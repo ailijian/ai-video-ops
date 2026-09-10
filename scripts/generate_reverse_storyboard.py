@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import getpass
-import re
 import json
 import hashlib
 import os
@@ -16,12 +16,22 @@ from pathlib import Path
 from typing import Any
 
 from openai import OpenAI
+from privacy_projection_v1 import (
+    PRIVACY_POLICY_VERSION,
+    assert_safe_for_external_model,
+    build_egress_audit,
+    load_privacy_projection,
+    project_safe_semantic,
+    project_safe_verbatim,
+    project_value,
+    require_privacy_projection_for_egress,
+)
 
 
 SCHEMA_VERSION = "reverse-storyboard-v1.1-draft"
 INTERPRETATION_PROMPT_VERSION = "reverse-storyboard-v1.1-interpretation"
 GLOBAL_UNDERSTANDING_PROMPT_VERSION = (
-    "reverse-storyboard-v1.1-global-understanding"
+    "reverse-storyboard-v1.1-global-understanding-v1.1"
 )
 
 RELATION_CANDIDATE_SET = {"开始", "延续", "结束", "完整", "重叠", "无旁白"}
@@ -63,17 +73,6 @@ ALLOWED_PROOF_TYPES = {
     "other_verifiable",
 }
 
-PHONE_PATTERN = re.compile(r"(?:\+?86[- ]?)?1[3-9]\d{9}")
-ORDER_NUMBER_PATTERN = re.compile(
-    r"(?:订单|订单号|订单编号|运单|运单号|提货码|取餐码|外卖码|取货码|单号)[^\u4e00-\u9fa5A-Za-z0-9]{0,12}[A-Za-z0-9]{4,}",
-    re.IGNORECASE,
-)
-RELEVANT_ADDRESS_PATTERN = re.compile(
-    r"(?:地址|收货地址|送货地址|门牌|住址|收件人|顾客姓名|订单信息|订单姓名)",
-    re.IGNORECASE,
-)
-
-
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -82,36 +81,20 @@ def read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def sanitize_pii_text(value: Any) -> str:
-    text = str(value).strip()
-    if not text:
-        return ""
-
-    if PHONE_PATTERN.search(text):
-        return "电话"
-
-    if ORDER_NUMBER_PATTERN.search(text):
-        return "订单标签"
-
-    if RELEVANT_ADDRESS_PATTERN.search(text):
-        return "包装上的订单信息"
-
-    if "配送" in text or "快递" in text:
-        return "配送标签"
-
-    return text
-
-
-def sanitize_information_states(
+def project_information_states(
     info_states: list[dict[str, Any]],
+    projection: str,
 ) -> list[dict[str, Any]]:
-    out = []
+    out: list[dict[str, Any]] = []
     for state in info_states:
-        item = dict(state)
-        item["ocr_raw"] = sanitize_pii_text(item.get("ocr_raw", ""))
-        item["scene_summary"] = sanitize_pii_text(item.get("scene_summary", ""))
+        item = project_value(dict(state), projection)
+        suffix = projection
+        if "ocr_raw" in item:
+            item[f"ocr_{suffix}"] = item.pop("ocr_raw")
+        if "scene_summary" in item:
+            item[f"scene_summary_{suffix}"] = item.pop("scene_summary")
+        item["privacy_projection"] = projection
         out.append(item)
-
     return out
 
 
@@ -135,6 +118,10 @@ def append_jsonl(path: Path, item: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(item, ensure_ascii=False) + "\n")
+
+
+def prompt_json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, indent=2)
 
 
 def gpu_name() -> str | None:
@@ -168,17 +155,23 @@ def normalize_role_list(value: Any) -> list[str]:
     return [str(x) for x in value]
 
 
-def build_shot_input(shot: dict[str, Any]) -> dict[str, Any]:
-    info_states = sanitize_information_states(
-        shot.get("visual_projection", {}).get("information_states", [])
+def build_shot_input(
+    shot: dict[str, Any],
+    projection: str,
+) -> dict[str, Any]:
+    info_states = project_information_states(
+        shot.get("visual_projection", {}).get("information_states", []),
+        projection,
     )
+    ocr_field = f"ocr_{projection}"
+    scene_field = f"scene_summary_{projection}"
 
     ocr_sequence = uniq_text(
-        [str(x.get("ocr_raw", "")) for x in info_states]
+        [str(x.get(ocr_field, "")) for x in info_states]
     )
 
     scene_sequence = uniq_text(
-        [str(x.get("scene_summary", "")) for x in info_states]
+        [str(x.get(scene_field, "")) for x in info_states]
     )
 
     visual_refs = [
@@ -195,13 +188,18 @@ def build_shot_input(shot: dict[str, Any]) -> dict[str, Any]:
         "boundary_reason_type": shot.get("boundary", {}).get("reason_type"),
         "boundary_reason": shot.get("boundary", {}).get("reason"),
         # Machine-level overlap. The model may use it as timing context but must not rewrite it.
-        "audio_overlap_exact": audio.get("voiceover_exact", ""),
+        f"audio_overlap_{projection}": (
+            project_safe_verbatim(audio.get("voiceover_exact", ""))
+            if projection == "safe_verbatim"
+            else project_safe_semantic(audio.get("voiceover_exact", ""))
+        ),
         "audio_word_refs": audio.get("word_refs", []),
         "audio_segment_refs": audio.get("segment_refs", []),
-        "onscreen_text_sequence": ocr_sequence,
-        "observable_scene_sequence": scene_sequence,
+        f"onscreen_text_{projection}": ocr_sequence,
+        f"observable_scene_{projection}": scene_sequence,
         "visual_frame_refs": visual_refs,
-        "information_states": info_states,
+        "privacy_safe_information_states": info_states,
+        "privacy_projection": projection,
     }
 
 
@@ -448,8 +446,13 @@ def build_narration_links(
             {
                 "segment_id": segment["segment_id"],
                 "relation": relation,
-                "full_text": segment["text"],
-                "source_full_text": segment["source_text"],
+                "full_text_safe_verbatim": project_safe_verbatim(
+                    segment["text"]
+                ),
+                "source_text_ref": {
+                    "segment_id": segment["segment_id"],
+                    "field": "source_text",
+                },
                 "segment_start": segment["start"],
                 "segment_end": segment["end"],
                 "overlap_start": round(overlap_start, 6),
@@ -459,6 +462,39 @@ def build_narration_links(
         )
 
     return links
+
+
+def build_safe_narration_track(
+    narration_track: list[dict[str, Any]],
+    audio_source_ref: str,
+) -> list[dict[str, Any]]:
+    safe_track: list[dict[str, Any]] = []
+    for segment in narration_track:
+        safe_track.append(
+            {
+                "segment_id": segment["segment_id"],
+                "start": segment["start"],
+                "end": segment["end"],
+                "duration": segment["duration"],
+                "text_safe_verbatim": project_safe_verbatim(
+                    segment["text"]
+                ),
+                "text_safe_semantic": project_safe_semantic(
+                    segment["text"]
+                ),
+                "source_ref": audio_source_ref,
+                "source_field": (
+                    f"segments[{segment['segment_id']}].source_text"
+                ),
+                "changed": segment["changed"],
+                "word_refs": segment["word_refs"],
+                "text_authority": segment["text_authority"],
+                "timing_authority": segment["timing_authority"],
+                "word_refs_authority": segment["word_refs_authority"],
+                "privacy_policy_version": PRIVACY_POLICY_VERSION,
+            }
+        )
+    return safe_track
 
 
 def flatten_word_refs_from_segments(
@@ -484,7 +520,7 @@ def narration_link_label(links: list[dict[str, Any]]) -> str:
 
 def validate_video_understanding(
     video_understanding: dict[str, Any],
-    interpretation_by_shot_id: dict[str, dict[str, Any]],
+    _interpretation_by_shot_id: dict[str, dict[str, Any]],
 ) -> None:
     if not isinstance(video_understanding, dict):
         raise RuntimeError("video_understanding must be an object.")
@@ -523,6 +559,12 @@ def validate_video_understanding(
         raise RuntimeError(
             "video_understanding.structure_sequence must be an array."
         )
+    if not isinstance(video_understanding.get("claims"), list):
+        raise RuntimeError("video_understanding.claims must be an array.")
+    if not isinstance(video_understanding.get("verified_proofs"), list):
+        raise RuntimeError(
+            "video_understanding.verified_proofs must be an array."
+        )
 
     valid_stages = {
         "hook",
@@ -535,11 +577,6 @@ def validate_video_understanding(
         "other",
     }
 
-    proof_shot_ids = {
-        shot_id
-        for shot_id, item in interpretation_by_shot_id.items()
-        if bool(item.get("proof_assessment", {}).get("is_proof"))
-    }
     for item in structure_sequence:
         stage = item.get("stage")
         if stage not in valid_stages:
@@ -550,14 +587,345 @@ def validate_video_understanding(
         if not isinstance(shot_refs, list):
             raise RuntimeError("structure_sequence shot_refs must be a list.")
 
-    for proof in video_understanding.get("verified_proofs", []):
-        if not isinstance(proof, dict):
+def proof_reference_shot_ids(proof: Any) -> list[str]:
+    if not isinstance(proof, dict):
+        return []
+
+    refs: list[str] = []
+    for field in ("shot_refs", "evidence_shots"):
+        value = proof.get(field)
+        if isinstance(value, list):
+            refs.extend(str(item) for item in value)
+        elif isinstance(value, str) and value:
+            refs.append(value)
+    return list(dict.fromkeys(refs))
+
+
+def sanitize_verified_proofs(
+    raw_video_understanding: dict[str, Any],
+    interpretation_by_shot_id: dict[str, dict[str, Any]],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    proof_shot_ids = {
+        shot_id
+        for shot_id, item in interpretation_by_shot_id.items()
+        if bool(item.get("proof_assessment", {}).get("is_proof"))
+    }
+    all_shot_ids = set(interpretation_by_shot_id)
+    requested = raw_video_understanding.get("verified_proofs", [])
+    if not isinstance(requested, list):
+        raise RuntimeError(
+            "video_understanding.verified_proofs must be an array."
+        )
+
+    effective = copy.deepcopy(raw_video_understanding)
+    accepted: list[Any] = []
+    dropped: list[dict[str, Any]] = []
+    accepted_proof_ids: set[str] = set()
+    dropped_proof_ids: set[str] = set()
+
+    for index, proof in enumerate(requested, start=1):
+        refs = proof_reference_shot_ids(proof)
+        invalid_refs = [ref for ref in refs if ref not in proof_shot_ids]
+        proof_id = (
+            str(proof.get("proof_id") or proof.get("id") or f"proof_{index}")
+            if isinstance(proof, dict)
+            else f"proof_{index}"
+        )
+
+        if not refs:
+            dropped_proof_ids.add(proof_id)
+            dropped.append(
+                {
+                    "proof_index": index,
+                    "proof_id": proof_id,
+                    "shot_ids": [],
+                    "invalid_shot_ids": [],
+                    "reason": "missing_shot_reference",
+                }
+            )
+        elif invalid_refs:
+            dropped_proof_ids.add(proof_id)
+            dropped.append(
+                {
+                    "proof_index": index,
+                    "proof_id": proof_id,
+                    "shot_ids": refs,
+                    "invalid_shot_ids": invalid_refs,
+                    "reason": "shot_not_validated_as_proof",
+                }
+            )
+        else:
+            accepted.append(copy.deepcopy(proof))
+            accepted_proof_ids.add(proof_id)
+
+    effective["verified_proofs"] = accepted
+    effective["claims_semantics"] = (
+        "candidate_unverified_unless_supported_by_verified_proofs"
+    )
+
+    claim_downgrades: list[dict[str, Any]] = []
+    effective_claims = effective.get("claims", [])
+    for index, claim in enumerate(effective_claims, start=1):
+        if not isinstance(claim, dict):
             continue
-        refs = [str(x) for x in proof.get("shot_refs", [])]
-        if not all(ref in proof_shot_ids for ref in refs):
+
+        boolean_fields = ("verified", "is_verified", "evidence_backed")
+        status_fields = ("verification_status", "status")
+        is_marked_verified = any(
+            claim.get(field) is True for field in boolean_fields
+        ) or any(
+            str(claim.get(field, "")).lower()
+            in {"verified", "evidence_backed", "evidence-backed"}
+            for field in status_fields
+        )
+        if not is_marked_verified:
+            continue
+
+        claim_refs: list[str] = []
+        for field in (
+            "proof_refs",
+            "evidence_refs",
+            "shot_refs",
+            "evidence_shots",
+        ):
+            value = claim.get(field)
+            if isinstance(value, list):
+                claim_refs.extend(str(item) for item in value)
+            elif isinstance(value, str) and value:
+                claim_refs.append(value)
+
+        invalid_claim_refs = [
+            ref
+            for ref in claim_refs
+            if (
+                (ref in all_shot_ids and ref not in proof_shot_ids)
+                or ref in dropped_proof_ids
+            )
+        ]
+        has_accepted_evidence = any(
+            ref in proof_shot_ids or ref in accepted_proof_ids
+            for ref in claim_refs
+        )
+        if invalid_claim_refs or not has_accepted_evidence:
+            for field in boolean_fields:
+                if field in claim:
+                    claim[field] = False
+            for field in status_fields:
+                if str(claim.get(field, "")).lower() in {
+                    "verified",
+                    "evidence_backed",
+                    "evidence-backed",
+                }:
+                    claim[field] = "candidate"
+            claim_downgrades.append(
+                {
+                    "claim_index": index,
+                    "invalid_refs": invalid_claim_refs,
+                    "reason": "verified_status_lacks_accepted_proof",
+                }
+            )
+
+    warnings = [
+        (
+            f"Dropped global verified proof #{item['proof_index']}: "
+            f"{item['reason']} ({', '.join(item['invalid_shot_ids']) or 'no shot refs'})."
+        )
+        for item in dropped
+    ]
+    warnings.extend(
+        (
+            f"Downgraded global claim #{item['claim_index']}: "
+            f"{item['reason']}."
+        )
+        for item in claim_downgrades
+    )
+
+    reconciliation = {
+        "global_requested_count": len(requested),
+        "accepted_count": len(accepted),
+        "dropped_count": len(dropped),
+        "shot_level_validated_proof_count": len(proof_shot_ids),
+        "shot_level_validated_proof_shot_ids": sorted(proof_shot_ids),
+        "dropped": dropped,
+        "claims_downgraded_count": len(claim_downgrades),
+        "claims_downgraded": claim_downgrades,
+        "warnings": warnings,
+    }
+    return effective, reconciliation
+
+
+PROOF_LANGUAGE_REPLACEMENTS = (
+    ("结果证据", "结果信息"),
+    ("证据支持", "视觉支持"),
+    ("视觉证据", "视觉信息"),
+    ("视觉佐证", "视觉呼应"),
+    ("已验证", "候选"),
+    ("证明", "展示"),
+    ("证实", "显示"),
+    ("佐证", "呼应"),
+)
+
+PROOF_LANGUAGE_NEGATION_MARKERS = (
+    "无法",
+    "不能",
+    "不可",
+    "不足以",
+    "未能",
+    "没有",
+    "不存在",
+    "缺乏",
+    "不构成",
+    "并非",
+    "不是",
+)
+
+
+def _is_negated_proof_language(text: str, start: int) -> bool:
+    prefix = text[max(0, start - 12) : start]
+    compact = "".join(prefix.split())
+    return any(
+        compact.endswith(marker)
+        for marker in PROOF_LANGUAGE_NEGATION_MARKERS
+    )
+
+
+def _replace_affirmative_proof_language(
+    text: str,
+) -> tuple[str, int]:
+    result = text
+    change_count = 0
+    for term, replacement in PROOF_LANGUAGE_REPLACEMENTS:
+        cursor = 0
+        parts: list[str] = []
+        while True:
+            start = result.find(term, cursor)
+            if start < 0:
+                parts.append(result[cursor:])
+                break
+            end = start + len(term)
+            parts.append(result[cursor:start])
+            if _is_negated_proof_language(result, start):
+                parts.append(term)
+            else:
+                parts.append(replacement)
+                change_count += 1
+            cursor = end
+        result = "".join(parts)
+    return result, change_count
+
+
+def _proof_language_fields(
+    video_understanding: dict[str, Any],
+) -> list[tuple[str, dict[str, Any], str]]:
+    fields: list[tuple[str, dict[str, Any], str]] = []
+    for key in (
+        "content_goal_candidate",
+        "audio_role",
+        "visual_text_role",
+        "visual_scene_role",
+        "audio_visual_strategy",
+    ):
+        if isinstance(video_understanding.get(key), str):
+            fields.append((key, video_understanding, key))
+
+    hook = video_understanding.get("hook_candidate")
+    if isinstance(hook, dict):
+        for key in ("audio", "visual_text", "visual_scene"):
+            if isinstance(hook.get(key), str):
+                fields.append((f"hook_candidate.{key}", hook, key))
+
+    sequence = video_understanding.get("structure_sequence")
+    if isinstance(sequence, list):
+        for index, item in enumerate(sequence):
+            if isinstance(item, dict) and isinstance(
+                item.get("description"), str
+            ):
+                fields.append(
+                    (
+                        f"structure_sequence[{index}].description",
+                        item,
+                        "description",
+                    )
+                )
+    return fields
+
+
+def reconcile_proof_language(
+    effective_video_understanding: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    reconciled = copy.deepcopy(effective_video_understanding)
+    if reconciled.get("verified_proofs"):
+        return reconciled, {
+            "applied": False,
+            "reason": "effective_verified_proofs_present",
+            "changed_fields": [],
+            "change_count": 0,
+        }
+
+    changed_fields: list[str] = []
+    change_count = 0
+    for path, container, key in _proof_language_fields(reconciled):
+        original = str(container[key])
+        updated, field_changes = _replace_affirmative_proof_language(
+            original
+        )
+        if field_changes:
+            container[key] = updated
+            changed_fields.append(path)
+            change_count += field_changes
+
+    return reconciled, {
+        "applied": bool(change_count),
+        "reason": "no_effective_verified_proofs",
+        "changed_fields": changed_fields,
+        "change_count": change_count,
+    }
+
+
+def validate_effective_proof_language(
+    effective_video_understanding: dict[str, Any],
+) -> None:
+    if effective_video_understanding.get("verified_proofs"):
+        return
+
+    violations: list[str] = []
+    for path, container, key in _proof_language_fields(
+        effective_video_understanding
+    ):
+        text = str(container[key])
+        for term, _replacement in PROOF_LANGUAGE_REPLACEMENTS:
+            cursor = 0
+            while True:
+                start = text.find(term, cursor)
+                if start < 0:
+                    break
+                if not _is_negated_proof_language(text, start):
+                    violations.append(f"{path}:{term}")
+                cursor = start + len(term)
+
+    if violations:
+        raise RuntimeError(
+            "Effective Global contains affirmative strong proof language "
+            "without effective verified proofs: "
+            + ", ".join(violations)
+        )
+
+
+def validate_effective_verified_proofs(
+    effective_video_understanding: dict[str, Any],
+    interpretation_by_shot_id: dict[str, dict[str, Any]],
+) -> None:
+    proof_shot_ids = {
+        shot_id
+        for shot_id, item in interpretation_by_shot_id.items()
+        if bool(item.get("proof_assessment", {}).get("is_proof"))
+    }
+    for proof in effective_video_understanding.get("verified_proofs", []):
+        refs = proof_reference_shot_ids(proof)
+        if not refs or any(ref not in proof_shot_ids for ref in refs):
             raise RuntimeError(
-                "video_understanding.verified_proofs references shot "
-                "not validated as proof."
+                "Effective verified_proofs contains a shot not validated "
+                "as proof."
             )
 
 
@@ -565,7 +933,8 @@ def call_model_json(
     model: str,
     prompt: str,
     max_tokens: int = 14000,
-) -> tuple[dict[str, Any], float]:
+) -> tuple[dict[str, Any], float, int | None]:
+    assert_safe_for_external_model(prompt)
     client = get_client()
 
     started = time.perf_counter()
@@ -582,105 +951,56 @@ def call_model_json(
     content = response.choices[0].message.content
     if not content:
         raise RuntimeError("DeepSeek returned empty content.")
-    return json.loads(content), elapsed
+    usage = getattr(response, "usage", None)
+    token_count: int | None = None
+    if isinstance(usage, dict):
+        token_count = usage.get("total_tokens")
+        if token_count is None:
+            token_count = usage.get("prompt_tokens")
+    elif usage is not None:
+        token_count = getattr(usage, "total_tokens", None)
+        if token_count is None:
+            token_count = getattr(usage, "prompt_tokens", None)
+        if token_count is None:
+            token_count = getattr(usage, "completion_tokens", None)
+    if token_count is not None:
+        token_count = int(token_count)
+
+    return json.loads(content), elapsed, token_count
 
 
-def load_or_generate_interpretation(
-    args: argparse.Namespace,
-    shot_inputs: list[dict[str, Any]],
-    narration_track: list[dict[str, Any]],
-    expected_ids: list[str],
-    cache_root: Path,
-    cache_narration_mode: str,
-) -> tuple[list[dict[str, Any]], dict[str, Any], float, str]:
-    if args.reuse_existing:
-        reuse_path = Path(args.reuse_existing).expanduser().resolve()
-        if not reuse_path.exists():
-            raise FileNotFoundError(reuse_path)
-        previous = read_json(reuse_path)
-
-        annotations: list[dict[str, Any]] = []
-        for shot in previous.get("shots", []):
-            interpretation = shot.get("interpretation")
-            if interpretation:
-                annotations.append(interpretation)
-
-        validate_annotations(annotations, expected_ids)
-        video_understanding = previous.get("video_understanding", {})
-        validate_video_understanding(video_understanding, {x["shot_id"]: x for x in annotations})
-        return annotations, video_understanding, 0.0, f"reused:{reuse_path}"
-
-    chunk_size = max(1, int(args.interpretation_chunk_size))
-    total_chunks = (len(shot_inputs) + chunk_size - 1) // chunk_size
-
-    all_annotations: list[dict[str, Any]] = []
-    all_elapsed = 0.0
-
-    transcript_preview = [
-        {
-            "segment_id": str(x["segment_id"]),
-            "text": str(x["text"]),
-        }
-        for x in narration_track
-    ]
-
-    chunk_cache_count = 0
-    chunk_run_count = 0
-
-    for chunk_index in range(total_chunks):
-        start = chunk_index * chunk_size
-        chunk_shots = shot_inputs[start : start + chunk_size]
-        chunk_ids = [str(x["shot_id"]) for x in chunk_shots]
-
-        prior_context = None
-        if all_annotations:
-            prior = all_annotations[-1]
-            prior_context = {
-                "shot_id": prior.get("shot_id"),
-                "primary_role": prior.get("primary_role"),
-                "secondary_roles": prior.get("secondary_roles", []),
-                "narrative_function": prior.get("narrative_function"),
+def build_interpretation_prompt(
+    chunk_index: int,
+    total_chunks: int,
+    transcript_preview: list[dict[str, Any]],
+    chunk_shots: list[dict[str, Any]],
+    prior_context: dict[str, Any] | None = None,
+) -> str:
+    response_schema = {
+        "shot_annotations": [
+            {
+                "shot_id": "S001",
+                "primary_role": "hook",
+                "secondary_roles": ["context"],
+                "narrative_function": "一句简洁说明该 Shot 在原视频中的作用，不新增事实。",
+                "audio_to_visual_text": "repeat",
+                "audio_to_visual_scene": "supplement",
+                "proof_assessment": {
+                    "is_proof": False,
+                    "proof_type": None,
+                    "supports_claim": "",
+                    "basis": "",
+                },
+                "confidence": "high|medium|low",
+                "uncertainties": [],
             }
+        ]
+    }
 
-        chunk_input = {
-            "chunk_shots": chunk_shots,
-            "transcript_preview": transcript_preview,
-            "prior_context": prior_context,
-            "chunk_index": chunk_index + 1,
-            "total_chunks": total_chunks,
-            "narration_review_source": cache_narration_mode,
-        }
-
-        profile = {
-            "model": args.model,
-            "prompt_version": INTERPRETATION_PROMPT_VERSION,
-            "interpretation_chunk_size": chunk_size,
-            "input_content_hash": stable_hash(chunk_input),
-            "narration_source_mode": cache_narration_mode,
-        }
-
-        cache_path = cache_root / f"chunk_{chunk_index + 1:03d}.json"
-
-        cached = read_json(cache_path) if cache_path.exists() else None
-        if cached is not None and dict(cached.get("cache", {})) == profile:
-            annotations = cached.get("model_output", {}).get("shot_annotations")
-            if not isinstance(annotations, list):
-                raise RuntimeError(
-                    f"Cached chunk {chunk_index + 1} invalid."
-                )
-            returned_ids = [str(x.get("shot_id")) for x in annotations]
-            if returned_ids != chunk_ids:
-                raise RuntimeError(
-                    f"Cached chunk {chunk_index + 1} shot IDs mismatch."
-                )
-            chunk_cache_count += 1
-            all_elapsed += float(cached.get("model_elapsed_seconds") or 0.0)
-        else:
-            chunk_run_count += 1
-            chunk_prompt = (
-                f"""
+    body = (
+        f"""
 你正在生成“逆向分镜脚本 V1.1”。  
-这是第 {chunk_index + 1} / {total_chunks} 个 Chunk。  
+这是第 {chunk_index} / {total_chunks} 个 Chunk。  
 你只需要返回本 Chunk 的 Shot 解释，不返回全局变量，不输出额外字段。
 
 输入已经包含：
@@ -774,48 +1094,226 @@ other_verifiable
 
 【输入完整旁白，仅作上下文】
 
-{json.dumps(transcript_preview, ensure_ascii=False)}
+"""
+        + prompt_json(transcript_preview)
+        + """
 
 【本 Chunk Shot 输入】
 
-{json.dumps(chunk_shots, ensure_ascii=False)}
-
 """
-                + (
-                    ""
-                    if not prior_context
-                    else f"""
+        + prompt_json(chunk_shots)
+        + (
+            ""
+            if not prior_context
+            else """
 前一个 Chunk 最后 Shot 的 compact context（仅用于连贯性）：
-{json.dumps(prior_context, ensure_ascii=False)}
 """
-                )
-                + """
+            + prompt_json(prior_context)
+        )
+        + """
+
 只输出 JSON：
 
-{
-  "shot_annotations": [
-    {
-      "shot_id": "S001",
-      "primary_role": "hook",
-      "secondary_roles": ["context"],
-      "narrative_function": "一句简洁说明该 Shot 在原视频中的作用，不新增事实。",
-      "audio_to_visual_text": "repeat",
-      "audio_to_visual_scene": "supplement",
-      "proof_assessment": {
-        "is_proof": false,
-        "proof_type": null,
-        "supports_claim": "",
-        "basis": ""
-      },
-      "confidence": "high|medium|low",
-      "uncertainties": []
-    }
-  ]
-}
 """
-            )
+        + prompt_json(response_schema)
+    )
+    return body
 
-            model_output, model_elapsed = call_model_json(
+
+def build_global_understanding_prompt(
+    transcript_preview: list[dict[str, Any]],
+    compact_shots: list[dict[str, Any]],
+) -> str:
+    response_schema = {
+        "content_goal_candidate": "",
+        "hook_candidate": {
+            "audio": "",
+            "visual_text": "",
+            "visual_scene": "",
+        },
+        "audio_role": "",
+        "visual_text_role": "",
+        "visual_scene_role": "",
+        "audio_visual_strategy": "",
+        "structure_sequence": [
+            {
+                "shot_refs": ["S001", "S002"],
+                "stage": "hook|setup|development|demonstration|transition|payoff|CTA|other",
+                "description": "",
+            }
+        ],
+        "claims": [],
+        "verified_proofs": [],
+        "uncertainties": [],
+    }
+
+    return (
+        """
+你正在生成“逆向分镜脚本 V1.1 的全局理解”。
+
+输入是紧凑 shot 解释与完整旁白文本（仅用于语义理解）：
+
+完整旁白（按 Narration Track 顺序）：
+"""
+        + prompt_json(transcript_preview)
+        + """
+
+Shot 解释汇总：
+"""
+        + prompt_json(compact_shots)
+        + """
+
+只输出 JSON：
+
+"""
+        + prompt_json(response_schema)
+        + """
+
+要求：
+- 不生成 Pattern；
+- 不修改时间、OCR、word 证据；
+- 如果 Shot-level validated proof 数量为 0，不得把普通过程画面表述为“证明”“已验证”“证实”或“结果证据”；
+- 无 effective verified_proofs 支持的 claims 必须视为 candidate / unverified claims；
+- 可使用“视觉呼应”“对应展示”“视觉支持”“补充说明”“强化理解”等非证明性措辞；
+- output 必须 JSON。
+"""
+    )
+
+
+def load_or_generate_interpretation(
+    args: argparse.Namespace,
+    shot_inputs: list[dict[str, Any]],
+    global_shot_inputs: list[dict[str, Any]],
+    narration_track: list[dict[str, Any]],
+    expected_ids: list[str],
+    cache_root: Path,
+    cache_narration_mode: str,
+    privacy_context: dict[str, Any] | None,
+) -> tuple[list[dict[str, Any]], dict[str, Any], float, str]:
+    if args.reuse_existing:
+        reuse_path = Path(args.reuse_existing).expanduser().resolve()
+        if not reuse_path.exists():
+            raise FileNotFoundError(reuse_path)
+        previous = read_json(reuse_path)
+
+        annotations: list[dict[str, Any]] = []
+        for shot in previous.get("shots", []):
+            interpretation = shot.get("interpretation")
+            if interpretation:
+                annotations.append(interpretation)
+
+        validate_annotations(annotations, expected_ids)
+        video_understanding = previous.get("video_understanding", {})
+        validate_video_understanding(video_understanding, {x["shot_id"]: x for x in annotations})
+        return annotations, video_understanding, 0.0, f"reused:{reuse_path}"
+
+    chunk_size = max(1, int(args.interpretation_chunk_size))
+    total_chunks = (len(shot_inputs) + chunk_size - 1) // chunk_size
+
+    all_annotations: list[dict[str, Any]] = []
+    all_elapsed = 0.0
+
+    transcript_preview = [
+        {
+            "segment_id": str(x["segment_id"]),
+            "text_safe_verbatim": project_safe_verbatim(x["text"]),
+        }
+        for x in narration_track
+    ]
+    global_transcript_preview = [
+        {
+            "segment_id": str(x["segment_id"]),
+            "text_safe_semantic": project_safe_semantic(x["text"]),
+        }
+        for x in narration_track
+    ]
+
+    chunk_cache_count = 0
+    chunk_run_count = 0
+
+    for chunk_index in range(total_chunks):
+        start = chunk_index * chunk_size
+        chunk_shots = shot_inputs[start : start + chunk_size]
+        chunk_ids = [str(x["shot_id"]) for x in chunk_shots]
+
+        prior_context = None
+        if all_annotations:
+            prior = all_annotations[-1]
+            prior_context = {
+                "shot_id": prior.get("shot_id"),
+                "primary_role": prior.get("primary_role"),
+                "secondary_roles": prior.get("secondary_roles", []),
+                "narrative_function": prior.get("narrative_function"),
+            }
+
+        chunk_input = {
+            "chunk_shots": chunk_shots,
+            "transcript_preview": transcript_preview,
+            "prior_context": prior_context,
+            "chunk_index": chunk_index + 1,
+            "total_chunks": total_chunks,
+            "narration_review_source": cache_narration_mode,
+        }
+        chunk_prompt = build_interpretation_prompt(
+            chunk_index + 1,
+            total_chunks,
+            transcript_preview,
+            chunk_shots,
+            prior_context,
+        )
+        egress_audit = build_egress_audit(
+            safe_input=chunk_input,
+            rendered_prompt=chunk_prompt,
+            privacy_context=privacy_context,
+        )
+
+        profile = {
+            "model": args.model,
+            "prompt_version": INTERPRETATION_PROMPT_VERSION,
+            "interpretation_chunk_size": chunk_size,
+            "input_content_hash": stable_hash(chunk_input),
+            "narration_source_mode": cache_narration_mode,
+            **egress_audit,
+        }
+
+        cache_path = cache_root / f"chunk_{chunk_index + 1:03d}.json"
+
+        cached = read_json(cache_path) if cache_path.exists() else None
+        if cached is not None and dict(cached.get("cache", {})) == profile:
+            annotations = cached.get("model_output", {}).get("shot_annotations")
+            if not isinstance(annotations, list):
+                raise RuntimeError(
+                    f"Cached chunk {chunk_index + 1} invalid."
+                )
+            returned_ids = [str(x.get("shot_id")) for x in annotations]
+            if returned_ids != chunk_ids:
+                raise RuntimeError(
+                    f"Cached chunk {chunk_index + 1} shot IDs mismatch."
+                )
+            chunk_cache_count += 1
+            all_elapsed += float(cached.get("model_elapsed_seconds") or 0.0)
+            print(
+                f"[{chunk_index + 1}/{total_chunks}] "
+                f"INTERPRETATION CACHE HIT shots={len(chunk_shots)} "
+                f"context={1 if prior_context else 0} validation=PASS",
+                flush=True,
+            )
+        else:
+            chunk_run_count += 1
+            if getattr(args, "cache_only", False):
+                raise RuntimeError(
+                    f"Interpretation chunk {chunk_index + 1} cache miss "
+                    "during cache-only run."
+                )
+            require_privacy_projection_for_egress(privacy_context)
+            print(
+                f"[{chunk_index + 1}/{total_chunks}] INTERPRETATION START "
+                f"shots={len(chunk_shots)} context={1 if prior_context else 0} "
+                "cache=MISS",
+                flush=True,
+            )
+            assert_safe_for_external_model(chunk_prompt)
+            model_output, model_elapsed, token_count = call_model_json(
                 args.model,
                 chunk_prompt,
                 max_tokens=14000,
@@ -828,6 +1326,15 @@ other_verifiable
                     f"Chunk {chunk_index + 1} missing shot_annotations array."
                 )
             validate_annotations(annotations, chunk_ids)
+            token_text = (
+                str(token_count) if token_count is not None else "unavailable"
+            )
+            print(
+                f"[{chunk_index + 1}/{total_chunks}] INTERPRETATION PASS "
+                f"elapsed={model_elapsed:.2f}s tokens={token_text} "
+                "validation=PASS",
+                flush=True,
+            )
 
             cache_path.parent.mkdir(parents=True, exist_ok=True)
             cache_path.write_text(
@@ -853,13 +1360,13 @@ other_verifiable
             f"Expected: {expected_ids}\nReturned: {returned_ids}"
         )
 
-    shot_input_map = {
-        str(item["shot_id"]): item for item in shot_inputs
+    global_shot_input_map = {
+        str(item["shot_id"]): item for item in global_shot_inputs
     }
     compact_shots: list[dict[str, Any]] = []
     for item in all_annotations:
         shot_id = str(item["shot_id"])
-        shot_input = shot_input_map[shot_id]
+        shot_input = global_shot_input_map[shot_id]
         compact_shots.append(
             {
                 "shot_id": shot_id,
@@ -869,14 +1376,28 @@ other_verifiable
                 "secondary_roles": item.get("secondary_roles", []),
                 "narrative_function": item.get("narrative_function"),
                 "proof_assessment": item.get("proof_assessment", {}),
-                "onscreen_text_sequence": shot_input.get(
-                    "onscreen_text_sequence", []
+                "onscreen_text_safe_semantic": shot_input.get(
+                    "onscreen_text_safe_semantic", []
                 ),
-                "observable_scene_sequence": shot_input.get(
-                    "observable_scene_sequence", []
+                "observable_scene_safe_semantic": shot_input.get(
+                    "observable_scene_safe_semantic", []
                 ),
             }
         )
+
+    global_input = {
+        "compact_shots": compact_shots,
+        "transcript_preview": global_transcript_preview,
+    }
+    global_prompt = build_global_understanding_prompt(
+        global_transcript_preview,
+        compact_shots,
+    )
+    global_egress_audit = build_egress_audit(
+        safe_input=global_input,
+        rendered_prompt=global_prompt,
+        privacy_context=privacy_context,
+    )
 
     global_cache_profile = {
         "model": args.model,
@@ -884,10 +1405,11 @@ other_verifiable
         "input_content_hash": stable_hash(
             {
                 "compact_shots": compact_shots,
-                "transcript_preview": transcript_preview,
+                "transcript_preview": global_transcript_preview,
             }
         ),
         "narration_source_mode": cache_narration_mode,
+        **global_egress_audit,
     }
 
     global_cache_path = cache_root / "global_understanding.json"
@@ -908,50 +1430,19 @@ other_verifiable
         )
         all_elapsed += float(global_cached.get("model_elapsed_seconds") or 0.0)
         global_source = f"cached:{global_cache_path}"
+        print(
+            "GLOBAL UNDERSTANDING CACHE HIT schema_validation=PASS",
+            flush=True,
+        )
     else:
-        global_prompt = f"""
-你正在生成“逆向分镜脚本 V1.1 的全局理解”。
-
-输入是紧凑 shot 解释与完整旁白文本（仅用于语义理解）：
-
-完整旁白（按 Narration Track 顺序）：
-{json.dumps(transcript_preview, ensure_ascii=False)}
-
-Shot 解释汇总：
-{json.dumps(compact_shots, ensure_ascii=False)}
-
-只输出 JSON：
-
-{
-  "content_goal_candidate": "",
-  "hook_candidate": {
-    "audio": "",
-    "visual_text": "",
-    "visual_scene": ""
-  },
-  "audio_role": "",
-  "visual_text_role": "",
-  "visual_scene_role": "",
-  "audio_visual_strategy": "",
-  "structure_sequence": [
-    {
-      "shot_refs": ["S001", "S002"],
-      "stage": "hook|setup|development|demonstration|transition|payoff|CTA|other",
-      "description": ""
-    }
-  ],
-  "claims": [],
-  "verified_proofs": [],
-  "uncertainties": []
-}
-
-要求：
-- 不生成 Pattern；
-- 不修改时间、OCR、word 证据；
-- output 必须 JSON。
-"""
-
-        video_understanding, global_elapsed = call_model_json(
+        if getattr(args, "cache_only", False):
+            raise RuntimeError(
+                "Global Understanding cache miss during cache-only run."
+            )
+        require_privacy_projection_for_egress(privacy_context)
+        print("GLOBAL UNDERSTANDING START cache=MISS", flush=True)
+        assert_safe_for_external_model(global_prompt)
+        video_understanding, global_elapsed, token_count = call_model_json(
             args.model,
             global_prompt,
             max_tokens=12000,
@@ -960,6 +1451,15 @@ Shot 解释汇总：
         validate_video_understanding(
             video_understanding,
             {x["shot_id"]: x for x in all_annotations},
+        )
+        token_text = (
+            str(token_count) if token_count is not None else "unavailable"
+        )
+        print(
+            "GLOBAL UNDERSTANDING PASS "
+            f"elapsed={global_elapsed:.2f}s tokens={token_text} "
+            "schema_validation=PASS",
+            flush=True,
         )
         global_source = f"generated:{args.model}"
 
@@ -1032,6 +1532,24 @@ def main() -> None:
         default=None,
         help="Default: <project>/data/storyboards/<case_id>/v1",
     )
+    parser.add_argument(
+        "--privacy-projection",
+        default=None,
+        help=(
+            "Canonical privacy_projection_v1.json. Required before any "
+            "remote model cache miss."
+        ),
+    )
+    parser.add_argument(
+        "--cache-only",
+        action="store_true",
+        help="Fail on any model cache miss; never call the model.",
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Build and validate in memory without writing outputs or metrics.",
+    )
     args = parser.parse_args()
 
     shot_path = Path(args.shot_boundaries).expanduser().resolve()
@@ -1058,6 +1576,15 @@ def main() -> None:
     if str(audio_data.get("case_id")) != case_id:
         raise RuntimeError("Audio V1 case_id does not match shot boundaries.")
 
+    privacy_context = (
+        load_privacy_projection(
+            args.privacy_projection,
+            expected_case_id=case_id,
+        )
+        if args.privacy_projection
+        else None
+    )
+
     source_shots = list(shot_data.get("shots") or [])
     if not source_shots:
         raise RuntimeError("No deterministic shots found.")
@@ -1077,18 +1604,29 @@ def main() -> None:
         args.narration_review,
     )
 
-    shot_inputs = [build_shot_input(x) for x in source_shots]
+    shot_inputs = [
+        build_shot_input(x, "safe_verbatim") for x in source_shots
+    ]
+    global_shot_inputs = [
+        build_shot_input(x, "safe_semantic") for x in source_shots
+    ]
     expected_ids = [x["shot_id"] for x in shot_inputs]
 
     annotations, video_understanding, model_elapsed, interpretation_source = (
         load_or_generate_interpretation(
             args,
             shot_inputs,
+            global_shot_inputs,
             narration_track,
             expected_ids,
             cache_root,
             narration_review_source or "faster-whisper",
+            privacy_context,
         )
+    )
+    safe_narration_track = build_safe_narration_track(
+        narration_track,
+        str(audio_path),
     )
 
     annotation_by_id = {x["shot_id"]: x for x in annotations}
@@ -1157,9 +1695,17 @@ def main() -> None:
                 "duration": source_shot["duration"],
                 "boundary": source_shot.get("boundary", {}),
                 "evidence": {
-                    "audio_overlap_exact": source_shot.get(
-                        "audio_projection", {}
-                    ).get("voiceover_exact", ""),
+                    "audio_overlap_safe_verbatim": project_safe_verbatim(
+                        source_shot.get(
+                            "audio_projection", {}
+                        ).get("voiceover_exact", "")
+                    ),
+                    "audio_overlap_source": {
+                        "source_ref": str(shot_path),
+                        "source_field": (
+                            f"shots[{shot_id}].audio_projection.voiceover_exact"
+                        ),
+                    },
                     "audio_word_refs": source_shot.get(
                         "audio_projection", {}
                     ).get("word_refs", []),
@@ -1170,31 +1716,36 @@ def main() -> None:
                     "narration_display": narration_link_label(
                         narration_links
                     ),
-                    "onscreen_text_sequence": shot_input["onscreen_text_sequence"],
-                    "observable_scene_sequence": shot_input[
-                        "observable_scene_sequence"
+                    "onscreen_text_safe_verbatim": shot_input[
+                        "onscreen_text_safe_verbatim"
+                    ],
+                    "observable_scene_safe_verbatim": shot_input[
+                        "observable_scene_safe_verbatim"
                     ],
                     "visual_frame_refs": shot_input["visual_frame_refs"],
-                    "information_states": shot_input["information_states"],
+                    "privacy_safe_information_states": shot_input[
+                        "privacy_safe_information_states"
+                    ],
+                    "privacy_policy_version": PRIVACY_POLICY_VERSION,
                 },
                 "interpretation": annotation_by_id[shot_id],
             }
         )
 
-    proof_shot_ids = {
-        str(x["shot_id"])
-        for x in annotations
-        if bool(x.get("proof_assessment", {}).get("is_proof"))
-    }
-
-    verified_proofs = video_understanding.get("verified_proofs", [])
-    for proof in verified_proofs:
-        refs = proof.get("shot_refs", []) if isinstance(proof, dict) else []
-        if not refs or any(str(x) not in proof_shot_ids for x in refs):
-            raise RuntimeError(
-                "video_understanding.verified_proofs references a shot "
-                "not validated as proof."
-            )
+    raw_video_understanding = video_understanding
+    video_understanding, proof_reconciliation = sanitize_verified_proofs(
+        raw_video_understanding,
+        annotation_by_id,
+    )
+    (
+        video_understanding,
+        proof_language_reconciliation,
+    ) = reconcile_proof_language(video_understanding)
+    validate_effective_verified_proofs(
+        video_understanding,
+        annotation_by_id,
+    )
+    validate_effective_proof_language(video_understanding)
 
     final_shot_ids = [str(x["shot_id"]) for x in final_shots]
     if final_shot_ids != expected_ids:
@@ -1247,11 +1798,20 @@ def main() -> None:
                 if args.narration_review
                 else None
             ),
+            "privacy_projection_v1": (
+                privacy_context["path"] if privacy_context else None
+            ),
         },
         "storyboard_type": "reverse",
-        "narration_track": narration_track,
+        "narration_track": safe_narration_track,
         "shots": final_shots,
+        "video_understanding_raw": raw_video_understanding,
         "video_understanding": video_understanding,
+        "proof_reconciliation": proof_reconciliation,
+        "proof_language_reconciliation": proof_language_reconciliation,
+        "claims_semantics": (
+            "candidate_unverified_unless_supported_by_verified_proofs"
+        ),
         "authority": {
             "narration_text": narration_review_source or "faster-whisper",
             "narration_timing": "audio_word_timeline_v1 / faster-whisper",
@@ -1260,6 +1820,7 @@ def main() -> None:
             "time_and_shot_order": "shot_boundaries_v1_1",
             "roles_and_video_understanding": "deepseek-v4-flash",
             "pattern_mining": "not_performed",
+            "privacy_projection": PRIVACY_POLICY_VERSION,
         },
         "design_decision": {
             "narration_and_shots_are_separate_tracks": True,
@@ -1267,6 +1828,7 @@ def main() -> None:
             "human_facing_storyboard_uses_narration_links": True,
             "audio_overlap_exact_is_machine_sync_field": True,
             "do_not_treat_audio_overlap_exact_as_script_copy": True,
+            "derived_output_contains_privacy_safe_projection_only": True,
         },
         "timing": {
             "deepseek_storyboard_seconds": round(model_elapsed, 6),
@@ -1285,6 +1847,10 @@ def main() -> None:
             "ocr_generated_by_model": False,
             "pattern_generated_in_this_stage": False,
             "proof_role_strictly_validated": True,
+            "effective_verified_proofs_strictly_validated": True,
+            "effective_proof_language_strictly_validated": True,
+            "proof_reconciliation": proof_reconciliation,
+            "warnings": proof_reconciliation["warnings"],
             "audio_validation_passed": audio_validation.get("passed"),
             "shot_validation_passed": shot_validation.get("passed"),
             "manual_review_closed": manual_review_closed,
@@ -1294,16 +1860,17 @@ def main() -> None:
     }
 
     json_path = output_dir / "reverse_storyboard_v1.json"
-    json_path.write_text(
-        json.dumps(result, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    if not args.dry_run:
+        json_path.write_text(
+            json.dumps(result, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
 
     raw_output = {
         "shot_annotations": annotations,
-        "video_understanding": video_understanding,
+        "video_understanding": raw_video_understanding,
     }
-    if not args.reuse_existing:
+    if not args.reuse_existing and not args.dry_run:
         raw_path = output_dir / "reverse_storyboard_v1_model_raw.json"
         raw_path.write_text(
             json.dumps(raw_output, ensure_ascii=False, indent=2),
@@ -1320,7 +1887,7 @@ def main() -> None:
         "",
         "> **重要：旁白轨与视觉分镜轨是两条独立时间轨。**",
         "> 一个完整旁白段可以跨多个 Shot，一个 Shot 也可能跨多个旁白段。",
-        "> JSON 中的 `audio_overlap_exact` 只用于机器同步，不作为人类可读旁白脚本。",
+        "> JSON 中仅保存 `audio_overlap_safe_verbatim`；原始机器同步文本通过 source_ref 回溯。",
         "",
         "## 完整旁白轨",
         "",
@@ -1328,8 +1895,8 @@ def main() -> None:
         "|---|---|---:|---|",
     ]
 
-    for seg in narration_track:
-        text = str(seg["text"]).replace("|", "｜")
+    for seg in safe_narration_track:
+        text = str(seg["text_safe_verbatim"]).replace("|", "｜")
         md.append(
             f"| {seg['segment_id']} | "
             f"{seg['start']:.3f}–{seg['end']:.3f}s | "
@@ -1354,11 +1921,11 @@ def main() -> None:
         ).replace("|", "｜")
 
         ocr = " / ".join(
-            ev["onscreen_text_sequence"]
+            ev["onscreen_text_safe_verbatim"]
         ).replace("|", "｜")
 
         scenes = " / ".join(
-            ev["observable_scene_sequence"]
+            ev["observable_scene_safe_verbatim"]
         ).replace("|", "｜")
 
         secondary = ", ".join(
@@ -1438,15 +2005,16 @@ def main() -> None:
         "",
         "## 机器同步说明",
         "",
-        "- `audio_overlap_exact` 仍保留在 JSON 中，用于字幕、剪辑、TTS、BGM ducking 等机器级同步。",
+        "- 原始 `audio_overlap_exact` 保留在 Trusted Local Raw artifact；Storyboard 仅保存 safe projection 与 source_ref。",
         "- 人类主表通过 `A001 开始 / A001 延续 / A001 结束 / A001 完整` 等方式表达旁白与 Shot 的关系。",
     ]
 
     md_path = output_dir / "reverse_storyboard_v1.md"
-    md_path.write_text(
-        "\n".join(md),
-        encoding="utf-8",
-    )
+    if not args.dry_run:
+        md_path.write_text(
+            "\n".join(md),
+            encoding="utf-8",
+        )
 
     metric = {
         "run_id": (
@@ -1479,10 +2047,11 @@ def main() -> None:
         / "metrics"
         / "storyboard_runs.jsonl"
     )
-    append_jsonl(metrics_log, metric)
+    if not args.dry_run:
+        append_jsonl(metrics_log, metric)
 
     print()
-    print("REVERSE STORYBOARD V1.1 PASS")
+    print("REVERSE STORYBOARD V1 PASS", flush=True)
     print(f"Case ID: {case_id}")
     print(f"Shots preserved: {len(final_shots)}")
     print(f"Narration segments: {len(narration_track)}")
@@ -1491,9 +2060,12 @@ def main() -> None:
     print(f"Interpretation source: {interpretation_source}")
     print(f"DeepSeek storyboard: {model_elapsed:.2f}s")
     print(f"Total elapsed: {total_elapsed:.2f}s")
-    print(f"JSON: {json_path}")
-    print(f"Markdown: {md_path}")
-    print(f"Metrics: {metrics_log}")
+    if args.dry_run:
+        print("Dry run: no output artifacts or metrics written.")
+    else:
+        print(f"JSON: {json_path}")
+        print(f"Markdown: {md_path}")
+        print(f"Metrics: {metrics_log}")
 
 
 if __name__ == "__main__":

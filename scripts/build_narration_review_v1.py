@@ -12,6 +12,14 @@ from pathlib import Path
 from typing import Any
 
 from openai import OpenAI
+from privacy_projection_v1 import (
+    assert_safe_for_external_model,
+    build_egress_audit,
+    detect_sensitive_spans,
+    load_privacy_projection,
+    project_value,
+    require_privacy_projection_for_egress,
+)
 
 
 SCRIPT_VERSION = "build_narration_review_v1.py@1.1"
@@ -90,26 +98,6 @@ def sequence_metrics(a: str, b: str) -> tuple[float, float, int]:
     return ratio, coverage, longest
 
 
-def looks_sensitive(text: str) -> bool:
-    raw = str(text)
-
-    if re.search(r"\d{7,}", raw):
-        return True
-
-    sensitive_terms = (
-        "收件人",
-        "手机号",
-        "手机号码",
-        "联系电话",
-        "电话号码",
-        "详细地址",
-        "收货地址",
-        "订单号",
-        "运单号",
-    )
-    return any(term in raw for term in sensitive_terms)
-
-
 def split_ocr_lines(text: str) -> list[str]:
     pieces = re.split(r"[\r\n]+", str(text))
     out: list[str] = []
@@ -172,7 +160,7 @@ def supporting_ocr_for_segment(
             # Do not send nearby shipping/order-label PII merely because
             # it was visible in the same frame. Only allow it when it is
             # extremely close to the spoken segment itself.
-            if looks_sensitive(line) and ratio < 0.82:
+            if detect_sensitive_spans(line) and ratio < 0.82:
                 continue
 
             candidates.append(
@@ -621,6 +609,7 @@ def main() -> None:
         default=2,
     )
     parser.add_argument("--force", action="store_true")
+    parser.add_argument("--privacy-projection", required=True)
     parser.add_argument(
         "--review-file",
         default=None,
@@ -632,6 +621,10 @@ def main() -> None:
     )
     parser.add_argument("--output-root", default=None)
     args = parser.parse_args()
+    privacy_context = load_privacy_projection(
+        args.privacy_projection,
+        expected_case_id=args.case_id,
+    )
 
     if args.segment_chunk_size < 1:
         raise ValueError(
@@ -918,11 +911,24 @@ def main() -> None:
             start_index:
             start_index + args.segment_chunk_size
         ]
+        safe_chunk_inputs = project_value(
+            chunk_inputs,
+            "safe_verbatim",
+        )
+        prompt = build_prompt(
+            args.case_id,
+            safe_chunk_inputs,
+        )
+        egress_audit = build_egress_audit(
+            safe_input=safe_chunk_inputs,
+            rendered_prompt=prompt,
+            privacy_context=privacy_context,
+        )
 
         input_hash = sha256_json(
             {
                 "prompt_version": PROMPT_VERSION,
-                "inputs": chunk_inputs,
+                "inputs": safe_chunk_inputs,
             }
         )
 
@@ -957,6 +963,10 @@ def main() -> None:
                     meta.get("input_sha256")
                 )
                 == input_hash
+                and all(
+                    meta.get(key) == value
+                    for key, value in egress_audit.items()
+                )
             )
 
             if profile_matches:
@@ -993,11 +1003,6 @@ def main() -> None:
                     reused_chunk_count += 1
                     continue
 
-        prompt = build_prompt(
-            args.case_id,
-            chunk_inputs,
-        )
-
         success = False
         last_error: Exception | None = None
         final_results: list[
@@ -1019,6 +1024,8 @@ def main() -> None:
                 flush=True,
             )
 
+            require_privacy_projection_for_egress(privacy_context)
+            assert_safe_for_external_model(prompt)
             if client is None:
                 client = get_client()
 
@@ -1139,6 +1146,7 @@ def main() -> None:
                 for x in chunk_inputs
             ],
             "input_sha256": input_hash,
+            "input_content_hash": input_hash,
             "elapsed_seconds": round(
                 elapsed_total, 6
             ),
@@ -1148,6 +1156,7 @@ def main() -> None:
                 final_warnings
             ),
             "status": "success",
+            **egress_audit,
         }
 
         write_json(

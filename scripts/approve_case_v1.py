@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from privacy_projection_v1 import validate_case_privacy_gate
+
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -83,6 +85,11 @@ def main() -> None:
 
     if validation.get("passed") is not True:
         errors.append("Case validation.passed is not true.")
+
+    try:
+        validate_case_privacy_gate(case)
+    except RuntimeError as exc:
+        errors.append(str(exc))
 
     if visual.get("coverage_label") != "candidate_complete":
         errors.append(

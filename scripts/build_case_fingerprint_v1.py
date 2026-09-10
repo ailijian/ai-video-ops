@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from privacy_projection_v1 import validate_case_privacy_gate
+
 
 SCHEMA_VERSION = "case-fingerprint-v1.0-draft"
 BUILDER_VERSION = "build_case_fingerprint_v1.py@0.1"
@@ -151,6 +153,11 @@ def main() -> None:
 
     if validation.get("passed") is not True:
         errors.append("Case validation.passed is not true.")
+
+    try:
+        validate_case_privacy_gate(case)
+    except RuntimeError as exc:
+        errors.append(str(exc))
 
     if quality.get("human_review_completed") is not True:
         errors.append(

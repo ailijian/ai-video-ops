@@ -9,10 +9,18 @@ from pathlib import Path
 from typing import Any
 
 from openai import OpenAI
+from privacy_projection_v1 import (
+    assert_safe_for_external_model,
+    build_egress_audit,
+    load_privacy_projection,
+    project_value,
+    require_privacy_projection_for_egress,
+)
 
 
 SCRIPT_VERSION = "build_shot_boundaries_v1.py@1.5"
 SCHEMA_VERSION = "shot-boundaries-v1.5-draft"
+PROMPT_VERSION = "shot-boundary-prompt-v1.0"
 
 REASON_TYPES = {
     "video_start",
@@ -272,6 +280,7 @@ def main() -> None:
     parser.add_argument("--visual-manifest", required=True)
     parser.add_argument("--audio-v1", required=True)
     parser.add_argument("--model", default="deepseek-v4-flash")
+    parser.add_argument("--privacy-projection", required=True)
     parser.add_argument(
         "--decision-chunk-size",
         type=int,
@@ -296,6 +305,10 @@ def main() -> None:
     )
     parser.add_argument("--output-root", default=None)
     args = parser.parse_args()
+    privacy_context = load_privacy_projection(
+        args.privacy_projection,
+        expected_case_id=args.case_id,
+    )
 
     if args.decision_chunk_size < 4:
         raise ValueError("--decision-chunk-size must be >= 4")
@@ -441,6 +454,26 @@ def main() -> None:
         ]
         context = compact_frames[start - 1] if start > 0 else None
         expected_ids = [x["frame_id"] for x in primary]
+        safe_primary = project_value(primary, "safe_verbatim")
+        safe_context = (
+            project_value(context, "safe_verbatim")
+            if context is not None
+            else None
+        )
+        safe_input = {
+            "context_frame": safe_context,
+            "primary_frames": safe_primary,
+        }
+        prompt = build_prompt(
+            case_id=args.case_id,
+            context_frame=safe_context,
+            primary_frames=safe_primary,
+        )
+        egress_audit = build_egress_audit(
+            safe_input=safe_input,
+            rendered_prompt=prompt,
+            privacy_context=privacy_context,
+        )
 
         cache_path = chunks_dir / f"boundary_chunk_{chunk_no:03d}.json"
         raw_path = chunks_dir / f"boundary_chunk_{chunk_no:03d}_raw.json"
@@ -453,6 +486,11 @@ def main() -> None:
                 str(meta.get("model")) == str(args.model)
                 and int(meta.get("decision_chunk_size") or 0)
                 == args.decision_chunk_size
+                and str(meta.get("prompt_version")) == PROMPT_VERSION
+                and all(
+                    meta.get(key) == value
+                    for key, value in egress_audit.items()
+                )
             )
 
             if profile_matches:
@@ -477,12 +515,6 @@ def main() -> None:
                     chunk_records.append(meta)
                     continue
 
-        prompt = build_prompt(
-            case_id=args.case_id,
-            context_frame=context,
-            primary_frames=primary,
-        )
-
         success = False
         last_error: Exception | None = None
         final_decisions: list[dict[str, Any]] = []
@@ -501,6 +533,8 @@ def main() -> None:
             )
 
             started = time.perf_counter()
+            require_privacy_projection_for_egress(privacy_context)
+            assert_safe_for_external_model(prompt)
 
             if client is None:
                 client = get_client()
@@ -573,6 +607,8 @@ def main() -> None:
             "chunk_id": f"B{chunk_no:03d}",
             "model": args.model,
             "decision_chunk_size": args.decision_chunk_size,
+            "prompt_version": PROMPT_VERSION,
+            "input_content_hash": egress_audit["safe_input_sha256"],
             "primary_frame_ids": expected_ids,
             "context_frame_id": (
                 context["frame_id"] if context is not None else None
@@ -582,6 +618,7 @@ def main() -> None:
             "usage": response_usage,
             "sanitization_warnings": final_warnings,
             "status": "success",
+            **egress_audit,
         }
 
         cache_path.write_text(

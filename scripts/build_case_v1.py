@@ -7,6 +7,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from privacy_projection_v1 import (
+    build_case_privacy_gate,
+    load_privacy_projection,
+    project_safe_semantic,
+)
+
 
 SCHEMA_VERSION = "case-v1.1-draft"
 BUILDER_VERSION = "build_case_v1.py@0.2"
@@ -80,6 +86,7 @@ def main() -> None:
     parser.add_argument("--visual-v1", required=True)
     parser.add_argument("--shot-boundaries", required=True)
     parser.add_argument("--storyboard-v1", required=True)
+    parser.add_argument("--privacy-projection", required=True)
     parser.add_argument("--source-url", default=None)
     parser.add_argument("--output-root", default=None)
     args = parser.parse_args()
@@ -92,6 +99,7 @@ def main() -> None:
     visual_v1_path = Path(args.visual_v1).expanduser().resolve()
     shot_path = Path(args.shot_boundaries).expanduser().resolve()
     storyboard_path = Path(args.storyboard_v1).expanduser().resolve()
+    privacy_path = Path(args.privacy_projection).expanduser().resolve()
 
     for p in (
         video,
@@ -100,6 +108,7 @@ def main() -> None:
         visual_v1_path,
         shot_path,
         storyboard_path,
+        privacy_path,
     ):
         if not p.exists():
             raise FileNotFoundError(p)
@@ -109,9 +118,34 @@ def main() -> None:
     visual = read_json(visual_v1_path)
     shot_data = read_json(shot_path)
     storyboard = read_json(storyboard_path)
+    privacy_context = load_privacy_projection(
+        privacy_path,
+        expected_case_id=case_id,
+    )
 
     errors: list[str] = []
     warnings: list[str] = []
+    safe_audio_transcript = project_safe_semantic(
+        audio.get("transcript_raw", "")
+    )
+    privacy_gate = build_case_privacy_gate(
+        privacy_context=privacy_context,
+        derived_artifact={
+            "audio_transcript_safe_semantic": safe_audio_transcript,
+            "storyboard": {
+                "shots": storyboard.get("shots", []),
+                "video_understanding": storyboard.get(
+                    "video_understanding", {}
+                ),
+                "claims_semantics": storyboard.get("claims_semantics"),
+            },
+        },
+    )
+    if privacy_gate["library_safe"] is not True:
+        errors.append(
+            "Case privacy gate is not library-safe; rebuild derived "
+            "artifacts from Privacy-Safe Evidence."
+        )
 
     for name, data in (
         ("audio_v1", audio),
@@ -280,6 +314,7 @@ def main() -> None:
         "schema_version": SCHEMA_VERSION,
         "builder_version": BUILDER_VERSION,
         "case_id": case_id,
+        "privacy_gate": privacy_gate,
         "lifecycle": {
             "status": "review_required",
             "approved": False,
@@ -305,7 +340,11 @@ def main() -> None:
             "authority": "source",
         },
         "audio_evidence": {
-            "transcript_raw": audio.get("transcript_raw", ""),
+            "transcript_safe_semantic": safe_audio_transcript,
+            "transcript_source_ref": {
+                "path": str(audio_path),
+                "field": "transcript_raw",
+            },
             "segment_count": len(audio.get("segments") or []),
             "word_count": len(words),
             "has_speech": bool(str(audio.get("transcript_raw", "")).strip()),
@@ -410,6 +449,7 @@ def main() -> None:
             "visual_v1": artifact(visual_v1_path),
             "shot_boundaries": artifact(shot_path),
             "storyboard_v1": artifact(storyboard_path),
+            "privacy_projection_v1": artifact(privacy_path),
         },
     }
 
