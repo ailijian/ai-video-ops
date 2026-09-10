@@ -216,3 +216,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Project outputs (generated at runtime, typically large and environment-specific)
+data/
