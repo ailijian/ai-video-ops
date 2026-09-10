@@ -22,6 +22,14 @@ def sha256_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 def write_atomic_json(path: Path, data: dict[str, Any]) -> str:
     payload = json.dumps(
         data,
@@ -74,6 +82,9 @@ def main() -> None:
     visual = case.get("visual_evidence", {})
     storyboard = case.get("storyboard", {})
     quality = case.get("quality", {})
+    pattern_state = case.get("pattern_state", {})
+    privacy_gate = case.get("privacy_gate", {})
+    source_artifacts = case.get("source_artifacts", {})
 
     if lifecycle.get("status") != "review_required":
         errors.append(
@@ -104,6 +115,84 @@ def main() -> None:
         errors.append(
             "Case does not declare human_review_required=true."
         )
+
+    video_understanding = storyboard.get("video_understanding", {})
+    verified_proofs = video_understanding.get("verified_proofs")
+    if not isinstance(verified_proofs, list):
+        errors.append("Storyboard verified_proofs is not a list.")
+        verified_proofs = []
+    if quality.get("verified_proof_count") != len(verified_proofs):
+        errors.append(
+            "quality.verified_proof_count does not match effective Storyboard proofs."
+        )
+
+    expected_claims_semantics = (
+        "candidate_unverified_unless_supported_by_verified_proofs"
+    )
+    if storyboard.get("claims_semantics") != expected_claims_semantics:
+        errors.append("Storyboard claims semantics is not candidate/unverified.")
+
+    strong_claim_statuses = {
+        "verified",
+        "evidence_backed",
+        "evidence-backed",
+        "proved",
+        "proven",
+    }
+    claims = list(video_understanding.get("claims") or [])
+    if not verified_proofs:
+        for index, claim in enumerate(claims, start=1):
+            status = str(claim.get("status") or "").strip().lower()
+            if status in strong_claim_statuses:
+                errors.append(
+                    f"Claim {index} is marked {status!r} without a verified proof."
+                )
+
+    if pattern_state.get("pattern_mining_performed") is not False:
+        errors.append("Pattern mining must remain not_performed at Case approval.")
+
+    frozen_paths: dict[str, Path] = {}
+    artifact_keys = {
+        "source_video": "video",
+        "reverse_storyboard_v1": "storyboard_v1",
+        "privacy_projection_v1": "privacy_projection_v1",
+    }
+    for receipt_name, source_key in artifact_keys.items():
+        value = source_artifacts.get(source_key)
+        if not value:
+            errors.append(f"Missing source_artifacts.{source_key}.")
+            continue
+        path = Path(str(value)).expanduser().resolve()
+        if not path.is_file():
+            errors.append(f"Approval source artifact does not exist: {path}")
+            continue
+        frozen_paths[receipt_name] = path
+
+    privacy_path = frozen_paths.get("privacy_projection_v1")
+    if privacy_path is not None:
+        privacy_projection = read_json(privacy_path)
+        projection_policy = str(
+            privacy_projection.get("privacy_policy_version")
+            or privacy_projection.get("policy_version")
+            or ""
+        )
+        gate_policy = str(
+            privacy_gate.get("privacy_policy_version")
+            or privacy_gate.get("policy_version")
+            or ""
+        )
+        if not projection_policy or gate_policy != projection_policy:
+            errors.append(
+                "Case privacy policy version does not match Privacy Projection."
+            )
+        projection_sha256 = sha256_file(privacy_path)
+        recorded_projection_sha256 = str(
+            privacy_gate.get("source_projection_sha256") or ""
+        ).lower()
+        if recorded_projection_sha256 != projection_sha256:
+            errors.append(
+                "Case privacy projection SHA-256 does not match the source artifact."
+            )
 
     if errors:
         print("\nCASE APPROVAL BLOCKED")
@@ -160,6 +249,13 @@ def main() -> None:
         "case_path": str(case_path),
         "case_sha256_before_approval": original_sha256,
         "case_sha256_after_approval": approved_sha256,
+        "frozen_artifacts": {
+            name: {
+                "path": str(path),
+                "sha256": sha256_file(path),
+            }
+            for name, path in frozen_paths.items()
+        },
     }
 
     receipt_path = case_path.parent / "approval_receipt.json"

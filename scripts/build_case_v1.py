@@ -15,7 +15,7 @@ from privacy_projection_v1 import (
 
 
 SCHEMA_VERSION = "case-v1.1-draft"
-BUILDER_VERSION = "build_case_v1.py@0.2"
+BUILDER_VERSION = "build_case_v1.py@0.3"
 
 
 def now_iso() -> str:
@@ -73,6 +73,28 @@ def opt_artifact(path: Path | None) -> dict[str, Any] | None:
     return artifact(path) if path is not None and path.exists() else None
 
 
+def segment_id(segment: dict[str, Any]) -> str | None:
+    value = segment.get("segment_id", segment.get("id"))
+    return None if value is None else str(value)
+
+
+def manual_review_closed(review: Any) -> bool:
+    if not isinstance(review, dict):
+        return False
+    items = list(review.get("items") or [])
+    item_count = int(review.get("item_count", len(items)) or 0)
+    pending_count = int(review.get("pending_count", item_count) or 0)
+    status = str(review.get("status") or "").strip().lower()
+    explicit_closed = status in {"closed", "complete", "completed", "passed"}
+    no_review_required = review.get("required") is False
+    return (
+        (explicit_closed or no_review_required)
+        and item_count == 0
+        and pending_count == 0
+        and not items
+    )
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Build Canonical Case V1.1 from current validated Stage-2 artifacts."
@@ -82,6 +104,7 @@ def main() -> None:
     parser.add_argument("--industry", required=True)
     parser.add_argument("--video", required=True)
     parser.add_argument("--audio-v1", required=True)
+    parser.add_argument("--narration-review", required=True)
     parser.add_argument("--visual-manifest", required=True)
     parser.add_argument("--visual-v1", required=True)
     parser.add_argument("--shot-boundaries", required=True)
@@ -95,6 +118,7 @@ def main() -> None:
 
     video = Path(args.video).expanduser().resolve()
     audio_path = Path(args.audio_v1).expanduser().resolve()
+    narration_path = Path(args.narration_review).expanduser().resolve()
     visual_manifest_path = Path(args.visual_manifest).expanduser().resolve()
     visual_v1_path = Path(args.visual_v1).expanduser().resolve()
     shot_path = Path(args.shot_boundaries).expanduser().resolve()
@@ -104,6 +128,7 @@ def main() -> None:
     for p in (
         video,
         audio_path,
+        narration_path,
         visual_manifest_path,
         visual_v1_path,
         shot_path,
@@ -114,6 +139,7 @@ def main() -> None:
             raise FileNotFoundError(p)
 
     audio = read_json(audio_path)
+    narration = read_json(narration_path)
     visual_manifest = read_json(visual_manifest_path)
     visual = read_json(visual_v1_path)
     shot_data = read_json(shot_path)
@@ -141,6 +167,13 @@ def main() -> None:
             },
         },
     )
+    privacy_policy_version = str(
+        privacy_context.get("privacy_policy_version")
+        or privacy_context.get("policy_version")
+        or ""
+    )
+    privacy_gate["privacy_policy_version"] = privacy_policy_version
+    privacy_gate["privacy_projection_ref"] = str(privacy_path)
     if privacy_gate["library_safe"] is not True:
         errors.append(
             "Case privacy gate is not library-safe; rebuild derived "
@@ -149,6 +182,7 @@ def main() -> None:
 
     for name, data in (
         ("audio_v1", audio),
+        ("narration_review_v1", narration),
         ("visual_manifest", visual_manifest),
         ("visual_v1", visual),
         ("shot_boundaries", shot_data),
@@ -166,6 +200,66 @@ def main() -> None:
         errors.append("audio_v1 validation is not passed.")
     if not words:
         errors.append("audio_v1 contains no word-level evidence.")
+
+    audio_segments = list(audio.get("segments") or [])
+    narration_segments = list(narration.get("segments") or [])
+    narration_validation = narration.get("validation", {})
+    required_narration_validation = (
+        "passed",
+        "segment_count_preserved",
+        "segment_order_preserved",
+        "segment_timestamps_preserved",
+        "word_refs_preserved",
+        "raw_word_count_preserved",
+    )
+    for key in required_narration_validation:
+        if narration_validation.get(key) is not True:
+            errors.append(f"narration_review_v1 validation {key!r} is not true.")
+    if narration_validation.get("raw_words_modified") is not False:
+        errors.append("narration_review_v1 reports that raw words were modified.")
+    narration_review_is_closed = manual_review_closed(
+        narration.get("manual_review")
+    )
+    if not narration_review_is_closed:
+        errors.append("narration_review_v1 manual review is not closed.")
+    if len(narration_segments) != len(audio_segments):
+        errors.append(
+            "Narration segment count differs from the Audio V1 segment count."
+        )
+
+    narration_word_refs: list[str] = []
+    for index, (source, reviewed) in enumerate(
+        zip(audio_segments, narration_segments),
+        start=1,
+    ):
+        source_id = segment_id(source)
+        reviewed_id = segment_id(reviewed)
+        if source_id is None or reviewed_id is None or source_id != reviewed_id:
+            errors.append(
+                f"Narration segment {index} ID does not match Audio V1."
+            )
+        for field in ("start", "end"):
+            if field not in source or field not in reviewed:
+                errors.append(
+                    f"Narration segment {index} is missing {field!r}."
+                )
+                continue
+            if abs(float(source[field]) - float(reviewed[field])) > 1e-6:
+                errors.append(
+                    f"Narration segment {index} {field} differs from Audio V1."
+                )
+        source_refs = [str(x) for x in source.get("word_refs", [])]
+        reviewed_refs = [str(x) for x in reviewed.get("word_refs", [])]
+        if source_refs != reviewed_refs:
+            errors.append(
+                f"Narration segment {index} word_refs differ from Audio V1."
+            )
+        narration_word_refs.extend(reviewed_refs)
+
+    if narration_word_refs != word_ids:
+        errors.append(
+            "Narration Review word_refs do not preserve all Audio V1 words exactly once."
+        )
 
     visual_cov = visual.get("coverage", {})
     candidate_count = int(visual_cov.get("candidate_frame_count") or 0)
@@ -190,6 +284,11 @@ def main() -> None:
         errors.append("shot_boundaries did not preserve all visual frames exactly once.")
     if not shot_validation.get("all_audio_words_assigned_exactly_once"):
         errors.append("shot_boundaries did not preserve all audio words exactly once.")
+    boundary_review_is_closed = manual_review_closed(
+        shot_data.get("manual_review")
+    )
+    if not boundary_review_is_closed:
+        errors.append("shot_boundaries manual review is not closed.")
 
     deterministic_shots = list(shot_data.get("shots") or [])
     if not deterministic_shots:
@@ -221,6 +320,12 @@ def main() -> None:
     board_validation = storyboard.get("validation", {})
     if not board_validation.get("passed"):
         errors.append("storyboard_v1 validation is not passed.")
+    if board_validation.get("manual_review_closed") is not True:
+        errors.append("storyboard_v1 does not confirm closed Shot Boundary review.")
+    if board_validation.get("narration_review_closed") is not True:
+        errors.append("storyboard_v1 does not confirm closed Narration review.")
+    if board_validation.get("pattern_not_generated") is not True:
+        errors.append("storyboard_v1 did not preserve Pattern as not_performed.")
 
     board_shots = list(storyboard.get("shots") or [])
     det_ids = [str(x["shot_id"]) for x in deterministic_shots]
@@ -228,6 +333,14 @@ def main() -> None:
 
     if det_ids != board_ids:
         errors.append("Storyboard shot IDs/order do not exactly match shot boundaries.")
+
+    board_narration = list(storyboard.get("narration_track") or [])
+    narration_ids = [segment_id(x) for x in narration_segments]
+    board_narration_ids = [segment_id(x) for x in board_narration]
+    if narration_ids != board_narration_ids:
+        errors.append(
+            "Storyboard narration IDs/order do not exactly match Narration Review."
+        )
 
     det_by_id = {
         str(x["shot_id"]): x
@@ -278,10 +391,44 @@ def main() -> None:
         "video_understanding", {}
     ).get("verified_proofs", [])
 
+    claims = list(
+        storyboard.get("video_understanding", {}).get("claims") or []
+    )
+    claims_semantics = storyboard.get("claims_semantics")
+    if claims_semantics != (
+        "candidate_unverified_unless_supported_by_verified_proofs"
+    ):
+        errors.append("Storyboard claims_semantics is not candidate/unverified.")
+    strong_claim_statuses = {
+        "verified",
+        "evidence_backed",
+        "evidence-backed",
+        "proved",
+        "proven",
+    }
+    for index, claim in enumerate(claims, start=1):
+        status = str(claim.get("status") or "").strip().lower()
+        if not verified_proofs and status in strong_claim_statuses:
+            errors.append(
+                f"Claim {index} is marked {status!r} without an effective verified proof."
+            )
+
     if verified_proofs and not proof_shots:
         errors.append(
             "video_understanding has verified_proofs but no Shot was validated as proof."
         )
+
+    gate_policy = str(
+        privacy_gate.get("privacy_policy_version")
+        or privacy_gate.get("policy_version")
+        or ""
+    )
+    if not privacy_policy_version or gate_policy != privacy_policy_version:
+        errors.append("Case privacy policy version does not match its projection.")
+    if int(privacy_gate.get("unresolved_sensitive_items", -1)) != 0:
+        errors.append("Case privacy gate has unresolved sensitive items.")
+    if privacy_gate.get("derived_artifact_scan_passed") is not True:
+        errors.append("Case derived artifact privacy scan did not pass.")
 
     boundary_precision = shot_data.get(
         "design_decision", {}
@@ -353,6 +500,19 @@ def main() -> None:
             "model": audio.get("model"),
             "authority": "faster-whisper + deterministic word timeline",
         },
+        "narration_evidence": {
+            "segment_count": len(narration_segments),
+            "changed_segment_count": sum(
+                1 for segment in narration_segments if segment.get("changed") is True
+            ),
+            "manual_review_closed": narration_review_is_closed,
+            "reviewed_text_source_ref": {
+                "path": str(narration_path),
+                "field": "segments[*].reviewed_text",
+            },
+            "artifact": artifact(narration_path),
+            "authority": "narration_review_v1",
+        },
         "visual_evidence": {
             "candidate_frame_count": candidate_count,
             "analyzed_frame_count": analyzed_count,
@@ -383,6 +543,7 @@ def main() -> None:
             "storyboard_type": "reverse",
             "shots": board_shots,
             "video_understanding": storyboard.get("video_understanding", {}),
+            "claims_semantics": claims_semantics,
             "artifact": artifact(storyboard_path),
             "authority": storyboard.get("authority", {}),
             "model_interpretation_warning": (
@@ -403,6 +564,7 @@ def main() -> None:
             "verified_proof_count": len(
                 verified_proofs if isinstance(verified_proofs, list) else []
             ),
+            "claim_count": len(claims),
             "warnings": warnings,
         },
         "timing": {
@@ -440,11 +602,30 @@ def main() -> None:
             "storyboard_audio_refs_match": True,
             "storyboard_visual_refs_match": True,
             "proof_consistency_valid": True,
+            "narration_segments_match_audio_v1": True,
+            "narration_word_refs_preserved_exactly_once": True,
+            "narration_review_closed": True,
+            "boundary_review_closed": True,
+            "privacy_gate_passed": True,
+            "privacy_policy_version_match": True,
+            "claims_remain_candidate_unverified": True,
+            "pattern_not_generated": True,
             "human_approval_required": True,
             "auto_approved": False,
         },
+        "source_artifacts": {
+            "video": str(video),
+            "audio_v1": str(audio_path),
+            "narration_review_v1": str(narration_path),
+            "visual_manifest": str(visual_manifest_path),
+            "visual_v1": str(visual_v1_path),
+            "shot_boundaries": str(shot_path),
+            "privacy_projection_v1": str(privacy_path),
+            "storyboard_v1": str(storyboard_path),
+        },
         "provenance": {
             "audio_v1": artifact(audio_path),
+            "narration_review_v1": artifact(narration_path),
             "visual_manifest": artifact(visual_manifest_path),
             "visual_v1": artifact(visual_v1_path),
             "shot_boundaries": artifact(shot_path),
@@ -482,6 +663,7 @@ def main() -> None:
         "",
         f"- Audio segments: `{case['audio_evidence']['segment_count']}`",
         f"- Audio words: `{case['audio_evidence']['word_count']}`",
+        f"- Narration Review segments: `{case['narration_evidence']['segment_count']}`",
         f"- Visual: `{analyzed_count}/{candidate_count}` (`{visual_cov.get('coverage_label')}`)",
         f"- Shots: `{len(deterministic_shots)}`",
         f"- Boundary precision: `{boundary_precision}`",
@@ -524,6 +706,7 @@ def main() -> None:
     print("Status: review_required")
     print("Approved: False")
     print(f"Audio words: {len(words)}")
+    print(f"Narration segments: {len(narration_segments)}")
     print(f"Visual coverage: {analyzed_count}/{candidate_count}")
     print(f"Shots: {len(deterministic_shots)}")
     print(f"Boundary precision: {boundary_precision}")
