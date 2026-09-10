@@ -1,0 +1,16 @@
+{
+  "schema_version": "persona-approval-receipt-v1.0",
+  "persona_id": "fixture_local_service_operator",
+  "revision": 1,
+  "fixture_only": true,
+  "decision": "approved",
+  "reviewer": "Fixture Reviewer",
+  "approved_at": "2026-09-10T18:36:29.082600+00:00",
+  "note": "Test Human Approval confirmed the Persona fact authority for fixture-only Production Foundation validation.",
+  "human_gate": true,
+  "persona_path": "E:\\projects\\ai-video-ops\\ops-pipeline\\tests\\fixtures\\production_foundation_v1\\runtime\\personas\\fixture_local_service_operator\\revision_0001\\persona_v1.json",
+  "persona_sha256_before_approval": "d01f81592f7c0ca558ea6b4f9976799d938a41f04478780ee2e10f46dd5c5def",
+  "persona_sha256_after_approval": "4e80cff150a48e9affdf6fd886f55d753641ea7ff88600369b99848515d8e8ff",
+  "content_sha256": "3cce0203aeed95807c7962b07234ae0dec5f4bdb6dc40a3812e69884f5e0f670",
+  "previous_approved_revision": null
+}

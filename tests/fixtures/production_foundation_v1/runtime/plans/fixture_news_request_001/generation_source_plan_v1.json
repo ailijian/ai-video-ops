@@ -1,0 +1,136 @@
+{
+  "schema_version": "generation-source-plan-v1.0",
+  "matcher_version": "match_generation_sources_v1.py@0.1",
+  "request_id": "fixture_news_request_001",
+  "persona": {
+    "persona_id": "fixture_local_service_operator",
+    "revision": 1,
+    "persona_sha": "4e80cff150a48e9affdf6fd886f55d753641ea7ff88600369b99848515d8e8ff",
+    "content_sha": "3cce0203aeed95807c7962b07234ae0dec5f4bdb6dc40a3812e69884f5e0f670",
+    "status": "approved",
+    "fixture_only": true,
+    "known_fact_fields": [
+      "public_display_name",
+      "company_short_name",
+      "industry",
+      "primary_products_or_services",
+      "secondary_products_or_services",
+      "core_audience",
+      "customer_use_cases",
+      "customer_pains",
+      "differentiators",
+      "selection_reasons",
+      "brand_story",
+      "founder_or_operator_story",
+      "product_or_service_facts",
+      "process_facts",
+      "service_process",
+      "values",
+      "tone_preferences",
+      "unknown_facts",
+      "forbidden_claims",
+      "prohibited_topics"
+    ],
+    "unknown_fact_fields": [
+      "years_in_business",
+      "service_area",
+      "business_address",
+      "important_turning_points",
+      "authorized_customer_cases_or_feedback",
+      "beliefs",
+      "information_requiring_human_review"
+    ],
+    "requires_review_fact_fields": [],
+    "fact_values_copied_to_plan": false
+  },
+  "request": {
+    "request_sha": "fa5600d69305d7a85c988681fd4b11e6bbe91429da7b226323ba27918aaf42f7",
+    "profile": "news",
+    "quantity": 1,
+    "platform": "douyin",
+    "content_intent": "trust",
+    "cta_intent": null,
+    "constraints": {
+      "fixture_only": true,
+      "generation_must_not_start": true
+    }
+  },
+  "coverage": {
+    "status": "insufficient",
+    "code": "research_coverage_insufficient",
+    "reason": "No Approved News Pattern exists. The Approved mix Pattern cannot be used as a fallback for a News request."
+  },
+  "selected_patterns": [],
+  "eligible_case_pool": [],
+  "selected_cases": [],
+  "rotation": {
+    "case_rotation_enabled": false,
+    "case_rotation_order": [],
+    "pattern_rotation_ready": true,
+    "pattern_rotation_order": []
+  },
+  "excluded_sources": [
+    {
+      "source_id": "pcv1_multimodal_hook_no_explicit_cta",
+      "source_type": "pattern_candidate",
+      "status": "review_rejected",
+      "sha256": "7c8596afc267ba630bbc6e5240eb8bab3243b128030c78406f95f3c01b7c9d82",
+      "reason": "Only Approved Patterns may enter Production Matching."
+    },
+    {
+      "source_id": "H002A",
+      "source_type": "research_hypothesis",
+      "status": "research_hypothesis",
+      "reason": "Research Hypotheses are not Production Pattern authority."
+    },
+    {
+      "source_id": "pcv1_narration_led_process_projection",
+      "source_type": "approved_pattern",
+      "status": "approved_but_not_eligible_for_request",
+      "sha256": "e610e610965214a07d523cd66dd6b829ec7b5515fdd9f2b2b8314446a8ac190a",
+      "reason": "profile_news_outside_approved_pattern_scope"
+    }
+  ],
+  "generation_constraints": {
+    "persona_facts_only": true,
+    "known_persona_facts_only": true,
+    "unknown_persona_facts_must_not_be_filled": true,
+    "requires_review_facts_must_not_be_published_without_review": true,
+    "case_facts_must_not_transfer": true,
+    "effectiveness_claims_allowed": false,
+    "pattern_scope_must_be_respected": true,
+    "shared_privacy_gateway_required_before_future_remote_generation": true
+  },
+  "ranking_policy": {
+    "status": "provisional_v1_not_frozen",
+    "deterministic": true,
+    "performance_metrics_used": false,
+    "effectiveness_used": false
+  },
+  "authority": {
+    "generation_not_started": true,
+    "script_generation_performed": false,
+    "remote_model_call_performed": false,
+    "raw_whisper_read": false,
+    "raw_visual_evidence_read": false,
+    "candidate_case_read": false,
+    "case_facts_used_as_persona_facts": false,
+    "rejected_pattern_selected": false,
+    "research_hypothesis_selected": false,
+    "proof_reinterpreted": false
+  },
+  "validation": {
+    "passed": true,
+    "persona_approved": true,
+    "persona_content_sha_valid": true,
+    "request_persona_revision_match": true,
+    "approved_patterns_only": true,
+    "approved_cases_only": true,
+    "fingerprint_lineage_complete": true,
+    "input_sha_lineage_complete": true,
+    "research_coverage_gate_applied": true,
+    "news_does_not_fallback_to_mix": true,
+    "effectiveness_excluded_from_ranking": true,
+    "remote_model_call_performed": false
+  }
+}

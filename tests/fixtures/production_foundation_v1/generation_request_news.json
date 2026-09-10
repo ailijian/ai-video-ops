@@ -1,0 +1,15 @@
+{
+  "schema_version": "generation-request-v1.0",
+  "request_id": "fixture_news_request_001",
+  "persona_id": "fixture_local_service_operator",
+  "persona_revision": 1,
+  "profile": "news",
+  "quantity": 1,
+  "platform": "douyin",
+  "content_intent": "trust",
+  "cta_intent": null,
+  "constraints": {
+    "fixture_only": true,
+    "generation_must_not_start": true
+  }
+}

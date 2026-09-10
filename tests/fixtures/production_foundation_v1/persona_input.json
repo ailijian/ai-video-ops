@@ -1,0 +1,115 @@
+{
+  "schema_version": "persona-input-v1.0",
+  "persona_id": "fixture_local_service_operator",
+  "revision": 1,
+  "fixture_only": true,
+  "source_type": "test_fixture",
+  "source_ref": "production_foundation_v1_smoke",
+  "facts": {
+    "public_display_name": {
+      "state": "known",
+      "value": "Fixture Service Operator",
+      "source_refs": ["fixture:persona_input"]
+    },
+    "company_short_name": {
+      "state": "known",
+      "value": "Fixture Green Service",
+      "source_refs": ["fixture:persona_input"]
+    },
+    "industry": {
+      "state": "known",
+      "value": "绿植租赁",
+      "source_refs": ["fixture:persona_input"]
+    },
+    "years_in_business": {
+      "state": "unknown",
+      "value": null,
+      "source_refs": []
+    },
+    "primary_products_or_services": {
+      "state": "known",
+      "value": ["办公空间绿植租赁", "上门绿植养护"],
+      "source_refs": ["fixture:persona_input"]
+    },
+    "secondary_products_or_services": {
+      "state": "known",
+      "value": ["办公空间绿植布置"],
+      "source_refs": ["fixture:persona_input"]
+    },
+    "core_audience": {
+      "state": "known",
+      "value": ["需要办公空间绿植服务的企业客户"],
+      "source_refs": ["fixture:persona_input"]
+    },
+    "customer_use_cases": {
+      "state": "known",
+      "value": ["办公室绿植布置", "长期上门养护"],
+      "source_refs": ["fixture:persona_input"]
+    },
+    "customer_pains": {
+      "state": "known",
+      "value": ["缺少持续养护能力", "空间绿植状态不稳定"],
+      "source_refs": ["fixture:persona_input"]
+    },
+    "differentiators": {
+      "state": "known",
+      "value": ["提供现场勘测", "提供持续上门养护"],
+      "source_refs": ["fixture:persona_input"]
+    },
+    "selection_reasons": {
+      "state": "known",
+      "value": ["服务过程清晰", "养护安排可追踪"],
+      "source_refs": ["fixture:persona_input"]
+    },
+    "brand_story": {
+      "state": "known",
+      "value": "Fixture business focuses on making office plant care easier to understand.",
+      "source_refs": ["fixture:persona_input"]
+    },
+    "founder_or_operator_story": {
+      "state": "known",
+      "value": "Fixture operator participates in site assessment and routine service delivery.",
+      "source_refs": ["fixture:persona_input"]
+    },
+    "product_or_service_facts": {
+      "state": "known",
+      "value": ["提供绿植租赁", "提供定期养护"],
+      "source_refs": ["fixture:persona_input"]
+    },
+    "process_facts": {
+      "state": "known",
+      "value": ["现场勘测", "方案确认", "布置", "定期养护"],
+      "source_refs": ["fixture:persona_input"]
+    },
+    "service_process": {
+      "state": "known",
+      "value": ["了解空间需求", "现场勘测", "确认方案", "实施布置", "后续养护"],
+      "source_refs": ["fixture:persona_input"]
+    },
+    "values": {
+      "state": "known",
+      "value": ["清晰沟通", "持续服务"],
+      "source_refs": ["fixture:persona_input"]
+    },
+    "tone_preferences": {
+      "state": "known",
+      "value": ["真实", "克制", "具体"],
+      "source_refs": ["fixture:persona_input"]
+    },
+    "unknown_facts": {
+      "state": "known",
+      "value": ["经营年限", "客户复购率", "效果数据"],
+      "source_refs": ["fixture:persona_input"]
+    },
+    "forbidden_claims": {
+      "state": "known",
+      "value": ["未经资料支持的经营年限", "未经资料支持的客户复购率", "效果保证"],
+      "source_refs": ["fixture:persona_input"]
+    },
+    "prohibited_topics": {
+      "state": "known",
+      "value": ["虚构客户反馈", "虚构经营数据"],
+      "source_refs": ["fixture:persona_input"]
+    }
+  }
+}
