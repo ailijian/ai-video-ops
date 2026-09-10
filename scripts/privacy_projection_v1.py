@@ -47,7 +47,7 @@ EMAIL_PATTERN = re.compile(
     r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@"
     r"[A-Za-z0-9.-]+\.[A-Za-z]{2,}(?![A-Za-z0-9.-])"
 )
-ID_CARD_PATTERN = re.compile(r"(?<!\d)\d{17}[\dXx](?!\d)")
+ID_CARD_PATTERN = re.compile(r"(?<![\d.])\d{17}[\dXx](?![\d.])")
 BANK_CARD_PATTERN = re.compile(
     r"(?:银行卡号|银行卡|卡号)\s*[:：]?\s*"
     r"(?P<value>(?:\d[ -]?){15,18}\d)"

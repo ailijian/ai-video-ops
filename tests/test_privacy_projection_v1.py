@@ -72,6 +72,23 @@ class PrivacyProjectionV1Tests(unittest.TestCase):
             public_address,
         )
 
+    def test_internal_numeric_identifiers_and_decimal_telemetry(self) -> None:
+        for source in (
+            "7650056203686530319",
+            "pixel_difference_signal=0.024600694444444446",
+        ):
+            with self.subTest(source=source):
+                self.assertNotIn(
+                    "id_card",
+                    {item["type"] for item in detect_sensitive_spans(source)},
+                )
+
+        actual_id_card = "身份证号：11010519491231002X"
+        self.assertIn(
+            "id_card",
+            {item["type"] for item in detect_sensitive_spans(actual_id_card)},
+        )
+
     def test_minimal_redaction_not_sentence_replacement(self) -> None:
         source = "请核对收件人：张三，然后安排骑手配送"
         self.assertEqual(

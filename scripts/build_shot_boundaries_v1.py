@@ -6,7 +6,7 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from openai import OpenAI
 from privacy_projection_v1 import (
@@ -18,7 +18,7 @@ from privacy_projection_v1 import (
 )
 
 
-SCRIPT_VERSION = "build_shot_boundaries_v1.py@1.5"
+SCRIPT_VERSION = "build_shot_boundaries_v1.py@1.6"
 SCHEMA_VERSION = "shot-boundaries-v1.5-draft"
 PROMPT_VERSION = "shot-boundary-prompt-v1.0"
 
@@ -79,6 +79,58 @@ def usage_dict(response: Any) -> dict[str, Any]:
         "completion_tokens": getattr(usage, "completion_tokens", None),
         "total_tokens": getattr(usage, "total_tokens", None),
     }
+
+
+def prepare_boundary_egress(
+    *,
+    case_id: str,
+    context_frame: dict[str, Any] | None,
+    primary_frames: list[dict[str, Any]],
+    privacy_context: dict[str, Any] | None,
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    require_privacy_projection_for_egress(privacy_context)
+    safe_primary = project_value(primary_frames, "safe_verbatim")
+    safe_context = (
+        project_value(context_frame, "safe_verbatim")
+        if context_frame is not None
+        else None
+    )
+    safe_input = {
+        "context_frame": safe_context,
+        "primary_frames": safe_primary,
+    }
+    prompt = build_prompt(
+        case_id=case_id,
+        context_frame=safe_context,
+        primary_frames=safe_primary,
+    )
+    pre_call_audit = build_egress_audit(
+        safe_input=safe_input,
+        rendered_prompt=prompt,
+        privacy_context=privacy_context,
+    )
+    return safe_input, prompt, pre_call_audit
+
+
+def invoke_boundary_transport(
+    *,
+    safe_input: dict[str, Any],
+    rendered_prompt: str,
+    privacy_context: dict[str, Any] | None,
+    pre_call_audit: dict[str, Any],
+    transport: Callable[[], Any],
+) -> tuple[Any, dict[str, Any]]:
+    require_privacy_projection_for_egress(privacy_context)
+    assert_safe_for_external_model(rendered_prompt)
+    response = transport()
+    post_call_audit = build_egress_audit(
+        safe_input=safe_input,
+        rendered_prompt=rendered_prompt,
+        privacy_context=privacy_context,
+    )
+    if post_call_audit != pre_call_audit:
+        raise RuntimeError("Boundary egress audit changed across network call.")
+    return response, post_call_audit
 
 
 def sanitize_decisions(
@@ -160,6 +212,10 @@ def compact_frame(
     frame_id = str(frame["frame_id"])
     mf = manifest_by_id.get(frame_id, {})
 
+    pixel_difference_signal = mf.get("difference_ratio_from_previous_kept")
+    if isinstance(pixel_difference_signal, (int, float)):
+        pixel_difference_signal = round(float(pixel_difference_signal), 6)
+
     return {
         "frame_id": frame_id,
         "timestamp_seconds": float(frame["timestamp_seconds"]),
@@ -172,9 +228,7 @@ def compact_frame(
             "information_change", "UNCERTAIN"
         ),
         "pyscenedetect_reasons": mf.get("reasons", []),
-        "pixel_difference_signal": mf.get(
-            "difference_ratio_from_previous_kept"
-        ),
+        "pixel_difference_signal": pixel_difference_signal,
     }
 
 
@@ -454,24 +508,10 @@ def main() -> None:
         ]
         context = compact_frames[start - 1] if start > 0 else None
         expected_ids = [x["frame_id"] for x in primary]
-        safe_primary = project_value(primary, "safe_verbatim")
-        safe_context = (
-            project_value(context, "safe_verbatim")
-            if context is not None
-            else None
-        )
-        safe_input = {
-            "context_frame": safe_context,
-            "primary_frames": safe_primary,
-        }
-        prompt = build_prompt(
+        safe_input, prompt, egress_audit = prepare_boundary_egress(
             case_id=args.case_id,
-            context_frame=safe_context,
-            primary_frames=safe_primary,
-        )
-        egress_audit = build_egress_audit(
-            safe_input=safe_input,
-            rendered_prompt=prompt,
+            context_frame=context,
+            primary_frames=primary,
             privacy_context=privacy_context,
         )
 
@@ -521,6 +561,7 @@ def main() -> None:
         final_warnings: list[str] = []
         elapsed_total = 0.0
         response_usage: dict[str, Any] = {}
+        post_call_egress_audit_passed = False
 
         for attempt in range(1, args.max_retries + 2):
             print(
@@ -533,19 +574,28 @@ def main() -> None:
             )
 
             started = time.perf_counter()
-            require_privacy_projection_for_egress(privacy_context)
-            assert_safe_for_external_model(prompt)
+            def transport() -> Any:
+                nonlocal client
+                if client is None:
+                    client = get_client()
+                return client.chat.completions.create(
+                    model=args.model,
+                    messages=[{"role": "user", "content": prompt}],
+                    response_format={"type": "json_object"},
+                    temperature=0,
+                    max_tokens=12000,
+                    extra_body={"thinking": {"type": "disabled"}},
+                )
 
-            if client is None:
-                client = get_client()
-
-            response = client.chat.completions.create(
-                model=args.model,
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"},
-                temperature=0,
-                max_tokens=12000,
-                extra_body={"thinking": {"type": "disabled"}},
+            response, post_call_audit = invoke_boundary_transport(
+                safe_input=safe_input,
+                rendered_prompt=prompt,
+                privacy_context=privacy_context,
+                pre_call_audit=egress_audit,
+                transport=transport,
+            )
+            post_call_egress_audit_passed = (
+                post_call_audit == egress_audit
             )
 
             elapsed = time.perf_counter() - started
@@ -618,6 +668,9 @@ def main() -> None:
             "usage": response_usage,
             "sanitization_warnings": final_warnings,
             "status": "success",
+            "post_call_egress_audit_passed": (
+                post_call_egress_audit_passed
+            ),
             **egress_audit,
         }
 
