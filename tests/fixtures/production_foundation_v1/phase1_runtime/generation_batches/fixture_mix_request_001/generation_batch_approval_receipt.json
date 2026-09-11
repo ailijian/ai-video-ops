@@ -1,0 +1,24 @@
+{
+  "schema_version": "generation-batch-approval-receipt-v1.0",
+  "request_id": "fixture_mix_request_001",
+  "decision": "reject_batch",
+  "status": "rejected",
+  "reviewer": "李健",
+  "reviewed_at": "2026-09-10T19:52:46.110770+00:00",
+  "source_batch": {
+    "path": "E:\\projects\\ai-video-ops\\ops-pipeline\\tests\\fixtures\\production_foundation_v1\\phase1_runtime\\generation_batches\\fixture_mix_request_001\\generation_batch_v1.json",
+    "sha256": "d0d2f46eb7df7b231b09d6413ac5ff90eb1273eedd00695d469eefdbfefdc676"
+  },
+  "review_file": {
+    "path": "E:\\projects\\ai-video-ops\\ops-pipeline\\tests\\fixtures\\production_foundation_v1\\phase1_runtime\\generation_batches\\fixture_mix_request_001\\generation_human_review_v1.json",
+    "sha256": "c6b4f6d3283460354ef00ca103f6921fc27d7ee47fa216be97c58d6a09d3eeb5"
+  },
+  "reviewed_batch": {
+    "path": "E:\\projects\\ai-video-ops\\ops-pipeline\\tests\\fixtures\\production_foundation_v1\\phase1_runtime\\generation_batches\\fixture_mix_request_001\\reviewed_generation_batch_v1.json",
+    "sha256": "3c96764d25b57d815cdb23765f0bd546951bac6a3d60218ec8f690fc8bce4d8b"
+  },
+  "approved_item_count": 0,
+  "rejected_item_count": 10,
+  "human_gate": true,
+  "approver_version": "approve_generation_batch_v1.py@0.1"
+}

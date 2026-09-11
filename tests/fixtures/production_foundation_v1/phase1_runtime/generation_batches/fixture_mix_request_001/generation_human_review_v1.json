@@ -1,0 +1,20 @@
+{
+  "schema_version": "generation-batch-review-v1.0",
+  "request_id": "fixture_mix_request_001",
+  "batch_sha256": "d0d2f46eb7df7b231b09d6413ac5ff90eb1273eedd00695d469eefdbfefdc676",
+  "reviewer": "李健",
+  "decision": "reject_batch",
+  "note": "Batch rejected for revision because lexical diversity passed while content angles and service-process sequences remained semantically repetitive.",
+  "items": [
+    {"content_id": "fixture_mix_request_001-C001", "decision": "revision_required", "note": "Revision needed."},
+    {"content_id": "fixture_mix_request_001-C002", "decision": "rejected", "note": "Rejected for semantic repetition."},
+    {"content_id": "fixture_mix_request_001-C003", "decision": "revision_required", "note": "Revision needed."},
+    {"content_id": "fixture_mix_request_001-C004", "decision": "keep", "note": "Keep as a useful reference for revision."},
+    {"content_id": "fixture_mix_request_001-C005", "decision": "keep", "note": "Keep as a useful reference for revision."},
+    {"content_id": "fixture_mix_request_001-C006", "decision": "rejected", "note": "Rejected for semantic repetition."},
+    {"content_id": "fixture_mix_request_001-C007", "decision": "rejected", "note": "Rejected for semantic repetition."},
+    {"content_id": "fixture_mix_request_001-C008", "decision": "rejected", "note": "Rejected for semantic repetition."},
+    {"content_id": "fixture_mix_request_001-C009", "decision": "rejected", "note": "Rejected for semantic repetition."},
+    {"content_id": "fixture_mix_request_001-C010", "decision": "rejected", "note": "Rejected for semantic repetition."}
+  ]
+}

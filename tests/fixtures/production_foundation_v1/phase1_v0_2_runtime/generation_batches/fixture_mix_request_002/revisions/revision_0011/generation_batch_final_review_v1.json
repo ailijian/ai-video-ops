@@ -1,0 +1,52 @@
+{
+  "schema_version": "generation-batch-review-v1.0",
+  "request_id": "fixture_mix_request_002",
+  "batch_sha256": "4b253a8fd3fc9eb57ed72f8c7f20e36156df61d4e6e77ed78ec06426d2007dfb",
+  "decision": "approve_items",
+  "scope": "fixture_only",
+  "reviewer": "李健",
+  "reviewed_at": "2026-09-11T00:57:10.291829+00:00",
+  "note": "Human review approved all 10 Revision 11 items for fixture pipeline validation. C001 and C010 are acceptable for fixture validation but are not intended to define the future production-quality writing benchmark. No Authority, Privacy, Proof, Persona Fact, Case Fact leakage, or service-contract issue remains.",
+  "items": [
+    {
+      "content_id": "fixture_mix_request_002-C001",
+      "decision": "approved"
+    },
+    {
+      "content_id": "fixture_mix_request_002-C002",
+      "decision": "approved"
+    },
+    {
+      "content_id": "fixture_mix_request_002-C003",
+      "decision": "approved"
+    },
+    {
+      "content_id": "fixture_mix_request_002-C004",
+      "decision": "approved"
+    },
+    {
+      "content_id": "fixture_mix_request_002-C005",
+      "decision": "approved"
+    },
+    {
+      "content_id": "fixture_mix_request_002-C006",
+      "decision": "approved"
+    },
+    {
+      "content_id": "fixture_mix_request_002-C007",
+      "decision": "approved"
+    },
+    {
+      "content_id": "fixture_mix_request_002-C008",
+      "decision": "approved"
+    },
+    {
+      "content_id": "fixture_mix_request_002-C009",
+      "decision": "approved"
+    },
+    {
+      "content_id": "fixture_mix_request_002-C010",
+      "decision": "approved"
+    }
+  ]
+}

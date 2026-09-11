@@ -9,14 +9,17 @@ from typing import Any
 
 
 SCHEMA_VERSION = "persona-v1.0"
-BUILDER_VERSION = "build_persona_v1.py@0.1"
+BUILDER_VERSION = "build_persona_v1.py@0.2"
 FACT_STATES = {"known", "unknown", "requires_review"}
+PERSONA_SCOPES = {"business", "speaker"}
+SPEAKER_TYPES = {"owner_founder", "frontline_expert", "brand", "generic"}
 FACT_FIELDS = (
     "public_display_name",
     "company_short_name",
     "industry",
     "years_in_business",
     "service_area",
+    "location_public_area",
     "business_address",
     "primary_products_or_services",
     "secondary_products_or_services",
@@ -29,12 +32,23 @@ FACT_FIELDS = (
     "founder_or_operator_story",
     "important_turning_points",
     "product_or_service_facts",
+    "pricing_facts",
+    "included_service_facts",
     "process_facts",
     "service_process",
+    "service_time_facts",
+    "business_volume_fact",
+    "time_efficiency_fact",
     "authorized_customer_cases_or_feedback",
     "values",
+    "business_principles",
     "beliefs",
     "tone_preferences",
+    "public_role",
+    "speaker_role_facts",
+    "first_person_allowed_topics",
+    "first_person_forbidden_claims",
+    "role_scope_constraints",
     "unknown_facts",
     "forbidden_claims",
     "prohibited_topics",
@@ -50,6 +64,13 @@ REQUIRED_KNOWN_FIELDS = (
 REQUIRED_IDENTITY_ALTERNATIVES = (
     "company_short_name",
     "public_display_name",
+)
+SPEAKER_REQUIRED_KNOWN_FIELDS = (
+    "public_display_name",
+    "public_role",
+    "speaker_role_facts",
+    "first_person_allowed_topics",
+    "first_person_forbidden_claims",
 )
 
 
@@ -131,6 +152,15 @@ def fact_is_known(persona: dict[str, Any], field: str) -> bool:
 
 
 def validate_required_fact_authority(persona: dict[str, Any]) -> list[str]:
+    if persona.get("persona_scope", "business") == "speaker":
+        errors = [
+            f"{field} must be KNOWN before Speaker Persona approval."
+            for field in SPEAKER_REQUIRED_KNOWN_FIELDS
+            if not fact_is_known(persona, field)
+        ]
+        if not isinstance(persona.get("business_persona_ref"), dict):
+            errors.append("Speaker Persona requires an Approved Business Persona reference.")
+        return errors
     errors = [
         f"{field} must be KNOWN before approval."
         for field in REQUIRED_KNOWN_FIELDS
@@ -148,6 +178,10 @@ def persona_content_hash(persona: dict[str, Any]) -> str:
         {
             "persona_id": persona.get("persona_id"),
             "revision": persona.get("revision"),
+            "persona_scope": persona.get("persona_scope", "business"),
+            "speaker_type": persona.get("speaker_type"),
+            "business_persona_ref": persona.get("business_persona_ref"),
+            "speaker_authority": persona.get("speaker_authority"),
             "facts": persona.get("facts", {}),
         }
     )
@@ -161,11 +195,82 @@ def write_new_json(path: Path, value: dict[str, Any]) -> str:
     return sha256_bytes(payload)
 
 
+def render_persona_review_pack(persona: dict[str, Any]) -> str:
+    lines = [
+        "# Persona V1 Human Review Pack",
+        "",
+        f"Persona ID: `{persona['persona_id']}`",
+        f"Revision: `{persona['revision']}`",
+        f"Scope: `{persona.get('persona_scope', 'business')}`",
+        f"Status: `{persona['lifecycle']['status']}`",
+    ]
+    if persona.get("speaker_type"):
+        lines.append(f"Speaker Type: `{persona['speaker_type']}`")
+    if persona.get("business_persona_ref"):
+        lines.append(
+            "Business Persona Ref: `"
+            + str(persona["business_persona_ref"].get("persona_id"))
+            + "`"
+        )
+    for state, heading in (
+        ("known", "KNOWN"),
+        ("unknown", "UNKNOWN"),
+        ("requires_review", "REQUIRES_REVIEW"),
+    ):
+        lines.extend(["", f"## {heading}", ""])
+        selected = [
+            (field, fact)
+            for field, fact in persona.get("facts", {}).items()
+            if fact.get("state") == state
+        ]
+        if not selected:
+            lines.append("None.")
+        for field, fact in selected:
+            lines.append(f"### {field}")
+            if state == "unknown":
+                lines.append("`UNKNOWN: model must not complete`")
+            else:
+                lines.append("```json")
+                lines.append(json.dumps(fact.get("value"), ensure_ascii=False, indent=2))
+                lines.append("```")
+            if fact.get("review_note"):
+                lines.append(f"Review note: {fact['review_note']}")
+            lines.append("")
+    lines.extend(["## FORBIDDEN", ""])
+    for field in ("forbidden_claims", "prohibited_topics", "first_person_forbidden_claims"):
+        fact = persona.get("facts", {}).get(field, {})
+        if fact.get("state") == "known":
+            lines.append(f"### {field}")
+            lines.append("```json")
+            lines.append(json.dumps(fact.get("value"), ensure_ascii=False, indent=2))
+            lines.append("```")
+    if persona.get("persona_scope") == "speaker":
+        lines.extend(["", "## Speaker can say", ""])
+        lines.append(
+            json.dumps(
+                persona.get("facts", {}).get("first_person_allowed_topics", {}).get("value"),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+        lines.extend(["", "## Speaker cannot say", ""])
+        lines.append(
+            json.dumps(
+                persona.get("facts", {}).get("first_person_forbidden_claims", {}).get("value"),
+                ensure_ascii=False,
+                indent=2,
+            )
+        )
+    lines.extend(["", "Human approval is required before Production Matching.", ""])
+    return "\n".join(lines)
+
+
 def build_persona(
     input_path: Path,
     output_root: Path,
     previous_persona_path: Path | None = None,
     created_at: str | None = None,
+    business_persona_path: Path | None = None,
 ) -> tuple[Path, dict[str, Any]]:
     input_path = input_path.expanduser().resolve()
     output_root = output_root.expanduser().resolve()
@@ -202,6 +307,45 @@ def build_persona(
     elif revision != 1:
         raise RuntimeError("Revision greater than one requires --previous-persona.")
 
+    persona_scope = str(source.get("persona_scope") or "business").strip().lower()
+    if persona_scope not in PERSONA_SCOPES:
+        raise RuntimeError("Persona scope must be business or speaker.")
+    speaker_type = source.get("speaker_type")
+    business_ref: dict[str, Any] | None = None
+    if persona_scope == "speaker":
+        speaker_type = str(speaker_type or "").strip().lower()
+        if speaker_type not in SPEAKER_TYPES:
+            raise RuntimeError("Speaker Persona requires a valid speaker_type.")
+        if business_persona_path is None:
+            raise RuntimeError("Speaker Persona requires --business-persona.")
+        business_path = business_persona_path.expanduser().resolve()
+        business = read_json(business_path)
+        lifecycle = business.get("lifecycle", {})
+        if (
+            business.get("persona_scope", "business") != "business"
+            or lifecycle.get("status") != "approved"
+            or lifecycle.get("approved") is not True
+        ):
+            raise RuntimeError("Speaker Persona must reference an Approved Business Persona.")
+        expected_ref = source.get("business_persona_ref")
+        expected_id = (
+            expected_ref.get("persona_id")
+            if isinstance(expected_ref, dict)
+            else expected_ref
+        )
+        if expected_id != business.get("persona_id"):
+            raise RuntimeError("Speaker business_persona_ref does not match the supplied Business Persona.")
+        business_ref = {
+            "persona_id": business.get("persona_id"),
+            "revision": business.get("revision"),
+            "path": str(business_path),
+            "sha256": sha256_file(business_path),
+            "content_sha256": business.get("provenance", {}).get("content_sha256"),
+            "status": "approved",
+        }
+    elif speaker_type or source.get("business_persona_ref"):
+        raise RuntimeError("Business Persona cannot declare Speaker-only authority fields.")
+
     raw_facts = source.get("facts") or {}
     if not isinstance(raw_facts, dict):
         raise RuntimeError("Persona input facts must be an object.")
@@ -218,6 +362,18 @@ def build_persona(
         "schema_version": SCHEMA_VERSION,
         "persona_id": persona_id,
         "revision": revision,
+        "persona_scope": persona_scope,
+        "speaker_type": speaker_type if persona_scope == "speaker" else None,
+        "business_persona_ref": business_ref,
+        "speaker_authority": (
+            {
+                "business_facts_copied": False,
+                "first_person_claims_require_speaker_known_fact_or_allowed_topic": True,
+                "business_facts_require_business_persona_lineage": True,
+            }
+            if persona_scope == "speaker"
+            else None
+        ),
         "fixture_only": bool(source.get("fixture_only", False)),
         "lifecycle": {
             "status": "review_required",
@@ -265,6 +421,8 @@ def build_persona(
             "build_cannot_approve": True,
             "case_sources_consumed": False,
             "remote_model_call_performed": False,
+            "persona_scope_valid": True,
+            "speaker_business_facts_copied": False,
         },
     }
     persona["validation"]["required_fact_approval_blockers"] = (
@@ -273,11 +431,13 @@ def build_persona(
     persona["provenance"]["content_sha256"] = persona_content_hash(persona)
 
     output_path = output_root / persona_id / f"revision_{revision:04d}" / "persona_v1.json"
-    if output_path.exists():
+    review_path = output_path.parent / "persona_review_pack_v1.md"
+    if output_path.exists() or review_path.exists():
         raise RuntimeError(
             "Persona revision already exists; Approved Persona revisions cannot be silently overwritten."
         )
     write_new_json(output_path, persona)
+    review_path.write_text(render_persona_review_pack(persona), encoding="utf-8")
     return output_path, persona
 
 
@@ -296,6 +456,11 @@ def main() -> None:
         default=None,
         help="Default: <project>/data/personas",
     )
+    parser.add_argument(
+        "--business-persona",
+        default=None,
+        help="Required for persona_scope=speaker; must be an Approved Business Persona.",
+    )
     args = parser.parse_args()
     project_root = Path(__file__).resolve().parents[1]
     output_root = (
@@ -307,6 +472,9 @@ def main() -> None:
         Path(args.input),
         output_root,
         Path(args.previous_persona) if args.previous_persona else None,
+        business_persona_path=(
+            Path(args.business_persona) if args.business_persona else None
+        ),
     )
     print("PERSONA V1 BUILD PASS")
     print(f"Persona ID: {persona['persona_id']}")
@@ -315,6 +483,7 @@ def main() -> None:
     print(f"Fixture only: {persona['fixture_only']}")
     print(f"Content SHA-256: {persona['provenance']['content_sha256']}")
     print(f"Persona: {output_path}")
+    print(f"Review Pack: {output_path.parent / 'persona_review_pack_v1.md'}")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,59 @@
+{
+  "schema_version": "generation-batch-content-review-v1.0",
+  "request_id": "fixture_mix_request_002",
+  "source_batch_sha256": "7e4a9fd41ae4d5b09a8fd73bf0c173dd66f34677e8db8504503ebe5bd9f26988",
+  "reviewer": "李健",
+  "decision": "partial_revision_required",
+  "items": [
+    {
+      "content_id": "fixture_mix_request_002-C001",
+      "decision": "revise",
+      "revision_instructions": "保留 pain angle。只围绕空间绿植状态不稳定、缺少持续养护能力、提供持续上门养护组织。删除黄叶、品种、浇水、光照、通风、频率比较和因果结论。"
+    },
+    {
+      "content_id": "fixture_mix_request_002-C002",
+      "decision": "revise",
+      "revision_instructions": "保留 misconception angle。表达绿植布置不是服务流程最后一步，当前服务还包含持续上门养护。不要声称养护才是保持稳定的关键。"
+    },
+    {
+      "content_id": "fixture_mix_request_002-C003",
+      "decision": "revise",
+      "revision_instructions": "保留 selection_criteria angle。直接使用服务过程清晰、养护安排可追踪。删除很多人、其实更该、更省心等比较或经验表达。"
+    },
+    {
+      "content_id": "fixture_mix_request_002-C004",
+      "decision": "revise",
+      "revision_instructions": "保留 process angle。严格使用了解空间需求、现场勘测、确认方案、实施布置、后续养护。删除光线、位置、空间条件等未提供的勘测细节。"
+    },
+    {
+      "content_id": "fixture_mix_request_002-C005",
+      "decision": "revise",
+      "revision_instructions": "保留 differentiator angle。直接表达除了绿植租赁还提供持续上门养护。不要描述很多同行或很多做法，不要承诺让状态更稳定。"
+    },
+    {
+      "content_id": "fixture_mix_request_002-C006",
+      "decision": "approved",
+      "revision_instructions": null
+    },
+    {
+      "content_id": "fixture_mix_request_002-C007",
+      "decision": "revise",
+      "revision_instructions": "保留 customer_question angle。可用办公室绿植状态不稳定，可以先看什么作为问题式 Hook。不要伪造企业提问，不要增加偶尔打理就容易起伏等因果。"
+    },
+    {
+      "content_id": "fixture_mix_request_002-C008",
+      "decision": "revise",
+      "revision_instructions": "保留 operator_viewpoint angle。允许第一人称表达我会参与现场勘测和日常服务。禁止我常在现场、看得多了、很多时候、不是一次布置决定而是等未经支持的经验结论。"
+    },
+    {
+      "content_id": "fixture_mix_request_002-C009",
+      "decision": "approved",
+      "revision_instructions": null
+    },
+    {
+      "content_id": "fixture_mix_request_002-C010",
+      "decision": "revise",
+      "revision_instructions": "保留 product_or_service angle。表达除了绿植租赁还提供定期养护，不得解释为租赁套餐必然包含养护。"
+    }
+  ]
+}

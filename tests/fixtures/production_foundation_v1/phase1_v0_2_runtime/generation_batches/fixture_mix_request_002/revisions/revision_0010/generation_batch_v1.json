@@ -1,0 +1,1179 @@
+{
+  "schema_version": "generation-batch-v1.0",
+  "generator_version": "generate_mix_scripts_v1.py@0.5",
+  "prompt_version": "mix-script-generation-prompt-v1.8",
+  "request_id": "fixture_mix_request_002",
+  "profile": "mix",
+  "status": "review_required",
+  "fixture_only": true,
+  "created_at": "2026-09-11T00:46:12.399634+00:00",
+  "model": "deepseek-v4-flash",
+  "requested_quantity": 10,
+  "generated_count": 10,
+  "machine_pass_count": 10,
+  "rejected_generation_count": 0,
+  "contents": [
+    {
+      "content_id": "fixture_mix_request_002-C001",
+      "request_id": "fixture_mix_request_002",
+      "persona_ref": {
+        "persona_id": "fixture_local_service_operator",
+        "revision": 1,
+        "persona_sha": "4e80cff150a48e9affdf6fd886f55d753641ea7ff88600369b99848515d8e8ff"
+      },
+      "pattern_ref": {
+        "pattern_id": "pcv1_narration_led_process_projection",
+        "pattern_sha": "e610e610965214a07d523cd66dd6b829ec7b5515fdd9f2b2b8314446a8ac190a"
+      },
+      "case_reference": {
+        "case_id": "7650056203686530319",
+        "fingerprint_sha": "3c92902e5d114c5b0b9758579d8090efcd96451ff40c51f2b757de28b6579be4",
+        "reference_authority": "structural_abstraction_only"
+      },
+      "content_intent": "mixed",
+      "slot_id": "SLOT_001",
+      "primary_angle": "pain",
+      "primary_persona_fact_refs": [
+        "customer_pains"
+      ],
+      "optional_secondary_fact_refs": [
+        "differentiators",
+        "customer_use_cases"
+      ],
+      "opening_strategy": "pain_led_question",
+      "narrative_mode": "single_problem_explanation",
+      "title": "办公绿植状态不稳定，怎么办？",
+      "narration": "办公空间的绿植，状态会不会不稳定？我们了解到，办公空间绿植状态不稳定，是一个客户痛点。缺少持续养护能力，是另一个客户痛点。我们提供持续上门养护。",
+      "central_claim": "办公空间绿植状态不稳定，以及缺少持续养护能力，是两个独立的已知客户痛点；同时提供持续上门养护是已知的服务事实。",
+      "persona_fact_refs_used": [
+        "customer_pains",
+        "differentiators"
+      ],
+      "claim_candidates": [
+        {
+          "claim": "办公空间绿植状态不稳定，是一个客户痛点。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "customer_pains"
+          ]
+        },
+        {
+          "claim": "缺少持续养护能力，是另一个客户痛点。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "customer_pains"
+          ]
+        },
+        {
+          "claim": "我们提供持续上门养护。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "differentiators"
+          ]
+        }
+      ],
+      "cta": {
+        "present": false,
+        "text": null
+      },
+      "validation": {
+        "passed": true,
+        "unsupported_fact_guard_passed": true,
+        "grounding_guard_passed": true,
+        "proof_language_guard_passed": true,
+        "persona_fact_refs_valid": true,
+        "privacy_egress_gate_passed_before_generation": true,
+        "batch_duplicate_check_passed": true
+      },
+      "potential_review_flags": [
+        "claim_candidates_require_human_review"
+      ],
+      "status": "revised_pending_human_review",
+      "item_revision": 10,
+      "revision_lineage": {
+        "source_batch_sha256": "78a8674857b605ae48b5cc9289cc4d9ac7bbc33fd5118decceceba4cd843fee2",
+        "source_item_sha256": "d5f8c90d3a506e4bf7013ff33dae31fd29ad82f449a3377bdc6c8b84a145e2d0",
+        "human_decision": "revise",
+        "human_review_sha256": "cce3afb6296e096192e11490249f5287a4b410c10d1fa1c5e1580e243e4d020c"
+      }
+    },
+    {
+      "content_id": "fixture_mix_request_002-C002",
+      "request_id": "fixture_mix_request_002",
+      "persona_ref": {
+        "persona_id": "fixture_local_service_operator",
+        "revision": 1,
+        "persona_sha": "4e80cff150a48e9affdf6fd886f55d753641ea7ff88600369b99848515d8e8ff"
+      },
+      "pattern_ref": {
+        "pattern_id": "pcv1_narration_led_process_projection",
+        "pattern_sha": "e610e610965214a07d523cd66dd6b829ec7b5515fdd9f2b2b8314446a8ac190a"
+      },
+      "case_reference": {
+        "case_id": "7683027343636542565",
+        "fingerprint_sha": "0777528729cfef93b8595576399f576d0db76188adef860604f5157488d8c19b",
+        "reference_authority": "structural_abstraction_only"
+      },
+      "content_intent": "mixed",
+      "slot_id": "SLOT_002",
+      "primary_angle": "misconception",
+      "primary_persona_fact_refs": [
+        "customer_pains",
+        "differentiators"
+      ],
+      "optional_secondary_fact_refs": [
+        "primary_products_or_services"
+      ],
+      "opening_strategy": "misconception_correction",
+      "narrative_mode": "contrast_without_absolute_claim",
+      "title": "绿植布置完，服务就结束了吗？",
+      "narration": "绿植布置完，服务就结束了吗？在我们的服务流程里，布置之后还有后续养护。我们提供办公空间绿植租赁，也提供上门绿植养护。",
+      "central_claim": "绿植布置不是服务流程的最后一步，当前服务还包含持续上门养护。",
+      "persona_fact_refs_used": [
+        "differentiators",
+        "primary_products_or_services",
+        "service_process"
+      ],
+      "claim_candidates": [
+        {
+          "claim": "绿植布置不是服务流程的最后一步，当前服务还包含持续上门养护。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "service_process",
+            "primary_products_or_services",
+            "differentiators"
+          ]
+        }
+      ],
+      "cta": {
+        "present": false,
+        "text": null
+      },
+      "validation": {
+        "passed": true,
+        "unsupported_fact_guard_passed": true,
+        "grounding_guard_passed": true,
+        "proof_language_guard_passed": true,
+        "persona_fact_refs_valid": true,
+        "privacy_egress_gate_passed_before_generation": true,
+        "batch_duplicate_check_passed": true
+      },
+      "potential_review_flags": [
+        "claim_candidates_require_human_review"
+      ],
+      "status": "revised_pending_human_review",
+      "item_revision": 9,
+      "revision_lineage": {
+        "source_batch_sha256": "7e4a9fd41ae4d5b09a8fd73bf0c173dd66f34677e8db8504503ebe5bd9f26988",
+        "source_item_sha256": "e5a0ea7008cdeca68e1ac7c348fe143b0479aa84e5cb2e9c6b749d4956056ceb",
+        "human_decision": "revise",
+        "human_review_sha256": "b1edea4e33da3164a0daa8153d06b1aaf06de6134be5993b4413fb1649403523"
+      }
+    },
+    {
+      "content_id": "fixture_mix_request_002-C003",
+      "request_id": "fixture_mix_request_002",
+      "persona_ref": {
+        "persona_id": "fixture_local_service_operator",
+        "revision": 1,
+        "persona_sha": "4e80cff150a48e9affdf6fd886f55d753641ea7ff88600369b99848515d8e8ff"
+      },
+      "pattern_ref": {
+        "pattern_id": "pcv1_narration_led_process_projection",
+        "pattern_sha": "e610e610965214a07d523cd66dd6b829ec7b5515fdd9f2b2b8314446a8ac190a"
+      },
+      "case_reference": {
+        "case_id": "7680512578585870322",
+        "fingerprint_sha": "4d8a98cffaaa230c72b288f6db55867f59b2c32729b43853fd9fd5f7a49da07d",
+        "reference_authority": "structural_abstraction_only"
+      },
+      "content_intent": "mixed",
+      "slot_id": "SLOT_003",
+      "primary_angle": "selection_criteria",
+      "primary_persona_fact_refs": [
+        "selection_reasons",
+        "differentiators"
+      ],
+      "optional_secondary_fact_refs": [
+        "customer_pains"
+      ],
+      "opening_strategy": "selection_question",
+      "narrative_mode": "criteria_explanation",
+      "title": "选办公绿植服务，看这两点",
+      "narration": "选办公绿植服务，可以看两点：服务过程清不清晰，养护安排能不能追踪。我们提供现场勘测和持续上门养护，服务过程清晰，养护安排可追踪。",
+      "central_claim": "选办公绿植服务时，可以看服务过程是否清晰、养护安排是否可追踪。",
+      "persona_fact_refs_used": [
+        "differentiators",
+        "selection_reasons"
+      ],
+      "claim_candidates": [
+        {
+          "claim": "选办公绿植服务时，可以看服务过程是否清晰、养护安排是否可追踪。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "selection_reasons"
+          ]
+        },
+        {
+          "claim": "提供现场勘测和持续上门养护，服务过程清晰，养护安排可追踪。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "differentiators",
+            "selection_reasons"
+          ]
+        }
+      ],
+      "cta": {
+        "present": false,
+        "text": null
+      },
+      "validation": {
+        "passed": true,
+        "unsupported_fact_guard_passed": true,
+        "grounding_guard_passed": true,
+        "proof_language_guard_passed": true,
+        "persona_fact_refs_valid": true,
+        "privacy_egress_gate_passed_before_generation": true,
+        "batch_duplicate_check_passed": true
+      },
+      "potential_review_flags": [
+        "claim_candidates_require_human_review"
+      ],
+      "status": "revised_pending_human_review",
+      "item_revision": 4,
+      "revision_lineage": {
+        "source_batch_sha256": "7e4a9fd41ae4d5b09a8fd73bf0c173dd66f34677e8db8504503ebe5bd9f26988",
+        "source_item_sha256": "e06cdc6331cb94483fd34b33d1fe3c209eadf3ecee040a0a247f817325e46c78",
+        "human_decision": "revise",
+        "human_review_sha256": "b1edea4e33da3164a0daa8153d06b1aaf06de6134be5993b4413fb1649403523"
+      }
+    },
+    {
+      "content_id": "fixture_mix_request_002-C004",
+      "request_id": "fixture_mix_request_002",
+      "persona_ref": {
+        "persona_id": "fixture_local_service_operator",
+        "revision": 1,
+        "persona_sha": "4e80cff150a48e9affdf6fd886f55d753641ea7ff88600369b99848515d8e8ff"
+      },
+      "pattern_ref": {
+        "pattern_id": "pcv1_narration_led_process_projection",
+        "pattern_sha": "e610e610965214a07d523cd66dd6b829ec7b5515fdd9f2b2b8314446a8ac190a"
+      },
+      "case_reference": {
+        "case_id": "7650056203686530319",
+        "fingerprint_sha": "3c92902e5d114c5b0b9758579d8090efcd96451ff40c51f2b757de28b6579be4",
+        "reference_authority": "structural_abstraction_only"
+      },
+      "content_intent": "mixed",
+      "slot_id": "SLOT_004",
+      "primary_angle": "process",
+      "primary_persona_fact_refs": [
+        "process_facts",
+        "service_process"
+      ],
+      "optional_secondary_fact_refs": [
+        "primary_products_or_services"
+      ],
+      "opening_strategy": "process_entry",
+      "narrative_mode": "focused_process_walkthrough",
+      "title": "办公绿植服务的流程",
+      "narration": "办公绿植服务的流程，从了解空间需求开始。接着是现场勘测，然后确认方案，再实施布置。布置之后，还有后续养护。",
+      "central_claim": "办公绿植服务从了解空间需求开始，经过现场勘测、确认方案、实施布置，再到后续养护。",
+      "persona_fact_refs_used": [
+        "process_facts",
+        "service_process"
+      ],
+      "claim_candidates": [
+        {
+          "claim": "办公绿植服务从了解空间需求开始，经过现场勘测、确认方案、实施布置，再到后续养护。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "service_process"
+          ]
+        },
+        {
+          "claim": "现场勘测、确认方案、实施布置和后续养护，是办公绿植服务的几个环节。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "process_facts"
+          ]
+        }
+      ],
+      "cta": {
+        "present": false,
+        "text": null
+      },
+      "validation": {
+        "passed": true,
+        "unsupported_fact_guard_passed": true,
+        "grounding_guard_passed": true,
+        "proof_language_guard_passed": true,
+        "persona_fact_refs_valid": true,
+        "privacy_egress_gate_passed_before_generation": true,
+        "batch_duplicate_check_passed": true
+      },
+      "potential_review_flags": [
+        "claim_candidates_require_human_review"
+      ],
+      "status": "revised_pending_human_review",
+      "item_revision": 4,
+      "revision_lineage": {
+        "source_batch_sha256": "7e4a9fd41ae4d5b09a8fd73bf0c173dd66f34677e8db8504503ebe5bd9f26988",
+        "source_item_sha256": "4059f2c9c18ca3ff304bb9ef880fcd2602fe0da2c188908c73b5d99fc3aa90a0",
+        "human_decision": "revise",
+        "human_review_sha256": "b1edea4e33da3164a0daa8153d06b1aaf06de6134be5993b4413fb1649403523"
+      }
+    },
+    {
+      "content_id": "fixture_mix_request_002-C005",
+      "request_id": "fixture_mix_request_002",
+      "persona_ref": {
+        "persona_id": "fixture_local_service_operator",
+        "revision": 1,
+        "persona_sha": "4e80cff150a48e9affdf6fd886f55d753641ea7ff88600369b99848515d8e8ff"
+      },
+      "pattern_ref": {
+        "pattern_id": "pcv1_narration_led_process_projection",
+        "pattern_sha": "e610e610965214a07d523cd66dd6b829ec7b5515fdd9f2b2b8314446a8ac190a"
+      },
+      "case_reference": {
+        "case_id": "7683027343636542565",
+        "fingerprint_sha": "0777528729cfef93b8595576399f576d0db76188adef860604f5157488d8c19b",
+        "reference_authority": "structural_abstraction_only"
+      },
+      "content_intent": "mixed",
+      "slot_id": "SLOT_005",
+      "primary_angle": "differentiator",
+      "primary_persona_fact_refs": [
+        "differentiators"
+      ],
+      "optional_secondary_fact_refs": [
+        "selection_reasons",
+        "customer_pains"
+      ],
+      "opening_strategy": "difference_first",
+      "narrative_mode": "one_difference_explained",
+      "title": "除了绿植租赁，还有持续上门养护",
+      "narration": "办公绿植服务里，除了绿植租赁，我们还提供持续上门养护。定期上门做养护，回应的是缺少持续养护能力这件事。",
+      "central_claim": "除了绿植租赁，还提供持续上门养护。",
+      "persona_fact_refs_used": [
+        "customer_pains",
+        "differentiators"
+      ],
+      "claim_candidates": [
+        {
+          "claim": "除了绿植租赁，还提供持续上门养护。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "differentiators"
+          ]
+        },
+        {
+          "claim": "提供持续上门养护，回应的是缺少持续养护能力这一痛点。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "differentiators",
+            "customer_pains"
+          ]
+        }
+      ],
+      "cta": {
+        "present": false,
+        "text": null
+      },
+      "validation": {
+        "passed": true,
+        "unsupported_fact_guard_passed": true,
+        "grounding_guard_passed": true,
+        "proof_language_guard_passed": true,
+        "persona_fact_refs_valid": true,
+        "privacy_egress_gate_passed_before_generation": true,
+        "batch_duplicate_check_passed": true
+      },
+      "potential_review_flags": [
+        "claim_candidates_require_human_review"
+      ],
+      "status": "revised_pending_human_review",
+      "item_revision": 4,
+      "revision_lineage": {
+        "source_batch_sha256": "7e4a9fd41ae4d5b09a8fd73bf0c173dd66f34677e8db8504503ebe5bd9f26988",
+        "source_item_sha256": "9ace4508162baa64571e0a90ce4c48dc6a7ce3d10d62e0b4ffab9852f9ae279f",
+        "human_decision": "revise",
+        "human_review_sha256": "b1edea4e33da3164a0daa8153d06b1aaf06de6134be5993b4413fb1649403523"
+      }
+    },
+    {
+      "content_id": "fixture_mix_request_002-C006",
+      "request_id": "fixture_mix_request_002",
+      "persona_ref": {
+        "persona_id": "fixture_local_service_operator",
+        "revision": 1,
+        "persona_sha": "4e80cff150a48e9affdf6fd886f55d753641ea7ff88600369b99848515d8e8ff"
+      },
+      "pattern_ref": {
+        "pattern_id": "pcv1_narration_led_process_projection",
+        "pattern_sha": "e610e610965214a07d523cd66dd6b829ec7b5515fdd9f2b2b8314446a8ac190a"
+      },
+      "case_reference": {
+        "case_id": "7680512578585870322",
+        "fingerprint_sha": "4d8a98cffaaa230c72b288f6db55867f59b2c32729b43853fd9fd5f7a49da07d",
+        "reference_authority": "structural_abstraction_only"
+      },
+      "content_intent": "mixed",
+      "slot_id": "SLOT_006",
+      "primary_angle": "service_philosophy",
+      "primary_persona_fact_refs": [
+        "values"
+      ],
+      "optional_secondary_fact_refs": [
+        "differentiators"
+      ],
+      "opening_strategy": "principle_statement",
+      "narrative_mode": "operator_principle",
+      "title": "绿植服务，我们坚持两件事",
+      "narration": "做办公绿植服务，我们比较看重两点：清晰沟通，持续服务。沟通清楚，方案才落地；服务持续，绿植状态才有人管。这也是我们做这件事的基本方式。",
+      "central_claim": "做办公绿植服务，我们看重清晰沟通和持续服务。",
+      "persona_fact_refs_used": [
+        "differentiators",
+        "values"
+      ],
+      "claim_candidates": [
+        {
+          "claim": "做办公绿植服务，看重清晰沟通和持续服务。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "values"
+          ]
+        },
+        {
+          "claim": "清晰沟通和持续服务，是办公绿植服务的基本方式。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "values",
+            "differentiators"
+          ]
+        }
+      ],
+      "cta": {
+        "present": false,
+        "text": null
+      },
+      "validation": {
+        "passed": true,
+        "unsupported_fact_guard_passed": true,
+        "proof_language_guard_passed": true,
+        "persona_fact_refs_valid": true,
+        "privacy_egress_gate_passed_before_generation": true,
+        "batch_duplicate_check_passed": true
+      },
+      "potential_review_flags": [
+        "claim_candidates_require_human_review"
+      ],
+      "status": "human_approved_carried_forward",
+      "item_revision": 1,
+      "revision_lineage": {
+        "source_batch_sha256": "7e4a9fd41ae4d5b09a8fd73bf0c173dd66f34677e8db8504503ebe5bd9f26988",
+        "source_item_sha256": "f3ff890cd2e77d71c2605914b49555eab6ec62e67e3527d7441d3d67e6846adb",
+        "human_decision": "approved",
+        "content_unchanged": true
+      }
+    },
+    {
+      "content_id": "fixture_mix_request_002-C007",
+      "request_id": "fixture_mix_request_002",
+      "persona_ref": {
+        "persona_id": "fixture_local_service_operator",
+        "revision": 1,
+        "persona_sha": "4e80cff150a48e9affdf6fd886f55d753641ea7ff88600369b99848515d8e8ff"
+      },
+      "pattern_ref": {
+        "pattern_id": "pcv1_narration_led_process_projection",
+        "pattern_sha": "e610e610965214a07d523cd66dd6b829ec7b5515fdd9f2b2b8314446a8ac190a"
+      },
+      "case_reference": {
+        "case_id": "7650056203686530319",
+        "fingerprint_sha": "3c92902e5d114c5b0b9758579d8090efcd96451ff40c51f2b757de28b6579be4",
+        "reference_authority": "structural_abstraction_only"
+      },
+      "content_intent": "mixed",
+      "slot_id": "SLOT_007",
+      "primary_angle": "customer_question",
+      "primary_persona_fact_refs": [
+        "customer_pains",
+        "customer_use_cases"
+      ],
+      "optional_secondary_fact_refs": [
+        "primary_products_or_services"
+      ],
+      "opening_strategy": "customer_question",
+      "narrative_mode": "question_and_bounded_answer",
+      "title": "办公室绿植状态不稳定，先看什么",
+      "narration": "办公室绿植状态不稳定，可以先看什么？可以先看有没有持续养护安排。我们提供定期养护和上门服务，针对的就是这个情况。",
+      "central_claim": "办公室绿植状态不稳定，可以先看有没有持续养护安排。",
+      "persona_fact_refs_used": [
+        "customer_pains",
+        "customer_use_cases",
+        "primary_products_or_services"
+      ],
+      "claim_candidates": [
+        {
+          "claim": "办公室绿植状态不稳定，可以先看有没有持续养护安排。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "customer_pains",
+            "customer_use_cases"
+          ]
+        },
+        {
+          "claim": "提供定期养护和上门服务，针对的是办公室绿植状态不稳定这一情况。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "customer_pains",
+            "primary_products_or_services"
+          ]
+        }
+      ],
+      "cta": {
+        "present": false,
+        "text": null
+      },
+      "validation": {
+        "passed": true,
+        "unsupported_fact_guard_passed": true,
+        "grounding_guard_passed": true,
+        "proof_language_guard_passed": true,
+        "persona_fact_refs_valid": true,
+        "privacy_egress_gate_passed_before_generation": true,
+        "batch_duplicate_check_passed": true
+      },
+      "potential_review_flags": [
+        "claim_candidates_require_human_review"
+      ],
+      "status": "revised_pending_human_review",
+      "item_revision": 4,
+      "revision_lineage": {
+        "source_batch_sha256": "7e4a9fd41ae4d5b09a8fd73bf0c173dd66f34677e8db8504503ebe5bd9f26988",
+        "source_item_sha256": "4b4fd7a2d2d5df3389ce83dd6fce5be2a062240d8b533d3ee23bc95fd3bc3df7",
+        "human_decision": "revise",
+        "human_review_sha256": "b1edea4e33da3164a0daa8153d06b1aaf06de6134be5993b4413fb1649403523"
+      }
+    },
+    {
+      "content_id": "fixture_mix_request_002-C008",
+      "request_id": "fixture_mix_request_002",
+      "persona_ref": {
+        "persona_id": "fixture_local_service_operator",
+        "revision": 1,
+        "persona_sha": "4e80cff150a48e9affdf6fd886f55d753641ea7ff88600369b99848515d8e8ff"
+      },
+      "pattern_ref": {
+        "pattern_id": "pcv1_narration_led_process_projection",
+        "pattern_sha": "e610e610965214a07d523cd66dd6b829ec7b5515fdd9f2b2b8314446a8ac190a"
+      },
+      "case_reference": {
+        "case_id": "7683027343636542565",
+        "fingerprint_sha": "0777528729cfef93b8595576399f576d0db76188adef860604f5157488d8c19b",
+        "reference_authority": "structural_abstraction_only"
+      },
+      "content_intent": "mixed",
+      "slot_id": "SLOT_008",
+      "primary_angle": "operator_viewpoint",
+      "primary_persona_fact_refs": [
+        "values",
+        "founder_or_operator_story"
+      ],
+      "optional_secondary_fact_refs": [
+        "differentiators"
+      ],
+      "opening_strategy": "operator_observation",
+      "narrative_mode": "first_person_viewpoint",
+      "title": "我会参与现场勘测和日常服务",
+      "narration": "我自己会参与现场勘测和日常服务。清晰沟通、持续服务，是我们做事的方式。",
+      "central_claim": "我会参与现场勘测和日常服务，清晰沟通、持续服务是我们做事的方式。",
+      "persona_fact_refs_used": [
+        "founder_or_operator_story",
+        "values"
+      ],
+      "claim_candidates": [
+        {
+          "claim": "我会参与现场勘测和日常服务。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "founder_or_operator_story"
+          ]
+        },
+        {
+          "claim": "清晰沟通和持续服务，是我们做事的方式。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "values"
+          ]
+        }
+      ],
+      "cta": {
+        "present": false,
+        "text": null
+      },
+      "validation": {
+        "passed": true,
+        "unsupported_fact_guard_passed": true,
+        "grounding_guard_passed": true,
+        "proof_language_guard_passed": true,
+        "persona_fact_refs_valid": true,
+        "privacy_egress_gate_passed_before_generation": true,
+        "batch_duplicate_check_passed": true
+      },
+      "potential_review_flags": [
+        "claim_candidates_require_human_review"
+      ],
+      "status": "revised_pending_human_review",
+      "item_revision": 4,
+      "revision_lineage": {
+        "source_batch_sha256": "7e4a9fd41ae4d5b09a8fd73bf0c173dd66f34677e8db8504503ebe5bd9f26988",
+        "source_item_sha256": "7e804ddb7c3bf397fe46afef64ff79ea7a9692339ee63ef1a19405fea611167b",
+        "human_decision": "revise",
+        "human_review_sha256": "b1edea4e33da3164a0daa8153d06b1aaf06de6134be5993b4413fb1649403523"
+      }
+    },
+    {
+      "content_id": "fixture_mix_request_002-C009",
+      "request_id": "fixture_mix_request_002",
+      "persona_ref": {
+        "persona_id": "fixture_local_service_operator",
+        "revision": 1,
+        "persona_sha": "4e80cff150a48e9affdf6fd886f55d753641ea7ff88600369b99848515d8e8ff"
+      },
+      "pattern_ref": {
+        "pattern_id": "pcv1_narration_led_process_projection",
+        "pattern_sha": "e610e610965214a07d523cd66dd6b829ec7b5515fdd9f2b2b8314446a8ac190a"
+      },
+      "case_reference": {
+        "case_id": "7680512578585870322",
+        "fingerprint_sha": "4d8a98cffaaa230c72b288f6db55867f59b2c32729b43853fd9fd5f7a49da07d",
+        "reference_authority": "structural_abstraction_only"
+      },
+      "content_intent": "mixed",
+      "slot_id": "SLOT_009",
+      "primary_angle": "use_case",
+      "primary_persona_fact_refs": [
+        "customer_use_cases",
+        "core_audience"
+      ],
+      "optional_secondary_fact_refs": [
+        "primary_products_or_services",
+        "customer_pains"
+      ],
+      "opening_strategy": "specific_situation",
+      "narrative_mode": "use_case_focus",
+      "title": "办公室绿植，适合这样用",
+      "narration": "需要办公空间绿植服务的企业，常见用法有两种：一是办公室绿植布置，二是长期上门养护。布置让空间有绿意，养护让状态有人管。如果办公室绿植需要持续维护，这两种用法可以一起考虑。",
+      "central_claim": "企业办公室做绿植布置和长期上门养护，适合需要持续维护的办公空间。",
+      "persona_fact_refs_used": [
+        "core_audience",
+        "customer_use_cases",
+        "primary_products_or_services"
+      ],
+      "claim_candidates": [
+        {
+          "claim": "企业办公室做绿植布置和长期上门养护，适合需要持续维护的办公空间。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "customer_use_cases",
+            "core_audience"
+          ]
+        },
+        {
+          "claim": "办公空间绿植服务包括绿植布置和长期上门养护两种用法。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "customer_use_cases",
+            "primary_products_or_services"
+          ]
+        }
+      ],
+      "cta": {
+        "present": false,
+        "text": null
+      },
+      "validation": {
+        "passed": true,
+        "unsupported_fact_guard_passed": true,
+        "proof_language_guard_passed": true,
+        "persona_fact_refs_valid": true,
+        "privacy_egress_gate_passed_before_generation": true,
+        "batch_duplicate_check_passed": true
+      },
+      "potential_review_flags": [
+        "claim_candidates_require_human_review"
+      ],
+      "status": "human_approved_carried_forward",
+      "item_revision": 1,
+      "revision_lineage": {
+        "source_batch_sha256": "7e4a9fd41ae4d5b09a8fd73bf0c173dd66f34677e8db8504503ebe5bd9f26988",
+        "source_item_sha256": "8693bce9adbd93adf5de6315e2d2e64035b3ee4499e544bf6a99fbdfca2f1006",
+        "human_decision": "approved",
+        "content_unchanged": true
+      }
+    },
+    {
+      "content_id": "fixture_mix_request_002-C010",
+      "request_id": "fixture_mix_request_002",
+      "persona_ref": {
+        "persona_id": "fixture_local_service_operator",
+        "revision": 1,
+        "persona_sha": "4e80cff150a48e9affdf6fd886f55d753641ea7ff88600369b99848515d8e8ff"
+      },
+      "pattern_ref": {
+        "pattern_id": "pcv1_narration_led_process_projection",
+        "pattern_sha": "e610e610965214a07d523cd66dd6b829ec7b5515fdd9f2b2b8314446a8ac190a"
+      },
+      "case_reference": {
+        "case_id": "7650056203686530319",
+        "fingerprint_sha": "3c92902e5d114c5b0b9758579d8090efcd96451ff40c51f2b757de28b6579be4",
+        "reference_authority": "structural_abstraction_only"
+      },
+      "content_intent": "mixed",
+      "slot_id": "SLOT_010",
+      "primary_angle": "product_or_service",
+      "primary_persona_fact_refs": [
+        "primary_products_or_services",
+        "product_or_service_facts"
+      ],
+      "optional_secondary_fact_refs": [
+        "core_audience"
+      ],
+      "opening_strategy": "service_definition",
+      "narrative_mode": "single_service_explanation",
+      "title": "办公绿植租赁，还有上门养护",
+      "narration": "办公空间绿植租赁，我们提供。上门绿植养护，我们也提供。这两项服务，面向需要办公空间绿植服务的企业客户。",
+      "central_claim": "我们提供办公空间绿植租赁和上门绿植养护两项服务，面向需要办公空间绿植服务的企业客户。",
+      "persona_fact_refs_used": [
+        "core_audience",
+        "primary_products_or_services",
+        "product_or_service_facts"
+      ],
+      "claim_candidates": [
+        {
+          "claim": "我们提供办公空间绿植租赁。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "primary_products_or_services"
+          ]
+        },
+        {
+          "claim": "我们提供上门绿植养护。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "primary_products_or_services",
+            "product_or_service_facts"
+          ]
+        },
+        {
+          "claim": "这两项服务面向需要办公空间绿植服务的企业客户。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "core_audience"
+          ]
+        }
+      ],
+      "cta": {
+        "present": false,
+        "text": null
+      },
+      "validation": {
+        "passed": true,
+        "unsupported_fact_guard_passed": true,
+        "grounding_guard_passed": true,
+        "proof_language_guard_passed": true,
+        "persona_fact_refs_valid": true,
+        "privacy_egress_gate_passed_before_generation": true,
+        "batch_duplicate_check_passed": true
+      },
+      "potential_review_flags": [
+        "claim_candidates_require_human_review"
+      ],
+      "status": "revised_pending_human_review",
+      "item_revision": 10,
+      "revision_lineage": {
+        "source_batch_sha256": "78a8674857b605ae48b5cc9289cc4d9ac7bbc33fd5118decceceba4cd843fee2",
+        "source_item_sha256": "6c5f61f86a2ed496e41bb51878ca09a8a8950bf8811b20f916a8d23e328164d1",
+        "human_decision": "revise",
+        "human_review_sha256": "cce3afb6296e096192e11490249f5287a4b410c10d1fa1c5e1580e243e4d020c"
+      }
+    }
+  ],
+  "rejected_generations": [],
+  "content_angle_plan": {
+    "planning_version": "content-angle-plan-v0.2",
+    "taxonomy_status": "provisional_v1_not_frozen",
+    "requested_quantity": 10,
+    "high_confidence_distinct_capacity": 12,
+    "planned_quantity": 10,
+    "status": "supported",
+    "reason": "distinct supported angle capacity meets request",
+    "slots": [
+      {
+        "slot_id": "SLOT_001",
+        "case_id": "7650056203686530319",
+        "primary_angle": "pain",
+        "primary_persona_fact_refs": [
+          "customer_pains"
+        ],
+        "optional_secondary_fact_refs": [
+          "differentiators",
+          "customer_use_cases"
+        ],
+        "opening_strategy": "pain_led_question",
+        "narrative_mode": "single_problem_explanation",
+        "selected_case_structural_reference": "CASE_REF_003"
+      },
+      {
+        "slot_id": "SLOT_002",
+        "case_id": "7683027343636542565",
+        "primary_angle": "misconception",
+        "primary_persona_fact_refs": [
+          "customer_pains",
+          "differentiators"
+        ],
+        "optional_secondary_fact_refs": [
+          "primary_products_or_services"
+        ],
+        "opening_strategy": "misconception_correction",
+        "narrative_mode": "contrast_without_absolute_claim",
+        "selected_case_structural_reference": "CASE_REF_002"
+      },
+      {
+        "slot_id": "SLOT_003",
+        "case_id": "7680512578585870322",
+        "primary_angle": "selection_criteria",
+        "primary_persona_fact_refs": [
+          "selection_reasons",
+          "differentiators"
+        ],
+        "optional_secondary_fact_refs": [
+          "customer_pains"
+        ],
+        "opening_strategy": "selection_question",
+        "narrative_mode": "criteria_explanation",
+        "selected_case_structural_reference": "CASE_REF_001"
+      },
+      {
+        "slot_id": "SLOT_004",
+        "case_id": "7650056203686530319",
+        "primary_angle": "process",
+        "primary_persona_fact_refs": [
+          "process_facts",
+          "service_process"
+        ],
+        "optional_secondary_fact_refs": [
+          "primary_products_or_services"
+        ],
+        "opening_strategy": "process_entry",
+        "narrative_mode": "focused_process_walkthrough",
+        "selected_case_structural_reference": "CASE_REF_003"
+      },
+      {
+        "slot_id": "SLOT_005",
+        "case_id": "7683027343636542565",
+        "primary_angle": "differentiator",
+        "primary_persona_fact_refs": [
+          "differentiators"
+        ],
+        "optional_secondary_fact_refs": [
+          "selection_reasons",
+          "customer_pains"
+        ],
+        "opening_strategy": "difference_first",
+        "narrative_mode": "one_difference_explained",
+        "selected_case_structural_reference": "CASE_REF_002"
+      },
+      {
+        "slot_id": "SLOT_006",
+        "case_id": "7680512578585870322",
+        "primary_angle": "service_philosophy",
+        "primary_persona_fact_refs": [
+          "values"
+        ],
+        "optional_secondary_fact_refs": [
+          "differentiators"
+        ],
+        "opening_strategy": "principle_statement",
+        "narrative_mode": "operator_principle",
+        "selected_case_structural_reference": "CASE_REF_001"
+      },
+      {
+        "slot_id": "SLOT_007",
+        "case_id": "7650056203686530319",
+        "primary_angle": "customer_question",
+        "primary_persona_fact_refs": [
+          "customer_pains",
+          "customer_use_cases"
+        ],
+        "optional_secondary_fact_refs": [
+          "primary_products_or_services"
+        ],
+        "opening_strategy": "customer_question",
+        "narrative_mode": "question_and_bounded_answer",
+        "selected_case_structural_reference": "CASE_REF_003"
+      },
+      {
+        "slot_id": "SLOT_008",
+        "case_id": "7683027343636542565",
+        "primary_angle": "operator_viewpoint",
+        "primary_persona_fact_refs": [
+          "values",
+          "founder_or_operator_story"
+        ],
+        "optional_secondary_fact_refs": [
+          "differentiators"
+        ],
+        "opening_strategy": "operator_observation",
+        "narrative_mode": "first_person_viewpoint",
+        "selected_case_structural_reference": "CASE_REF_002"
+      },
+      {
+        "slot_id": "SLOT_009",
+        "case_id": "7680512578585870322",
+        "primary_angle": "use_case",
+        "primary_persona_fact_refs": [
+          "customer_use_cases",
+          "core_audience"
+        ],
+        "optional_secondary_fact_refs": [
+          "primary_products_or_services",
+          "customer_pains"
+        ],
+        "opening_strategy": "specific_situation",
+        "narrative_mode": "use_case_focus",
+        "selected_case_structural_reference": "CASE_REF_001"
+      },
+      {
+        "slot_id": "SLOT_010",
+        "case_id": "7650056203686530319",
+        "primary_angle": "product_or_service",
+        "primary_persona_fact_refs": [
+          "primary_products_or_services",
+          "product_or_service_facts"
+        ],
+        "optional_secondary_fact_refs": [
+          "core_audience"
+        ],
+        "opening_strategy": "service_definition",
+        "narrative_mode": "single_service_explanation",
+        "selected_case_structural_reference": "CASE_REF_003"
+      }
+    ]
+  },
+  "content_capacity_assessment": {
+    "status": "supported",
+    "reason": "distinct supported angle capacity meets request",
+    "requested_quantity": 10,
+    "high_confidence_distinct_capacity": 12,
+    "planned_quantity": 10
+  },
+  "batch_similarity": {
+    "policy": "provisional_v1_not_frozen",
+    "method": "normalized_sequence_matcher",
+    "rejection_threshold": 0.82,
+    "pair_count": 45,
+    "maximum_similarity": 0.42735,
+    "mean_similarity": 0.217032,
+    "pairs_at_or_above_threshold": [],
+    "distinct_titles": true
+  },
+  "batch_diversity_v0_2": {
+    "policy": "provisional_v1_not_frozen",
+    "primary_angle_distribution": {
+      "customer_question": 1,
+      "differentiator": 1,
+      "misconception": 1,
+      "operator_viewpoint": 1,
+      "pain": 1,
+      "process": 1,
+      "product_or_service": 1,
+      "selection_criteria": 1,
+      "service_philosophy": 1,
+      "use_case": 1
+    },
+    "primary_angle_reuse": {},
+    "fact_bundle_distribution": {
+      "core_audience,customer_use_cases,primary_products_or_services": 1,
+      "core_audience,primary_products_or_services,product_or_service_facts": 1,
+      "customer_pains,customer_use_cases,primary_products_or_services": 1,
+      "customer_pains,differentiators": 2,
+      "differentiators,primary_products_or_services,service_process": 1,
+      "differentiators,selection_reasons": 1,
+      "differentiators,values": 1,
+      "founder_or_operator_story,values": 1,
+      "process_facts,service_process": 1
+    },
+    "fact_bundle_high_overlap_pairs": [
+      {
+        "left": "fixture_mix_request_002-C001",
+        "right": "fixture_mix_request_002-C005",
+        "overlap": 1.0
+      }
+    ],
+    "central_claim_overlap_threshold": 0.72,
+    "central_claim_overlap_pairs": [],
+    "service_process_sequence_repetition": [],
+    "semantic_diversity_flags": [
+      "primary_fact_bundle_high_overlap"
+    ],
+    "passed_without_flags": false
+  },
+  "review_flag_summary": {
+    "items_with_review_flags": 10,
+    "total_review_flag_count": 10,
+    "claim_review_flag_count": 10,
+    "by_flag": {
+      "claim_candidates_require_human_review": 10
+    }
+  },
+  "generation_attempts": [
+    {
+      "attempt": 1,
+      "requested_slots": [
+        "SLOT_001",
+        "SLOT_010"
+      ],
+      "accepted_count": 2,
+      "rejected_count": 0,
+      "rendered_prompt_sha256": "3d4bf2e2f5812a3c62d10f012019e55829db0fa6aea51ccb871697200c50e79c",
+      "safe_input_sha256": "b38b0cf476f9674bd9e017da27efdb6d190bb6929999bc0b7106753049784fe4",
+      "runtime_persona_projection_sha256": "e730f19271856e96114485ad49b1b43dc62bcece938028ef2339eb08af81da6a",
+      "privacy_policy_version": "privacy-policy-v1.0",
+      "pre_call_privacy_gate_passed": true,
+      "post_call_egress_audit_passed": true,
+      "response_sha256": "34391bb4c1c751cc59c5a536e0f7066c185a010091d36631fea7ed0834fc7ce5",
+      "usage": {
+        "prompt_tokens": 3951,
+        "completion_tokens": 579,
+        "total_tokens": 4530
+      },
+      "elapsed_seconds": 3.171575,
+      "error": null
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 3951,
+    "completion_tokens": 579,
+    "total_tokens": 4530
+  },
+  "timing": {
+    "remote_generation_elapsed_seconds": 3.171575,
+    "attempt_count": 1,
+    "retry_count": 0
+  },
+  "lineage": {
+    "persona": {
+      "path": "E:\\projects\\ai-video-ops\\ops-pipeline\\tests\\fixtures\\production_foundation_v1\\runtime\\personas\\fixture_local_service_operator\\revision_0001\\persona_v1.json",
+      "sha256": "4e80cff150a48e9affdf6fd886f55d753641ea7ff88600369b99848515d8e8ff",
+      "content_sha256": "3cce0203aeed95807c7962b07234ae0dec5f4bdb6dc40a3812e69884f5e0f670"
+    },
+    "request": {
+      "path": "E:\\projects\\ai-video-ops\\ops-pipeline\\tests\\fixtures\\production_foundation_v1\\generation_request_mix_v0_2.json",
+      "sha256": "d3e605c589a689f615abbbf4cabde370cffb9e0f707402d3dc76f566e9342833"
+    },
+    "source_plan": {
+      "path": "E:\\projects\\ai-video-ops\\ops-pipeline\\tests\\fixtures\\production_foundation_v1\\phase1_v0_2_runtime\\plans\\fixture_mix_request_002\\generation_source_plan_v1.json",
+      "sha256": "090a3620eda6929e918638a6e90d1305efdfd67b1d7e1c0e6ca720c001dc75c8"
+    },
+    "approved_pattern": {
+      "path": "E:\\projects\\ai-video-ops\\ops-pipeline\\data\\patterns\\approved\\pcv1_narration_led_process_projection\\pattern_v1.json",
+      "sha256": "e610e610965214a07d523cd66dd6b829ec7b5515fdd9f2b2b8314446a8ac190a"
+    },
+    "fingerprints": {
+      "7650056203686530319": {
+        "path": "E:\\projects\\ai-video-ops\\ops-pipeline\\data\\fingerprints\\7650056203686530319\\case_fingerprint_v1.json",
+        "sha256": "3c92902e5d114c5b0b9758579d8090efcd96451ff40c51f2b757de28b6579be4"
+      },
+      "7680512578585870322": {
+        "path": "E:\\projects\\ai-video-ops\\ops-pipeline\\data\\fingerprints\\7680512578585870322\\case_fingerprint_v1.json",
+        "sha256": "4d8a98cffaaa230c72b288f6db55867f59b2c32729b43853fd9fd5f7a49da07d"
+      },
+      "7683027343636542565": {
+        "path": "E:\\projects\\ai-video-ops\\ops-pipeline\\data\\fingerprints\\7683027343636542565\\case_fingerprint_v1.json",
+        "sha256": "0777528729cfef93b8595576399f576d0db76188adef860604f5157488d8c19b"
+      }
+    },
+    "combined_prompt_sha256": "4ca2e57178830ab8f9b9911e7cc836e6b25fe35a6fe5081657238e23167af688",
+    "rendered_prompt_sha256": [
+      "52315b87aa2ac68eec90412ba9df0af3bd800837212176f192793a61e450d50c",
+      "b3652a5fca8891e41815d3fe7312b13c24686aecf643ffbee4f14fdec42ebc61"
+    ],
+    "source_generation_batch": {
+      "path": "E:\\projects\\ai-video-ops\\ops-pipeline\\tests\\fixtures\\production_foundation_v1\\phase1_v0_2_runtime\\generation_batches\\fixture_mix_request_002\\revisions\\revision_0009\\generation_batch_v1.json",
+      "sha256": "78a8674857b605ae48b5cc9289cc4d9ac7bbc33fd5118decceceba4cd843fee2"
+    },
+    "human_content_review": {
+      "path": "E:\\projects\\ai-video-ops\\ops-pipeline\\tests\\fixtures\\production_foundation_v1\\phase1_v0_2_runtime\\generation_batches\\fixture_mix_request_002\\revisions\\revision_0009\\generation_human_content_review_v1.json",
+      "sha256": "cce3afb6296e096192e11490249f5287a4b410c10d1fa1c5e1580e243e4d020c"
+    },
+    "revision_rendered_prompt_sha256": [
+      "3d4bf2e2f5812a3c62d10f012019e55829db0fa6aea51ccb871697200c50e79c"
+    ],
+    "source_incomplete_revision": {
+      "path": "E:\\projects\\ai-video-ops\\ops-pipeline\\tests\\fixtures\\production_foundation_v1\\phase1_v0_2_runtime\\generation_batches\\fixture_mix_request_002\\revisions\\revision_0008\\generation_batch_v1.json",
+      "sha256": "76d8d478f5287a0b0592b09b5034ceef056daafc1607ccb994dc219f2c04dcea"
+    }
+  },
+  "privacy": {
+    "privacy_policy_version": "privacy-policy-v1.0",
+    "approved_persona_known_facts_only": true,
+    "runtime_shared_projection_used": true,
+    "pre_network_gate_passed_all_attempts": true,
+    "raw_persona_sent": false,
+    "private_or_review_fields_omitted": [
+      "authorized_customer_cases_or_feedback",
+      "business_address",
+      "information_requiring_human_review"
+    ],
+    "pre_network_gate_passed_all_revision_attempts": true
+  },
+  "authority": {
+    "generation_completed": true,
+    "generation_completed_for_planned_capacity": true,
+    "human_review_required": true,
+    "auto_approved": false,
+    "raw_case_narration_read": false,
+    "raw_case_visual_text_read": false,
+    "case_specific_claims_sent_to_model": false,
+    "case_facts_transferred": false,
+    "pattern_effectiveness_used": false,
+    "proof_reinterpreted": false,
+    "selective_revision_only": true,
+    "selective_revision_resume": false,
+    "content_angles_replanned": false,
+    "approved_items_carried_forward_unchanged": true
+  },
+  "validation": {
+    "passed": true,
+    "selective_revision_complete": true,
+    "approved_items_unchanged": true,
+    "slot_ids_preserved": true,
+    "primary_angles_preserved": true,
+    "grounding_guard_passed": true,
+    "persona_fact_refs_known_only": true,
+    "proof_guard_passed": true,
+    "privacy_gate_before_network": true,
+    "source_sha_lineage_complete": true,
+    "human_review_required": true
+  },
+  "batch_revision": 10,
+  "revision_type": "selective_human_content_revision",
+  "source_generation_usage": {
+    "prompt_tokens": 3041,
+    "completion_tokens": 228,
+    "total_tokens": 3269
+  },
+  "human_content_review": {
+    "decision": "partial_revision_required",
+    "reviewer": "李健",
+    "approved_carried_forward_count": 8,
+    "revised_item_count": 2,
+    "topup_generated_count": 2,
+    "rejected_item_count": 0
+  }
+}

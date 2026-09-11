@@ -11,7 +11,7 @@ from privacy_projection_v1 import validate_case_privacy_gate
 
 
 PLAN_VERSION = "generation-source-plan-v1.0"
-MATCHER_VERSION = "match_generation_sources_v1.py@0.1"
+MATCHER_VERSION = "match_generation_sources_v1.py@0.2"
 PROFILES = {"news", "mix"}
 CONTENT_INTENTS = {
     "persona",
@@ -52,7 +52,9 @@ def known_value(persona: dict[str, Any], field: str) -> Any:
     return persona.get("facts", {}).get(field, {}).get("value")
 
 
-def load_approved_persona(path: Path) -> tuple[dict[str, Any], str]:
+def load_approved_persona(
+    path: Path, expected_scope: str = "business"
+) -> tuple[dict[str, Any], str]:
     path = path.expanduser().resolve()
     if not path.is_file():
         raise FileNotFoundError(path)
@@ -60,13 +62,19 @@ def load_approved_persona(path: Path) -> tuple[dict[str, Any], str]:
     lifecycle = persona.get("lifecycle", {})
     if lifecycle.get("status") != "approved" or lifecycle.get("approved") is not True:
         raise RuntimeError("Persona must be Approved before Matching.")
+    if persona.get("persona_scope", "business") != expected_scope:
+        raise RuntimeError(f"Matching expected a {expected_scope} Persona.")
     content_sha = persona_content_hash(persona)
     if persona.get("provenance", {}).get("content_sha256") != content_sha:
         raise RuntimeError("Approved Persona content changed without a new revision.")
     return persona, sha256_file(path)
 
 
-def load_request(path: Path, persona: dict[str, Any]) -> tuple[dict[str, Any], str]:
+def load_request(
+    path: Path,
+    persona: dict[str, Any],
+    speaker_persona: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], str]:
     path = path.expanduser().resolve()
     if not path.is_file():
         raise FileNotFoundError(path)
@@ -80,6 +88,18 @@ def load_request(path: Path, persona: dict[str, Any]) -> tuple[dict[str, Any], s
         raise RuntimeError("Generation Request Persona ID mismatch.")
     if int(request.get("persona_revision") or 0) != int(persona.get("revision") or 0):
         raise RuntimeError("Generation Request Persona revision mismatch.")
+    requested_speaker = request.get("speaker_persona")
+    if requested_speaker:
+        if speaker_persona is None:
+            raise RuntimeError("Generation Request requires an Approved Speaker Persona.")
+        if requested_speaker != speaker_persona.get("persona_id"):
+            raise RuntimeError("Generation Request Speaker Persona ID mismatch.")
+        if int(request.get("speaker_persona_revision") or 0) != int(
+            speaker_persona.get("revision") or 0
+        ):
+            raise RuntimeError("Generation Request Speaker Persona revision mismatch.")
+    elif speaker_persona is not None:
+        raise RuntimeError("Speaker Persona supplied but not selected by Generation Request.")
     if request.get("profile") not in PROFILES:
         raise RuntimeError("Generation Request profile is invalid.")
     if request.get("content_intent") not in CONTENT_INTENTS:
@@ -179,7 +199,9 @@ def load_cases_and_fingerprints(
     }
 
 
-def persona_capabilities(persona: dict[str, Any]) -> dict[str, bool]:
+def persona_capabilities(
+    persona: dict[str, Any], speaker_persona: dict[str, Any] | None = None
+) -> dict[str, bool]:
     return {
         "process_material_available": any(
             fact_is_known(persona, field)
@@ -188,6 +210,10 @@ def persona_capabilities(persona: dict[str, Any]) -> dict[str, bool]:
         "story_or_operator_context_available": any(
             fact_is_known(persona, field)
             for field in ("brand_story", "founder_or_operator_story")
+        )
+        or bool(
+            speaker_persona
+            and fact_is_known(speaker_persona, "speaker_role_facts")
         ),
         "product_or_service_facts_available": fact_is_known(
             persona, "product_or_service_facts"
@@ -346,14 +372,30 @@ def build_source_plan(
     case_paths: list[Path],
     fingerprint_paths: list[Path],
     candidate_source_paths: list[Path] | None = None,
+    speaker_persona_path: Path | None = None,
 ) -> dict[str, Any]:
     persona_path = persona_path.expanduser().resolve()
     request_path = request_path.expanduser().resolve()
-    persona, persona_sha = load_approved_persona(persona_path)
-    request, request_sha = load_request(request_path, persona)
+    persona, persona_sha = load_approved_persona(persona_path, "business")
+    speaker_persona: dict[str, Any] | None = None
+    speaker_sha: str | None = None
+    resolved_speaker_path: Path | None = None
+    if speaker_persona_path is not None:
+        resolved_speaker_path = speaker_persona_path.expanduser().resolve()
+        speaker_persona, speaker_sha = load_approved_persona(
+            resolved_speaker_path, "speaker"
+        )
+        reference = speaker_persona.get("business_persona_ref") or {}
+        if (
+            reference.get("persona_id") != persona.get("persona_id")
+            or int(reference.get("revision") or 0) != int(persona.get("revision") or 0)
+            or reference.get("sha256") != persona_sha
+        ):
+            raise RuntimeError("Speaker Persona Business Persona lineage mismatch.")
+    request, request_sha = load_request(request_path, persona, speaker_persona)
     patterns = load_patterns(pattern_paths)
     case_sources = load_cases_and_fingerprints(case_paths, fingerprint_paths)
-    capabilities = persona_capabilities(persona)
+    capabilities = persona_capabilities(persona, speaker_persona)
     excluded = excluded_candidate_sources(candidate_source_paths or [])
 
     eligible_patterns: list[dict[str, Any]] = []
@@ -456,6 +498,25 @@ def build_source_plan(
             "requires_review_fact_fields": review_fields,
             "fact_values_copied_to_plan": False,
         },
+        "speaker_persona": (
+            {
+                "persona_id": speaker_persona.get("persona_id"),
+                "revision": speaker_persona.get("revision"),
+                "speaker_type": speaker_persona.get("speaker_type"),
+                "speaker_sha": speaker_sha,
+                "content_sha": speaker_persona.get("provenance", {}).get(
+                    "content_sha256"
+                ),
+                "status": "approved",
+                "business_persona_ref": speaker_persona.get(
+                    "business_persona_ref"
+                ),
+                "fact_values_copied_to_plan": False,
+                "path": str(resolved_speaker_path),
+            }
+            if speaker_persona
+            else None
+        ),
         "request": {
             "request_sha": request_sha,
             "profile": request.get("profile"),
@@ -463,6 +524,8 @@ def build_source_plan(
             "platform": request.get("platform"),
             "content_intent": request.get("content_intent"),
             "cta_intent": request.get("cta_intent"),
+            "speaker_persona": request.get("speaker_persona"),
+            "speaker_persona_revision": request.get("speaker_persona_revision"),
             "constraints": request.get("constraints") or {},
         },
         "coverage": {
@@ -491,6 +554,8 @@ def build_source_plan(
             "effectiveness_claims_allowed": False,
             "pattern_scope_must_be_respected": True,
             "shared_privacy_gateway_required_before_future_remote_generation": True,
+            "speaker_overlay_authority_enforced": speaker_persona is not None,
+            "speaker_cannot_inherit_unauthorized_business_facts": True,
         },
         "ranking_policy": {
             "status": "provisional_v1_not_frozen",
@@ -509,11 +574,20 @@ def build_source_plan(
             "rejected_pattern_selected": False,
             "research_hypothesis_selected": False,
             "proof_reinterpreted": False,
+            "speaker_business_facts_copied": False,
         },
         "validation": {
             "passed": True,
             "persona_approved": True,
             "persona_content_sha_valid": True,
+            "speaker_persona_approved": speaker_persona is None
+            or (
+                speaker_persona.get("lifecycle", {}).get("status") == "approved"
+                and speaker_persona.get("lifecycle", {}).get("approved") is True
+            ),
+            "speaker_business_lineage_valid": speaker_persona is None
+            or speaker_persona.get("business_persona_ref", {}).get("sha256")
+            == persona_sha,
             "request_persona_revision_match": True,
             "approved_patterns_only": True,
             "approved_cases_only": True,
@@ -556,6 +630,7 @@ def main() -> None:
         )
     )
     parser.add_argument("--persona", required=True)
+    parser.add_argument("--speaker-persona")
     parser.add_argument("--request", required=True)
     parser.add_argument("--pattern", action="append", required=True)
     parser.add_argument("--case", action="append", required=True)
@@ -574,6 +649,7 @@ def main() -> None:
         [Path(value) for value in args.case],
         [Path(value) for value in args.fingerprint],
         [Path(value) for value in args.candidate_source],
+        Path(args.speaker_persona) if args.speaker_persona else None,
     )
     project_root = Path(__file__).resolve().parents[1]
     output_root = (

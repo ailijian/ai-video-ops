@@ -1,6 +1,6 @@
 {
   "schema_version": "generation-request-v1.0",
-  "request_id": "fixture_mix_request_001",
+  "request_id": "fixture_mix_request_002",
   "persona_id": "fixture_local_service_operator",
   "persona_revision": 1,
   "profile": "mix",
@@ -10,6 +10,7 @@
   "cta_intent": "optional",
   "constraints": {
     "fixture_only": true,
-    "generation_must_not_start": false
+    "generation_must_not_start": false,
+    "generation_revision": "v0.2"
   }
 }

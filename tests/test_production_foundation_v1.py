@@ -293,6 +293,62 @@ class ProductionFoundationTests(unittest.TestCase):
         self.assertFalse(authority["remote_model_call_performed"])
         self.assertFalse(authority["script_generation_performed"])
 
+    def test_frontline_speaker_overlay_requires_approved_business_lineage(self) -> None:
+        self.approve()
+        speaker_input = self.root / "speaker_input.json"
+        write_json(
+            speaker_input,
+            {
+                "persona_id": "fixture_frontline_speaker",
+                "revision": 1,
+                "persona_scope": "speaker",
+                "speaker_type": "frontline_expert",
+                "business_persona_ref": "fixture_operator",
+                "fixture_only": True,
+                "source_type": "test_fixture",
+                "facts": {
+                    "public_display_name": self.fact("Fixture Speaker"),
+                    "public_role": self.fact("主厨"),
+                    "speaker_role_facts": self.fact(["负责窗口烹饪"]),
+                    "first_person_allowed_topics": self.fact(["现场烹饪流程"]),
+                    "first_person_forbidden_claims": self.fact(["我是老板"]),
+                    "unknown_facts": self.fact(["从业年限", "是否创始人"]),
+                },
+            },
+        )
+        speaker_path, speaker = build_persona(
+            speaker_input,
+            self.root / "personas",
+            created_at="2026-09-11T00:02:00+00:00",
+            business_persona_path=self.persona_path,
+        )
+        self.assertEqual(speaker["persona_scope"], "speaker")
+        self.assertFalse(speaker["speaker_authority"]["business_facts_copied"])
+        approve_persona(
+            speaker_path,
+            "Fixture Reviewer",
+            "Fixture Speaker approval",
+            "2026-09-11T00:03:00+00:00",
+        )
+        request = self.request("mix", "speaker_mix_request")
+        request["speaker_persona"] = "fixture_frontline_speaker"
+        request["speaker_persona_revision"] = 1
+        request_path = self.root / "speaker_mix_request.json"
+        write_json(request_path, request)
+        plan = build_source_plan(
+            self.persona_path,
+            request_path,
+            [self.pattern_path],
+            self.case_paths,
+            self.fingerprint_paths,
+            [self.rejected_path],
+            speaker_path,
+        )
+        self.assertEqual(plan["speaker_persona"]["speaker_type"], "frontline_expert")
+        self.assertEqual(plan["speaker_persona"]["speaker_sha"], sha256(speaker_path))
+        self.assertTrue(plan["validation"]["speaker_business_lineage_valid"])
+        self.assertFalse(plan["authority"]["speaker_business_facts_copied"])
+
 
 if __name__ == "__main__":
     unittest.main()

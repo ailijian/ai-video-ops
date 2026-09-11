@@ -1,0 +1,247 @@
+{
+  "schema_version": "generation-source-plan-v1.0",
+  "matcher_version": "match_generation_sources_v1.py@0.1",
+  "request_id": "fixture_mix_request_001",
+  "persona": {
+    "persona_id": "fixture_local_service_operator",
+    "revision": 1,
+    "persona_sha": "4e80cff150a48e9affdf6fd886f55d753641ea7ff88600369b99848515d8e8ff",
+    "content_sha": "3cce0203aeed95807c7962b07234ae0dec5f4bdb6dc40a3812e69884f5e0f670",
+    "status": "approved",
+    "fixture_only": true,
+    "known_fact_fields": [
+      "public_display_name",
+      "company_short_name",
+      "industry",
+      "primary_products_or_services",
+      "secondary_products_or_services",
+      "core_audience",
+      "customer_use_cases",
+      "customer_pains",
+      "differentiators",
+      "selection_reasons",
+      "brand_story",
+      "founder_or_operator_story",
+      "product_or_service_facts",
+      "process_facts",
+      "service_process",
+      "values",
+      "tone_preferences",
+      "unknown_facts",
+      "forbidden_claims",
+      "prohibited_topics"
+    ],
+    "unknown_fact_fields": [
+      "years_in_business",
+      "service_area",
+      "business_address",
+      "important_turning_points",
+      "authorized_customer_cases_or_feedback",
+      "beliefs",
+      "information_requiring_human_review"
+    ],
+    "requires_review_fact_fields": [],
+    "fact_values_copied_to_plan": false
+  },
+  "request": {
+    "request_sha": "11534b803bbe9dd9865097242a812619016398caf8013dc4b863b662244c444e",
+    "profile": "mix",
+    "quantity": 10,
+    "platform": "douyin",
+    "content_intent": "mixed",
+    "cta_intent": "optional",
+    "constraints": {
+      "fixture_only": true,
+      "generation_must_not_start": false
+    }
+  },
+  "coverage": {
+    "status": "supported",
+    "code": "research_coverage_supported",
+    "reason": "An Approved Pattern passes profile and Persona capability gates, with multiple Approved Case/Fingerprint references available for rotation."
+  },
+  "selected_patterns": [
+    {
+      "pattern_id": "pcv1_narration_led_process_projection",
+      "approved_pattern_sha": "e610e610965214a07d523cd66dd6b829ec7b5515fdd9f2b2b8314446a8ac190a",
+      "eligibility_reason": "Approved mix-scope Pattern matches a narration-oriented operator/business-story Persona with KNOWN real process material.",
+      "effectiveness_status": "unvalidated",
+      "effectiveness_used_in_ranking": false
+    }
+  ],
+  "eligible_case_pool": [
+    {
+      "case_id": "7650056203686530319",
+      "approved_case_sha": "0d43b2536057fba7c8a1e9a802c8870042f97b001eee85a0b776b64a85d53814",
+      "fingerprint_sha": "3c92902e5d114c5b0b9758579d8090efcd96451ff40c51f2b757de28b6579be4",
+      "ranking_score": 0.985294,
+      "ranking_components": {
+        "industry_similarity": 1.0,
+        "operator_business_story_compatibility": 1.0,
+        "content_intent_compatibility": 0.882354,
+        "persona_process_material_available": 1.0,
+        "persona_story_context_available": 1.0,
+        "persona_presence_compatibility": 1.0,
+        "narration_oriented_structure": 1.0,
+        "approved_pattern_supports_case": 1.0
+      },
+      "selection_reason": "Approved Case/Fingerprint provides a structurally compatible reference; its client-specific facts remain non-transferable."
+    },
+    {
+      "case_id": "7683027343636542565",
+      "approved_case_sha": "3e4d117edd67c7b73022e05fdb880ade205e1ab5a5d4509aefd52d1c65ee78a3",
+      "fingerprint_sha": "0777528729cfef93b8595576399f576d0db76188adef860604f5157488d8c19b",
+      "ranking_score": 0.868182,
+      "ranking_components": {
+        "industry_similarity": 0.0,
+        "operator_business_story_compatibility": 1.0,
+        "content_intent_compatibility": 0.945454,
+        "persona_process_material_available": 1.0,
+        "persona_story_context_available": 1.0,
+        "persona_presence_compatibility": 1.0,
+        "narration_oriented_structure": 1.0,
+        "approved_pattern_supports_case": 1.0
+      },
+      "selection_reason": "Approved Case/Fingerprint provides a structurally compatible reference; its client-specific facts remain non-transferable."
+    },
+    {
+      "case_id": "7680512578585870322",
+      "approved_case_sha": "30e102808d5e198e18ba8176523472b5271ba3789403ab97e7e873daf4c415f1",
+      "fingerprint_sha": "4d8a98cffaaa230c72b288f6db55867f59b2c32729b43853fd9fd5f7a49da07d",
+      "ranking_score": 0.857143,
+      "ranking_components": {
+        "industry_similarity": 0.0,
+        "operator_business_story_compatibility": 1.0,
+        "content_intent_compatibility": 0.857144,
+        "persona_process_material_available": 1.0,
+        "persona_story_context_available": 1.0,
+        "persona_presence_compatibility": 1.0,
+        "narration_oriented_structure": 1.0,
+        "approved_pattern_supports_case": 1.0
+      },
+      "selection_reason": "Approved Case/Fingerprint provides a structurally compatible reference; its client-specific facts remain non-transferable."
+    }
+  ],
+  "selected_cases": [
+    {
+      "case_id": "7650056203686530319",
+      "approved_case_sha": "0d43b2536057fba7c8a1e9a802c8870042f97b001eee85a0b776b64a85d53814",
+      "fingerprint_sha": "3c92902e5d114c5b0b9758579d8090efcd96451ff40c51f2b757de28b6579be4",
+      "ranking_score": 0.985294,
+      "ranking_components": {
+        "industry_similarity": 1.0,
+        "operator_business_story_compatibility": 1.0,
+        "content_intent_compatibility": 0.882354,
+        "persona_process_material_available": 1.0,
+        "persona_story_context_available": 1.0,
+        "persona_presence_compatibility": 1.0,
+        "narration_oriented_structure": 1.0,
+        "approved_pattern_supports_case": 1.0
+      },
+      "selection_reason": "Approved Case/Fingerprint provides a structurally compatible reference; its client-specific facts remain non-transferable."
+    },
+    {
+      "case_id": "7683027343636542565",
+      "approved_case_sha": "3e4d117edd67c7b73022e05fdb880ade205e1ab5a5d4509aefd52d1c65ee78a3",
+      "fingerprint_sha": "0777528729cfef93b8595576399f576d0db76188adef860604f5157488d8c19b",
+      "ranking_score": 0.868182,
+      "ranking_components": {
+        "industry_similarity": 0.0,
+        "operator_business_story_compatibility": 1.0,
+        "content_intent_compatibility": 0.945454,
+        "persona_process_material_available": 1.0,
+        "persona_story_context_available": 1.0,
+        "persona_presence_compatibility": 1.0,
+        "narration_oriented_structure": 1.0,
+        "approved_pattern_supports_case": 1.0
+      },
+      "selection_reason": "Approved Case/Fingerprint provides a structurally compatible reference; its client-specific facts remain non-transferable."
+    },
+    {
+      "case_id": "7680512578585870322",
+      "approved_case_sha": "30e102808d5e198e18ba8176523472b5271ba3789403ab97e7e873daf4c415f1",
+      "fingerprint_sha": "4d8a98cffaaa230c72b288f6db55867f59b2c32729b43853fd9fd5f7a49da07d",
+      "ranking_score": 0.857143,
+      "ranking_components": {
+        "industry_similarity": 0.0,
+        "operator_business_story_compatibility": 1.0,
+        "content_intent_compatibility": 0.857144,
+        "persona_process_material_available": 1.0,
+        "persona_story_context_available": 1.0,
+        "persona_presence_compatibility": 1.0,
+        "narration_oriented_structure": 1.0,
+        "approved_pattern_supports_case": 1.0
+      },
+      "selection_reason": "Approved Case/Fingerprint provides a structurally compatible reference; its client-specific facts remain non-transferable."
+    }
+  ],
+  "rotation": {
+    "case_rotation_enabled": true,
+    "case_rotation_order": [
+      "7650056203686530319",
+      "7683027343636542565",
+      "7680512578585870322"
+    ],
+    "pattern_rotation_ready": true,
+    "pattern_rotation_order": [
+      "pcv1_narration_led_process_projection"
+    ]
+  },
+  "excluded_sources": [
+    {
+      "source_id": "pcv1_multimodal_hook_no_explicit_cta",
+      "source_type": "pattern_candidate",
+      "status": "review_rejected",
+      "sha256": "7c8596afc267ba630bbc6e5240eb8bab3243b128030c78406f95f3c01b7c9d82",
+      "reason": "Only Approved Patterns may enter Production Matching."
+    },
+    {
+      "source_id": "H002A",
+      "source_type": "research_hypothesis",
+      "status": "research_hypothesis",
+      "reason": "Research Hypotheses are not Production Pattern authority."
+    }
+  ],
+  "generation_constraints": {
+    "persona_facts_only": true,
+    "known_persona_facts_only": true,
+    "unknown_persona_facts_must_not_be_filled": true,
+    "requires_review_facts_must_not_be_published_without_review": true,
+    "case_facts_must_not_transfer": true,
+    "effectiveness_claims_allowed": false,
+    "pattern_scope_must_be_respected": true,
+    "shared_privacy_gateway_required_before_future_remote_generation": true
+  },
+  "ranking_policy": {
+    "status": "provisional_v1_not_frozen",
+    "deterministic": true,
+    "performance_metrics_used": false,
+    "effectiveness_used": false
+  },
+  "authority": {
+    "generation_not_started": true,
+    "script_generation_performed": false,
+    "remote_model_call_performed": false,
+    "raw_whisper_read": false,
+    "raw_visual_evidence_read": false,
+    "candidate_case_read": false,
+    "case_facts_used_as_persona_facts": false,
+    "rejected_pattern_selected": false,
+    "research_hypothesis_selected": false,
+    "proof_reinterpreted": false
+  },
+  "validation": {
+    "passed": true,
+    "persona_approved": true,
+    "persona_content_sha_valid": true,
+    "request_persona_revision_match": true,
+    "approved_patterns_only": true,
+    "approved_cases_only": true,
+    "fingerprint_lineage_complete": true,
+    "input_sha_lineage_complete": true,
+    "research_coverage_gate_applied": true,
+    "news_does_not_fallback_to_mix": true,
+    "effectiveness_excluded_from_ranking": true,
+    "remote_model_call_performed": false
+  }
+}

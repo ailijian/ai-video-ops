@@ -1,0 +1,70 @@
+{
+  "schema_version": "generation-batch-content-review-v1.0",
+  "request_id": "fixture_mix_request_002",
+  "source_batch_sha256": "78a8674857b605ae48b5cc9289cc4d9ac7bbc33fd5118decceceba4cd843fee2",
+  "reviewer": "李健",
+  "decision": "partial_revision_required",
+  "items": [
+    {
+      "content_id": "fixture_mix_request_002-C001",
+      "decision": "revise",
+      "revision_instructions": "Keep slot_id, pain angle, Pattern, Case structural reference, and Persona authority. Use only: space greenery condition is unstable; ongoing-care capacity is lacking; continuous on-site care is provided. Write natural external-facing Chinese with low-risk framing. Do not expose Persona field/taxonomy language such as 客户痛点 or 另一个痛点. Add no plant species, yellow leaves, watering, lighting, ventilation, causal claim, empirical claim, or outcome guarantee."
+    },
+    {
+      "content_id": "fixture_mix_request_002-C002",
+      "decision": "approved",
+      "revision_instructions": null
+    },
+    {
+      "content_id": "fixture_mix_request_002-C003",
+      "decision": "approved",
+      "revision_instructions": null
+    },
+    {
+      "content_id": "fixture_mix_request_002-C004",
+      "decision": "approved",
+      "revision_instructions": null
+    },
+    {
+      "content_id": "fixture_mix_request_002-C005",
+      "decision": "approved",
+      "revision_instructions": null
+    },
+    {
+      "content_id": "fixture_mix_request_002-C006",
+      "decision": "approved",
+      "revision_instructions": null
+    },
+    {
+      "content_id": "fixture_mix_request_002-C007",
+      "decision": "approved",
+      "revision_instructions": null
+    },
+    {
+      "content_id": "fixture_mix_request_002-C008",
+      "decision": "approved",
+      "revision_instructions": null
+    },
+    {
+      "content_id": "fixture_mix_request_002-C009",
+      "decision": "approved",
+      "revision_instructions": null
+    },
+    {
+      "content_id": "fixture_mix_request_002-C010",
+      "decision": "revise",
+      "revision_instructions": "Keep the product_or_service angle and the three KNOWN facts: office-space greenery rental, on-site/regular care, and enterprise customers. Explain naturally that both services are provided. Do not imply that rental inherently or automatically includes care, and do not use internal Contract language such as 分开说的两项服务."
+    }
+  ],
+  "reviewed_at": "2026-09-11T00:45:18.948869Z",
+  "source_batch": {
+    "path": "E:\\projects\\ai-video-ops\\ops-pipeline\\tests\\fixtures\\production_foundation_v1\\phase1_v0_2_runtime\\generation_batches\\fixture_mix_request_002\\revisions\\revision_0009\\generation_batch_v1.json",
+    "sha256": "78a8674857b605ae48b5cc9289cc4d9ac7bbc33fd5118decceceba4cd843fee2"
+  },
+  "summary": {
+    "approved_count": 8,
+    "revise_count": 2,
+    "rejected_count": 0,
+    "batch_decision": "partial_revision_required"
+  }
+}

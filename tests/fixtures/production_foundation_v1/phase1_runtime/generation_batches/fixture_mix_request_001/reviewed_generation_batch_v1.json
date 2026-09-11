@@ -1,0 +1,831 @@
+{
+  "schema_version": "reviewed-generation-batch-v1.0",
+  "generator_version": "generate_mix_scripts_v1.py@0.1",
+  "prompt_version": "mix-script-generation-prompt-v1.0",
+  "request_id": "fixture_mix_request_001",
+  "profile": "mix",
+  "status": "rejected",
+  "fixture_only": true,
+  "created_at": "2026-09-10T19:35:56.857725+00:00",
+  "model": "deepseek-v4-flash",
+  "requested_quantity": 10,
+  "generated_count": 10,
+  "machine_pass_count": 10,
+  "rejected_generation_count": 0,
+  "contents": [
+    {
+      "content_id": "fixture_mix_request_001-C001",
+      "request_id": "fixture_mix_request_001",
+      "persona_ref": {
+        "persona_id": "fixture_local_service_operator",
+        "revision": 1,
+        "persona_sha": "4e80cff150a48e9affdf6fd886f55d753641ea7ff88600369b99848515d8e8ff"
+      },
+      "pattern_ref": {
+        "pattern_id": "pcv1_narration_led_process_projection",
+        "pattern_sha": "e610e610965214a07d523cd66dd6b829ec7b5515fdd9f2b2b8314446a8ac190a"
+      },
+      "case_reference": {
+        "case_id": "7650056203686530319",
+        "fingerprint_sha": "3c92902e5d114c5b0b9758579d8090efcd96451ff40c51f2b757de28b6579be4",
+        "reference_authority": "structural_abstraction_only"
+      },
+      "content_intent": "mixed",
+      "title": "办公室绿植养不住？先看现场再定方案",
+      "narration": "办公室绿植总是状态不稳，很多时候不是不想养，而是缺少持续养护。我们先把现场勘测做细，看清光照、通风和空间动线，再确认布置方案。布置完成只是开始，后续定期上门养护才是让绿植长期保持状态的关键。",
+      "persona_fact_refs_used": [
+        "customer_pains",
+        "differentiators",
+        "product_or_service_facts",
+        "service_process"
+      ],
+      "claim_candidates": [
+        {
+          "claim": "办公空间绿植状态不稳，往往和缺少持续养护能力有关。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "customer_pains"
+          ]
+        },
+        {
+          "claim": "服务从现场勘测开始，再确认方案并实施布置。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "service_process",
+            "differentiators"
+          ]
+        }
+      ],
+      "cta": {
+        "present": false,
+        "text": null
+      },
+      "validation": {
+        "passed": true,
+        "unsupported_fact_guard_passed": true,
+        "proof_language_guard_passed": true,
+        "persona_fact_refs_valid": true,
+        "privacy_egress_gate_passed_before_generation": true,
+        "batch_duplicate_check_passed": true
+      },
+      "potential_review_flags": [
+        "claim_candidates_require_human_review"
+      ],
+      "status": "human_revision_required",
+      "human_review": {
+        "decision": "revision_required",
+        "reviewer": "李健",
+        "reviewed_at": "2026-09-10T19:52:46.110770+00:00",
+        "note": "Revision needed."
+      }
+    },
+    {
+      "content_id": "fixture_mix_request_001-C002",
+      "request_id": "fixture_mix_request_001",
+      "persona_ref": {
+        "persona_id": "fixture_local_service_operator",
+        "revision": 1,
+        "persona_sha": "4e80cff150a48e9affdf6fd886f55d753641ea7ff88600369b99848515d8e8ff"
+      },
+      "pattern_ref": {
+        "pattern_id": "pcv1_narration_led_process_projection",
+        "pattern_sha": "e610e610965214a07d523cd66dd6b829ec7b5515fdd9f2b2b8314446a8ac190a"
+      },
+      "case_reference": {
+        "case_id": "7683027343636542565",
+        "fingerprint_sha": "0777528729cfef93b8595576399f576d0db76188adef860604f5157488d8c19b",
+        "reference_authority": "structural_abstraction_only"
+      },
+      "content_intent": "mixed",
+      "title": "从勘测到养护，办公绿植服务一步步怎么做",
+      "narration": "企业客户找绿植服务，最怕过程不清晰。我们先了解空间需求，再到现场勘测，确认方案后实施布置。布置完不是结束，后续还有定期上门养护。每一步都尽量让客户知道我们在做什么，养护安排也尽量做到可追踪。",
+      "persona_fact_refs_used": [
+        "core_audience",
+        "selection_reasons",
+        "service_process",
+        "values"
+      ],
+      "claim_candidates": [
+        {
+          "claim": "服务过程尽量保持清晰，养护安排尽量可追踪。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "selection_reasons",
+            "values"
+          ]
+        },
+        {
+          "claim": "绿植服务包含现场勘测、方案确认、布置和定期养护。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "service_process",
+            "process_facts"
+          ]
+        }
+      ],
+      "cta": {
+        "present": false,
+        "text": null
+      },
+      "validation": {
+        "passed": true,
+        "unsupported_fact_guard_passed": true,
+        "proof_language_guard_passed": true,
+        "persona_fact_refs_valid": true,
+        "privacy_egress_gate_passed_before_generation": true,
+        "batch_duplicate_check_passed": true
+      },
+      "potential_review_flags": [
+        "claim_candidates_require_human_review"
+      ],
+      "status": "human_rejected",
+      "human_review": {
+        "decision": "rejected",
+        "reviewer": "李健",
+        "reviewed_at": "2026-09-10T19:52:46.110770+00:00",
+        "note": "Rejected for semantic repetition."
+      }
+    },
+    {
+      "content_id": "fixture_mix_request_001-C003",
+      "request_id": "fixture_mix_request_001",
+      "persona_ref": {
+        "persona_id": "fixture_local_service_operator",
+        "revision": 1,
+        "persona_sha": "4e80cff150a48e9affdf6fd886f55d753641ea7ff88600369b99848515d8e8ff"
+      },
+      "pattern_ref": {
+        "pattern_id": "pcv1_narration_led_process_projection",
+        "pattern_sha": "e610e610965214a07d523cd66dd6b829ec7b5515fdd9f2b2b8314446a8ac190a"
+      },
+      "case_reference": {
+        "case_id": "7680512578585870322",
+        "fingerprint_sha": "4d8a98cffaaa230c72b288f6db55867f59b2c32729b43853fd9fd5f7a49da07d",
+        "reference_authority": "structural_abstraction_only"
+      },
+      "content_intent": "mixed",
+      "title": "绿植布置完就没人管？持续上门养护才是重点",
+      "narration": "很多办公空间的绿植，刚布置完看着不错，过一段时间状态就下滑。问题往往出在后续养护跟不上。我们提供持续上门养护，把定期养护安排进服务流程里，让绿植状态尽量保持稳定。",
+      "persona_fact_refs_used": [
+        "customer_pains",
+        "differentiators",
+        "primary_products_or_services",
+        "product_or_service_facts"
+      ],
+      "claim_candidates": [
+        {
+          "claim": "绿植状态下滑，常见原因是后续养护跟不上。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "customer_pains"
+          ]
+        },
+        {
+          "claim": "服务包含持续上门养护和定期养护安排。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "differentiators",
+            "product_or_service_facts"
+          ]
+        }
+      ],
+      "cta": {
+        "present": false,
+        "text": null
+      },
+      "validation": {
+        "passed": true,
+        "unsupported_fact_guard_passed": true,
+        "proof_language_guard_passed": true,
+        "persona_fact_refs_valid": true,
+        "privacy_egress_gate_passed_before_generation": true,
+        "batch_duplicate_check_passed": true
+      },
+      "potential_review_flags": [
+        "claim_candidates_require_human_review"
+      ],
+      "status": "human_revision_required",
+      "human_review": {
+        "decision": "revision_required",
+        "reviewer": "李健",
+        "reviewed_at": "2026-09-10T19:52:46.110770+00:00",
+        "note": "Revision needed."
+      }
+    },
+    {
+      "content_id": "fixture_mix_request_001-C004",
+      "request_id": "fixture_mix_request_001",
+      "persona_ref": {
+        "persona_id": "fixture_local_service_operator",
+        "revision": 1,
+        "persona_sha": "4e80cff150a48e9affdf6fd886f55d753641ea7ff88600369b99848515d8e8ff"
+      },
+      "pattern_ref": {
+        "pattern_id": "pcv1_narration_led_process_projection",
+        "pattern_sha": "e610e610965214a07d523cd66dd6b829ec7b5515fdd9f2b2b8314446a8ac190a"
+      },
+      "case_reference": {
+        "case_id": "7650056203686530319",
+        "fingerprint_sha": "3c92902e5d114c5b0b9758579d8090efcd96451ff40c51f2b757de28b6579be4",
+        "reference_authority": "structural_abstraction_only"
+      },
+      "content_intent": "mixed",
+      "title": "办公绿植服务，现场勘测为什么不能省",
+      "narration": "办公空间绿植布置，不是随便摆几盆就行。不同位置的光照、通风和人员走动情况都不一样。我们先做现场勘测，再根据实际情况确认方案。这样布置出来的绿植，更贴近空间本身的需求，后续养护也更好安排。",
+      "persona_fact_refs_used": [
+        "customer_use_cases",
+        "differentiators",
+        "secondary_products_or_services",
+        "service_process"
+      ],
+      "claim_candidates": [
+        {
+          "claim": "现场勘测是绿植布置前的重要环节。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "differentiators",
+            "service_process"
+          ]
+        },
+        {
+          "claim": "办公空间绿植布置需要结合空间实际情况确认方案。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "secondary_products_or_services",
+            "customer_use_cases"
+          ]
+        }
+      ],
+      "cta": {
+        "present": false,
+        "text": null
+      },
+      "validation": {
+        "passed": true,
+        "unsupported_fact_guard_passed": true,
+        "proof_language_guard_passed": true,
+        "persona_fact_refs_valid": true,
+        "privacy_egress_gate_passed_before_generation": true,
+        "batch_duplicate_check_passed": true
+      },
+      "potential_review_flags": [
+        "claim_candidates_require_human_review"
+      ],
+      "status": "human_keep_for_revision",
+      "human_review": {
+        "decision": "keep",
+        "reviewer": "李健",
+        "reviewed_at": "2026-09-10T19:52:46.110770+00:00",
+        "note": "Keep as a useful reference for revision."
+      }
+    },
+    {
+      "content_id": "fixture_mix_request_001-C005",
+      "request_id": "fixture_mix_request_001",
+      "persona_ref": {
+        "persona_id": "fixture_local_service_operator",
+        "revision": 1,
+        "persona_sha": "4e80cff150a48e9affdf6fd886f55d753641ea7ff88600369b99848515d8e8ff"
+      },
+      "pattern_ref": {
+        "pattern_id": "pcv1_narration_led_process_projection",
+        "pattern_sha": "e610e610965214a07d523cd66dd6b829ec7b5515fdd9f2b2b8314446a8ac190a"
+      },
+      "case_reference": {
+        "case_id": "7683027343636542565",
+        "fingerprint_sha": "0777528729cfef93b8595576399f576d0db76188adef860604f5157488d8c19b",
+        "reference_authority": "structural_abstraction_only"
+      },
+      "content_intent": "mixed",
+      "title": "绿植租赁不是一锤子买卖，养护安排要能追踪",
+      "narration": "绿植租赁和上门养护，其实是一套持续的服务。从了解空间需求，到现场勘测、确认方案、实施布置，再到后续定期养护，每个环节都需要沟通清楚。我们尽量把养护安排做得可追踪，让企业客户知道绿植有人管、按节奏管。",
+      "persona_fact_refs_used": [
+        "primary_products_or_services",
+        "selection_reasons",
+        "service_process",
+        "values"
+      ],
+      "claim_candidates": [
+        {
+          "claim": "绿植租赁和上门养护是一套持续服务。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "primary_products_or_services"
+          ]
+        },
+        {
+          "claim": "养护安排尽量做到可追踪，服务过程尽量清晰。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "selection_reasons",
+            "values"
+          ]
+        }
+      ],
+      "cta": {
+        "present": false,
+        "text": null
+      },
+      "validation": {
+        "passed": true,
+        "unsupported_fact_guard_passed": true,
+        "proof_language_guard_passed": true,
+        "persona_fact_refs_valid": true,
+        "privacy_egress_gate_passed_before_generation": true,
+        "batch_duplicate_check_passed": true
+      },
+      "potential_review_flags": [
+        "claim_candidates_require_human_review"
+      ],
+      "status": "human_keep_for_revision",
+      "human_review": {
+        "decision": "keep",
+        "reviewer": "李健",
+        "reviewed_at": "2026-09-10T19:52:46.110770+00:00",
+        "note": "Keep as a useful reference for revision."
+      }
+    },
+    {
+      "content_id": "fixture_mix_request_001-C006",
+      "request_id": "fixture_mix_request_001",
+      "persona_ref": {
+        "persona_id": "fixture_local_service_operator",
+        "revision": 1,
+        "persona_sha": "4e80cff150a48e9affdf6fd886f55d753641ea7ff88600369b99848515d8e8ff"
+      },
+      "pattern_ref": {
+        "pattern_id": "pcv1_narration_led_process_projection",
+        "pattern_sha": "e610e610965214a07d523cd66dd6b829ec7b5515fdd9f2b2b8314446a8ac190a"
+      },
+      "case_reference": {
+        "case_id": "7680512578585870322",
+        "fingerprint_sha": "4d8a98cffaaa230c72b288f6db55867f59b2c32729b43853fd9fd5f7a49da07d",
+        "reference_authority": "structural_abstraction_only"
+      },
+      "content_intent": "mixed",
+      "title": "办公室绿植状态不稳，问题可能出在养护节奏",
+      "narration": "办公室绿植状态不稳定，很多时候不是植物本身的问题，而是养护节奏没跟上。我们提供定期上门养护，按确认好的方案持续服务。现场勘测、方案确认、布置、定期养护，每一步都尽量做扎实。",
+      "persona_fact_refs_used": [
+        "customer_pains",
+        "differentiators",
+        "process_facts",
+        "product_or_service_facts"
+      ],
+      "claim_candidates": [
+        {
+          "claim": "绿植状态不稳定，可能和养护节奏有关。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "customer_pains"
+          ]
+        },
+        {
+          "claim": "服务流程包括现场勘测、方案确认、布置和定期养护。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "process_facts"
+          ]
+        }
+      ],
+      "cta": {
+        "present": false,
+        "text": null
+      },
+      "validation": {
+        "passed": true,
+        "unsupported_fact_guard_passed": true,
+        "proof_language_guard_passed": true,
+        "persona_fact_refs_valid": true,
+        "privacy_egress_gate_passed_before_generation": true,
+        "batch_duplicate_check_passed": true
+      },
+      "potential_review_flags": [
+        "claim_candidates_require_human_review"
+      ],
+      "status": "human_rejected",
+      "human_review": {
+        "decision": "rejected",
+        "reviewer": "李健",
+        "reviewed_at": "2026-09-10T19:52:46.110770+00:00",
+        "note": "Rejected for semantic repetition."
+      }
+    },
+    {
+      "content_id": "fixture_mix_request_001-C007",
+      "request_id": "fixture_mix_request_001",
+      "persona_ref": {
+        "persona_id": "fixture_local_service_operator",
+        "revision": 1,
+        "persona_sha": "4e80cff150a48e9affdf6fd886f55d753641ea7ff88600369b99848515d8e8ff"
+      },
+      "pattern_ref": {
+        "pattern_id": "pcv1_narration_led_process_projection",
+        "pattern_sha": "e610e610965214a07d523cd66dd6b829ec7b5515fdd9f2b2b8314446a8ac190a"
+      },
+      "case_reference": {
+        "case_id": "7650056203686530319",
+        "fingerprint_sha": "3c92902e5d114c5b0b9758579d8090efcd96451ff40c51f2b757de28b6579be4",
+        "reference_authority": "structural_abstraction_only"
+      },
+      "content_intent": "mixed",
+      "title": "企业绿植服务，清晰沟通比什么都重要",
+      "narration": "企业客户选绿植服务，往往看重过程是不是清楚。我们先了解空间需求，再现场勘测、确认方案，然后实施布置。后续养护也按安排持续进行。沟通清楚，服务才能做得踏实。",
+      "persona_fact_refs_used": [
+        "core_audience",
+        "selection_reasons",
+        "service_process",
+        "values"
+      ],
+      "claim_candidates": [
+        {
+          "claim": "清晰沟通是绿植服务的重要部分。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "values"
+          ]
+        },
+        {
+          "claim": "服务流程从了解空间需求开始，到后续养护持续进行。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "service_process"
+          ]
+        }
+      ],
+      "cta": {
+        "present": false,
+        "text": null
+      },
+      "validation": {
+        "passed": true,
+        "unsupported_fact_guard_passed": true,
+        "proof_language_guard_passed": true,
+        "persona_fact_refs_valid": true,
+        "privacy_egress_gate_passed_before_generation": true,
+        "batch_duplicate_check_passed": true
+      },
+      "potential_review_flags": [
+        "claim_candidates_require_human_review"
+      ],
+      "status": "human_rejected",
+      "human_review": {
+        "decision": "rejected",
+        "reviewer": "李健",
+        "reviewed_at": "2026-09-10T19:52:46.110770+00:00",
+        "note": "Rejected for semantic repetition."
+      }
+    },
+    {
+      "content_id": "fixture_mix_request_001-C008",
+      "request_id": "fixture_mix_request_001",
+      "persona_ref": {
+        "persona_id": "fixture_local_service_operator",
+        "revision": 1,
+        "persona_sha": "4e80cff150a48e9affdf6fd886f55d753641ea7ff88600369b99848515d8e8ff"
+      },
+      "pattern_ref": {
+        "pattern_id": "pcv1_narration_led_process_projection",
+        "pattern_sha": "e610e610965214a07d523cd66dd6b829ec7b5515fdd9f2b2b8314446a8ac190a"
+      },
+      "case_reference": {
+        "case_id": "7683027343636542565",
+        "fingerprint_sha": "0777528729cfef93b8595576399f576d0db76188adef860604f5157488d8c19b",
+        "reference_authority": "structural_abstraction_only"
+      },
+      "content_intent": "mixed",
+      "title": "绿植布置之后，后续养护怎么安排",
+      "narration": "绿植布置完成之后，后续养护怎么安排，是很多企业客户关心的问题。我们提供定期上门养护，把养护纳入持续服务流程。从现场勘测到方案确认，再到布置和后续养护，每一步都尽量让客户看得明白。",
+      "persona_fact_refs_used": [
+        "customer_use_cases",
+        "product_or_service_facts",
+        "selection_reasons",
+        "service_process"
+      ],
+      "claim_candidates": [
+        {
+          "claim": "布置完成后，后续养护是持续服务的一部分。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "customer_use_cases",
+            "product_or_service_facts"
+          ]
+        },
+        {
+          "claim": "服务过程尽量让客户看得明白。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "selection_reasons"
+          ]
+        }
+      ],
+      "cta": {
+        "present": false,
+        "text": null
+      },
+      "validation": {
+        "passed": true,
+        "unsupported_fact_guard_passed": true,
+        "proof_language_guard_passed": true,
+        "persona_fact_refs_valid": true,
+        "privacy_egress_gate_passed_before_generation": true,
+        "batch_duplicate_check_passed": true
+      },
+      "potential_review_flags": [
+        "claim_candidates_require_human_review"
+      ],
+      "status": "human_rejected",
+      "human_review": {
+        "decision": "rejected",
+        "reviewer": "李健",
+        "reviewed_at": "2026-09-10T19:52:46.110770+00:00",
+        "note": "Rejected for semantic repetition."
+      }
+    },
+    {
+      "content_id": "fixture_mix_request_001-C009",
+      "request_id": "fixture_mix_request_001",
+      "persona_ref": {
+        "persona_id": "fixture_local_service_operator",
+        "revision": 1,
+        "persona_sha": "4e80cff150a48e9affdf6fd886f55d753641ea7ff88600369b99848515d8e8ff"
+      },
+      "pattern_ref": {
+        "pattern_id": "pcv1_narration_led_process_projection",
+        "pattern_sha": "e610e610965214a07d523cd66dd6b829ec7b5515fdd9f2b2b8314446a8ac190a"
+      },
+      "case_reference": {
+        "case_id": "7680512578585870322",
+        "fingerprint_sha": "4d8a98cffaaa230c72b288f6db55867f59b2c32729b43853fd9fd5f7a49da07d",
+        "reference_authority": "structural_abstraction_only"
+      },
+      "content_intent": "mixed",
+      "title": "办公空间绿植布置，先了解需求再动手",
+      "narration": "办公空间绿植布置，不是先买植物再想怎么摆。我们先了解空间需求，做现场勘测，确认方案后再实施布置。后续还有定期上门养护。这样一套流程下来，绿植服务会更贴合实际使用场景。",
+      "persona_fact_refs_used": [
+        "differentiators",
+        "primary_products_or_services",
+        "secondary_products_or_services",
+        "service_process"
+      ],
+      "claim_candidates": [
+        {
+          "claim": "绿植布置前先了解空间需求并现场勘测。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "service_process",
+            "differentiators"
+          ]
+        },
+        {
+          "claim": "服务包含办公空间绿植布置和定期上门养护。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "secondary_products_or_services",
+            "primary_products_or_services"
+          ]
+        }
+      ],
+      "cta": {
+        "present": false,
+        "text": null
+      },
+      "validation": {
+        "passed": true,
+        "unsupported_fact_guard_passed": true,
+        "proof_language_guard_passed": true,
+        "persona_fact_refs_valid": true,
+        "privacy_egress_gate_passed_before_generation": true,
+        "batch_duplicate_check_passed": true
+      },
+      "potential_review_flags": [
+        "claim_candidates_require_human_review"
+      ],
+      "status": "human_rejected",
+      "human_review": {
+        "decision": "rejected",
+        "reviewer": "李健",
+        "reviewed_at": "2026-09-10T19:52:46.110770+00:00",
+        "note": "Rejected for semantic repetition."
+      }
+    },
+    {
+      "content_id": "fixture_mix_request_001-C010",
+      "request_id": "fixture_mix_request_001",
+      "persona_ref": {
+        "persona_id": "fixture_local_service_operator",
+        "revision": 1,
+        "persona_sha": "4e80cff150a48e9affdf6fd886f55d753641ea7ff88600369b99848515d8e8ff"
+      },
+      "pattern_ref": {
+        "pattern_id": "pcv1_narration_led_process_projection",
+        "pattern_sha": "e610e610965214a07d523cd66dd6b829ec7b5515fdd9f2b2b8314446a8ac190a"
+      },
+      "case_reference": {
+        "case_id": "7650056203686530319",
+        "fingerprint_sha": "3c92902e5d114c5b0b9758579d8090efcd96451ff40c51f2b757de28b6579be4",
+        "reference_authority": "structural_abstraction_only"
+      },
+      "content_intent": "mixed",
+      "title": "绿植租赁加持续养护，办公空间省心一点",
+      "narration": "办公空间绿植，租赁和养护往往要一起考虑。我们提供绿植租赁，也提供持续上门养护。从了解空间需求、现场勘测，到确认方案、实施布置，再到后续定期养护，尽量把服务过程做清楚。",
+      "persona_fact_refs_used": [
+        "differentiators",
+        "primary_products_or_services",
+        "service_process",
+        "values"
+      ],
+      "claim_candidates": [
+        {
+          "claim": "绿植租赁和持续上门养护可以一起安排。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "primary_products_or_services",
+            "differentiators"
+          ]
+        },
+        {
+          "claim": "服务过程尽量保持清晰。",
+          "status": "candidate_unverified",
+          "persona_fact_refs": [
+            "values"
+          ]
+        }
+      ],
+      "cta": {
+        "present": false,
+        "text": null
+      },
+      "validation": {
+        "passed": true,
+        "unsupported_fact_guard_passed": true,
+        "proof_language_guard_passed": true,
+        "persona_fact_refs_valid": true,
+        "privacy_egress_gate_passed_before_generation": true,
+        "batch_duplicate_check_passed": true
+      },
+      "potential_review_flags": [
+        "claim_candidates_require_human_review"
+      ],
+      "status": "human_rejected",
+      "human_review": {
+        "decision": "rejected",
+        "reviewer": "李健",
+        "reviewed_at": "2026-09-10T19:52:46.110770+00:00",
+        "note": "Rejected for semantic repetition."
+      }
+    }
+  ],
+  "rejected_generations": [],
+  "batch_similarity": {
+    "policy": "provisional_v1_not_frozen",
+    "method": "normalized_sequence_matcher",
+    "rejection_threshold": 0.82,
+    "pair_count": 45,
+    "maximum_similarity": 0.5,
+    "mean_similarity": 0.285031,
+    "pairs_at_or_above_threshold": [],
+    "distinct_titles": true
+  },
+  "generation_attempts": [
+    {
+      "attempt": 1,
+      "requested_slots": [
+        "SLOT_001",
+        "SLOT_002",
+        "SLOT_003",
+        "SLOT_004",
+        "SLOT_005",
+        "SLOT_006",
+        "SLOT_007",
+        "SLOT_008",
+        "SLOT_009",
+        "SLOT_010"
+      ],
+      "accepted_count": 10,
+      "rejected_count": 0,
+      "rendered_prompt_sha256": "a324ff8f0da68441afae39ed672e8cfb89b1bbbd940c1d6d7883643fc924a51e",
+      "safe_input_sha256": "a4a70fe850b4bb34349222113f436128bb7d696ee2cb38bcade9b9065385a7fa",
+      "runtime_persona_projection_sha256": "e730f19271856e96114485ad49b1b43dc62bcece938028ef2339eb08af81da6a",
+      "privacy_policy_version": "privacy-policy-v1.0",
+      "pre_call_privacy_gate_passed": true,
+      "post_call_egress_audit_passed": true,
+      "response_sha256": "2c6ae98d80e4a32af19280623831d55d2d687f8e7ee0dfe8150180eea6fc3629",
+      "usage": {
+        "prompt_tokens": 8182,
+        "completion_tokens": 2481,
+        "total_tokens": 10663
+      },
+      "elapsed_seconds": 10.312155,
+      "error": null
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 8182,
+    "completion_tokens": 2481,
+    "total_tokens": 10663
+  },
+  "timing": {
+    "remote_generation_elapsed_seconds": 10.312155,
+    "attempt_count": 1,
+    "retry_count": 0
+  },
+  "lineage": {
+    "persona": {
+      "path": "E:\\projects\\ai-video-ops\\ops-pipeline\\tests\\fixtures\\production_foundation_v1\\runtime\\personas\\fixture_local_service_operator\\revision_0001\\persona_v1.json",
+      "sha256": "4e80cff150a48e9affdf6fd886f55d753641ea7ff88600369b99848515d8e8ff",
+      "content_sha256": "3cce0203aeed95807c7962b07234ae0dec5f4bdb6dc40a3812e69884f5e0f670"
+    },
+    "request": {
+      "path": "E:\\projects\\ai-video-ops\\ops-pipeline\\tests\\fixtures\\production_foundation_v1\\generation_request_mix.json",
+      "sha256": "11534b803bbe9dd9865097242a812619016398caf8013dc4b863b662244c444e"
+    },
+    "source_plan": {
+      "path": "E:\\projects\\ai-video-ops\\ops-pipeline\\tests\\fixtures\\production_foundation_v1\\phase1_runtime\\plans\\fixture_mix_request_001\\generation_source_plan_v1.json",
+      "sha256": "fc29916f981572f23293a2ab4b2a8f16511d3fb68afb7adf68be1b087994cbdc"
+    },
+    "approved_pattern": {
+      "path": "E:\\projects\\ai-video-ops\\ops-pipeline\\data\\patterns\\approved\\pcv1_narration_led_process_projection\\pattern_v1.json",
+      "sha256": "e610e610965214a07d523cd66dd6b829ec7b5515fdd9f2b2b8314446a8ac190a"
+    },
+    "fingerprints": {
+      "7650056203686530319": {
+        "path": "E:\\projects\\ai-video-ops\\ops-pipeline\\data\\fingerprints\\7650056203686530319\\case_fingerprint_v1.json",
+        "sha256": "3c92902e5d114c5b0b9758579d8090efcd96451ff40c51f2b757de28b6579be4"
+      },
+      "7680512578585870322": {
+        "path": "E:\\projects\\ai-video-ops\\ops-pipeline\\data\\fingerprints\\7680512578585870322\\case_fingerprint_v1.json",
+        "sha256": "4d8a98cffaaa230c72b288f6db55867f59b2c32729b43853fd9fd5f7a49da07d"
+      },
+      "7683027343636542565": {
+        "path": "E:\\projects\\ai-video-ops\\ops-pipeline\\data\\fingerprints\\7683027343636542565\\case_fingerprint_v1.json",
+        "sha256": "0777528729cfef93b8595576399f576d0db76188adef860604f5157488d8c19b"
+      }
+    },
+    "combined_prompt_sha256": "8b07ab213cee63df4ac9bc162d7f2fec25a1dfeec60293529d990d1cb30d20ef",
+    "rendered_prompt_sha256": [
+      "a324ff8f0da68441afae39ed672e8cfb89b1bbbd940c1d6d7883643fc924a51e"
+    ],
+    "source_generation_batch": {
+      "path": "E:\\projects\\ai-video-ops\\ops-pipeline\\tests\\fixtures\\production_foundation_v1\\phase1_runtime\\generation_batches\\fixture_mix_request_001\\generation_batch_v1.json",
+      "sha256": "d0d2f46eb7df7b231b09d6413ac5ff90eb1273eedd00695d469eefdbfefdc676"
+    },
+    "human_review_file": {
+      "path": "E:\\projects\\ai-video-ops\\ops-pipeline\\tests\\fixtures\\production_foundation_v1\\phase1_runtime\\generation_batches\\fixture_mix_request_001\\generation_human_review_v1.json",
+      "sha256": "c6b4f6d3283460354ef00ca103f6921fc27d7ee47fa216be97c58d6a09d3eeb5"
+    }
+  },
+  "privacy": {
+    "privacy_policy_version": "privacy-policy-v1.0",
+    "approved_persona_known_facts_only": true,
+    "runtime_shared_projection_used": true,
+    "pre_network_gate_passed_all_attempts": true,
+    "raw_persona_sent": false,
+    "private_or_review_fields_omitted": [
+      "authorized_customer_cases_or_feedback",
+      "business_address",
+      "information_requiring_human_review"
+    ]
+  },
+  "authority": {
+    "generation_completed": true,
+    "human_review_required": true,
+    "auto_approved": false,
+    "raw_case_narration_read": false,
+    "raw_case_visual_text_read": false,
+    "case_specific_claims_sent_to_model": false,
+    "case_facts_transferred": false,
+    "pattern_effectiveness_used": false,
+    "proof_reinterpreted": false,
+    "human_review_completed": true,
+    "export_allowed": false
+  },
+  "validation": {
+    "passed": true,
+    "contract_valid": true,
+    "requested_quantity_met": true,
+    "all_contents_machine_passed": true,
+    "persona_fact_refs_known_only": true,
+    "unsupported_fact_guard_passed": true,
+    "proof_guard_passed": true,
+    "batch_similarity_passed": true,
+    "source_plan_supported": true,
+    "profile_mix": true,
+    "approved_pattern_only": true,
+    "sha_lineage_complete": true,
+    "privacy_gate_before_network": true
+  },
+  "human_review": {
+    "decision": "reject_batch",
+    "reviewer": "李健",
+    "reviewed_at": "2026-09-10T19:52:46.110770+00:00",
+    "note": "Batch rejected for revision because lexical diversity passed while content angles and service-process sequences remained semantically repetitive.",
+    "approved_item_count": 0,
+    "rejected_item_count": 10,
+    "all_export_items_human_approved": false,
+    "finding_counts": {
+      "keep": 2,
+      "rejected": 6,
+      "revision_required": 2
+    }
+  }
+}

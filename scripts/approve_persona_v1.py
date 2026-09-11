@@ -9,11 +9,12 @@ from typing import Any
 from build_persona_v1 import (
     persona_content_hash,
     sha256_bytes,
+    sha256_file,
     validate_required_fact_authority,
 )
 
 
-APPROVER_VERSION = "approve_persona_v1.py@0.1"
+APPROVER_VERSION = "approve_persona_v1.py@0.2"
 
 
 def now_iso() -> str:
@@ -60,6 +61,21 @@ def approve_persona(
         errors.append("Persona build validation is not passed.")
     if persona.get("validation", {}).get("case_sources_consumed") is not False:
         errors.append("Persona unexpectedly consumed Case sources.")
+    if persona.get("persona_scope", "business") == "speaker":
+        reference = persona.get("business_persona_ref") or {}
+        business_path = Path(str(reference.get("path") or ""))
+        if not business_path.is_file():
+            errors.append("Speaker Business Persona reference is missing.")
+        elif sha256_file(business_path) != reference.get("sha256"):
+            errors.append("Speaker Business Persona SHA-256 mismatch.")
+        else:
+            business = json.loads(business_path.read_text(encoding="utf-8"))
+            if (
+                business.get("persona_scope", "business") != "business"
+                or business.get("lifecycle", {}).get("status") != "approved"
+                or business.get("lifecycle", {}).get("approved") is not True
+            ):
+                errors.append("Speaker must remain bound to an Approved Business Persona.")
     receipt_path = persona_path.parent / "approval_receipt.json"
     if receipt_path.exists():
         errors.append("Persona approval receipt already exists.")
