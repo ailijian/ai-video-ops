@@ -211,11 +211,32 @@ def presentation_signature(
         "signature_version": SIGNATURE_VERSION,
         "speaker_id": speaker_id,
         "speaker_type": speaker_type,
+        "production_profile": concept.get("production_profile")
+        or concept.get("target_profile")
+        or concept.get("profile"),
         "opening_strategy": concept.get("opening_strategy"),
         "narrative_mode": concept.get("narrative_mode"),
         "case_structural_ref": concept.get("case_structural_ref"),
         "visual_anchor": concept.get("visual_anchor"),
         "storyboard_shape": concept.get("storyboard_shape"),
+    }
+
+
+def reuse_intent_contract(
+    reuse_intent: str | None,
+    historical_content_refs: list[str] | None = None,
+) -> dict[str, Any]:
+    resolved = reuse_intent or "novel_content"
+    if resolved not in {"novel_content", "cross_profile_repurpose"}:
+        raise ValueError("Unsupported Content reuse_intent.")
+    repurpose = resolved == "cross_profile_repurpose"
+    return {
+        "reuse_intent": resolved,
+        "reused_semantic_content": repurpose,
+        "novel_content": not repurpose,
+        "novel_capacity_eligible": not repurpose,
+        "historical_exposure_reset": False,
+        "historical_content_refs": sorted(set(historical_content_refs or [])),
     }
 
 
@@ -947,6 +968,14 @@ def build_content_plan(
     )
     weights = config.get("editorial_weights") or DEFAULT_EDITORIAL_WEIGHTS
     requested = int(request.get("quantity") or 0)
+    target_profile = request.get("target_profile") or request.get("profile")
+    if target_profile not in {"news", "mix"}:
+        raise ValueError("Content Plan target_profile must resolve to news or mix.")
+    reuse_contract = reuse_intent_contract(request.get("reuse_intent"))
+    if not reuse_contract["novel_capacity_eligible"]:
+        raise ValueError(
+            "cross_profile_repurpose cannot enter the novel-content capacity planner."
+        )
     entries = list(ledger.get("entries") or [])
     invalid_candidates: list[dict[str, Any]] = [
         dict(item) for item in (prevalidated_invalid_candidates or [])
@@ -983,6 +1012,7 @@ def build_content_plan(
             continue
         normalized["speaker_id"] = speaker_id
         normalized["speaker_type"] = speaker_type
+        normalized["production_profile"] = target_profile
         normalized["semantic_signature"] = semantic_signature(normalized, business_id)
         normalized["presentation_signature"] = presentation_signature(
             normalized,
@@ -1079,7 +1109,9 @@ def build_content_plan(
         "business_id": business_id,
         "speaker_id": speaker_id,
         "speaker_type": speaker_type,
-        "profile": request.get("profile"),
+        "profile": target_profile,
+        "target_profile": target_profile,
+        "reuse_intent_contract": reuse_contract,
         "candidate_pool": {
             "configured_size": int(
                 config.get("candidate_pool_size", DEFAULT_CANDIDATE_POOL_SIZE)
@@ -1177,14 +1209,14 @@ def build_content_plan(
 
 
 def build_storyboard_plan(content_plan: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "schema_version": STORYBOARD_SCHEMA_VERSION,
-        "created_at": content_plan.get("created_at"),
-        "request_id": content_plan.get("request_id"),
-        "content_plan_sha256": canonical_sha256(content_plan),
-        "items": [
+    profile = content_plan.get("target_profile") or content_plan.get("profile")
+    if profile not in {"news", "mix"}:
+        raise ValueError("Storyboard Plan profile must resolve to news or mix.")
+    if profile == "mix":
+        items = [
             {
                 "concept_ref": concept["concept_id"],
+                "profile": "mix",
                 "visual_anchor": concept.get("visual_anchor"),
                 "hero_shot_role": concept.get("hero_shot_role"),
                 "supporting_shot_roles": concept.get("supporting_shot_roles") or [],
@@ -1194,11 +1226,39 @@ def build_storyboard_plan(content_plan: dict[str, Any]) -> dict[str, Any]:
                 "storyboard_shape": concept.get("storyboard_shape"),
             }
             for concept in content_plan.get("selected_concepts") or []
-        ],
+        ]
+        contract_shape = "narration_to_visual_many_to_many"
+    else:
+        items = [
+            {
+                "concept_ref": concept["concept_id"],
+                "profile": "news",
+                "micro_beats": concept.get("micro_beats") or [],
+                "contract_fields": [
+                    "semantic_role",
+                    "text",
+                    "visual_state",
+                    "order",
+                    "duration_guidance",
+                    "evidence_lineage",
+                ],
+            }
+            for concept in content_plan.get("selected_concepts") or []
+        ]
+        contract_shape = "micro_beat_sequence"
+    return {
+        "schema_version": STORYBOARD_SCHEMA_VERSION,
+        "created_at": content_plan.get("created_at"),
+        "request_id": content_plan.get("request_id"),
+        "profile": profile,
+        "storyboard_contract_shape": contract_shape,
+        "content_plan_sha256": canonical_sha256(content_plan),
+        "items": items,
         "authority": {
             "planning_only": True,
             "video_editing_performed": False,
             "excel_contract_changed": False,
+            "storyboard_diversity_resets_semantic_novelty": False,
         },
     }
 
@@ -1457,6 +1517,8 @@ def build_ledger_seed(
                 "content_id": analysis["content_id"],
                 "business_id": baseline_analysis["business_id"],
                 "speaker_id": analysis.get("speaker_id"),
+                "production_profile": approved_batch.get("profile"),
+                "reuse_intent": "novel_content",
                 "batch_ref": approved_batch.get("request_id"),
                 "semantic_signature": analysis["semantic_signature"],
                 "presentation_signature": analysis["presentation_signature"],
@@ -1532,6 +1594,9 @@ def review_batch_ledger_entries(
                 "content_id": item["content_id"],
                 "business_id": item.get("persona_ref", {}).get("persona_id"),
                 "speaker_id": item.get("speaker_ref", {}).get("persona_id"),
+                "production_profile": generation_batch.get("profile"),
+                "reuse_intent": generation_batch.get("reuse_intent")
+                or "novel_content",
                 "batch_ref": generation_batch.get("request_id"),
                 "semantic_signature": item.get("semantic_signature"),
                 "presentation_signature": item.get("presentation_signature"),

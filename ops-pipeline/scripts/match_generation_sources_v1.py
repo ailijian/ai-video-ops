@@ -8,10 +8,16 @@ from typing import Any
 
 from build_persona_v1 import fact_is_known, persona_content_hash, sha256_file
 from privacy_projection_v1 import validate_case_privacy_gate
+from production_profile_v1 import (
+    COVERAGE_REPORT_SCHEMA_VERSION,
+    pattern_compatibility_record,
+    validate_registry,
+    validate_target_profile,
+)
 
 
 PLAN_VERSION = "generation-source-plan-v1.0"
-MATCHER_VERSION = "match_generation_sources_v1.py@0.2"
+MATCHER_VERSION = "match_generation_sources_v1.py@1.0"
 PROFILES = {"news", "mix"}
 CONTENT_INTENTS = {
     "persona",
@@ -100,8 +106,18 @@ def load_request(
             raise RuntimeError("Generation Request Speaker Persona revision mismatch.")
     elif speaker_persona is not None:
         raise RuntimeError("Speaker Persona supplied but not selected by Generation Request.")
-    if request.get("profile") not in PROFILES:
-        raise RuntimeError("Generation Request profile is invalid.")
+    legacy_profile = request.get("profile")
+    explicit_target = request.get("target_profile")
+    if legacy_profile and explicit_target and legacy_profile != explicit_target:
+        raise RuntimeError("Generation Request profile and target_profile conflict.")
+    target_profile = explicit_target or legacy_profile
+    if target_profile not in PROFILES:
+        raise RuntimeError(
+            "Generation Request target_profile must resolve to news or mix."
+        )
+    reuse_intent = request.get("reuse_intent") or "novel_content"
+    if reuse_intent not in {"novel_content", "cross_profile_repurpose"}:
+        raise RuntimeError("Generation Request reuse_intent is invalid.")
     if request.get("content_intent") not in CONTENT_INTENTS:
         raise RuntimeError("Generation Request content_intent is invalid.")
     quantity = int(request.get("quantity") or 0)
@@ -109,7 +125,48 @@ def load_request(
         raise RuntimeError("Generation Request quantity must be positive.")
     if not str(request.get("platform") or "").strip():
         raise RuntimeError("Generation Request platform is required.")
+    request = dict(request)
+    request["target_profile"] = target_profile
+    request.setdefault("profile", target_profile)
+    request["reuse_intent"] = reuse_intent
     return request, sha256_file(path)
+
+
+def load_profile_registry(path: Path | None) -> tuple[dict[str, Any] | None, str | None]:
+    if path is None:
+        return None, None
+    path = path.expanduser().resolve()
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    registry = read_json(path)
+    validate_registry(registry)
+    return registry, sha256_file(path)
+
+
+def load_compatibility_report(
+    path: Path | None,
+    registry_sha256: str | None,
+) -> tuple[dict[str, Any] | None, str | None]:
+    if path is None:
+        if registry_sha256 is not None:
+            raise RuntimeError(
+                "Canonical Profile Matching requires the Creative Coverage compatibility audit."
+            )
+        return None, None
+    if registry_sha256 is None:
+        raise RuntimeError("Creative Coverage compatibility audit requires a Profile Registry.")
+    path = path.expanduser().resolve()
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    report = read_json(path)
+    if report.get("schema_version") != COVERAGE_REPORT_SCHEMA_VERSION:
+        raise RuntimeError("Creative Coverage Report schema is invalid.")
+    if (report.get("source_registry_ref") or {}).get("sha256") != registry_sha256:
+        raise RuntimeError("Creative Coverage Report Registry SHA mismatch.")
+    authority = report.get("authority") or {}
+    if authority.get("can_change_compatibility") is not False:
+        raise RuntimeError("Coverage Report incorrectly claims Compatibility authority.")
+    return report, sha256_file(path)
 
 
 def load_patterns(paths: list[Path]) -> list[dict[str, Any]]:
@@ -222,18 +279,42 @@ def persona_capabilities(
 
 
 def pattern_eligibility(
-    pattern: dict[str, Any], request: dict[str, Any], capabilities: dict[str, bool]
+    pattern: dict[str, Any],
+    request: dict[str, Any],
+    capabilities: dict[str, bool],
+    registry: dict[str, Any] | None = None,
+    pattern_sha256: str | None = None,
 ) -> tuple[bool, str]:
     pattern_id = pattern.get("pattern_id")
+    target_profile = request.get("target_profile") or request.get("profile")
+    if registry is not None:
+        record = pattern_compatibility_record(
+            registry,
+            str(pattern_id),
+            str(pattern_sha256 or ""),
+        )
+        if record is None:
+            return False, "approved_pattern_has_no_canonical_profile_compatibility"
+        if target_profile not in record.get("compatible_profiles", []):
+            return False, f"profile_{target_profile}_outside_approved_pattern_compatibility"
+    else:
+        policy = PATTERN_POLICIES.get(str(pattern_id))
+        if policy is None:
+            return False, "approved_pattern_has_no_v1_production_scope_policy"
+        if target_profile not in policy["profiles"]:
+            return False, f"profile_{target_profile}_outside_approved_pattern_scope"
     policy = PATTERN_POLICIES.get(str(pattern_id))
     if policy is None:
-        return False, "approved_pattern_has_no_v1_production_scope_policy"
-    if request.get("profile") not in policy["profiles"]:
-        return False, f"profile_{request.get('profile')}_outside_approved_pattern_scope"
+        return False, "approved_pattern_has_no_v1_capability_policy"
     if policy["requires_process_material"] and not capabilities["process_material_available"]:
         return False, "persona_lacks_known_process_material"
     if policy["requires_story_or_operator_context"] and not capabilities["story_or_operator_context_available"]:
         return False, "persona_lacks_known_story_or_operator_context"
+    if registry is not None:
+        return True, (
+            "Approved Pattern has canonical target-profile compatibility and matches "
+            "the approved Persona capability policy."
+        )
     return True, (
         "Approved mix-scope Pattern matches a narration-oriented operator/business-story "
         "Persona with KNOWN real process material."
@@ -373,6 +454,8 @@ def build_source_plan(
     fingerprint_paths: list[Path],
     candidate_source_paths: list[Path] | None = None,
     speaker_persona_path: Path | None = None,
+    profile_registry_path: Path | None = None,
+    creative_coverage_report_path: Path | None = None,
 ) -> dict[str, Any]:
     persona_path = persona_path.expanduser().resolve()
     request_path = request_path.expanduser().resolve()
@@ -393,6 +476,17 @@ def build_source_plan(
         ):
             raise RuntimeError("Speaker Persona Business Persona lineage mismatch.")
     request, request_sha = load_request(request_path, persona, speaker_persona)
+    registry, registry_sha = load_profile_registry(profile_registry_path)
+    compatibility_report, compatibility_report_sha = load_compatibility_report(
+        creative_coverage_report_path,
+        registry_sha,
+    )
+    target_profile = str(request.get("target_profile"))
+    profile_contract = (
+        validate_target_profile(registry, target_profile)
+        if registry is not None
+        else None
+    )
     patterns = load_patterns(pattern_paths)
     case_sources = load_cases_and_fingerprints(case_paths, fingerprint_paths)
     capabilities = persona_capabilities(persona, speaker_persona)
@@ -400,7 +494,13 @@ def build_source_plan(
 
     eligible_patterns: list[dict[str, Any]] = []
     for item in patterns:
-        eligible, reason = pattern_eligibility(item["artifact"], request, capabilities)
+        eligible, reason = pattern_eligibility(
+            item["artifact"],
+            request,
+            capabilities,
+            registry,
+            item["sha256"],
+        )
         if eligible:
             eligible_patterns.append(item | {"eligibility_reason": reason})
         else:
@@ -417,14 +517,52 @@ def build_source_plan(
     selected_patterns: list[dict[str, Any]] = []
     selected_cases: list[dict[str, Any]] = []
     eligible_case_pool: list[dict[str, Any]] = []
+    assessment_by_case = {
+        item.get("case_id"): item
+        for item in (
+            (compatibility_report or {})
+            .get("case_profile_compatibility_audit", {})
+            .get("assessments", [])
+        )
+    }
     if eligible_patterns:
         selected_pattern = eligible_patterns[0]
         pattern = selected_pattern["artifact"]
+        selected_pattern_profile_record = (
+            pattern_compatibility_record(
+                registry,
+                str(pattern.get("pattern_id")),
+                selected_pattern["sha256"],
+            )
+            if registry is not None
+            else None
+        )
+        legacy_bridge_request_sha = str(
+            (
+                (selected_pattern_profile_record or {}).get("lineage") or {}
+            ).get("real_mix_request_sha256")
+            or ""
+        )
+        legacy_bridge_permitted = (
+            target_profile == "mix"
+            and bool(legacy_bridge_request_sha)
+            and request_sha == legacy_bridge_request_sha
+        )
         selected_patterns = [
             {
                 "pattern_id": pattern.get("pattern_id"),
                 "approved_pattern_sha": selected_pattern["sha256"],
                 "eligibility_reason": selected_pattern["eligibility_reason"],
+                "compatible_profiles": (
+                    selected_pattern_profile_record.get("compatible_profiles", [])
+                    if registry is not None
+                    else sorted(PATTERN_POLICIES[str(pattern.get("pattern_id"))]["profiles"])
+                ),
+                "profile_compatibility_status": (
+                    "approved_canonical_backfill"
+                    if registry is not None
+                    else "legacy_builtin_policy"
+                ),
                 "effectiveness_status": pattern.get("effectiveness", {}).get("status"),
                 "effectiveness_used_in_ranking": False,
             }
@@ -440,6 +578,52 @@ def build_source_plan(
                     }
                 )
                 continue
+            compatibility_basis = "legacy_builtin_pattern_scope"
+            compatibility_review_status = "legacy_not_profile_audited"
+            approved_case_profile_compatibility = False
+            if compatibility_report is not None:
+                assessment = assessment_by_case.get(case_id)
+                if not assessment:
+                    excluded.append(
+                        {
+                            "source_id": case_id,
+                            "source_type": "approved_case",
+                            "reason": "Case has no Profile Compatibility assessment.",
+                        }
+                    )
+                    continue
+                approved_profiles = set(
+                    assessment.get("approved_compatible_generation_profiles") or []
+                )
+                legacy_profiles = set(
+                    (assessment.get("legacy_current_truth") or {}).get(
+                        "compatible_profiles", []
+                    )
+                )
+                if target_profile in approved_profiles:
+                    compatibility_basis = "approved_profile_compatibility"
+                    compatibility_review_status = "approved"
+                    approved_case_profile_compatibility = True
+                elif legacy_bridge_permitted and target_profile in legacy_profiles:
+                    compatibility_basis = "legacy_current_truth_bridge"
+                    compatibility_review_status = str(
+                        assessment.get("review_status") or "review_required"
+                    )
+                else:
+                    excluded.append(
+                        {
+                            "source_id": case_id,
+                            "source_type": "approved_case",
+                            "status": "profile_compatibility_not_approved",
+                            "reason": (
+                                f"Case is not approved compatible with target_profile "
+                                f"{target_profile}; operator hint and observed profile are "
+                                "not eligibility authority, and the legacy bridge is scoped "
+                                "only to the frozen historical Request SHA."
+                            ),
+                        }
+                    )
+                    continue
             fingerprint = source["fingerprint"]["artifact"]
             ranking = case_ranking(
                 case_id, fingerprint, persona, request, pattern, capabilities
@@ -451,6 +635,10 @@ def build_source_plan(
                 "ranking_score": ranking["ranking_score"],
                 "ranking_components": ranking["ranking_components"],
                 "selection_reason": ranking["selection_reason"],
+                "target_profile": target_profile,
+                "profile_compatibility_basis": compatibility_basis,
+                "profile_compatibility_review_status": compatibility_review_status,
+                "approved_case_profile_compatibility": approved_case_profile_compatibility,
             }
             eligible_case_pool.append(entry)
         eligible_case_pool.sort(
@@ -458,7 +646,7 @@ def build_source_plan(
         )
         selected_cases = list(eligible_case_pool)
 
-    if request.get("profile") == "news" and not eligible_patterns:
+    if target_profile == "news" and not eligible_patterns:
         coverage_status = "insufficient"
         coverage_code = "research_coverage_insufficient"
         coverage_reason = (
@@ -468,10 +656,20 @@ def build_source_plan(
     elif eligible_patterns and selected_cases:
         coverage_status = "supported"
         coverage_code = "research_coverage_supported"
-        coverage_reason = (
-            "An Approved Pattern passes profile and Persona capability gates, with "
-            "multiple Approved Case/Fingerprint references available for rotation."
-        )
+        if any(
+            item.get("profile_compatibility_basis") == "legacy_current_truth_bridge"
+            for item in selected_cases
+        ):
+            coverage_reason = (
+                "The Approved Pattern passes canonical Mix Profile gates. Existing frozen "
+                "Cases remain available through an explicit legacy current-truth bridge; "
+                "their canonical Profile Compatibility still requires Human Review."
+            )
+        else:
+            coverage_reason = (
+                "An Approved Pattern and approved Profile-compatible Case pool pass all "
+                "hard gates."
+            )
     else:
         coverage_status = "insufficient"
         coverage_code = "research_coverage_insufficient"
@@ -520,6 +718,14 @@ def build_source_plan(
         "request": {
             "request_sha": request_sha,
             "profile": request.get("profile"),
+            "target_profile": target_profile,
+            "profile_resolution": (
+                "explicit_target_profile"
+                if request.get("target_profile")
+                and read_json(request_path).get("target_profile")
+                else "legacy_profile_field_resolved"
+            ),
+            "reuse_intent": request.get("reuse_intent"),
             "quantity": request.get("quantity"),
             "platform": request.get("platform"),
             "content_intent": request.get("content_intent"),
@@ -532,6 +738,43 @@ def build_source_plan(
             "status": coverage_status,
             "code": coverage_code,
             "reason": coverage_reason,
+            "missing_creative_coverage": (
+                (compatibility_report or {})
+                .get("profiles", {})
+                .get(target_profile, {})
+                .get("major_gaps", [])
+            ),
+            "canonical_approved_compatible_case_count": sum(
+                bool(item.get("approved_case_profile_compatibility"))
+                for item in selected_cases
+            ),
+            "legacy_current_truth_bridge_case_count": sum(
+                item.get("profile_compatibility_basis")
+                == "legacy_current_truth_bridge"
+                for item in selected_cases
+            ),
+            "legacy_bridge_scoped_to_historical_request_sha": True,
+        },
+        "production_profile_contract": {
+            "mode": "canonical_registry" if registry is not None else "legacy_builtin_compatibility",
+            "registry_schema_version": (
+                registry.get("schema_version") if registry is not None else None
+            ),
+            "registry_sha256": registry_sha,
+            "coverage_report_sha256": compatibility_report_sha,
+            "target_profile": target_profile,
+            "profile_status": profile_contract.get("status") if profile_contract else None,
+            "script_shape": (
+                profile_contract.get("script_contract", {}).get("shape")
+                if profile_contract
+                else None
+            ),
+            "storyboard_shape": (
+                profile_contract.get("storyboard_contract", {}).get("shape")
+                if profile_contract
+                else None
+            ),
+            "export_contract_compatible": profile_contract is not None,
         },
         "selected_patterns": selected_patterns,
         "eligible_case_pool": eligible_case_pool,
@@ -553,6 +796,11 @@ def build_source_plan(
             "case_facts_must_not_transfer": True,
             "effectiveness_claims_allowed": False,
             "pattern_scope_must_be_respected": True,
+            "target_profile_must_be_resolved": True,
+            "operator_profile_hint_cannot_grant_eligibility": True,
+            "observed_source_profile_cannot_grant_eligibility": True,
+            "new_cases_require_approved_profile_compatibility": registry is not None,
+            "legacy_case_bridge_limited_to_frozen_current_truth": registry is not None,
             "shared_privacy_gateway_required_before_future_remote_generation": True,
             "speaker_overlay_authority_enforced": speaker_persona is not None,
             "speaker_cannot_inherit_unauthorized_business_facts": True,
@@ -595,8 +843,19 @@ def build_source_plan(
             "input_sha_lineage_complete": True,
             "research_coverage_gate_applied": True,
             "news_does_not_fallback_to_mix": not (
-                request.get("profile") == "news" and selected_patterns
+                target_profile == "news" and selected_patterns
             ),
+            "target_profile_registered": registry is None
+            or target_profile in registry.get("profiles", {}),
+            "profile_contract_compatible": registry is None
+            or profile_contract is not None,
+            "approved_pattern_profile_compatibility_applied": registry is None
+            or all(
+                target_profile in item.get("compatible_profiles", [])
+                for item in selected_patterns
+            ),
+            "operator_profile_hint_used_for_eligibility": False,
+            "observed_source_profile_used_as_approval": False,
             "effectiveness_excluded_from_ranking": True,
             "remote_model_call_performed": False,
         },
@@ -636,6 +895,8 @@ def main() -> None:
     parser.add_argument("--case", action="append", required=True)
     parser.add_argument("--fingerprint", action="append", required=True)
     parser.add_argument("--candidate-source", action="append", default=[])
+    parser.add_argument("--profile-registry", required=True)
+    parser.add_argument("--creative-coverage-report", required=True)
     parser.add_argument(
         "--output-root",
         default=None,
@@ -650,6 +911,8 @@ def main() -> None:
         [Path(value) for value in args.fingerprint],
         [Path(value) for value in args.candidate_source],
         Path(args.speaker_persona) if args.speaker_persona else None,
+        Path(args.profile_registry),
+        Path(args.creative_coverage_report),
     )
     project_root = Path(__file__).resolve().parents[1]
     output_root = (

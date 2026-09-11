@@ -33,6 +33,7 @@ from content_quality_v1 import (  # noqa: E402
     novelty_evaluation,
     presentation_signature,
     render_content_capacity_replenishment_intake_markdown,
+    reuse_intent_contract,
     semantic_duplicate_reasons,
     semantic_signature,
     speaker_fit_evaluation,
@@ -304,6 +305,59 @@ class ContentQualityV1Tests(unittest.TestCase):
         new["semantic_signature"] = semantic_signature(new, self.BUSINESS_ID)
         self.assertTrue(semantic_duplicate_reasons(new, old))
 
+    def test_mix_history_blocks_same_semantic_content_in_news(self) -> None:
+        old = self.concept("OLD", "same_claim", production_profile="mix")
+        old["presentation_signature"] = presentation_signature(
+            old, old["speaker_id"], old["speaker_type"]
+        )
+        new = self.concept("NEW", "same_claim", production_profile="news")
+        new["semantic_signature"] = semantic_signature(new, self.BUSINESS_ID)
+        new["presentation_signature"] = presentation_signature(
+            new, new["speaker_id"], new["speaker_type"]
+        )
+        entry = self.ledger_entry(old)
+        entry["production_profile"] = "mix"
+        novelty = novelty_evaluation(new, [entry])
+        self.assertTrue(novelty["hard_duplicate"])
+        self.assertEqual(new["presentation_signature"]["production_profile"], "news")
+
+    def test_news_history_blocks_same_semantic_content_in_mix(self) -> None:
+        old = self.concept("OLD", "same_claim", production_profile="news")
+        new = self.concept("NEW", "same_claim", production_profile="mix")
+        entry = self.ledger_entry(old)
+        entry["production_profile"] = "news"
+        self.assertTrue(novelty_evaluation(new, [entry])["hard_duplicate"])
+
+    def test_production_profile_is_presentation_not_semantic_identity(self) -> None:
+        mix = self.concept("SAME", "same_claim", production_profile="mix")
+        news = self.concept("SAME", "same_claim", production_profile="news")
+        mix_semantic = semantic_signature(mix, self.BUSINESS_ID)
+        news_semantic = semantic_signature(news, self.BUSINESS_ID)
+        self.assertEqual(mix_semantic, news_semantic)
+        self.assertNotEqual(
+            presentation_signature(mix, self.SPEAKER_ID, "frontline_expert"),
+            presentation_signature(news, self.SPEAKER_ID, "frontline_expert"),
+        )
+
+    def test_cross_profile_repurpose_is_reused_content_not_novel_capacity(self) -> None:
+        contract = reuse_intent_contract(
+            "cross_profile_repurpose", ["historical_mix_001"]
+        )
+        self.assertTrue(contract["reused_semantic_content"])
+        self.assertFalse(contract["novel_content"])
+        self.assertFalse(contract["novel_capacity_eligible"])
+        self.assertFalse(contract["historical_exposure_reset"])
+
+    def test_profile_metadata_does_not_change_fact_authority(self) -> None:
+        candidate = self.concept("PROFILE", "claim", production_profile="news")
+        valid, errors = validate_candidate_authority(
+            candidate,
+            {"pricing_facts"},
+            {"speaker_role_facts"},
+        )
+        self.assertIsNotNone(valid)
+        self.assertEqual(errors, [])
+
     def test_same_customer_quote_and_takeaway_rejects(self) -> None:
         old = self.concept(
             "OLD",
@@ -551,7 +605,15 @@ class ContentQualityV1Tests(unittest.TestCase):
         self.assertFalse(plan["authority"]["pattern_effectiveness_used"])
         self.assertFalse(plan["opportunity_structure"]["case_determines_topic"])
         storyboard = build_storyboard_plan(plan)
+        self.assertEqual(storyboard["profile"], "mix")
+        self.assertEqual(
+            storyboard["storyboard_contract_shape"],
+            "narration_to_visual_many_to_many",
+        )
         self.assertFalse(storyboard["authority"]["excel_contract_changed"])
+        self.assertFalse(
+            storyboard["authority"]["storyboard_diversity_resets_semantic_novelty"]
+        )
 
     def test_selected_script_cannot_drift_into_historical_duplicate(self) -> None:
         historical = self.concept("OLD", "old_claim")
