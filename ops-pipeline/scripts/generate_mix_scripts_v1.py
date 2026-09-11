@@ -12,6 +12,26 @@ from pathlib import Path
 from typing import Any, Callable
 
 from openai import OpenAI
+from content_quality_v1 import (
+    DEFAULT_CANDIDATE_POOL_SIZE,
+    PLAN_SCHEMA_VERSION,
+    append_ledger_file,
+    build_comparison_scorecard,
+    build_content_gap_report_v1,
+    build_content_plan as build_quality_content_plan,
+    build_content_plan_v1_1_1,
+    build_content_plan_v1_1,
+    build_storyboard_plan,
+    build_v1_diagnostic_human_review,
+    build_v1_v1_1_v1_1_1_scorecard,
+    build_v1_vs_v1_1_scorecard,
+    enrich_ledger_with_communicated_information,
+    is_strong_memory,
+    replace_ledger_with_communicated_information,
+    review_batch_ledger_entries,
+    validate_script_against_plan,
+    write_new_json,
+)
 from privacy_projection_v1 import (
     PRIVACY_POLICY_VERSION,
     assert_safe_for_external_model,
@@ -21,14 +41,31 @@ from privacy_projection_v1 import (
 
 
 SCHEMA_VERSION = "generation-batch-v1.0"
-GENERATOR_VERSION = "generate_mix_scripts_v1.py@0.6.4"
-PROMPT_VERSION = "mix-script-generation-prompt-v1.9"
-REVIEW_PACK_VERSION = "generation-review-pack-v1.2"
+GENERATOR_VERSION = "generate_mix_scripts_v1.py@0.7"
+PROMPT_VERSION = "mix-script-generation-prompt-v2.0"
+REVIEW_PACK_VERSION = "generation-review-pack-v1.3"
 DEFAULT_MODEL = "deepseek-v4-flash"
 SIMILARITY_POLICY = "provisional_v1_not_frozen"
 MAX_SIMILARITY = 0.82
 CENTRAL_CLAIM_SIMILARITY = 0.72
 FACT_BUNDLE_OVERLAP = 0.80
+
+
+class RemoteAttemptError(RuntimeError):
+    def __init__(self, message: str, telemetry: dict[str, Any]):
+        super().__init__(message)
+        self.telemetry = telemetry
+
+
+def remote_failure_telemetry(exc: Exception) -> dict[str, Any]:
+    telemetry = dict(getattr(exc, "telemetry", {}) or {})
+    telemetry.setdefault("error_type", type(exc).__name__)
+    telemetry.setdefault("error_message", str(exc))
+    telemetry.setdefault("usage", {})
+    telemetry.setdefault("elapsed_seconds", None)
+    telemetry.setdefault("response_sha256", None)
+    telemetry["artifact_written"] = False
+    return telemetry
 GENERATION_FACT_FIELDS = (
     "public_display_name",
     "company_short_name",
@@ -151,6 +188,14 @@ GROUNDING_PATTERNS = (
     (
         "assumed_customer_behavior",
         r"反复调整[^。！？!?\n]{0,20}|与其[^。！？!?\n]{1,30}(?:不如|可以)",
+    ),
+    (
+        "unsupported_physical_display_location",
+        r"贴在窗口|窗口处[^。！？!?\n]{0,12}(?:价目表|价格标示)|价目表[^。！？!?\n]{0,8}窗口",
+    ),
+    (
+        "unsupported_observer_location",
+        r"站在窗口外|透过[^。！？!?\n]{0,10}窗口[^。！？!?\n]{0,10}看到",
     ),
 )
 SERVICE_PROCESS_TERMS = (
@@ -375,6 +420,55 @@ def canonical_sha256(value: Any) -> str:
     return sha256_text(payload)
 
 
+def persist_remote_failure_telemetry(
+    context: dict[str, Any],
+    phase: str,
+    attempt: int,
+    exc: Exception,
+    pre_call_audit: dict[str, Any] | None = None,
+) -> Path:
+    request_path = Path(context["paths"]["request"]).expanduser().resolve()
+    data_root = next(
+        (parent for parent in request_path.parents if parent.name == "data"),
+        request_path.parent,
+    )
+    output_dir = (
+        data_root
+        / "metrics"
+        / "generation_requests"
+        / str(context["request"].get("request_id") or "unknown_request")
+    )
+    output_dir.mkdir(parents=True, exist_ok=True)
+    telemetry = remote_failure_telemetry(exc)
+    record = {
+        "schema_version": "remote-attempt-telemetry-v1.1",
+        "created_at": now_iso(),
+        "request_id": context["request"].get("request_id"),
+        "phase": phase,
+        "attempt": attempt,
+        "elapsed_seconds": telemetry.get("elapsed_seconds"),
+        "provider_usage": telemetry.get("usage") or {},
+        "error_type": telemetry.get("error_type"),
+        "error_message": telemetry.get("error_message"),
+        "response_sha256": telemetry.get("response_sha256"),
+        "finish_reason": telemetry.get("finish_reason"),
+        "artifact_written": False,
+        "privacy": {
+            "pre_call_gate_passed": bool(pre_call_audit),
+            "rendered_prompt_sha256": (pre_call_audit or {}).get(
+                "rendered_prompt_sha256"
+            ),
+            "safe_input_sha256": (pre_call_audit or {}).get("safe_input_sha256"),
+        },
+    }
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    output_path = output_dir / f"{phase}-{attempt:02d}-{stamp}.json"
+    payload = json.dumps(record, ensure_ascii=False, indent=2).encode("utf-8")
+    with output_path.open("xb") as handle:
+        handle.write(payload)
+    return output_path
+
+
 def get_client() -> OpenAI:
     key = os.getenv("DEEPSEEK_API_KEY")
     if not key:
@@ -567,6 +661,28 @@ def validate_generation_inputs(
         raise RuntimeError("Mix Generator rejects non-mix Generation Requests.")
     if request.get("constraints", {}).get("generation_must_not_start") is True:
         raise RuntimeError("Generation Request explicitly forbids generation.")
+    quality = request.get("content_quality_v1") or {}
+    if isinstance(quality, dict) and quality.get("enabled") is True:
+        candidate_pool_size = int(
+            quality.get("candidate_pool_size", DEFAULT_CANDIDATE_POOL_SIZE)
+        )
+        minimum_score = float(quality.get("minimum_editorial_score", 3.25))
+        if candidate_pool_size <= 0:
+            raise RuntimeError("Content Quality candidate_pool_size must be positive.")
+        if not 0 <= minimum_score <= 5:
+            raise RuntimeError("Content Quality editorial threshold must be on 0-5 scale.")
+        constraints = request.get("constraints") or {}
+        forbidden_enables = (
+            "new_customer_facts_allowed",
+            "new_cases_allowed",
+            "external_research_allowed",
+            "auto_approval_allowed",
+            "excel_export_allowed",
+        )
+        if any(constraints.get(field) is True for field in forbidden_enables):
+            raise RuntimeError(
+                "Content Quality V1 request violates frozen experiment boundaries."
+            )
     if source_plan.get("coverage", {}).get("status") != "supported":
         raise RuntimeError("Generation Source Plan coverage is not supported.")
     if source_plan.get("request_id") != request.get("request_id"):
@@ -723,12 +839,561 @@ def generation_slots(context: dict[str, Any]) -> list[dict[str, Any]]:
     return build_content_angle_plan(context)["slots"]
 
 
+def content_quality_config(context: dict[str, Any]) -> dict[str, Any]:
+    value = context.get("request", {}).get("content_quality_v1") or {}
+    return dict(value) if isinstance(value, dict) else {}
+
+
+def content_quality_enabled(context: dict[str, Any]) -> bool:
+    return content_quality_config(context).get("enabled") is True
+
+
+def content_plan_output_schema_example() -> dict[str, Any]:
+    return {
+        "candidates": [
+            {
+                "concept_id": "CONCEPT_001",
+                "audience_need": "one concrete audience need",
+                "content_job": "one bounded editorial job",
+                "primary_topic": "one topic chosen only from approved facts",
+                "primary_fact_refs": ["exact_known_business_fact_field"],
+                "supporting_fact_refs": ["exact_known_business_fact_field"],
+                "speaker_fact_refs": ["exact_known_speaker_fact_field"],
+                "central_claim": "one bounded central claim",
+                "central_claim_key": "stable_semantic_key_independent_of_wording",
+                "exclusive_anchor": {
+                    "kind": "specific_price_time_person_process_scene_or_behavior",
+                    "value": "concrete authorized anchor or null",
+                    "fact_refs": ["exact_known_fact_field"],
+                },
+                "customer_story_ref": None,
+                "speaker_id": "supplied speaker id",
+                "opening_strategy": "opening plan only, not a written hook",
+                "narrative_mode": "narrative organization",
+                "visual_anchor": "one concrete hero visual",
+                "hero_shot_role": "hero shot purpose",
+                "supporting_shot_roles": ["supporting shot purpose"],
+                "storyboard_shape": None,
+                "why_publish": "specific information gain",
+            }
+        ]
+    }
+
+
+def render_content_plan_prompt(
+    safe_input: dict[str, Any],
+    candidate_pool_size: int,
+) -> str:
+    return (
+        "You plan Chinese short-video Content Concepts as JSON only. Do not write titles "
+        "or full narration. Return about the requested candidate_pool_size; quality and "
+        "semantic range matter more than filling the number. Use the supplied concept_id_range "
+        "for concept IDs so independently planned batches remain traceable.\n"
+        "Use only KNOWN facts in the supplied Business Persona and Speaker projections. "
+        "Never use UNKNOWN, REQUIRES_REVIEW, forbidden material, external research, "
+        "performance data, or facts from a Case. No Case content is supplied because Cases "
+        "may organize a selected concept later but may not decide what to say.\n"
+        "Treat historical_content_memory as content already said for this Business. Do not "
+        "repackage it by changing title, hook, speaker, wording, case, shot order, or narrative "
+        "style. speaker_id is presentation lineage, never a novelty reset key. A Speaker may "
+        "create information gain only through an explicit KNOWN speaker fact.\n"
+        "Each concept must make one central claim and distinguish Primary Facts from "
+        "Supporting Facts. Prefer specific authorized prices, times, people, feedback, "
+        "services, processes, scenes, numbers, or speaker behavior as exclusive anchors. "
+        "Do not call generic praise such as convenient, professional, or good service an "
+        "exclusive anchor. Reuse as supporting context is allowed; avoid making a recently "
+        "overused fact the primary center.\n"
+        "central_claim_key must be a stable semantic identifier for the claim, independent "
+        "of surface wording. Two equivalent claims must use the same key. If the fixed fact "
+        "space supports fewer worthwhile new concepts, return fewer concepts.\n\n"
+        "OUTPUT SCHEMA:\n"
+        + json.dumps(content_plan_output_schema_example(), ensure_ascii=False, indent=2)
+        + "\n\nSAFE CONTENT PLANNING CONTEXT:\n"
+        + json.dumps(
+            safe_input | {"candidate_pool_size": candidate_pool_size},
+            ensure_ascii=False,
+            indent=2,
+        )
+    )
+
+
+def prepare_content_plan_egress(
+    context: dict[str, Any],
+    ledger: dict[str, Any],
+    candidate_pool_size: int | None = None,
+    candidate_batch_index: int = 1,
+    candidate_batch_count: int = 1,
+    concept_start_index: int = 1,
+) -> tuple[dict[str, Any], str, dict[str, Any]]:
+    persona_projection = safe_persona_projection(context["persona"])
+    speaker_projection = (
+        safe_speaker_projection(context["speaker_persona"])
+        if context.get("speaker_persona")
+        else None
+    )
+    history = [
+        {
+            "content_ref": entry.get("content_id"),
+            "semantic_signature": entry.get("semantic_signature"),
+            "central_claim": entry.get("central_claim"),
+            "primary_fact_refs": entry.get("primary_fact_refs") or [],
+            "exclusive_anchor": entry.get("exclusive_anchor"),
+            "status": entry.get("status"),
+        }
+        for entry in ledger.get("entries") or []
+        if is_strong_memory(entry)
+        and entry.get("business_id") == context["persona"].get("persona_id")
+    ]
+    candidate_pool_size = int(
+        candidate_pool_size
+        if candidate_pool_size is not None
+        else content_quality_config(context).get(
+            "candidate_pool_size", DEFAULT_CANDIDATE_POOL_SIZE
+        )
+    )
+    safe_input = {
+        "business_persona": persona_projection,
+        "speaker_persona": speaker_projection,
+        "request": project_value(
+            {
+                "request_id": context["request"].get("request_id"),
+                "profile": context["request"].get("profile"),
+                "quantity": context["request"].get("quantity"),
+                "content_intent": context["request"].get("content_intent"),
+                "cta_intent": context["request"].get("cta_intent"),
+            },
+            "safe_verbatim",
+        ),
+        "historical_content_memory": project_value(history, "safe_semantic"),
+        "planning_boundaries": {
+            "case_determines_topic": False,
+            "case_facts_available": False,
+            "pattern_effectiveness_available": False,
+            "external_research_available": False,
+        },
+        "candidate_batch": {
+            "batch_index": candidate_batch_index,
+            "batch_count": candidate_batch_count,
+            "concept_id_range": (
+                f"CONCEPT_{concept_start_index:03d}.."
+                f"CONCEPT_{concept_start_index + candidate_pool_size - 1:03d}"
+            ),
+        },
+    }
+    prompt = render_content_plan_prompt(safe_input, candidate_pool_size)
+    runtime_projection_sha = canonical_sha256(
+        {
+            "business_persona": persona_projection,
+            "speaker_persona": speaker_projection,
+            "historical_content_memory": history,
+        }
+    )
+    audit = build_egress_audit(
+        safe_input=safe_input,
+        rendered_prompt=prompt,
+        privacy_context={"privacy_projection_sha256": runtime_projection_sha},
+    )
+    audit["projection_scope"] = (
+        "runtime_approved_known_facts_and_strong_business_content_memory"
+    )
+    audit["runtime_persona_projection_sha256"] = runtime_projection_sha
+    return safe_input, prompt, audit
+
+
+def build_content_plan_from_candidates_v1(
+    context: dict[str, Any],
+    ledger: dict[str, Any],
+    candidates: list[dict[str, Any]],
+    planning_call: dict[str, Any],
+    *,
+    created_at: str | None = None,
+    prevalidated_invalid_candidates: list[dict[str, Any]] | None = None,
+    received_size_override: int | None = None,
+) -> dict[str, Any]:
+    if not content_quality_enabled(context):
+        raise RuntimeError("Generation Request does not enable Content Quality V1.")
+    if ledger.get("schema_version") != "content-ledger-v1.0":
+        raise RuntimeError("Content Quality V1 requires content-ledger-v1.0.")
+    if ledger.get("business_id") != context["persona"].get("persona_id"):
+        raise RuntimeError("Content Ledger business_id mismatch.")
+
+    business_projection = safe_persona_projection(context["persona"])
+    speaker_projection = (
+        safe_speaker_projection(context["speaker_persona"])
+        if context.get("speaker_persona")
+        else None
+    )
+    allowed_fact_refs = set(business_projection["facts"])
+    allowed_speaker_refs = set((speaker_projection or {}).get("facts") or {})
+    blocked_terms = requires_review_blocked_terms(context["persona"])
+    if context.get("speaker_persona"):
+        blocked_terms.extend(
+            requires_review_blocked_terms(context["speaker_persona"])
+        )
+    blocked_terms.extend(flatten_strings(business_projection.get("guardrails") or {}))
+    blocked_terms.extend(flatten_strings((speaker_projection or {}).get("guardrails") or {}))
+    rotation = context["source_plan"].get("rotation", {}).get(
+        "case_rotation_order", []
+    ) or [
+        str(item["case_id"])
+        for item in context["source_plan"].get("eligible_case_pool") or []
+    ]
+    selected_pattern = context["source_plan"]["selected_patterns"][0]
+    source_lineage = {
+        "persona": {
+            "path": str(context["paths"]["persona"]),
+            "sha256": sha256_file(context["paths"]["persona"]),
+        },
+        "speaker_persona": (
+            {
+                "path": str(context["paths"]["speaker_persona"]),
+                "sha256": sha256_file(context["paths"]["speaker_persona"]),
+            }
+            if context.get("speaker_persona")
+            else None
+        ),
+        "request": {
+            "path": str(context["paths"]["request"]),
+            "sha256": sha256_file(context["paths"]["request"]),
+        },
+        "source_plan": {
+            "path": str(context["paths"]["source_plan"]),
+            "sha256": sha256_file(context["paths"]["source_plan"]),
+        },
+        "content_ledger_sha256": canonical_sha256(ledger),
+        "approved_pattern_id": selected_pattern.get("pattern_id"),
+        "eligible_case_ids": rotation,
+    }
+    return build_quality_content_plan(
+        request=context["request"],
+        business_id=context["persona"]["persona_id"],
+        speaker_id=(context.get("speaker_persona") or {}).get("persona_id"),
+        speaker_type=(context.get("speaker_persona") or {}).get("speaker_type"),
+        allowed_fact_refs=allowed_fact_refs,
+        allowed_speaker_fact_refs=allowed_speaker_refs,
+        ledger=ledger,
+        raw_candidates=candidates,
+        case_rotation=rotation,
+        pattern_id=selected_pattern["pattern_id"],
+        source_lineage=source_lineage,
+        config=content_quality_config(context),
+        planning_call=planning_call,
+        created_at=created_at,
+        authorized_fact_values=business_projection["facts"],
+        authorized_speaker_fact_values=(speaker_projection or {}).get("facts") or {},
+        blocked_terms=sorted(set(blocked_terms)),
+        prevalidated_invalid_candidates=prevalidated_invalid_candidates,
+        received_size_override=received_size_override,
+    )
+
+
+def generate_content_plan_v1(
+    context: dict[str, Any],
+    ledger: dict[str, Any],
+    model: str = DEFAULT_MODEL,
+    transport: Callable[[str], dict[str, Any]] | None = None,
+    created_at: str | None = None,
+) -> dict[str, Any]:
+    if not content_quality_enabled(context):
+        raise RuntimeError("Generation Request does not enable Content Quality V1.")
+    if ledger.get("schema_version") != "content-ledger-v1.0":
+        raise RuntimeError("Content Quality V1 requires content-ledger-v1.0.")
+    if ledger.get("business_id") != context["persona"].get("persona_id"):
+        raise RuntimeError("Content Ledger business_id mismatch.")
+    config = content_quality_config(context)
+    target_size = int(
+        config.get("candidate_pool_size", DEFAULT_CANDIDATE_POOL_SIZE)
+    )
+    per_call = max(1, min(int(config.get("candidate_call_batch_size", 10)), target_size))
+    batch_count = (target_size + per_call - 1) // per_call
+    remote_transport = transport or default_transport(model)
+    candidates: list[dict[str, Any]] = []
+    planning_calls: list[dict[str, Any]] = []
+    safe_input: dict[str, Any] | None = None
+    print(
+        "CONTENT CONCEPT PLANNING START "
+        f"target={target_size} batches={batch_count}",
+        flush=True,
+    )
+    for batch_index in range(1, batch_count + 1):
+        start_index = (batch_index - 1) * per_call + 1
+        requested_in_batch = min(per_call, target_size - len(candidates))
+        safe_input, prompt, pre_audit = prepare_content_plan_egress(
+            context,
+            ledger,
+            candidate_pool_size=requested_in_batch,
+            candidate_batch_index=batch_index,
+            candidate_batch_count=batch_count,
+            concept_start_index=start_index,
+        )
+        try:
+            result, post_audit = invoke_generation_transport(
+                safe_input=safe_input,
+                rendered_prompt=prompt,
+                pre_call_audit=pre_audit,
+                transport=remote_transport,
+            )
+        except Exception as exc:
+            failure = remote_failure_telemetry(exc)
+            telemetry_path = persist_remote_failure_telemetry(
+                context,
+                "content_planning",
+                batch_index,
+                exc,
+                pre_audit,
+            )
+            failure["telemetry_artifact_path"] = str(telemetry_path.resolve())
+            raise RemoteAttemptError(str(exc), failure) from exc
+        payload = result.get("payload")
+        batch_candidates = (
+            payload.get("candidates") if isinstance(payload, dict) else None
+        )
+        if not isinstance(batch_candidates, list):
+            failure_exc = RemoteAttemptError(
+                "Content Concept response candidates missing or invalid.",
+                {
+                    "error_type": "response_schema_failed",
+                    "error_message": (
+                        "Content Concept response candidates missing or invalid."
+                    ),
+                    "usage": result.get("usage") or {},
+                    "elapsed_seconds": result.get("elapsed_seconds"),
+                    "response_sha256": result.get("response_sha256"),
+                    "finish_reason": result.get("finish_reason"),
+                    "artifact_written": False,
+                },
+            )
+            telemetry_path = persist_remote_failure_telemetry(
+                context,
+                "content_planning",
+                batch_index,
+                failure_exc,
+                pre_audit,
+            )
+            failure = remote_failure_telemetry(failure_exc)
+            failure["telemetry_artifact_path"] = str(telemetry_path.resolve())
+            raise RemoteAttemptError(str(failure_exc), failure) from failure_exc
+        candidates.extend(batch_candidates[:requested_in_batch])
+        planning_calls.append(
+            {
+                "batch_index": batch_index,
+                "requested_candidate_count": requested_in_batch,
+                "received_candidate_count": len(batch_candidates),
+                "rendered_prompt_sha256": pre_audit["rendered_prompt_sha256"],
+                "safe_input_sha256": pre_audit["safe_input_sha256"],
+                "privacy_policy_version": pre_audit["privacy_policy_version"],
+                "pre_call_privacy_gate_passed": True,
+                "post_call_egress_audit_passed": (
+                    post_audit["rendered_prompt_sha256"]
+                    == pre_audit["rendered_prompt_sha256"]
+                ),
+                "response_sha256": result.get("response_sha256"),
+                "usage": result.get("usage") or {},
+                "elapsed_seconds": result.get("elapsed_seconds"),
+            }
+        )
+        print(
+            "CONTENT CONCEPT PLANNING BATCH "
+            f"{batch_index}/{batch_count} PASS received={len(batch_candidates)} "
+            f"elapsed={result.get('elapsed_seconds')}s "
+            f"tokens={(result.get('usage') or {}).get('total_tokens')}",
+            flush=True,
+        )
+    if safe_input is None:
+        raise RuntimeError("Content Concept planning did not prepare a safe input.")
+    planning_usage = {
+        key: sum(
+            int(call.get("usage", {}).get(key) or 0) for call in planning_calls
+        )
+        for key in ("prompt_tokens", "completion_tokens", "total_tokens")
+    }
+    planning_elapsed = round(
+        sum(float(call.get("elapsed_seconds") or 0) for call in planning_calls),
+        6,
+    )
+    planning_call = {
+        "remote_model_call_performed": True,
+        "remote_model_call_count": len(planning_calls),
+        "model": model,
+        "calls": planning_calls,
+        "usage": planning_usage,
+        "elapsed_seconds": planning_elapsed,
+        "pre_call_privacy_gate_passed_all": all(
+            call["pre_call_privacy_gate_passed"] for call in planning_calls
+        ),
+        "post_call_egress_audit_passed_all": all(
+            call["post_call_egress_audit_passed"] for call in planning_calls
+        ),
+    }
+    plan = build_content_plan_from_candidates_v1(
+        context,
+        ledger,
+        candidates,
+        planning_call,
+        created_at=created_at,
+    )
+    print(
+        "CONTENT CONCEPT PLANNING PASS "
+        f"received={len(candidates)} selected={len(plan['selected_concepts'])} "
+        f"capacity={plan['capacity']['status']} "
+        f"elapsed={planning_elapsed}s "
+        f"tokens={planning_usage.get('total_tokens')}",
+        flush=True,
+    )
+    return plan
+
+
+def reevaluate_content_plan_v1(
+    context: dict[str, Any],
+    ledger: dict[str, Any],
+    existing_plan: dict[str, Any],
+) -> dict[str, Any]:
+    validate_content_plan_input(context, existing_plan, ledger)
+    candidate_fields = (
+        "concept_id",
+        "audience_need",
+        "content_job",
+        "primary_topic",
+        "primary_fact_refs",
+        "supporting_fact_refs",
+        "speaker_fact_refs",
+        "central_claim",
+        "central_claim_key",
+        "exclusive_anchor",
+        "customer_story_ref",
+        "opening_strategy",
+        "narrative_mode",
+        "visual_anchor",
+        "storyboard_shape",
+        "hero_shot_role",
+        "supporting_shot_roles",
+        "why_publish",
+    )
+    candidates = [
+        {field: candidate.get(field) for field in candidate_fields}
+        for candidate in existing_plan.get("candidate_pool", {}).get("candidates") or []
+    ]
+    prevalidated_invalid = [
+        dict(item)
+        for item in existing_plan.get("novelty_gate", {}).get(
+            "rejected_candidates", []
+        )
+        if item.get("decision") == "authority_rejected"
+    ]
+    planning_call = json.loads(
+        json.dumps(existing_plan.get("planning_call") or {}, ensure_ascii=False)
+    )
+    planning_call["deterministic_reevaluation"] = {
+        "performed": True,
+        "remote_model_call_performed": False,
+        "reason": "quality_gate_policy_or_implementation_changed_before_script_generation",
+        "source_content_plan_sha256": canonical_sha256(existing_plan),
+    }
+    return build_content_plan_from_candidates_v1(
+        context,
+        ledger,
+        candidates,
+        planning_call,
+        created_at=existing_plan.get("created_at"),
+        prevalidated_invalid_candidates=prevalidated_invalid,
+        received_size_override=existing_plan.get("candidate_pool", {}).get(
+            "received_size"
+        ),
+    )
+
+
+def validate_content_plan_input(
+    context: dict[str, Any],
+    content_plan: dict[str, Any],
+    ledger: dict[str, Any],
+) -> None:
+    if content_plan.get("schema_version") != PLAN_SCHEMA_VERSION:
+        raise RuntimeError("Content Quality generation requires content-plan-v1.0.")
+    if content_plan.get("request_id") != context["request"].get("request_id"):
+        raise RuntimeError("Content Plan request_id mismatch.")
+    if content_plan.get("business_id") != context["persona"].get("persona_id"):
+        raise RuntimeError("Content Plan business_id mismatch.")
+    expected_speaker = (context.get("speaker_persona") or {}).get("persona_id")
+    if content_plan.get("speaker_id") != expected_speaker:
+        raise RuntimeError("Content Plan speaker_id mismatch.")
+    lineage = content_plan.get("lineage") or {}
+    expected_hashes = {
+        "persona": sha256_file(context["paths"]["persona"]),
+        "request": sha256_file(context["paths"]["request"]),
+        "source_plan": sha256_file(context["paths"]["source_plan"]),
+    }
+    for name, expected in expected_hashes.items():
+        if (lineage.get(name) or {}).get("sha256") != expected:
+            raise RuntimeError(f"Content Plan {name} SHA mismatch.")
+    if lineage.get("content_ledger_sha256") != canonical_sha256(ledger):
+        raise RuntimeError("Content Plan Content Ledger SHA mismatch.")
+    eligible_cases = {
+        str(item.get("case_id"))
+        for item in context["source_plan"].get("eligible_case_pool") or []
+    }
+    selected_pattern = context["source_plan"]["selected_patterns"][0]["pattern_id"]
+    selected_concepts = content_plan.get("selected_concepts") or []
+    capacity = content_plan.get("capacity") or {}
+    if int(capacity.get("selected_quantity") or 0) != len(selected_concepts):
+        raise RuntimeError("Content Plan selected quantity mismatch.")
+    if int(capacity.get("selected_quantity") or 0) > int(
+        capacity.get("high_quality_novel_capacity") or 0
+    ):
+        raise RuntimeError("Content Plan attempts capacity padding.")
+    if capacity.get("padding_generated") is not False:
+        raise RuntimeError("Content Plan capacity padding must be false.")
+    for concept in selected_concepts:
+        if concept.get("gate_decision") != "high_quality_novel":
+            raise RuntimeError("Content Plan contains a non-passing selected concept.")
+        signature = concept.get("semantic_signature") or {}
+        if signature.get("business_id") != context["persona"].get("persona_id"):
+            raise RuntimeError("Selected Semantic Signature business_id mismatch.")
+        presentation = concept.get("presentation_signature") or {}
+        if presentation.get("speaker_id") != expected_speaker:
+            raise RuntimeError("Selected Presentation Signature speaker_id mismatch.")
+        if str(concept.get("case_structural_ref")) not in eligible_cases:
+            raise RuntimeError("Content Plan selected an ineligible Case.")
+        if concept.get("pattern_ref") != selected_pattern:
+            raise RuntimeError("Content Plan selected a different Pattern.")
+    if content_plan.get("authority", {}).get("pattern_effectiveness_used") is not False:
+        raise RuntimeError("Content Plan must not use Pattern effectiveness.")
+
+
+def slots_from_content_plan(
+    context: dict[str, Any], content_plan: dict[str, Any]
+) -> list[dict[str, Any]]:
+    slots: list[dict[str, Any]] = []
+    for index, concept in enumerate(content_plan.get("selected_concepts") or [], start=1):
+        slots.append(
+            {
+                "slot_id": f"SLOT_{index:03d}",
+                "concept_ref": concept["concept_id"],
+                "selected_concept": concept,
+                "case_id": str(concept["case_structural_ref"]),
+                "primary_angle": concept["primary_topic"],
+                "primary_persona_fact_refs": concept["primary_fact_refs"],
+                "optional_secondary_fact_refs": concept.get("supporting_fact_refs") or [],
+                "speaker_fact_refs": concept.get("speaker_fact_refs") or [],
+                "opening_strategy": concept.get("opening_strategy"),
+                "narrative_mode": concept.get("narrative_mode"),
+                "selected_case_structural_reference": context["fingerprints"][
+                    str(concept["case_structural_ref"])
+                ]["surrogate_ref"],
+                "visual_anchor": concept.get("visual_anchor"),
+                "hero_shot_role": concept.get("hero_shot_role"),
+            }
+        )
+    return slots
+
+
 def output_schema_example() -> dict[str, Any]:
     return {
         "items": [
             {
                 "slot_id": "SLOT_001",
+                "concept_ref": "CONCEPT_001 when a selected Content Plan is supplied",
                 "central_claim": "one bounded candidate claim",
+                "central_claim_key": "selected semantic key when a Content Plan is supplied",
                 "title": "Chinese title",
                 "narration": "Chinese narration",
                 "persona_fact_refs_used": ["known_fact_field"],
@@ -779,6 +1444,39 @@ def render_generation_prompt(
                     "selected_case_structural_reference"
                 ),
                 "case_structure": safe_input["case_structures"][slot["case_id"]],
+                "selected_content_plan": (
+                    {
+                        "concept_ref": slot["concept_ref"],
+                        "audience_need": slot["selected_concept"]["audience_need"],
+                        "content_job": slot["selected_concept"]["content_job"],
+                        "primary_topic": slot["selected_concept"]["primary_topic"],
+                        "primary_fact_refs": slot["selected_concept"]["primary_fact_refs"],
+                        "supporting_fact_refs": slot["selected_concept"].get(
+                            "supporting_fact_refs", []
+                        ),
+                        "speaker_fact_refs": slot["selected_concept"].get(
+                            "speaker_fact_refs", []
+                        ),
+                        "central_claim": slot["selected_concept"]["central_claim"],
+                        "central_claim_key": slot["selected_concept"][
+                            "semantic_signature"
+                        ]["central_claim_key"],
+                        "exclusive_anchor": slot["selected_concept"].get(
+                            "exclusive_anchor"
+                        ),
+                        "opening_strategy": slot["selected_concept"].get(
+                            "opening_strategy"
+                        ),
+                        "narrative_mode": slot["selected_concept"].get(
+                            "narrative_mode"
+                        ),
+                        "visual_anchor": slot["selected_concept"].get(
+                            "visual_anchor"
+                        ),
+                    }
+                    if slot.get("selected_concept")
+                    else None
+                ),
             }
             for slot in remaining_slots
         ],
@@ -789,6 +1487,10 @@ def render_generation_prompt(
         "Use only KNOWN Persona facts in the supplied safe Persona projection. "
         "Never invent years, numbers, prices, locations, customer counts, repeat rates, "
         "rankings, qualifications, customer feedback, outcomes, guarantees, or effects.\n"
+        "Do not turn abstract visibility or transparency facts into unsupported physical "
+        "details. Unless a KNOWN fact states the location, never claim that a price is "
+        "posted at the window, that a price board is at a particular spot, or that a "
+        "viewer stands outside or looks through a specific window.\n"
         "Case structures are abstract references only. Never infer or copy any source "
         "Case client fact, narration, OCR, name, city, product, or claim.\n"
         "Apply the Approved Pattern as a flexible structural constraint, not a fixed "
@@ -801,6 +1503,12 @@ def render_generation_prompt(
         "may supplement but must not replace the primary angle. Do not repeat the full "
         "service-process sequence outside the dedicated process slot. Return a concise "
         "central_claim for deterministic diversity review.\n"
+        "When selected_content_plan is present, it is the frozen topic authority for this "
+        "generation item. Copy concept_ref, central_claim, and central_claim_key exactly. "
+        "Do not change audience_need, content_job, primary topic, Primary Fact Bundle, or "
+        "exclusive anchor. Use supporting facts only as support. You may improve natural "
+        "expression and implement the supplied opening and narrative mode, but must not "
+        "select another topic or drift toward historical content.\n"
         "Make every title, opening, central claim, and ending materially distinct. Write "
         "natural Chinese. Keep each narration concise enough for a short video.\n"
         "persona_fact_refs_used and each claim persona_fact_refs must contain exact field "
@@ -1053,7 +1761,18 @@ def invoke_generation_transport(
         post_call_audit.get(key) != pre_call_audit.get(key)
         for key in comparable_keys
     ):
-        raise RuntimeError("Generation pre-call and post-call Egress Audits differ.")
+        raise RemoteAttemptError(
+            "Generation pre-call and post-call Egress Audits differ.",
+            {
+                "error_type": "post_call_egress_audit_mismatch",
+                "error_message": "Generation pre-call and post-call Egress Audits differ.",
+                "usage": result.get("usage") or {},
+                "elapsed_seconds": result.get("elapsed_seconds"),
+                "response_sha256": result.get("response_sha256"),
+                "finish_reason": result.get("finish_reason"),
+                "artifact_written": False,
+            },
+        )
     return result, post_call_audit
 
 
@@ -1065,23 +1784,70 @@ def default_transport(model: str) -> Callable[[str], dict[str, Any]]:
         if client is None:
             client = get_client()
         started = time.perf_counter()
-        response = client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            response_format={"type": "json_object"},
-            temperature=0.7,
-            max_tokens=10000,
-            extra_body={"thinking": {"type": "disabled"}},
-        )
+        try:
+            response = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+                temperature=0.7,
+                max_tokens=10000,
+                extra_body={"thinking": {"type": "disabled"}},
+            )
+        except Exception as exc:
+            elapsed = round(time.perf_counter() - started, 6)
+            raise RemoteAttemptError(
+                "Remote provider call failed.",
+                {
+                    "error_type": "provider_call_failed",
+                    "error_message": str(exc),
+                    "usage": {},
+                    "elapsed_seconds": elapsed,
+                    "response_sha256": None,
+                    "finish_reason": None,
+                    "artifact_written": False,
+                },
+            ) from exc
         elapsed = time.perf_counter() - started
         content = response.choices[0].message.content
-        if not content:
-            raise RuntimeError("Remote Model returned empty content.")
-        return {
-            "payload": json.loads(content),
-            "response_sha256": sha256_text(content),
+        finish_reason = getattr(response.choices[0], "finish_reason", None)
+        telemetry = {
             "usage": usage_dict(response),
             "elapsed_seconds": round(elapsed, 6),
+            "response_sha256": sha256_text(content) if content else None,
+            "finish_reason": finish_reason,
+            "artifact_written": False,
+        }
+        if not content:
+            raise RemoteAttemptError(
+                "Remote Model returned empty content.",
+                telemetry
+                | {
+                    "error_type": "empty_response",
+                    "error_message": "Remote Model returned empty content.",
+                },
+            )
+        try:
+            payload = json.loads(content)
+        except json.JSONDecodeError as exc:
+            error_type = (
+                "truncated_json_response"
+                if finish_reason == "length"
+                else "json_parse_failed"
+            )
+            raise RemoteAttemptError(
+                "Remote Model response was not valid complete JSON.",
+                telemetry
+                | {
+                    "error_type": error_type,
+                    "error_message": str(exc),
+                },
+            ) from exc
+        return {
+            "payload": payload,
+            "response_sha256": telemetry["response_sha256"],
+            "usage": telemetry["usage"],
+            "elapsed_seconds": telemetry["elapsed_seconds"],
+            "finish_reason": finish_reason,
         }
 
     return call
@@ -1555,9 +2321,17 @@ def validate_generated_item(
             errors.append("duplicate_ending")
 
     normalized = {
+        "concept_ref": (
+            str(item.get("concept_ref")) if item.get("concept_ref") else None
+        ),
         "title": title,
         "narration": narration,
         "central_claim": central_claim,
+        "central_claim_key": (
+            str(item.get("central_claim_key"))
+            if item.get("central_claim_key")
+            else None
+        ),
         "persona_fact_refs_used": sorted(set(refs)),
         "speaker_fact_refs_used": sorted(set(speaker_refs)),
         "claim_candidates": claims,
@@ -1952,11 +2726,43 @@ def generate_batch(
     max_attempts: int = 3,
     transport: Callable[[str], dict[str, Any]] | None = None,
     created_at: str | None = None,
+    content_plan: dict[str, Any] | None = None,
+    content_ledger: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     request = context["request"]
     source_plan = context["source_plan"]
-    angle_plan = build_content_angle_plan(context)
-    slots = angle_plan["slots"]
+    quality_mode = content_quality_enabled(context)
+    if quality_mode:
+        if content_plan is None or content_ledger is None:
+            raise RuntimeError(
+                "Content Quality V1 generation requires Content Plan and Content Ledger."
+            )
+        validate_content_plan_input(context, content_plan, content_ledger)
+        slots = slots_from_content_plan(context, content_plan)
+        capacity = content_plan["capacity"]
+        angle_plan = {
+            "planning_version": PLAN_SCHEMA_VERSION,
+            "taxonomy_status": "content_quality_v1",
+            "requested_quantity": capacity["requested_quantity"],
+            "high_confidence_distinct_capacity": capacity[
+                "high_quality_novel_capacity"
+            ],
+            "planned_quantity": capacity["selected_quantity"],
+            "status": capacity["status"],
+            "reason": (
+                "Novelty and editorial gates support the requested quantity."
+                if capacity["status"] == "supported"
+                else "Fixed approved fact space supports fewer high-quality novel concepts than requested."
+            ),
+            "slots": slots,
+        }
+    else:
+        if content_plan is not None or content_ledger is not None:
+            raise RuntimeError(
+                "Legacy Generation Request must not receive Content Quality artifacts."
+            )
+        angle_plan = build_content_angle_plan(context)
+        slots = angle_plan["slots"]
     slot_by_id = {slot["slot_id"]: slot for slot in slots}
     accepted_by_slot: dict[str, dict[str, Any]] = {}
     rejected: list[dict[str, Any]] = []
@@ -2002,11 +2808,22 @@ def generate_batch(
                 transport=remote_transport,
             )
         except Exception as exc:
+            failure = remote_failure_telemetry(exc)
+            telemetry_path = persist_remote_failure_telemetry(
+                context,
+                "script_generation",
+                attempt_number,
+                exc,
+                pre_audit,
+            )
             rejected.append(
                 {
                     "attempt": attempt_number,
                     "scope": "transport_or_response",
                     "reason": str(exc),
+                    "error_type": failure.get("error_type"),
+                    "response_sha256": failure.get("response_sha256"),
+                    "telemetry_artifact_path": str(telemetry_path.resolve()),
                 }
             )
             attempts.append(
@@ -2022,8 +2839,13 @@ def generate_batch(
                     "privacy_policy_version": PRIVACY_POLICY_VERSION,
                     "pre_call_privacy_gate_passed": True,
                     "post_call_egress_audit_passed": False,
-                    "usage": {},
-                    "elapsed_seconds": None,
+                    "response_sha256": failure.get("response_sha256"),
+                    "usage": failure.get("usage") or {},
+                    "elapsed_seconds": failure.get("elapsed_seconds"),
+                    "finish_reason": failure.get("finish_reason"),
+                    "error_type": failure.get("error_type"),
+                    "artifact_written": False,
+                    "telemetry_artifact_path": str(telemetry_path.resolve()),
                     "error": str(exc),
                 }
             )
@@ -2035,14 +2857,37 @@ def generate_batch(
 
         payload = result.get("payload")
         items = payload.get("items") if isinstance(payload, dict) else None
+        contract_failure_path: Path | None = None
         if not isinstance(items, list):
             items = []
+            contract_failure = RemoteAttemptError(
+                "Generation response items missing or invalid.",
+                {
+                    "error_type": "response_schema_failed",
+                    "error_message": "Generation response items missing or invalid.",
+                    "usage": result.get("usage") or {},
+                    "elapsed_seconds": result.get("elapsed_seconds"),
+                    "response_sha256": result.get("response_sha256"),
+                    "finish_reason": result.get("finish_reason"),
+                    "artifact_written": False,
+                },
+            )
+            contract_failure_path = persist_remote_failure_telemetry(
+                context,
+                "script_generation",
+                attempt_number,
+                contract_failure,
+                pre_audit,
+            )
             rejected.append(
                 {
                     "attempt": attempt_number,
                     "scope": "response_contract",
                     "reason": "response_items_missing_or_invalid",
                     "response_sha256": result.get("response_sha256"),
+                    "telemetry_artifact_path": str(
+                        contract_failure_path.resolve()
+                    ),
                 }
             )
         seen_slots: set[str] = set()
@@ -2094,6 +2939,26 @@ def generate_batch(
                 )
                 continue
             slot = slot_by_id[slot_id]
+            if quality_mode:
+                drift_errors = validate_script_against_plan(
+                    normalized,
+                    slot["selected_concept"],
+                    list((content_ledger or {}).get("entries") or []),
+                )
+                if drift_errors:
+                    rejected_this_attempt += 1
+                    rejected.append(
+                        {
+                            "attempt": attempt_number,
+                            "response_index": response_index,
+                            "slot_id": slot_id,
+                            "concept_ref": slot.get("concept_ref"),
+                            "reasons": drift_errors,
+                            "candidate_sha256": canonical_sha256(raw_item),
+                            "candidate": raw_item,
+                        }
+                    )
+                    continue
             case_record = context["fingerprints"][slot["case_id"]]
             accepted_by_slot[slot_id] = normalized | {
                 "slot_id": slot_id,
@@ -2107,6 +2972,8 @@ def generate_batch(
                     "persona_fact_refs_valid": True,
                     "privacy_egress_gate_passed_before_generation": True,
                     "batch_duplicate_check_passed": True,
+                    "selected_content_plan_preserved": quality_mode,
+                    "script_level_novelty_passed": quality_mode,
                 },
             }
             accepted_this_attempt += 1
@@ -2143,7 +3010,20 @@ def generate_batch(
                 "response_sha256": result.get("response_sha256"),
                 "usage": result.get("usage", {}),
                 "elapsed_seconds": result.get("elapsed_seconds"),
-                "error": None,
+                "error_type": (
+                    "response_schema_failed" if contract_failure_path else None
+                ),
+                "artifact_written": contract_failure_path is None,
+                "telemetry_artifact_path": (
+                    str(contract_failure_path.resolve())
+                    if contract_failure_path
+                    else None
+                ),
+                "error": (
+                    "response_items_missing_or_invalid"
+                    if contract_failure_path
+                    else None
+                ),
             }
         )
         print(
@@ -2205,6 +3085,44 @@ def generate_batch(
                 },
                 "content_intent": request["content_intent"],
                 "slot_id": slot["slot_id"],
+                "concept_ref": slot.get("concept_ref"),
+                "semantic_signature": (
+                    slot.get("selected_concept", {}).get("semantic_signature")
+                    if quality_mode
+                    else None
+                ),
+                "presentation_signature": (
+                    slot.get("selected_concept", {}).get("presentation_signature")
+                    if quality_mode
+                    else None
+                ),
+                "editorial_summary": (
+                    slot.get("selected_concept", {}).get(
+                        "editorial_score_summary"
+                    )
+                    if quality_mode
+                    else None
+                ),
+                "novelty_summary": (
+                    slot.get("selected_concept", {}).get("novelty_summary")
+                    if quality_mode
+                    else None
+                ),
+                "exclusive_anchor": (
+                    slot.get("selected_concept", {}).get("exclusive_anchor")
+                    if quality_mode
+                    else None
+                ),
+                "visual_anchor": (
+                    slot.get("selected_concept", {}).get("visual_anchor")
+                    if quality_mode
+                    else None
+                ),
+                "hero_shot_role": (
+                    slot.get("selected_concept", {}).get("hero_shot_role")
+                    if quality_mode
+                    else None
+                ),
                 "primary_angle": slot["primary_angle"],
                 "primary_persona_fact_refs": slot["primary_persona_fact_refs"],
                 "optional_secondary_fact_refs": slot[
@@ -2268,23 +3186,67 @@ def generate_batch(
         "contents": contents,
         "rejected_generations": rejected,
         "content_angle_plan": angle_plan,
-        "content_capacity_assessment": {
-            key: angle_plan[key]
-            for key in (
-                "status",
-                "reason",
-                "requested_quantity",
-                "high_confidence_distinct_capacity",
-                "planned_quantity",
-            )
-        },
+        "content_plan_ref": (
+            {
+                "schema_version": content_plan.get("schema_version"),
+                "sha256": canonical_sha256(content_plan),
+                "request_id": content_plan.get("request_id"),
+            }
+            if quality_mode and content_plan
+            else None
+        ),
+        "content_capacity_assessment": (
+            {
+                "status": content_plan["capacity"]["status"],
+                "reason": angle_plan["reason"],
+                "requested_quantity": content_plan["capacity"][
+                    "requested_quantity"
+                ],
+                "high_quality_novel_capacity": content_plan["capacity"][
+                    "high_quality_novel_capacity"
+                ],
+                "selected_quantity": content_plan["capacity"][
+                    "selected_quantity"
+                ],
+                "planned_quantity": content_plan["capacity"][
+                    "selected_quantity"
+                ],
+                "padding_generated": False,
+            }
+            if quality_mode and content_plan
+            else {
+                key: angle_plan[key]
+                for key in (
+                    "status",
+                    "reason",
+                    "requested_quantity",
+                    "high_confidence_distinct_capacity",
+                    "planned_quantity",
+                )
+            }
+        ),
+        "batch_editorial_summary": (
+            content_plan.get("batch_editorial_summary")
+            if quality_mode and content_plan
+            else None
+        ),
         "batch_similarity": similarity_summary(contents),
         "batch_diversity_v0_2": diversity_v02,
         "review_flag_summary": review_flags,
         "generation_attempts": attempts,
         "usage": usage_totals,
+        "content_planning_usage": (
+            content_plan.get("planning_call", {}).get("usage", {})
+            if quality_mode and content_plan
+            else {}
+        ),
         "timing": {
             "remote_generation_elapsed_seconds": elapsed_total,
+            "remote_content_planning_elapsed_seconds": (
+                content_plan.get("planning_call", {}).get("elapsed_seconds")
+                if quality_mode and content_plan
+                else None
+            ),
             "attempt_count": len(attempts),
             "retry_count": max(0, len(attempts) - 1),
         },
@@ -2318,6 +3280,16 @@ def generate_batch(
                 "path": str(context["paths"]["source_plan"]),
                 "sha256": sha256_file(context["paths"]["source_plan"]),
             },
+            "content_plan": (
+                {"sha256": canonical_sha256(content_plan)}
+                if quality_mode and content_plan
+                else None
+            ),
+            "content_ledger": (
+                {"sha256": canonical_sha256(content_ledger)}
+                if quality_mode and content_ledger
+                else None
+            ),
             "approved_pattern": {
                 "path": str(context["paths"]["pattern"]),
                 "sha256": sha256_file(context["paths"]["pattern"]),
@@ -2356,6 +3328,10 @@ def generate_batch(
             "speaker_overlay_applied": context.get("speaker_persona") is not None,
             "speaker_business_facts_copied": False,
             "pattern_effectiveness_used": False,
+            "content_quality_v1_enabled": quality_mode,
+            "topic_selected_before_case_assignment": quality_mode,
+            "selected_content_plan_is_generation_authority": quality_mode,
+            "external_research_used": False,
             "proof_reinterpreted": False,
         },
         "validation": {
@@ -2389,6 +3365,20 @@ def generate_batch(
             "approved_pattern_only": True,
             "sha_lineage_complete": True,
             "privacy_gate_before_network": True,
+            "script_level_novelty_passed": (
+                full if quality_mode else None
+            ),
+            "content_plan_lineage_complete": (
+                bool(content_plan and content_ledger) if quality_mode else None
+            ),
+            "capacity_limited_is_valid": (
+                quality_mode
+                and full
+                and angle_plan.get("status") == "capacity_limited"
+            ),
+            "no_capacity_padding": (
+                len(contents) == planned_quantity if quality_mode else None
+            ),
         },
     }
     return batch
@@ -2641,8 +3631,23 @@ def generate_selective_revision_batch(
                 transport=remote_transport,
             )
         except Exception as exc:
+            failure = remote_failure_telemetry(exc)
+            telemetry_path = persist_remote_failure_telemetry(
+                context,
+                "selective_revision",
+                attempt_number,
+                exc,
+                pre_audit,
+            )
             rejected.append(
-                {"attempt": attempt_number, "scope": "transport_or_response", "reason": str(exc)}
+                {
+                    "attempt": attempt_number,
+                    "scope": "transport_or_response",
+                    "reason": str(exc),
+                    "error_type": failure.get("error_type"),
+                    "response_sha256": failure.get("response_sha256"),
+                    "telemetry_artifact_path": str(telemetry_path.resolve()),
+                }
             )
             attempts.append(
                 {
@@ -2655,8 +3660,13 @@ def generate_selective_revision_batch(
                     "privacy_policy_version": PRIVACY_POLICY_VERSION,
                     "pre_call_privacy_gate_passed": True,
                     "post_call_egress_audit_passed": False,
-                    "usage": {},
-                    "elapsed_seconds": None,
+                    "response_sha256": failure.get("response_sha256"),
+                    "usage": failure.get("usage") or {},
+                    "elapsed_seconds": failure.get("elapsed_seconds"),
+                    "finish_reason": failure.get("finish_reason"),
+                    "error_type": failure.get("error_type"),
+                    "artifact_written": False,
+                    "telemetry_artifact_path": str(telemetry_path.resolve()),
                     "error": str(exc),
                 }
             )
@@ -2668,14 +3678,39 @@ def generate_selective_revision_batch(
 
         payload = result.get("payload")
         items = payload.get("items") if isinstance(payload, dict) else None
+        contract_failure_path: Path | None = None
         if not isinstance(items, list):
             items = []
+            contract_failure = RemoteAttemptError(
+                "Selective Revision response items missing or invalid.",
+                {
+                    "error_type": "response_schema_failed",
+                    "error_message": (
+                        "Selective Revision response items missing or invalid."
+                    ),
+                    "usage": result.get("usage") or {},
+                    "elapsed_seconds": result.get("elapsed_seconds"),
+                    "response_sha256": result.get("response_sha256"),
+                    "finish_reason": result.get("finish_reason"),
+                    "artifact_written": False,
+                },
+            )
+            contract_failure_path = persist_remote_failure_telemetry(
+                context,
+                "selective_revision",
+                attempt_number,
+                contract_failure,
+                pre_audit,
+            )
             rejected.append(
                 {
                     "attempt": attempt_number,
                     "scope": "response_contract",
                     "reason": "response_items_missing_or_invalid",
                     "response_sha256": result.get("response_sha256"),
+                    "telemetry_artifact_path": str(
+                        contract_failure_path.resolve()
+                    ),
                 }
             )
         seen_slots: set[str] = set()
@@ -2781,7 +3816,20 @@ def generate_selective_revision_batch(
                 "response_sha256": result.get("response_sha256"),
                 "usage": result.get("usage", {}),
                 "elapsed_seconds": result.get("elapsed_seconds"),
-                "error": None,
+                "error_type": (
+                    "response_schema_failed" if contract_failure_path else None
+                ),
+                "artifact_written": contract_failure_path is None,
+                "telemetry_artifact_path": (
+                    str(contract_failure_path.resolve())
+                    if contract_failure_path
+                    else None
+                ),
+                "error": (
+                    "response_items_missing_or_invalid"
+                    if contract_failure_path
+                    else None
+                ),
             }
         )
         print(
@@ -3068,8 +4116,27 @@ def render_review_pack(
         f"Machine pass: `{batch['machine_pass_count']}/{batch['requested_quantity']}`",
         f"Rejected generation records: `{batch['rejected_generation_count']}`",
         f"Content capacity: `{capacity.get('status')}` "
-        f"(`{capacity.get('high_confidence_distinct_capacity')}` distinct angles; "
+        f"(`{capacity.get('high_quality_novel_capacity', capacity.get('high_confidence_distinct_capacity'))}` high-quality novel; "
         f"`{capacity.get('planned_quantity')}` planned)",
+        "Capacity padding generated: `"
+        + str(bool(capacity.get("padding_generated"))).lower()
+        + "`",
+        "Customer specificity distribution: `"
+        + json.dumps(
+            {
+                "customer_specific": (batch.get("batch_editorial_summary") or {}).get(
+                    "customer_specific_count"
+                ),
+                "category_specific": (batch.get("batch_editorial_summary") or {}).get(
+                    "category_specific_count"
+                ),
+                "generic": (batch.get("batch_editorial_summary") or {}).get(
+                    "generic_count"
+                ),
+            },
+            ensure_ascii=False,
+        )
+        + "`",
         "Angle distribution: `"
         + json.dumps(diversity.get("primary_angle_distribution", {}), ensure_ascii=False)
         + "`",
@@ -3096,6 +4163,7 @@ def render_review_pack(
                 "",
                 f"Content Intent: `{item['content_intent']}`",
                 f"Primary Angle: `{item.get('primary_angle')}`",
+                f"Concept Ref: `{item.get('concept_ref') or 'legacy_not_applicable'}`",
                 "Speaker: `"
                 + (
                     str(item.get("speaker_ref", {}).get("public_display_name"))
@@ -3114,6 +4182,16 @@ def render_review_pack(
                 item["narration"],
                 "",
                 f"Central Claim: {item.get('central_claim')}",
+                "Semantic Signature: `"
+                + json.dumps(item.get("semantic_signature"), ensure_ascii=False)
+                + "`",
+                "Exclusive Anchor: `"
+                + json.dumps(item.get("exclusive_anchor"), ensure_ascii=False)
+                + "`",
+                f"Visual Anchor: `{item.get('visual_anchor')}`",
+                "Editorial Summary: `"
+                + json.dumps(item.get("editorial_summary"), ensure_ascii=False)
+                + "`",
                 "Business Facts Used: "
                 + ", ".join(f"`{value}`" for value in item["persona_fact_refs_used"]),
                 "Speaker Facts Used: "
@@ -3240,6 +4318,27 @@ def write_batch(batch: dict[str, Any], output_root: Path) -> tuple[Path, Path, s
     return batch_path, review_path, batch_sha
 
 
+def replace_json_if_unchanged(
+    path: Path,
+    expected_current: dict[str, Any],
+    replacement: dict[str, Any],
+) -> str:
+    path = path.expanduser().resolve()
+    if read_json(path) != expected_current:
+        raise RuntimeError(f"Artifact changed before deterministic reevaluation: {path}")
+    payload = json.dumps(replacement, ensure_ascii=False, indent=2).encode("utf-8")
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    if temporary.exists():
+        raise RuntimeError(f"Artifact temporary replacement path already exists: {temporary}")
+    with temporary.open("xb") as handle:
+        handle.write(payload)
+    if read_json(path) != expected_current:
+        temporary.unlink(missing_ok=True)
+        raise RuntimeError(f"Artifact changed during deterministic reevaluation: {path}")
+    temporary.replace(path)
+    return hashlib.sha256(payload).hexdigest()
+
+
 def write_review_pack_for_existing_batch(
     batch_path: Path, output_path: Path | None = None
 ) -> tuple[Path, str, dict[str, Any]]:
@@ -3286,6 +4385,44 @@ def main() -> None:
     parser.add_argument("--model", default=DEFAULT_MODEL)
     parser.add_argument("--max-attempts", type=int, default=3)
     parser.add_argument(
+        "--content-ledger",
+        help="Content Ledger V1 required by an enabled Content Quality V1 request.",
+    )
+    parser.add_argument(
+        "--plan-only",
+        action="store_true",
+        help="Generate Content Plan V1 and Storyboard Plan V1 without scripts.",
+    )
+    parser.add_argument(
+        "--reevaluate-content-plan",
+        action="store_true",
+        help="Re-run only deterministic gates on an existing --content-plan; no remote call.",
+    )
+    parser.add_argument(
+        "--v1-1-reevaluate",
+        action="store_true",
+        help="Offline Historical Exposure backfill and V1.1 re-ranking; never generates scripts.",
+    )
+    parser.add_argument(
+        "--v1-1-1-closure",
+        action="store_true",
+        help="Offline V1.1.1 closure calibration and Content Gap Report; never calls a model or generates scripts.",
+    )
+    parser.add_argument("--content-plan")
+    parser.add_argument("--content-plan-output")
+    parser.add_argument("--storyboard-plan-output")
+    parser.add_argument("--baseline-analysis")
+    parser.add_argument("--comparison-output")
+    parser.add_argument("--v1-diagnostic-batch")
+    parser.add_argument("--v1-diagnostic-review-pack")
+    parser.add_argument("--v1-diagnostic-scorecard")
+    parser.add_argument("--v1-1-content-plan-output")
+    parser.add_argument("--v1-diagnostic-review-output")
+    parser.add_argument("--v1-diagnostic-content-plan")
+    parser.add_argument("--v1-1-diagnostic-content-plan")
+    parser.add_argument("--v1-1-1-content-plan-output")
+    parser.add_argument("--content-gap-output")
+    parser.add_argument(
         "--output-root",
         default=None,
         help="Default: <project>/data/generation_batches",
@@ -3325,6 +4462,317 @@ def main() -> None:
         [Path(value) for value in args.fingerprint],
         Path(args.speaker_persona) if args.speaker_persona else None,
     )
+    project_root = Path(__file__).resolve().parents[1]
+    ledger = read_json(Path(args.content_ledger)) if args.content_ledger else None
+    if args.v1_1_1_closure:
+        closure_required = {
+            "content-ledger": args.content_ledger,
+            "v1-diagnostic-content-plan": args.v1_diagnostic_content_plan,
+            "v1-1-diagnostic-content-plan": args.v1_1_diagnostic_content_plan,
+        }
+        closure_missing = [
+            name for name, value in closure_required.items() if not value
+        ]
+        if closure_missing:
+            parser.error(
+                "--v1-1-1-closure requires: " + ", ".join(closure_missing)
+            )
+        if args.plan_only or args.v1_1_reevaluate:
+            parser.error("--v1-1-1-closure is an independent offline mode.")
+        assert ledger is not None
+        v1_plan_path = Path(args.v1_diagnostic_content_plan).expanduser().resolve()
+        v1_1_plan_path = Path(
+            args.v1_1_diagnostic_content_plan
+        ).expanduser().resolve()
+        ledger_path = Path(args.content_ledger).expanduser().resolve()
+        preserved_source_paths = {
+            "content_plan_v1": v1_plan_path,
+            "content_plan_v1_1": v1_1_plan_path,
+            "content_ledger_v1": ledger_path,
+        }
+        source_hashes = {
+            name: sha256_file(path)
+            for name, path in preserved_source_paths.items()
+        }
+        v1_plan = read_json(v1_plan_path)
+        v1_1_plan = read_json(v1_1_plan_path)
+        closure_plan = build_content_plan_v1_1_1(
+            v1_1_plan=v1_1_plan,
+            ledger=ledger,
+            request=context["request"],
+            source_artifact_hashes=source_hashes,
+        )
+        closure_plan_output = (
+            Path(args.v1_1_1_content_plan_output)
+            if args.v1_1_1_content_plan_output
+            else project_root
+            / "data"
+            / "content_plans"
+            / str(context["request"]["request_id"])
+            / "revisions"
+            / "v1_1_1"
+            / "content_plan_v1_1_1.json"
+        )
+        gap_output = (
+            Path(args.content_gap_output)
+            if args.content_gap_output
+            else project_root
+            / "data"
+            / "content_gap_reports"
+            / str(context["request"]["request_id"])
+            / "content_gap_report_v1.json"
+        )
+        comparison_output = (
+            Path(args.comparison_output)
+            if args.comparison_output
+            else project_root
+            / "data"
+            / "comparisons"
+            / str(context["request"]["request_id"])
+            / "v1_vs_v1_1_vs_v1_1_1_content_quality_scorecard.json"
+        )
+        for output_path in (closure_plan_output, gap_output, comparison_output):
+            if output_path.expanduser().resolve().exists():
+                raise RuntimeError(
+                    f"V1.1.1 closure output already exists: {output_path}"
+                )
+        predicted_plan_sha = hashlib.sha256(
+            json.dumps(
+                closure_plan, ensure_ascii=False, indent=2
+            ).encode("utf-8")
+        ).hexdigest()
+        gap_report = build_content_gap_report_v1(
+            content_plan_v1_1_1=closure_plan,
+            ledger=ledger,
+            speaker_persona=context.get("speaker_persona"),
+            source_artifact_hashes={
+                "content_plan_v1_1_1": predicted_plan_sha,
+                "content_ledger_v1": source_hashes["content_ledger_v1"],
+            },
+        )
+        comparison = build_v1_v1_1_v1_1_1_scorecard(
+            v1_plan, v1_1_plan, closure_plan
+        )
+        plan_sha = write_new_json(closure_plan_output, closure_plan)
+        if plan_sha != predicted_plan_sha:
+            raise RuntimeError("V1.1.1 Content Plan write hash mismatch.")
+        gap_sha = write_new_json(gap_output, gap_report)
+        comparison_sha = write_new_json(comparison_output, comparison)
+        after_hashes = {
+            name: sha256_file(path)
+            for name, path in preserved_source_paths.items()
+        }
+        if after_hashes != source_hashes:
+            raise RuntimeError(
+                "A preserved V1/V1.1/Ledger artifact changed during V1.1.1."
+            )
+        print("CONTENT QUALITY V1.1.1 CLOSURE CALIBRATION PASS")
+        print("Remote model calls: 0")
+        print(
+            "CONCEPT_018: "
+            + str(
+                closure_plan["closure_calibration"][
+                    "concept_018_final_decision"
+                ]
+            )
+        )
+        print(
+            "Capacity: "
+            f"{closure_plan['capacity']['high_quality_novel_capacity']}/"
+            f"{closure_plan['capacity']['requested_quantity']} "
+            f"({closure_plan['capacity']['status']})"
+        )
+        print(f"V1.1.1 Content Plan SHA-256: {plan_sha}")
+        print(f"V1.1.1 Content Plan: {closure_plan_output.resolve()}")
+        print(f"Content Gap Report SHA-256: {gap_sha}")
+        print(f"Content Gap Report: {gap_output.resolve()}")
+        print(f"Comparison SHA-256: {comparison_sha}")
+        print(f"Comparison: {comparison_output.resolve()}")
+        return
+    if args.v1_1_reevaluate:
+        v1_1_required = {
+            "content-ledger": args.content_ledger,
+            "content-plan": args.content_plan,
+            "v1-diagnostic-batch": args.v1_diagnostic_batch,
+            "v1-diagnostic-review-pack": args.v1_diagnostic_review_pack,
+            "v1-diagnostic-scorecard": args.v1_diagnostic_scorecard,
+        }
+        v1_1_missing = [
+            name for name, value in v1_1_required.items() if not value
+        ]
+        if v1_1_missing:
+            parser.error(
+                "--v1-1-reevaluate requires: " + ", ".join(v1_1_missing)
+            )
+        if args.plan_only:
+            parser.error("--v1-1-reevaluate is already a plan-only offline mode.")
+        assert ledger is not None
+        v1_plan_path = Path(args.content_plan).expanduser().resolve()
+        v1_batch_path = Path(args.v1_diagnostic_batch).expanduser().resolve()
+        v1_review_path = Path(args.v1_diagnostic_review_pack).expanduser().resolve()
+        v1_scorecard_path = Path(args.v1_diagnostic_scorecard).expanduser().resolve()
+        source_artifact_paths = {
+            "content_plan_v1": v1_plan_path,
+            "generation_batch_v1": v1_batch_path,
+            "generation_review_pack_v1": v1_review_path,
+            "comparison_scorecard_v1": v1_scorecard_path,
+        }
+        source_artifact_hashes = {
+            name: sha256_file(path) for name, path in source_artifact_paths.items()
+        }
+        v1_plan = read_json(v1_plan_path)
+        v1_batch = read_json(v1_batch_path)
+        business_projection = safe_persona_projection(context["persona"])
+        enriched_ledger = enrich_ledger_with_communicated_information(
+            ledger,
+            context["persona"],
+            sha256_file(context["paths"]["persona"]),
+            set(business_projection["facts"]),
+        )
+        human_diagnostic = build_v1_diagnostic_human_review(v1_batch, v1_plan)
+        v1_1_plan = build_content_plan_v1_1(
+            v1_plan=v1_plan,
+            ledger=enriched_ledger,
+            request=context["request"],
+            speaker_type=(context.get("speaker_persona") or {}).get(
+                "speaker_type"
+            ),
+            authorized_fact_values=business_projection["facts"],
+            source_artifact_hashes=source_artifact_hashes,
+        )
+        v1_vs_v1_1 = build_v1_vs_v1_1_scorecard(
+            v1_plan, v1_1_plan, human_diagnostic
+        )
+        v1_1_plan_path = (
+            Path(args.v1_1_content_plan_output)
+            if args.v1_1_content_plan_output
+            else project_root
+            / "data"
+            / "content_plans"
+            / str(context["request"]["request_id"])
+            / "revisions"
+            / "v1_1"
+            / "content_plan_v1_1.json"
+        )
+        human_diagnostic_path = (
+            Path(args.v1_diagnostic_review_output)
+            if args.v1_diagnostic_review_output
+            else project_root
+            / "data"
+            / "content_reviews"
+            / str(context["request"]["request_id"])
+            / "v1_diagnostic_human_review_v1_1.json"
+        )
+        comparison_path = (
+            Path(args.comparison_output)
+            if args.comparison_output
+            else project_root
+            / "data"
+            / "comparisons"
+            / str(context["request"]["request_id"])
+            / "v1_vs_v1_1_content_quality_scorecard.json"
+        )
+        for output_path in (
+            v1_1_plan_path,
+            human_diagnostic_path,
+            comparison_path,
+        ):
+            if output_path.expanduser().resolve().exists():
+                raise RuntimeError(f"V1.1 diagnostic output already exists: {output_path}")
+        ledger_sha = replace_ledger_with_communicated_information(
+            Path(args.content_ledger), ledger, enriched_ledger
+        )
+        plan_sha = write_new_json(v1_1_plan_path, v1_1_plan)
+        human_sha = write_new_json(human_diagnostic_path, human_diagnostic)
+        comparison_sha = write_new_json(comparison_path, v1_vs_v1_1)
+        after_hashes = {
+            name: sha256_file(path) for name, path in source_artifact_paths.items()
+        }
+        if after_hashes != source_artifact_hashes:
+            raise RuntimeError("A preserved V1 diagnostic artifact changed during V1.1.")
+        print("CONTENT QUALITY V1.1 OFFLINE RE-EVALUATION PASS")
+        print("Remote model calls: 0")
+        print(
+            "Capacity: "
+            f"{v1_1_plan['capacity']['high_quality_novel_capacity']}/"
+            f"{v1_1_plan['capacity']['requested_quantity']} "
+            f"({v1_1_plan['capacity']['status']})"
+        )
+        print(
+            "Novelty survivors: "
+            f"{v1_1_plan['capacity']['novelty_surviving_capacity']}"
+        )
+        print(f"Content Ledger V1.1 SHA-256: {ledger_sha}")
+        print(f"Updated Content Plan SHA-256: {plan_sha}")
+        print(f"Updated Content Plan: {v1_1_plan_path.resolve()}")
+        print(f"Human Diagnostic SHA-256: {human_sha}")
+        print(f"Human Diagnostic: {human_diagnostic_path.resolve()}")
+        print(f"V1 vs V1.1 Scorecard SHA-256: {comparison_sha}")
+        print(f"V1 vs V1.1 Scorecard: {comparison_path.resolve()}")
+        return
+    if args.plan_only:
+        if ledger is None:
+            parser.error("--plan-only requires --content-ledger.")
+        existing_plan = None
+        if args.reevaluate_content_plan:
+            if not args.content_plan:
+                parser.error("--reevaluate-content-plan requires --content-plan.")
+            existing_plan = read_json(Path(args.content_plan))
+            plan = reevaluate_content_plan_v1(context, ledger, existing_plan)
+        else:
+            plan = generate_content_plan_v1(context, ledger, args.model)
+        content_plan_path = (
+            Path(args.content_plan_output)
+            if args.content_plan_output
+            else Path(args.content_plan)
+            if args.reevaluate_content_plan and args.content_plan
+            else project_root
+            / "data"
+            / "content_plans"
+            / str(context["request"]["request_id"])
+            / "content_plan_v1.json"
+        )
+        storyboard_path = (
+            Path(args.storyboard_plan_output)
+            if args.storyboard_plan_output
+            else project_root
+            / "data"
+            / "storyboard_plans"
+            / str(context["request"]["request_id"])
+            / "storyboard_plan_v1.json"
+        )
+        if existing_plan is not None and content_plan_path.expanduser().resolve().is_file():
+            plan_sha = replace_json_if_unchanged(
+                content_plan_path, existing_plan, plan
+            )
+        else:
+            plan_sha = write_new_json(content_plan_path, plan)
+        storyboard = build_storyboard_plan(plan)
+        if args.reevaluate_content_plan and storyboard_path.expanduser().resolve().is_file():
+            existing_storyboard = read_json(storyboard_path)
+            if existing_plan is not None and existing_storyboard.get(
+                "content_plan_sha256"
+            ) != canonical_sha256(existing_plan):
+                raise RuntimeError(
+                    "Existing Storyboard Plan does not reference the source Content Plan."
+                )
+            storyboard_sha = replace_json_if_unchanged(
+                storyboard_path, existing_storyboard, storyboard
+            )
+        else:
+            storyboard_sha = write_new_json(storyboard_path, storyboard)
+        print("CONTENT PLAN V1 PASS")
+        print(f"Status: {plan['capacity']['status']}")
+        print(
+            "Capacity: "
+            f"{plan['capacity']['selected_quantity']}/"
+            f"{plan['capacity']['requested_quantity']}"
+        )
+        print(f"Content Plan SHA-256: {plan_sha}")
+        print(f"Content Plan: {content_plan_path.resolve()}")
+        print(f"Storyboard Plan SHA-256: {storyboard_sha}")
+        print(f"Storyboard Plan: {storyboard_path.resolve()}")
+        return
     if args.selective_revision_batch:
         if not args.human_content_review:
             parser.error("Selective Revision requires --human-content-review.")
@@ -3375,8 +4823,14 @@ def main() -> None:
         if not revised_batch["validation"]["passed"]:
             raise SystemExit(2)
         return
-    batch = generate_batch(context, args.model, args.max_attempts)
-    project_root = Path(__file__).resolve().parents[1]
+    content_plan = read_json(Path(args.content_plan)) if args.content_plan else None
+    batch = generate_batch(
+        context,
+        args.model,
+        args.max_attempts,
+        content_plan=content_plan,
+        content_ledger=ledger,
+    )
     output_root = (
         Path(args.output_root).expanduser().resolve()
         if args.output_root
@@ -3394,6 +4848,31 @@ def main() -> None:
     print(f"Batch SHA-256: {batch_sha}")
     print(f"Batch: {batch_path}")
     print(f"Review Pack: {review_path}")
+    if content_plan and ledger is not None and args.content_ledger:
+        _updated_ledger, ledger_sha = append_ledger_file(
+            Path(args.content_ledger),
+            ledger,
+            review_batch_ledger_entries(batch),
+        )
+        print(f"Content Ledger appended SHA-256: {ledger_sha}")
+    if content_plan and args.baseline_analysis:
+        comparison = build_comparison_scorecard(
+            read_json(Path(args.baseline_analysis)),
+            content_plan,
+            batch,
+        )
+        comparison_path = (
+            Path(args.comparison_output)
+            if args.comparison_output
+            else project_root
+            / "data"
+            / "comparisons"
+            / str(batch["request_id"])
+            / "b0_vs_v1_content_quality_scorecard.json"
+        )
+        comparison_sha = write_new_json(comparison_path, comparison)
+        print(f"Comparison Scorecard SHA-256: {comparison_sha}")
+        print(f"Comparison Scorecard: {comparison_path.resolve()}")
     if not batch["validation"]["passed"]:
         raise SystemExit(2)
 
