@@ -1476,7 +1476,6 @@ class ContentQualityV1Tests(unittest.TestCase):
             ROOT / "data" / "generation_batches" / "real_shufang_mix_002" / "generation_batch_v1.json": "cfd78730f3b85f8f0c1a3c4360f3c43bce289411a1c08799b4f191ba8aa262b1",
             ROOT / "data" / "generation_batches" / "real_shufang_mix_002" / "generation_review_pack_v1.md": "ff6844f9c676c4b5804f72ad94ef741abbebad3ec0fbd28bbb25692f9c803b2e",
             ROOT / "data" / "comparisons" / "real_shufang_mix_002" / "b0_vs_v1_content_quality_scorecard.json": "8293ea43b6194460f90232311e67075713620947207058376fb4609a22992856",
-            ROOT / "data" / "content_ledgers" / "shufang_zhiyuan_community_canteen" / "content_ledger_v1.json": "dcdd0580738713bbf5ebbf279365963f017fcdc83c10884009685903579e57d6",
             ROOT / "data" / "content_plans" / "real_shufang_mix_002" / "revisions" / "v1_1" / "content_plan_v1_1.json": "0293516e3b1c7300dbc225810bb4a09d96d61933cf118bd82de43ed3ff54c868",
             ROOT / "data" / "content_reviews" / "real_shufang_mix_002" / "v1_diagnostic_human_review_v1_1.json": "1678ae2634271021c6d5a588b840e54ddc0024c1d3ff4694727a1006f5b9bc06",
             ROOT / "data" / "comparisons" / "real_shufang_mix_002" / "v1_vs_v1_1_content_quality_scorecard.json": "db637d40c9d0fd144495a67d61f0c12d1a9f56fffe49ce6da2d7121962acb75e",
@@ -1487,6 +1486,25 @@ class ContentQualityV1Tests(unittest.TestCase):
         for path, digest in expected.items():
             self.assertTrue(path.exists(), path)
             self.assertEqual(sha256(path), digest, path)
+        ledger_path = (
+            ROOT
+            / "data"
+            / "content_ledgers"
+            / "shufang_zhiyuan_community_canteen"
+            / "content_ledger_v1.json"
+        )
+        ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+        self.assertEqual(len(ledger["entries"]), 17)
+        history = ledger["extensions"]["presentation_history_v1"]
+        self.assertEqual(history["storage_policy"], "append_only")
+        self.assertFalse(history["semantic_novelty_authority"])
+        self.assertEqual(len(history["entries"]), 1)
+        presentation = history["entries"][0]
+        self.assertEqual(
+            presentation["source_content_ref"], "real_shufang_mix_001-C003"
+        )
+        self.assertFalse(presentation["semantic_novelty"])
+        self.assertFalse(presentation["communicated_information_units_created"])
 
     def test_replenishment_sources_keep_approved_persona_hashes(self) -> None:
         expected = {

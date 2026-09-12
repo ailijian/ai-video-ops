@@ -11,7 +11,14 @@ from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from mine_pattern_candidates_v1 import build_pattern_research  # noqa: E402
+from mine_pattern_candidates_v1 import (  # noqa: E402
+    build_news_pattern_candidate,
+    build_pattern_research,
+    validate_news_pattern_candidate,
+)
+
+
+ROOT = SCRIPTS.parent
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -244,6 +251,198 @@ class PatternResearchTests(unittest.TestCase):
         research, _candidates = self.build()
         self.assertFalse(research["authority"]["remote_model_used"])
         self.assertFalse(research["validation"]["remote_model_call_performed"])
+
+
+class NewsPatternCandidateTests(unittest.TestCase):
+    PRICE_ROOT = (
+        ROOT
+        / "data"
+        / "cross_case_research"
+        / "news"
+        / "price_offer_led_micro_information"
+    )
+    PRICE_COMPARISON = PRICE_ROOT / "price_offer_led_cross_case_comparison_v1.json"
+    PRICE_APPROVAL = (
+        PRICE_ROOT / "price_offer_led_cross_case_comparison_v1_human_approval_v1.json"
+    )
+    PRICE_CANDIDATE = (
+        ROOT
+        / "data"
+        / "patterns"
+        / "candidates"
+        / "pcv1_news_price_offer_led_micro_information"
+        / "pattern_candidate_v1.json"
+    )
+    PRICE_PACK = PRICE_CANDIDATE.parent / "pattern_candidate_human_review_pack_v1.md"
+    SCENE_ROOT = ROOT / "data" / "cross_case_research" / "news" / "scene_contrast"
+    SCENE_COMPARISON = SCENE_ROOT / "scene_contrast_cross_case_comparison_v1.json"
+    SCENE_APPROVAL = (
+        SCENE_ROOT / "scene_contrast_cross_case_comparison_v1_human_approval_v1.json"
+    )
+    SCENE_CANDIDATE = (
+        ROOT
+        / "data"
+        / "patterns"
+        / "candidates"
+        / "pcv1_news_scene_contrast"
+        / "pattern_candidate_v1.json"
+    )
+    SCENE_PACK = SCENE_CANDIDATE.parent / "pattern_candidate_human_review_pack_v1.md"
+
+    def load_candidates(self) -> tuple[dict, dict]:
+        return (
+            json.loads(self.PRICE_CANDIDATE.read_text(encoding="utf-8")),
+            json.loads(self.SCENE_CANDIDATE.read_text(encoding="utf-8")),
+        )
+
+    def test_candidates_stop_at_review_required_not_approved_pattern(self) -> None:
+        for candidate in self.load_candidates():
+            validate_news_pattern_candidate(candidate)
+            self.assertEqual(candidate["status"], "review_required")
+            self.assertEqual(candidate["candidate_state"], "candidate")
+            self.assertEqual(candidate["compatible_profile_candidate"], ["news"])
+            self.assertTrue(candidate["authority"]["candidate_only"])
+            self.assertFalse(candidate["authority"]["approved_pattern"])
+            self.assertFalse(candidate["authority"]["auto_approved"])
+
+    def test_price_candidate_scope_and_non_invariants_are_narrow(self) -> None:
+        price, _scene = self.load_candidates()
+        invariants = price["definition"]["candidate_invariants"]
+        self.assertEqual(price["scope"]["scope_limitation"], "price_offer_led_only")
+        self.assertEqual(
+            price["scope"]["explicitly_not_supported"], "generic_number_led"
+        )
+        self.assertFalse(any("explicit_scope" in value for value in invariants))
+        self.assertFalse(any("close" in value for value in invariants))
+        self.assertIn(
+            "independent_explicit_scope_beat",
+            price["definition"]["explicitly_not_frozen"],
+        )
+        self.assertIn("explicit_close", price["definition"]["explicitly_not_frozen"])
+
+    def test_scene_candidate_excludes_transformation_and_retains_boundary(self) -> None:
+        _price, scene = self.load_candidates()
+        invariants = scene["definition"]["candidate_invariants"]
+        self.assertFalse(any("transformation" in value for value in invariants))
+        self.assertEqual(scene["transformation_action"]["status"], "optional_enhancer")
+        self.assertFalse(scene["transformation_action"]["candidate_invariant"])
+        boundary = scene["boundary_evidence"]
+        self.assertEqual(boundary[0]["case_id"], "7616327461634652005")
+        self.assertTrue(boundary[0]["shared_core_preserved"])
+
+    def test_scene_same_subject_identity_remains_unresolved(self) -> None:
+        _price, scene = self.load_candidates()
+        question = scene["unresolved_questions"][0]
+        self.assertEqual(question["question_id"], "same_subject_identity_requirement")
+        self.assertEqual(question["status"], "unresolved")
+        self.assertIsNone(question["frozen_answer"])
+
+    def test_scene_contrast_does_not_become_verified_proof(self) -> None:
+        _price, scene = self.load_candidates()
+        proof = scene["proof_boundary"]
+        self.assertTrue(proof["observable_state_difference"])
+        self.assertFalse(proof["state_difference_is_automatically_verified_proof"])
+        self.assertFalse(proof["causality_proven"])
+        self.assertFalse(proof["service_effect_proven"])
+        self.assertFalse(proof["commercial_result_proven"])
+
+    def test_candidates_have_no_effectiveness_or_performance_authority(self) -> None:
+        for candidate in self.load_candidates():
+            self.assertEqual(candidate["effectiveness"]["status"], "unvalidated")
+            self.assertFalse(candidate["effectiveness"]["performance_data_available"])
+            self.assertFalse(candidate["effectiveness"]["performance_data_used"])
+            self.assertFalse(candidate["authority"]["effectiveness_claimed"])
+            self.assertFalse(candidate["authority"]["performance_authority_created"])
+            self.assertFalse(candidate["authority"]["remote_model_used"])
+
+    def test_candidate_lineage_preserves_cases_comparisons_and_mix_pattern(self) -> None:
+        inputs = (
+            (self.PRICE_COMPARISON, self.PRICE_APPROVAL),
+            (self.SCENE_COMPARISON, self.SCENE_APPROVAL),
+        )
+        case_paths: set[Path] = set()
+        for candidate in self.load_candidates():
+            for item in candidate["evidence"]:
+                case_paths.add(Path(item["approved_case_ref"]["path"]))
+        tracked_paths = list(case_paths) + [
+            self.PRICE_COMPARISON,
+            self.SCENE_COMPARISON,
+            ROOT
+            / "data"
+            / "patterns"
+            / "approved"
+            / "pcv1_narration_led_process_projection"
+            / "pattern_v1.json",
+        ]
+        before = {str(path): sha256(path) for path in tracked_paths}
+        for comparison, approval in inputs:
+            rebuilt = build_news_pattern_candidate(comparison, approval)
+            validate_news_pattern_candidate(rebuilt)
+        self.assertEqual(before, {str(path): sha256(path) for path in tracked_paths})
+        for candidate in self.load_candidates():
+            self.assertEqual(
+                candidate["lineage"]["comparison_ref"]["sha256"],
+                sha256(Path(candidate["lineage"]["comparison_ref"]["path"])),
+            )
+            self.assertEqual(
+                set(candidate["lineage"]["case_sha256"]),
+                set(candidate["scope"]["supported_case_ids"]),
+            )
+
+    def test_human_review_packs_are_self_contained(self) -> None:
+        for pack_path in (self.PRICE_PACK, self.SCENE_PACK):
+            text = pack_path.read_text(encoding="utf-8")
+            for heading in (
+                "## A. Pattern ID",
+                "## B. Compatible Profile Candidate",
+                "## C. Evidence Cases",
+                "## D. Comparison Source",
+                "## E. Candidate Summary",
+                "## F. Candidate Invariants",
+                "## G. Variants",
+                "## H. Boundary Evidence",
+                "## I. Counterexamples / Attacks",
+                "## J. Scope",
+                "## K. Scope Limitations",
+                "## L. Unresolved Questions",
+                "## M. Proof / Effectiveness Boundary",
+                "## N. Production Implications",
+                "## O. Explicitly NOT Frozen",
+            ):
+                self.assertIn(heading, text)
+            self.assertIn("Review Required / Not Approved", text)
+
+    def test_news_readiness_and_event_direction_remain_unchanged(self) -> None:
+        registry = json.loads(
+            (
+                ROOT
+                / "data"
+                / "production_profiles"
+                / "production_profile_registry_v1.json"
+            ).read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            registry["profiles"]["news"]["operational_readiness"],
+            "research_coverage_insufficient",
+        )
+        self.assertEqual(
+            registry["profiles"]["news"]["pattern_compatibility_policy"][
+                "approved_compatible_pattern_ids"
+            ],
+            [],
+        )
+        self.assertFalse(
+            (
+                ROOT
+                / "data"
+                / "patterns"
+                / "candidates"
+                / "pcv1_news_event_explanation"
+            ).exists()
+        )
+        for candidate in self.load_candidates():
+            self.assertFalse(candidate["authority"]["news_generation_performed"])
+            self.assertFalse(candidate["authority"]["news_excel_export_performed"])
 
 
 if __name__ == "__main__":

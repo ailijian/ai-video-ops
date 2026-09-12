@@ -11,7 +11,16 @@ from pathlib import Path
 SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
-from compare_approved_cases_v1 import build_comparison  # noqa: E402
+from compare_approved_cases_v1 import (  # noqa: E402
+    build_comparison,
+    build_comparison_human_approval,
+    build_generalized_research_comparison,
+    validate_comparison_human_approval,
+    validate_generalized_research_comparison,
+)
+
+
+ROOT = SCRIPTS.parent
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -164,6 +173,208 @@ class CrossCaseComparisonTests(unittest.TestCase):
             self.assertEqual(
                 item["fingerprint"]["source_case_sha256"], sha256(case_path)
             )
+
+
+class GeneralizedNewsCrossCaseComparisonTests(unittest.TestCase):
+    PRICE_BUNDLE = (
+        ROOT
+        / "data"
+        / "cross_case_research"
+        / "news"
+        / "price_offer_led_micro_information"
+        / "research_input_bundle_v1.json"
+    )
+    PRICE_COMPARISON = PRICE_BUNDLE.parent / "price_offer_led_cross_case_comparison_v1.json"
+    SCENE_BUNDLE = (
+        ROOT
+        / "data"
+        / "cross_case_research"
+        / "news"
+        / "scene_contrast"
+        / "research_input_bundle_v1.json"
+    )
+    SCENE_COMPARISON = SCENE_BUNDLE.parent / "scene_contrast_cross_case_comparison_v1.json"
+    PRICE_APPROVAL = (
+        PRICE_BUNDLE.parent
+        / "price_offer_led_cross_case_comparison_v1_human_approval_v1.json"
+    )
+    SCENE_APPROVAL = (
+        SCENE_BUNDLE.parent
+        / "scene_contrast_cross_case_comparison_v1_human_approval_v1.json"
+    )
+
+    def test_generalized_comparator_supports_three_approved_cases(self) -> None:
+        for path in (self.PRICE_BUNDLE, self.SCENE_BUNDLE):
+            result = build_generalized_research_comparison(path)
+            validate_generalized_research_comparison(result)
+            self.assertEqual(result["case_count"], 3)
+            self.assertEqual(result["status"], "review_required")
+            self.assertFalse(result["pattern_candidate_eligibility"]["creates_pattern_candidate"])
+
+    def test_generalized_comparator_is_not_hardcoded_to_exactly_three(self) -> None:
+        bundle = json.loads(self.PRICE_BUNDLE.read_text(encoding="utf-8"))
+        bundle["cases"] = bundle["cases"][:2]
+        bundle["canonical_approved_case_count"] = 2
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "two_case_research_bundle.json"
+            write_json(path, bundle)
+            result = build_generalized_research_comparison(path)
+        self.assertEqual(result["case_count"], 2)
+        self.assertTrue(result["validation"]["minimum_two_cases_supported"])
+        self.assertFalse(result["validation"]["exact_case_count_hardcoded"])
+        self.assertEqual(result["candidate_research_readiness"], "needs_more_evidence")
+
+    def test_majority_similarity_does_not_automatically_become_invariant(self) -> None:
+        price = json.loads(self.PRICE_COMPARISON.read_text(encoding="utf-8"))
+        scene = json.loads(self.SCENE_COMPARISON.read_text(encoding="utf-8"))
+        majority = [
+            item
+            for result in (price, scene)
+            for item in result["variants"]
+            if item["status"] == "supported_majority"
+        ]
+        self.assertTrue(majority)
+        self.assertTrue(
+            all(not item["eligible_as_candidate_invariant"] for item in majority)
+        )
+
+    def test_price_scope_and_scope_beat_fail_closed(self) -> None:
+        result = json.loads(self.PRICE_COMPARISON.read_text(encoding="utf-8"))
+        self.assertEqual(
+            result["scope_statement"]["current_evidence_supports"],
+            "price_offer_led_micro_information",
+        )
+        self.assertEqual(
+            result["scope_statement"]["current_evidence_does_not_yet_support"],
+            "broader_number_led",
+        )
+        scope = next(
+            item for item in result["variants"] if item["observation_id"] == "PRICE_VAR_002"
+        )
+        self.assertEqual(scope["support_count"], 1)
+        self.assertFalse(scope["eligible_as_candidate_invariant"])
+        token_boundary = next(
+            item
+            for item in result["boundary_conditions"]
+            if item["case_id"] == "7640840358842207507"
+        )
+        self.assertIn(
+            "automatic_generic_number_led_scope_expansion",
+            token_boundary["attacks"],
+        )
+
+    def test_scene_boundary_case_contradicts_transformation_invariant(self) -> None:
+        result = json.loads(self.SCENE_COMPARISON.read_text(encoding="utf-8"))
+        action = result["transformation_action_status"]
+        self.assertEqual(action["status"], "optional_enhancer")
+        self.assertTrue(action["invariant_claim_contradicted"])
+        self.assertEqual(
+            action["valid_without_transformation_action_case_ids"],
+            ["7616327461634652005"],
+        )
+        boundary = result["boundary_variant_findings"][0]
+        self.assertTrue(boundary["shared_core_preserved"])
+
+    def test_narration_timing_and_surface_do_not_become_invariants(self) -> None:
+        for path in (self.PRICE_COMPARISON, self.SCENE_COMPARISON):
+            result = json.loads(path.read_text(encoding="utf-8"))
+            narration = next(
+                item
+                for item in result["candidate_invariants"]
+                if "narration" in item["statement"].lower()
+            )
+            self.assertEqual(narration["status"], "supported_all_cases")
+            timing = next(
+                item
+                for item in result["variants"]
+                if item["evidence_dimensions"] == ["timing_and_duration"]
+            )
+            self.assertFalse(timing["eligible_as_candidate_invariant"])
+            diversity = result["structural_similarity_and_surface_diversity"]
+            self.assertTrue(diversity["surface_diversity_observed"])
+            self.assertFalse(diversity["surface_diversity_is_structural_evidence"])
+
+    def test_comparison_preserves_case_sha_pattern_and_authority_boundaries(self) -> None:
+        bundle_paths = (self.PRICE_BUNDLE, self.SCENE_BUNDLE)
+        case_paths = []
+        for path in bundle_paths:
+            bundle = json.loads(path.read_text(encoding="utf-8"))
+            case_paths.extend(
+                Path(item["case_ref"]["path"]) for item in bundle["cases"]
+            )
+        before = {str(path): sha256(path) for path in case_paths}
+        for path in bundle_paths:
+            result = build_generalized_research_comparison(path)
+            authority = result["authority"]
+            self.assertTrue(authority["approved_cases_only"])
+            self.assertTrue(
+                all(
+                    value is False
+                    for key, value in authority.items()
+                    if key != "approved_cases_only"
+                )
+            )
+            self.assertFalse(result["effectiveness_boundary"]["effectiveness_claimed"])
+            self.assertFalse(result["effectiveness_boundary"]["performance_data_consumed"])
+        self.assertEqual(before, {str(path): sha256(path) for path in case_paths})
+        for path in case_paths:
+            case = json.loads(path.read_text(encoding="utf-8"))
+            self.assertFalse(case["pattern_state"]["pattern_mining_performed"])
+
+    def test_news_readiness_remains_insufficient(self) -> None:
+        registry = json.loads(
+            (
+                ROOT
+                / "data"
+                / "production_profiles"
+                / "production_profile_registry_v1.json"
+            ).read_text(encoding="utf-8")
+        )
+        self.assertEqual(
+            registry["profiles"]["news"]["operational_readiness"],
+            "research_coverage_insufficient",
+        )
+        self.assertEqual(
+            registry["profiles"]["news"]["pattern_compatibility_policy"][
+                "approved_compatible_pattern_ids"
+            ],
+            [],
+        )
+
+    def test_human_approval_approves_comparison_not_pattern(self) -> None:
+        for comparison_path, approval_path in (
+            (self.PRICE_COMPARISON, self.PRICE_APPROVAL),
+            (self.SCENE_COMPARISON, self.SCENE_APPROVAL),
+        ):
+            approval = json.loads(approval_path.read_text(encoding="utf-8"))
+            validate_comparison_human_approval(
+                approval,
+                expected_comparison_sha256=sha256(comparison_path),
+            )
+            self.assertEqual(
+                approval["approval_scope"],
+                "research_comparison_only_not_pattern_approval",
+            )
+            self.assertTrue(approval["authority"]["comparison_approved"])
+            self.assertFalse(approval["authority"]["pattern_approved"])
+            self.assertFalse(
+                approval["authority"]["pattern_candidate_created_by_approval"]
+            )
+
+    def test_comparison_approval_is_reference_first_and_preserves_source_sha(self) -> None:
+        for comparison_path, approval_path in (
+            (self.PRICE_COMPARISON, self.PRICE_APPROVAL),
+            (self.SCENE_COMPARISON, self.SCENE_APPROVAL),
+        ):
+            before = sha256(comparison_path)
+            rebuilt = build_comparison_human_approval(
+                comparison_path,
+                reviewer="李健",
+                reviewed_at="2026-09-12T00:00:00+00:00",
+            )
+            self.assertEqual(rebuilt["comparison_ref"]["sha256"], before)
+            self.assertFalse(rebuilt["comparison_ref"]["source_comparison_modified"])
+            self.assertEqual(sha256(comparison_path), before)
 
 
 if __name__ == "__main__":

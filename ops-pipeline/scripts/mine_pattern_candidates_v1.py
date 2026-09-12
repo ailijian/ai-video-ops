@@ -10,10 +10,15 @@ from privacy_projection_v1 import (
     assert_safe_for_external_model,
     validate_case_privacy_gate,
 )
+from compare_approved_cases_v1 import (
+    validate_comparison_human_approval,
+    validate_generalized_research_comparison,
+)
 
 
 RESEARCH_VERSION = "pattern-research-v1.0"
 BUILDER_VERSION = "mine_pattern_candidates_v1.py@0.1"
+NEWS_CANDIDATE_BUILDER_VERSION = "mine_pattern_candidates_v1.py@1.0"
 EXPECTED_PRIOR_HYPOTHESES = {"H001", "H002"}
 CLAIMS_SEMANTICS = "candidate_unverified_unless_supported_by_verified_proofs"
 
@@ -760,29 +765,552 @@ def render_markdown(research: dict[str, Any], candidates: list[dict[str, Any]]) 
     return "\n".join(lines)
 
 
+def current_artifact_ref(reference: dict[str, Any], artifact_type: str) -> dict[str, Any]:
+    path = Path(str(reference.get("path") or "")).expanduser().resolve()
+    expected_sha = str(reference.get("sha256") or "").lower()
+    if not path.is_file() or len(expected_sha) != 64:
+        raise RuntimeError(f"{artifact_type} lineage is incomplete: {path}")
+    if sha256_file(path) != expected_sha:
+        raise RuntimeError(f"{artifact_type} lineage changed: {path}")
+    return {
+        "artifact_type": artifact_type,
+        "path": str(path),
+        "sha256": expected_sha,
+    }
+
+
+def validate_news_candidate_inputs(
+    comparison_path: Path,
+    approval_path: Path,
+) -> tuple[dict[str, Any], dict[str, Any], list[dict[str, Any]]]:
+    comparison_path = comparison_path.expanduser().resolve()
+    approval_path = approval_path.expanduser().resolve()
+    if not comparison_path.is_file():
+        raise FileNotFoundError(comparison_path)
+    if not approval_path.is_file():
+        raise FileNotFoundError(approval_path)
+    comparison = read_json(comparison_path)
+    approval = read_json(approval_path)
+    validate_generalized_research_comparison(comparison)
+    validate_comparison_human_approval(
+        approval,
+        expected_comparison_sha256=sha256_file(comparison_path),
+    )
+    if approval.get("research_direction") != comparison.get("research_direction"):
+        raise RuntimeError("Comparison and Human Approval directions differ.")
+    if comparison.get("case_count") != 3:
+        raise RuntimeError("News Pattern Candidate V1 requires three Approved Cases.")
+    if comparison.get("candidate_research_readiness") != (
+        "ready_for_pattern_candidate_human_review"
+    ):
+        raise RuntimeError("Comparison is not ready for Pattern Candidate research.")
+    if comparison.get("pattern_candidate_eligibility", {}).get(
+        "creates_pattern_candidate"
+    ) is not False:
+        raise RuntimeError("Source Comparison crosses Pattern Candidate authority.")
+
+    evidence: list[dict[str, Any]] = []
+    inputs = comparison.get("input_artifacts") or {}
+    rows = (comparison.get("evidence_matrix") or {}).get("case_rows") or {}
+    for case_id in comparison.get("case_ids") or []:
+        item = inputs.get(case_id) or {}
+        case_ref = current_artifact_ref(
+            item.get("approved_case_ref") or {}, "approved_case"
+        )
+        fingerprint_ref = current_artifact_ref(
+            item.get("fingerprint_ref") or {}, "case_fingerprint"
+        )
+        storyboard_ref = current_artifact_ref(
+            item.get("storyboard_ref") or {}, "news_micro_beat_storyboard"
+        )
+        case = read_json(Path(case_ref["path"]))
+        if (
+            case.get("lifecycle", {}).get("status") != "approved"
+            or case.get("pattern_state", {}).get("pattern_mining_performed") is not False
+        ):
+            raise RuntimeError(f"Case {case_id} is not valid Approved Pattern evidence.")
+        evidence.append(
+            {
+                "case_id": case_id,
+                "research_role": (rows.get(case_id) or {}).get("research_role"),
+                "approved_case_ref": case_ref,
+                "fingerprint_ref": fingerprint_ref,
+                "micro_beat_storyboard_ref": storyboard_ref,
+                "structural_observation": rows.get(case_id) or {},
+                "case_specific_business_facts_are_customer_authority": False,
+            }
+        )
+    return comparison, approval, evidence
+
+
+def build_news_pattern_candidate(
+    comparison_path: Path,
+    approval_path: Path,
+) -> dict[str, Any]:
+    comparison, approval, evidence = validate_news_candidate_inputs(
+        comparison_path, approval_path
+    )
+    direction = str(comparison["research_direction"])
+    if direction == "price_offer_led_micro_information":
+        pattern_id = "pcv1_news_price_offer_led_micro_information"
+        working_name = "News Price / Offer-led Micro-information"
+        summary = (
+            "Price or Offer forms the first principal information anchor. Multiple "
+            "recoverable micro-information states then contextualize, scope, explain, "
+            "or situate the offer without requiring continuous Mix narration."
+        )
+        invariants = [
+            "price_or_offer_first_semantic_anchor",
+            "multiple_recoverable_micro_information_states_follow_the_anchor",
+            "later_states_materially_contextualize_scope_explain_or_situate_the_offer_without_requiring_a_fixed_scope_beat",
+            "continuous_mix_narration_not_required_for_semantic_recovery",
+        ]
+        variants = [
+            "persistent_vs_changing_offer_display",
+            "package_vs_discount_vs_bundle",
+            "explicit_vs_implicit_scope",
+            "number_of_beats",
+            "duration",
+            "visual_state_style",
+            "close",
+            "industry",
+            "product_or_service_category",
+        ]
+        scope = {
+            "supported": "price_offer_led_micro_information",
+            "scope_limitation": "price_offer_led_only",
+            "explicitly_not_supported": "generic_number_led",
+        }
+        unresolved = list(approval.get("unresolved_questions") or [])
+        proof_boundary = {
+            "offer_or_price_visibility_is_verified_proof": False,
+            "commercial_effectiveness_claimed": False,
+            "semantics": "observable_offer_information_not_performance_proof",
+        }
+        production_implications = [
+            "If later Approved, may guide News script and micro-beat planning around an offer-first information hierarchy.",
+            "If later Approved, may guide creative matching and storyboard planning without requiring continuous narration.",
+        ]
+        explicitly_not_frozen = [
+            "persistent_price_text",
+            "changing_price_state",
+            "independent_explicit_scope_beat",
+            "explicit_close",
+            "exact_beat_count",
+            "exact_duration",
+            "specific_industry",
+            "specific_offer_type",
+            "generic_number_led_scope",
+        ]
+    elif direction == "scene_contrast":
+        pattern_id = "pcv1_news_scene_contrast"
+        working_name = "News Scene Contrast"
+        summary = (
+            "Directly observable, semantically meaningful State A and State B form the "
+            "information core. Their difference changes viewer understanding, with visual "
+            "information states carrying the primary semantics without continuous narration."
+        )
+        invariants = [
+            "meaningful_comparable_state_a_and_state_b",
+            "state_difference_materially_changes_understanding",
+            "visual_information_state_is_primary_semantic_carrier",
+            "continuous_narration_not_required_for_semantic_recovery",
+        ]
+        variants = [
+            "transformation_action_optional_enhancer",
+            "actual_operation",
+            "visual_transition",
+            "overlay",
+            "direct_state_a_b",
+            "repeated_comparison_catalogue",
+            "single_transformation",
+            "multiple_paired_comparisons",
+            "supporting_text_labels_or_no_labels",
+            "explicit_or_implicit_close",
+            "duration",
+            "beat_count",
+        ]
+        scope = {"supported": "scene_contrast"}
+        unresolved = [
+            {
+                "question_id": "same_subject_identity_requirement",
+                "status": "unresolved",
+                "question": (
+                    "Must State A and State B preserve the same subject, place, object, "
+                    "or person identity, or is recoverable semantic correspondence sufficient?"
+                ),
+                "frozen_answer": None,
+            }
+        ]
+        proof_boundary = {
+            "observable_state_difference": True,
+            "state_difference_is_automatically_verified_proof": False,
+            "causality_proven": False,
+            "service_effect_proven": False,
+            "commercial_result_proven": False,
+            "transformation_attribution_proven": False,
+            "product_effect_attribution_proven": False,
+        }
+        production_implications = [
+            "If later Approved, may guide News beat planning around recoverable State A/State B correspondence.",
+            "If later Approved, may guide visual-first creative matching and storyboard planning without requiring narration.",
+        ]
+        explicitly_not_frozen = [
+            "transformation_action",
+            "transition_animation",
+            "overlay",
+            "single_continuous_transformation",
+            "repeated_comparison_catalogue",
+            "location_label",
+            "before_after_wording",
+            "explicit_result_close",
+            "exact_beat_count",
+            "exact_duration",
+            "industry_or_topic",
+            "same_subject_identity_requirement",
+        ]
+    else:
+        raise RuntimeError(f"Unsupported News Pattern Candidate direction: {direction}")
+
+    comparison_path = comparison_path.expanduser().resolve()
+    approval_path = approval_path.expanduser().resolve()
+    candidate = {
+        "schema_version": "pattern-candidate-v1.0",
+        "builder_version": NEWS_CANDIDATE_BUILDER_VERSION,
+        "pattern_id": pattern_id,
+        "status": "review_required",
+        "candidate_state": "candidate",
+        "working_name": working_name,
+        "compatible_profile_candidate": ["news"],
+        "candidate_summary": summary,
+        "definition": {
+            "candidate_invariants": invariants,
+            "variants": variants,
+            "explicitly_not_frozen": explicitly_not_frozen,
+        },
+        "scope": {
+            **scope,
+            "supported_case_count": len(evidence),
+            "supported_case_ids": [item["case_id"] for item in evidence],
+        },
+        "evidence": evidence,
+        "boundary_evidence": (
+            comparison.get("boundary_conditions")
+            or comparison.get("boundary_variant_findings")
+            or []
+        ),
+        "counterexamples_and_attacks": (
+            comparison.get("counterexamples")
+            or comparison.get("contradictions")
+            or []
+        ),
+        "unresolved_questions": unresolved,
+        "transformation_action": (
+            {
+                "status": "optional_enhancer",
+                "candidate_invariant": False,
+                "evidence": comparison.get("transformation_action_status"),
+            }
+            if direction == "scene_contrast"
+            else None
+        ),
+        "proof_boundary": proof_boundary,
+        "production_implications": {
+            "only_if_future_human_approved": True,
+            "may_guide": production_implications,
+            "news_generation_enabled_now": False,
+            "news_export_enabled_now": False,
+        },
+        "effectiveness": {
+            "status": "unvalidated",
+            "performance_data_available": False,
+            "performance_data_used": False,
+            "causal_or_performance_claims_permitted": False,
+        },
+        "lineage": {
+            "comparison_ref": current_artifact_ref(
+                {
+                    "path": str(comparison_path),
+                    "sha256": sha256_file(comparison_path),
+                },
+                "cross_case_comparison",
+            ),
+            "comparison_human_approval_ref": current_artifact_ref(
+                {
+                    "path": str(approval_path),
+                    "sha256": sha256_file(approval_path),
+                },
+                "comparison_human_approval",
+            ),
+            "case_sha256": {
+                item["case_id"]: item["approved_case_ref"]["sha256"]
+                for item in evidence
+            },
+            "fingerprint_sha256": {
+                item["case_id"]: item["fingerprint_ref"]["sha256"]
+                for item in evidence
+            },
+            "micro_beat_storyboard_sha256": {
+                item["case_id"]: item["micro_beat_storyboard_ref"]["sha256"]
+                for item in evidence
+            },
+        },
+        "authority": {
+            "candidate_only": True,
+            "human_review_required": True,
+            "auto_approved": False,
+            "approved_pattern": False,
+            "profile_compatibility_approved": False,
+            "effectiveness_claimed": False,
+            "performance_authority_created": False,
+            "proof_reinterpreted_or_upgraded": False,
+            "case_specific_facts_used_as_customer_authority": False,
+            "remote_model_used": False,
+            "local_model_used": False,
+            "news_generation_performed": False,
+            "news_excel_export_performed": False,
+            "new_case_acquisition_performed": False,
+        },
+        "validation": {
+            "passed": True,
+            "three_approved_cases_bound": len(evidence) == 3,
+            "comparison_human_approved": True,
+            "status_is_review_required": True,
+            "pattern_approval_not_performed": True,
+            "effectiveness_unvalidated": True,
+            "news_readiness_unchanged": True,
+        },
+    }
+    validate_news_pattern_candidate(candidate)
+    return candidate
+
+
+def validate_news_pattern_candidate(candidate: dict[str, Any]) -> None:
+    if candidate.get("schema_version") != "pattern-candidate-v1.0":
+        raise ValueError("News Pattern Candidate schema is invalid.")
+    if candidate.get("status") != "review_required":
+        raise ValueError("News Pattern Candidate must stop at review_required.")
+    if candidate.get("candidate_state") != "candidate":
+        raise ValueError("News Pattern Candidate state is invalid.")
+    if candidate.get("compatible_profile_candidate") != ["news"]:
+        raise ValueError("News Pattern Candidate compatibility must remain candidate-only News.")
+    if candidate.get("scope", {}).get("supported_case_count") != 3:
+        raise ValueError("News Pattern Candidate requires three Approved Evidence Cases.")
+    if len(candidate.get("evidence") or []) != 3:
+        raise ValueError("News Pattern Candidate Evidence lineage is incomplete.")
+    definition = candidate.get("definition") or {}
+    invariants = set(definition.get("candidate_invariants") or [])
+    if candidate.get("pattern_id") == "pcv1_news_price_offer_led_micro_information":
+        if candidate.get("scope", {}).get("scope_limitation") != "price_offer_led_only":
+            raise ValueError("Price Candidate scope must remain price_offer_led_only.")
+        if candidate.get("scope", {}).get("explicitly_not_supported") != "generic_number_led":
+            raise ValueError("Price Candidate must reject generic_number_led scope.")
+        if any("explicit_scope" in value for value in invariants):
+            raise ValueError("Explicit scope beat cannot become a Price invariant.")
+        if any("close" in value for value in invariants):
+            raise ValueError("Close cannot become a Price invariant.")
+    elif candidate.get("pattern_id") == "pcv1_news_scene_contrast":
+        if any("transformation" in value for value in invariants):
+            raise ValueError("Transformation action cannot become a Scene invariant.")
+        if candidate.get("transformation_action", {}).get("status") != "optional_enhancer":
+            raise ValueError("Scene transformation action must remain optional_enhancer.")
+        questions = candidate.get("unresolved_questions") or []
+        if not any(
+            item.get("question_id") == "same_subject_identity_requirement"
+            and item.get("status") == "unresolved"
+            and item.get("frozen_answer") is None
+            for item in questions
+            if isinstance(item, dict)
+        ):
+            raise ValueError("Scene same-subject identity requirement must remain unresolved.")
+        if candidate.get("proof_boundary", {}).get(
+            "state_difference_is_automatically_verified_proof"
+        ) is not False:
+            raise ValueError("Scene contrast cannot automatically become Verified Proof.")
+    else:
+        raise ValueError("Unknown News Pattern Candidate ID.")
+    effectiveness = candidate.get("effectiveness") or {}
+    if (
+        effectiveness.get("status") != "unvalidated"
+        or effectiveness.get("performance_data_available") is not False
+        or effectiveness.get("performance_data_used") is not False
+    ):
+        raise ValueError("News Pattern Candidate cannot claim Effectiveness.")
+    authority = candidate.get("authority") or {}
+    if authority.get("candidate_only") is not True or authority.get(
+        "human_review_required"
+    ) is not True:
+        raise ValueError("News Pattern Candidate authority is invalid.")
+    for field in (
+        "auto_approved",
+        "approved_pattern",
+        "profile_compatibility_approved",
+        "effectiveness_claimed",
+        "performance_authority_created",
+        "proof_reinterpreted_or_upgraded",
+        "case_specific_facts_used_as_customer_authority",
+        "remote_model_used",
+        "local_model_used",
+        "news_generation_performed",
+        "news_excel_export_performed",
+        "new_case_acquisition_performed",
+    ):
+        if authority.get(field) is not False:
+            raise ValueError("News Pattern Candidate crosses an Authority boundary.")
+
+
+def render_news_candidate_review_pack(candidate: dict[str, Any]) -> str:
+    lines = [
+        f"# Pattern Candidate Human Review｜{candidate['pattern_id']}",
+        "",
+        "Status: **Review Required / Not Approved**",
+        "",
+        "## A. Pattern ID",
+        "",
+        f"`{candidate['pattern_id']}`",
+        "",
+        "## B. Compatible Profile Candidate",
+        "",
+        "`[news]` — candidate only; profile compatibility is not yet approved.",
+        "",
+        "## C. Evidence Cases",
+        "",
+        "| Case | Research role | Case SHA | Fingerprint SHA | Storyboard SHA |",
+        "|---|---|---|---|---|",
+    ]
+    for item in candidate["evidence"]:
+        lines.append(
+            f"| {item['case_id']} | {item['research_role']} | "
+            f"`{item['approved_case_ref']['sha256']}` | "
+            f"`{item['fingerprint_ref']['sha256']}` | "
+            f"`{item['micro_beat_storyboard_ref']['sha256']}` |"
+        )
+    lineage = candidate["lineage"]
+    lines.extend(
+        [
+            "",
+            "## D. Comparison Source",
+            "",
+            f"- Comparison: `{lineage['comparison_ref']['path']}`",
+            f"- Comparison SHA: `{lineage['comparison_ref']['sha256']}`",
+            f"- Human Approval: `{lineage['comparison_human_approval_ref']['path']}`",
+            f"- Human Approval SHA: `{lineage['comparison_human_approval_ref']['sha256']}`",
+            "",
+            "## E. Candidate Summary",
+            "",
+            candidate["candidate_summary"],
+            "",
+            "## F. Candidate Invariants",
+            "",
+        ]
+    )
+    lines.extend(f"- `{value}`" for value in candidate["definition"]["candidate_invariants"])
+    lines.extend(["", "## G. Variants", ""])
+    lines.extend(f"- `{value}`" for value in candidate["definition"]["variants"])
+    lines.extend(["", "## H. Boundary Evidence", ""])
+    for item in candidate.get("boundary_evidence") or []:
+        lines.append(f"- `{item['case_id']}` — {item['finding']}")
+    lines.extend(["", "## I. Counterexamples / Attacks", ""])
+    for item in candidate.get("counterexamples_and_attacks") or []:
+        lines.append(
+            f"- `{item.get('status')}` {item.get('claim')} — "
+            + ", ".join(item.get("case_ids") or [])
+        )
+    lines.extend(
+        [
+            "",
+            "## J. Scope",
+            "",
+            "```json",
+            json.dumps(candidate["scope"], ensure_ascii=False, indent=2),
+            "```",
+            "",
+            "## K. Scope Limitations",
+            "",
+        ]
+    )
+    lines.extend(f"- `{value}`" for value in candidate["definition"]["explicitly_not_frozen"])
+    lines.extend(["", "## L. Unresolved Questions", ""])
+    for item in candidate.get("unresolved_questions") or []:
+        if isinstance(item, dict):
+            lines.append(f"- `{item['status']}` — {item['question']}")
+        else:
+            lines.append(f"- {item}")
+    lines.extend(
+        [
+            "",
+            "## M. Proof / Effectiveness Boundary",
+            "",
+            "```json",
+            json.dumps(candidate["proof_boundary"], ensure_ascii=False, indent=2),
+            "```",
+            "",
+            "Effectiveness remains `unvalidated`; no Performance Data was available or used.",
+            "",
+            "## N. Production Implications",
+            "",
+        ]
+    )
+    lines.extend(f"- {value}" for value in candidate["production_implications"]["may_guide"])
+    lines.extend(
+        [
+            "",
+            "These implications apply only after future Human Pattern Approval. News Generation and Export remain disabled.",
+            "",
+            "## O. Explicitly NOT Frozen",
+            "",
+        ]
+    )
+    lines.extend(f"- `{value}`" for value in candidate["definition"]["explicitly_not_frozen"])
+    lines.extend(
+        [
+            "",
+            "This Candidate is not an Approved Pattern and does not establish Effectiveness, causality, Proof, or customer Fact Authority.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def write_candidate_artifact(path: Path, content: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists():
+        if path.read_text(encoding="utf-8") != content:
+            raise RuntimeError(f"Pattern Candidate Artifact differs: {path}")
+        return
+    path.write_text(content, encoding="utf-8")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
-            "Deterministically research Pattern Candidates from exactly three Approved "
-            "Cases, their Fingerprints, and a prior Cross-case Comparison."
+            "Deterministically create review-required Pattern Candidates from Human-approved "
+            "Cross-case research, while retaining the legacy three-Case H001/H002 workflow."
         )
     )
     parser.add_argument(
         "--case",
         action="append",
-        required=True,
-        help="Approved case_v1.json; provide exactly three times.",
+        help="Legacy mode: Approved case_v1.json; provide exactly three times.",
     )
     parser.add_argument(
         "--fingerprint",
         action="append",
-        required=True,
-        help="case_fingerprint_v1.json; provide exactly three times.",
+        help="Legacy mode: case_fingerprint_v1.json; provide exactly three times.",
     )
     parser.add_argument(
         "--comparison",
-        required=True,
-        help="Existing two-Case cross_case_comparison_v1.json containing H001/H002.",
+        help="Legacy mode: existing two-Case comparison containing H001/H002.",
+    )
+    parser.add_argument(
+        "--news-comparison",
+        default=None,
+        help="News mode: Human-reviewed generalized Cross-case Comparison.",
+    )
+    parser.add_argument(
+        "--comparison-approval",
+        default=None,
+        help="News mode: matching Comparison Human Approval receipt.",
     )
     parser.add_argument(
         "--output-dir",
@@ -795,6 +1323,49 @@ def main() -> None:
         help="Default: <project>/data/patterns/candidates",
     )
     args = parser.parse_args()
+
+    if args.news_comparison or args.comparison_approval:
+        if not args.news_comparison or not args.comparison_approval:
+            raise ValueError(
+                "News Candidate mode requires --news-comparison and --comparison-approval."
+            )
+        if args.case or args.fingerprint or args.comparison:
+            raise ValueError("News Candidate mode cannot be combined with legacy inputs.")
+        candidate = build_news_pattern_candidate(
+            Path(args.news_comparison),
+            Path(args.comparison_approval),
+        )
+        project_root = Path(__file__).resolve().parents[1]
+        candidate_root = (
+            Path(args.candidate_root).expanduser().resolve()
+            if args.candidate_root
+            else project_root / "data" / "patterns" / "candidates"
+        )
+        candidate_dir = candidate_root / candidate["pattern_id"]
+        candidate_path = candidate_dir / "pattern_candidate_v1.json"
+        review_pack_path = candidate_dir / "pattern_candidate_human_review_pack_v1.md"
+        write_candidate_artifact(
+            candidate_path,
+            json.dumps(candidate, ensure_ascii=False, indent=2),
+        )
+        write_candidate_artifact(
+            review_pack_path,
+            render_news_candidate_review_pack(candidate),
+        )
+        print("NEWS PATTERN CANDIDATE V1 PASS")
+        print(f"Pattern ID: {candidate['pattern_id']}")
+        print(f"Status: {candidate['status']}")
+        print("Approved Pattern: False")
+        print("Effectiveness: unvalidated")
+        print("Remote/local model used: False / False")
+        print(f"Candidate: {candidate_path}")
+        print(f"Review pack: {review_pack_path}")
+        return
+
+    if not args.case or not args.fingerprint or not args.comparison:
+        raise ValueError(
+            "Legacy mode requires three --case, three --fingerprint, and --comparison."
+        )
 
     research, candidates = build_pattern_research(
         [Path(value) for value in args.case],

@@ -1,0 +1,166 @@
+{
+  "schema_version": "news-excel-export-receipt-v1.0",
+  "finalizer_version": "generate_mix_scripts_v1.py@news-mvp-final-1.0",
+  "exporter_version": "export_news_excel_v1.mjs@1.0",
+  "request_id": "real_shufang_news_validation_repurpose_001",
+  "profile": "news",
+  "exported_at": "2026-09-12T14:54:37.971288+00:00",
+  "human_approval": {
+    "track_a_path": "E:\\projects\\ai-video-ops\\ops-pipeline\\data\\news_production_mvp\\real_shufang_news_validation_novel_001\\news_novel_capacity_human_approval_v1.json",
+    "track_a_sha256": "4bb4dadb254f01132b30d31de5b0346cccf3c1385fcee62a97135f50a8b367b4",
+    "track_b_path": "E:\\projects\\ai-video-ops\\ops-pipeline\\data\\news_production_mvp\\real_shufang_news_validation_repurpose_001\\news_generation_human_approval_v1.json",
+    "track_b_sha256": "89a1722710c2b6a347122bb41f983c5145502f2bb90af118740e857e0d05022e",
+    "reviewer": "李健"
+  },
+  "reuse_declaration": {
+    "reuse_intent": "cross_profile_repurpose",
+    "semantic_novelty": false,
+    "historical_content_reused": true,
+    "source_content_ref": "real_shufang_mix_001-C003"
+  },
+  "selected_pattern": "pcv1_news_price_offer_led_micro_information",
+  "template_path": "E:\\projects\\ai-video-ops\\ops-pipeline\\output\\新闻体视频制作文案导入模板.xlsx",
+  "template_sha256_before": "9f36328df76f45d0a6315420bb5a1d4b361ffd08399de3b7552d448c4c75dca4",
+  "template_sha256_after": "9f36328df76f45d0a6315420bb5a1d4b361ffd08399de3b7552d448c4c75dca4",
+  "output_path": "E:\\projects\\ai-video-ops\\ops-pipeline\\output\\real_shufang_news_validation_repurpose_001_approved_news.xlsx",
+  "output_sha256": "4b753afa82d42491efe1aa0011e1880a3521a7195f070317827f37644e2767d7",
+  "exported_row_count": 1,
+  "row_4_headers": [
+    "标题1",
+    "标题2",
+    "标题3",
+    "标题4",
+    "标题5",
+    "标题6"
+  ],
+  "row_5_slots": [
+    "素菜通常8–10元",
+    "清蒸约15元",
+    "红烧约18元左右",
+    "油盐酱料免费",
+    "米饭免费",
+    "价格公开清晰"
+  ],
+  "excel_validation": {
+    "passed": true,
+    "checks": {
+      "workbook_readable": true,
+      "sheet_names_match": true,
+      "rows_1_4_content_and_styles_preserved": true,
+      "row_4_headers_exact": true,
+      "row_5_slots_exact": true,
+      "no_extra_business_columns_or_rows": true,
+      "no_internal_metadata": true,
+      "source_template_unchanged": true
+    },
+    "sheet_names": [
+      "Sheet1"
+    ],
+    "row_4_headers": [
+      "标题1",
+      "标题2",
+      "标题3",
+      "标题4",
+      "标题5",
+      "标题6"
+    ],
+    "row_5_slots": [
+      "素菜通常8–10元",
+      "清蒸约15元",
+      "红烧约18元左右",
+      "油盐酱料免费",
+      "米饭免费",
+      "价格公开清晰"
+    ],
+    "extra_populated_cells": [],
+    "template_sha256_before": "9f36328df76f45d0a6315420bb5a1d4b361ffd08399de3b7552d448c4c75dca4",
+    "template_sha256_after": "9f36328df76f45d0a6315420bb5a1d4b361ffd08399de3b7552d448c4c75dca4",
+    "output_sha256": "4b753afa82d42491efe1aa0011e1880a3521a7195f070317827f37644e2767d7"
+  },
+  "artifact_tool_validation": {
+    "passed": true,
+    "formula_error_count": 0,
+    "source_rows_1_4_values_preserved": true
+  },
+  "content_ledger": {
+    "path": "E:\\projects\\ai-video-ops\\ops-pipeline\\data\\content_ledgers\\shufang_zhiyuan_community_canteen\\content_ledger_v1.json",
+    "sha256_after_append": "f9045d8dcd9baf54fbd702bcf6b08f5674e505243b64635b07789e7b4b163ee9",
+    "semantic_entry_count_before": 17,
+    "semantic_entry_count_after": 17,
+    "presentation_history_entry": {
+      "presentation_id": "real_shufang_news_validation_repurpose_001-P001",
+      "business_id": "shufang_zhiyuan_community_canteen",
+      "speaker_id": "lin_dongfang_frontline_chef",
+      "request_id": "real_shufang_news_validation_repurpose_001",
+      "production_profile": "news",
+      "reuse_intent": "cross_profile_repurpose",
+      "semantic_novelty": false,
+      "historical_content_reused": true,
+      "source_content_ref": "real_shufang_mix_001-C003",
+      "selected_pattern_ref": "pcv1_news_price_offer_led_micro_information",
+      "status": "exported",
+      "approved_at": "2026-09-12T14:54:37.971288+00:00",
+      "exported_at": "2026-09-12T14:54:37.971288+00:00",
+      "novel_capacity_delta": 0,
+      "new_semantic_content_count_delta": 0,
+      "new_central_claim_count_delta": 0,
+      "new_information_gain_delta": 0,
+      "communicated_information_units_created": false,
+      "approval_ref": {
+        "artifact_type": "news_generation_human_approval_v1",
+        "path": "E:\\projects\\ai-video-ops\\ops-pipeline\\data\\news_production_mvp\\real_shufang_news_validation_repurpose_001\\news_generation_human_approval_v1.json",
+        "sha256": "89a1722710c2b6a347122bb41f983c5145502f2bb90af118740e857e0d05022e",
+        "source_artifact_modified": false
+      },
+      "export_ref": {
+        "artifact_type": "approved_news_excel_export",
+        "path": "E:\\projects\\ai-video-ops\\ops-pipeline\\output\\real_shufang_news_validation_repurpose_001_approved_news.xlsx",
+        "sha256": "4b753afa82d42491efe1aa0011e1880a3521a7195f070317827f37644e2767d7",
+        "source_artifact_modified": false
+      },
+      "events": [
+        {
+          "status": "approved",
+          "at": "2026-09-12T14:54:37.971288+00:00",
+          "source": "human_review"
+        },
+        {
+          "status": "exported",
+          "at": "2026-09-12T14:54:37.971288+00:00",
+          "source": "news_excel_export"
+        }
+      ]
+    }
+  },
+  "novel_capacity": {
+    "source_content_capacity_before": 2,
+    "source_content_capacity_after": 2,
+    "track_a_news_novel_capacity_before": 0,
+    "track_a_news_novel_capacity_after": 0,
+    "delta": 0
+  },
+  "production_validation": {
+    "pcv1_news_price_offer_led_micro_information": "passed",
+    "pcv1_news_scene_contrast": "pending_real_customer_opportunity",
+    "news_operational_readiness": "production_validation_required"
+  },
+  "coverage_update": {
+    "path": "E:\\projects\\ai-video-ops\\ops-pipeline\\data\\creative_coverage\\revisions\\news_production_mvp_final_validation_update_v1.json",
+    "sha256": "42fc279789fc711f6cfeb1872899958dc363606d514e215445f041a519feaaf1"
+  },
+  "mix_regression_artifacts": {
+    "template_sha256_before_after": "598b12a7a87dd498e48b1022c51a0a9f54402cd8ec5ea5d68913c06cad7c4d67",
+    "approved_export_sha256_before_after": "1c64d2f46c5878506ad5880f8ca137fda34d3860759a66791ec1b3aa1a54a910",
+    "unchanged": true
+  },
+  "authority": {
+    "communicated_information_units_created": 0,
+    "new_semantic_content_created": false,
+    "case_facts_transferred": false,
+    "case_footage_used": false,
+    "scene_customer_truth_fabricated": false,
+    "privacy_or_proof_authority_changed": false,
+    "remote_model_calls": 0
+  },
+  "validation_passed": true
+}

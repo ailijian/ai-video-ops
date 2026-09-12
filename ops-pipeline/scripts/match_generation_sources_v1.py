@@ -9,8 +9,10 @@ from typing import Any
 from build_persona_v1 import fact_is_known, persona_content_hash, sha256_file
 from privacy_projection_v1 import validate_case_privacy_gate
 from production_profile_v1 import (
+    COMPATIBILITY_APPROVAL_SCHEMA_VERSION,
     COVERAGE_REPORT_SCHEMA_VERSION,
     pattern_compatibility_record,
+    validate_profile_compatibility_approval_v1,
     validate_registry,
     validate_target_profile,
 )
@@ -35,6 +37,8 @@ PATTERN_POLICIES = {
         "requires_story_or_operator_context": True,
     }
 }
+NEWS_PRICE_PATTERN_ID = "pcv1_news_price_offer_led_micro_information"
+NEWS_SCENE_PATTERN_ID = "pcv1_news_scene_contrast"
 
 
 def read_json(path: Path) -> dict[str, Any]:
@@ -167,6 +171,31 @@ def load_compatibility_report(
     if authority.get("can_change_compatibility") is not False:
         raise RuntimeError("Coverage Report incorrectly claims Compatibility authority.")
     return report, sha256_file(path)
+
+
+def load_profile_compatibility_approval(
+    path: Path | None,
+    registry_sha256: str | None,
+    coverage_report_sha256: str | None,
+) -> tuple[dict[str, Any] | None, str | None]:
+    if path is None:
+        return None, None
+    if registry_sha256 is None or coverage_report_sha256 is None:
+        raise RuntimeError(
+            "Profile Compatibility Approval requires its Registry and Coverage Report."
+        )
+    path = path.expanduser().resolve()
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    approval = read_json(path)
+    if approval.get("schema_version") != COMPATIBILITY_APPROVAL_SCHEMA_VERSION:
+        raise RuntimeError("Profile Compatibility Approval schema is invalid.")
+    validate_profile_compatibility_approval_v1(
+        approval,
+        registry_sha256=registry_sha256,
+        coverage_report_sha256=coverage_report_sha256,
+    )
+    return approval, sha256_file(path)
 
 
 def load_patterns(paths: list[Path]) -> list[dict[str, Any]]:
@@ -321,6 +350,157 @@ def pattern_eligibility(
     )
 
 
+def selected_content_pattern_compatibility(
+    selected_content: dict[str, Any],
+    pattern: dict[str, Any],
+    target_profile: str,
+) -> dict[str, Any]:
+    """Match semantic content to an Approved Pattern without borrowing Case topics."""
+    pattern_id = str(pattern.get("pattern_id") or "")
+    base = {
+        "pattern_id": pattern_id,
+        "target_profile": target_profile,
+        "pattern_status": pattern.get("status"),
+        "case_topic_used_for_matching": False,
+        "case_specific_facts_used": False,
+        "pattern_created_customer_truth": False,
+    }
+    if pattern.get("status") != "approved":
+        return base | {
+            "compatible": False,
+            "reason_code": "pattern_not_approved",
+            "reason": "Only an Approved Pattern may be selected.",
+        }
+    if target_profile not in (pattern.get("compatible_profiles") or []):
+        return base | {
+            "compatible": False,
+            "reason_code": "target_profile_outside_approved_pattern_compatibility",
+            "reason": "Target Profile is outside the Pattern's Human-approved compatibility.",
+        }
+
+    semantic = selected_content.get("semantic_signature") or {}
+    primary_fact_refs = {
+        str(value)
+        for value in (
+            list(selected_content.get("primary_fact_refs") or [])
+            + list(semantic.get("primary_fact_bundle") or [])
+        )
+    }
+    supporting_fact_refs = {
+        str(value)
+        for value in selected_content.get("supporting_fact_refs") or []
+    }
+    fact_refs = primary_fact_refs | supporting_fact_refs
+    fact_atom_refs = {
+        str(value)
+        for value in selected_content.get("fact_atom_refs") or []
+    }
+    primary_fact_atom_refs = {
+        str(value)
+        for value in selected_content.get("primary_fact_atom_refs") or []
+    }
+    central_claim = str(selected_content.get("central_claim") or "")
+
+    if pattern_id == NEWS_PRICE_PATTERN_ID:
+        price_authority_present = "pricing_facts" in primary_fact_refs or any(
+            value.startswith("pricing_facts::") for value in primary_fact_atom_refs
+        )
+        if not price_authority_present:
+            generic_number_only = (
+                "business_volume_fact" in primary_fact_refs
+                or any(
+                    value.startswith("business_volume_fact::")
+                    for value in primary_fact_atom_refs
+                )
+            )
+            return base | {
+                "compatible": False,
+                "reason_code": (
+                    "generic_number_led_outside_price_offer_scope"
+                    if generic_number_only
+                    else "price_or_offer_not_primary_semantic_anchor"
+                    if "pricing_facts" in supporting_fact_refs
+                    or any(
+                        value.startswith("pricing_facts::")
+                        for value in fact_atom_refs
+                    )
+                    else "no_authority_supported_price_or_offer_anchor"
+                ),
+                "reason": (
+                    "A generic quantity/volume fact cannot expand the approved "
+                    "price_offer_led_only scope."
+                    if generic_number_only
+                    else "A supporting price fact cannot replace the selected concept's primary semantic anchor."
+                    if "pricing_facts" in supporting_fact_refs
+                    or any(
+                        value.startswith("pricing_facts::")
+                        for value in fact_atom_refs
+                    )
+                    else "Selected semantic content has no Authority-supported price/offer anchor."
+                ),
+            }
+        return base | {
+            "compatible": True,
+            "reason_code": "authority_supported_price_offer_content_matches_pattern_scope",
+            "reason": (
+                "The selected content is anchored in Approved pricing_facts; later "
+                "states can explain item scope and included value while preserving qualifiers."
+            ),
+            "matching_fact_refs": sorted(fact_refs & {"pricing_facts", "differentiators", "included_service_facts", "product_or_service_facts"}),
+            "central_claim_ref": central_claim,
+        }
+
+    if pattern_id == NEWS_SCENE_PATTERN_ID:
+        correspondence_refs = [
+            str(value)
+            for value in selected_content.get("approved_state_correspondence_refs") or []
+        ]
+        if not correspondence_refs:
+            return base | {
+                "compatible": False,
+                "reason_code": "no_approved_customer_state_a_b_correspondence",
+                "reason": (
+                    "The customer Authority contains no explicit recoverable State A/State B "
+                    "correspondence for this content opportunity; the Pattern cannot invent it."
+                ),
+            }
+        return base | {
+            "compatible": True,
+            "reason_code": "approved_customer_state_correspondence_matches_scene_pattern",
+            "reason": "Approved customer Fact refs provide recoverable State A/State B correspondence.",
+            "matching_fact_refs": correspondence_refs,
+        }
+
+    return base | {
+        "compatible": False,
+        "reason_code": "pattern_has_no_content_compatibility_policy",
+        "reason": "The Approved Pattern has no V1 content-to-pattern matching policy.",
+    }
+
+
+def match_selected_content_to_approved_patterns(
+    selected_content: dict[str, Any],
+    patterns: list[dict[str, Any]],
+    target_profile: str,
+) -> dict[str, Any]:
+    assessments = [
+        selected_content_pattern_compatibility(
+            selected_content, pattern, target_profile
+        )
+        for pattern in patterns
+    ]
+    matches = [item for item in assessments if item["compatible"]]
+    return {
+        "target_profile": target_profile,
+        "selected_pattern": matches[0] if len(matches) == 1 else None,
+        "compatible_pattern_count": len(matches),
+        "ambiguous_multiple_matches": len(matches) > 1,
+        "assessments": assessments,
+        "matching_basis": "selected_semantic_content_plus_target_profile_plus_approved_pattern_scope",
+        "case_topic_used_for_matching": False,
+    }
+
+
 def normalize_industry(value: Any) -> str:
     return str(value or "").strip().lower().replace("-", "").replace("_", "")
 
@@ -456,6 +636,7 @@ def build_source_plan(
     speaker_persona_path: Path | None = None,
     profile_registry_path: Path | None = None,
     creative_coverage_report_path: Path | None = None,
+    profile_compatibility_approval_path: Path | None = None,
 ) -> dict[str, Any]:
     persona_path = persona_path.expanduser().resolve()
     request_path = request_path.expanduser().resolve()
@@ -480,6 +661,13 @@ def build_source_plan(
     compatibility_report, compatibility_report_sha = load_compatibility_report(
         creative_coverage_report_path,
         registry_sha,
+    )
+    compatibility_approval, compatibility_approval_sha = (
+        load_profile_compatibility_approval(
+            profile_compatibility_approval_path,
+            registry_sha,
+            compatibility_report_sha,
+        )
     )
     target_profile = str(request.get("target_profile"))
     profile_contract = (
@@ -525,6 +713,14 @@ def build_source_plan(
             .get("assessments", [])
         )
     }
+    compatibility_approval_by_case = {
+        item.get("case_id"): item
+        for item in (
+            (compatibility_approval or {}).get(
+                "case_profile_compatibility_approvals", []
+            )
+        )
+    }
     if eligible_patterns:
         selected_pattern = eligible_patterns[0]
         pattern = selected_pattern["artifact"]
@@ -548,26 +744,59 @@ def build_source_plan(
             and bool(legacy_bridge_request_sha)
             and request_sha == legacy_bridge_request_sha
         )
-        selected_patterns = [
-            {
-                "pattern_id": pattern.get("pattern_id"),
-                "approved_pattern_sha": selected_pattern["sha256"],
-                "eligibility_reason": selected_pattern["eligibility_reason"],
-                "compatible_profiles": (
-                    selected_pattern_profile_record.get("compatible_profiles", [])
-                    if registry is not None
-                    else sorted(PATTERN_POLICIES[str(pattern.get("pattern_id"))]["profiles"])
-                ),
-                "profile_compatibility_status": (
-                    "approved_canonical_backfill"
-                    if registry is not None
-                    else "legacy_builtin_policy"
-                ),
-                "effectiveness_status": pattern.get("effectiveness", {}).get("status"),
-                "effectiveness_used_in_ranking": False,
-            }
-        ]
-        supported_ids = set(pattern.get("scope", {}).get("supported_case_ids", []))
+        human_pattern_approval = (
+            (compatibility_approval or {}).get(
+                "pattern_profile_compatibility_approval"
+            )
+            or {}
+        )
+        if compatibility_approval is not None and (
+            human_pattern_approval.get("pattern_id") != pattern.get("pattern_id")
+            or target_profile
+            not in (human_pattern_approval.get("compatible_profiles") or [])
+        ):
+            eligible_patterns = []
+            selected_pattern = None
+            pattern = None
+        if pattern is None:
+            selected_patterns = []
+        else:
+            selected_patterns = [
+                {
+                    "pattern_id": pattern.get("pattern_id"),
+                    "approved_pattern_sha": selected_pattern["sha256"],
+                    "eligibility_reason": selected_pattern["eligibility_reason"],
+                    "compatible_profiles": (
+                        selected_pattern_profile_record.get("compatible_profiles", [])
+                        if registry is not None
+                        else sorted(
+                            PATTERN_POLICIES[str(pattern.get("pattern_id"))]["profiles"]
+                        )
+                    ),
+                    "profile_compatibility_status": (
+                        "human_approved_compatibility"
+                        if compatibility_approval is not None
+                        else (
+                            "approved_canonical_backfill"
+                            if registry is not None
+                            else "legacy_builtin_policy"
+                        )
+                    ),
+                    "profile_compatibility_approval_sha256": (
+                        compatibility_approval_sha
+                        if compatibility_approval is not None
+                        else None
+                    ),
+                    "effectiveness_status": pattern.get("effectiveness", {}).get(
+                        "status"
+                    ),
+                    "effectiveness_used_in_ranking": False,
+                }
+            ]
+        if pattern is None:
+            supported_ids: set[str] = set()
+        else:
+            supported_ids = set(pattern.get("scope", {}).get("supported_case_ids", []))
         for case_id, source in case_sources.items():
             if case_id not in supported_ids:
                 excluded.append(
@@ -592,8 +821,9 @@ def build_source_plan(
                         }
                     )
                     continue
+                case_approval = compatibility_approval_by_case.get(case_id) or {}
                 approved_profiles = set(
-                    assessment.get("approved_compatible_generation_profiles") or []
+                    case_approval.get("approved_compatible_generation_profiles") or []
                 )
                 legacy_profiles = set(
                     (assessment.get("legacy_current_truth") or {}).get(
@@ -639,6 +869,11 @@ def build_source_plan(
                 "profile_compatibility_basis": compatibility_basis,
                 "profile_compatibility_review_status": compatibility_review_status,
                 "approved_case_profile_compatibility": approved_case_profile_compatibility,
+                "profile_compatibility_approval_sha256": (
+                    compatibility_approval_sha
+                    if approved_case_profile_compatibility
+                    else None
+                ),
             }
             eligible_case_pool.append(entry)
         eligible_case_pool.sort(
@@ -762,6 +997,7 @@ def build_source_plan(
             ),
             "registry_sha256": registry_sha,
             "coverage_report_sha256": compatibility_report_sha,
+            "profile_compatibility_approval_sha256": compatibility_approval_sha,
             "target_profile": target_profile,
             "profile_status": profile_contract.get("status") if profile_contract else None,
             "script_shape": (
@@ -815,6 +1051,7 @@ def build_source_plan(
             "generation_not_started": True,
             "script_generation_performed": False,
             "remote_model_call_performed": False,
+            "profile_compatibility_approval_used": compatibility_approval is not None,
             "raw_whisper_read": False,
             "raw_visual_evidence_read": False,
             "candidate_case_read": False,
@@ -856,6 +1093,15 @@ def build_source_plan(
             ),
             "operator_profile_hint_used_for_eligibility": False,
             "observed_source_profile_used_as_approval": False,
+            "canonical_case_compatibility_approval_applied": (
+                compatibility_approval is None
+                or all(
+                    item.get("approved_case_profile_compatibility")
+                    for item in selected_cases
+                    if item.get("profile_compatibility_basis")
+                    == "approved_profile_compatibility"
+                )
+            ),
             "effectiveness_excluded_from_ranking": True,
             "remote_model_call_performed": False,
         },
@@ -897,6 +1143,7 @@ def main() -> None:
     parser.add_argument("--candidate-source", action="append", default=[])
     parser.add_argument("--profile-registry", required=True)
     parser.add_argument("--creative-coverage-report", required=True)
+    parser.add_argument("--profile-compatibility-approval", required=True)
     parser.add_argument(
         "--output-root",
         default=None,
@@ -911,8 +1158,11 @@ def main() -> None:
         [Path(value) for value in args.fingerprint],
         [Path(value) for value in args.candidate_source],
         Path(args.speaker_persona) if args.speaker_persona else None,
-        Path(args.profile_registry),
-        Path(args.creative_coverage_report),
+        profile_registry_path=Path(args.profile_registry),
+        creative_coverage_report_path=Path(args.creative_coverage_report),
+        profile_compatibility_approval_path=Path(
+            args.profile_compatibility_approval
+        ),
     )
     project_root = Path(__file__).resolve().parents[1]
     output_root = (

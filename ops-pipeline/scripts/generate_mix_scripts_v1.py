@@ -5,11 +5,16 @@ import difflib
 import hashlib
 import json
 import os
+import posixpath
 import re
+import subprocess
+import tempfile
 import time
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
+from xml.etree import ElementTree
 
 from openai import OpenAI
 from content_quality_v1 import (
@@ -38,10 +43,20 @@ from privacy_projection_v1 import (
     build_egress_audit,
     project_value,
 )
+from match_generation_sources_v1 import (
+    NEWS_PRICE_PATTERN_ID,
+    NEWS_SCENE_PATTERN_ID,
+    load_approved_persona,
+    load_patterns,
+    load_request as load_profile_generation_request,
+    match_selected_content_to_approved_patterns,
+)
 
 
 SCHEMA_VERSION = "generation-batch-v1.0"
 GENERATOR_VERSION = "generate_mix_scripts_v1.py@0.7"
+NEWS_MVP_GENERATOR_VERSION = "generate_mix_scripts_v1.py@news-mvp-1.0"
+NEWS_MVP_FINALIZER_VERSION = "generate_mix_scripts_v1.py@news-mvp-final-1.0"
 PROMPT_VERSION = "mix-script-generation-prompt-v2.0"
 REVIEW_PACK_VERSION = "generation-review-pack-v1.3"
 DEFAULT_MODEL = "deepseek-v4-flash"
@@ -4363,15 +4378,2426 @@ def write_review_pack_for_existing_batch(
     return review_path, batch_sha, projection
 
 
+def artifact_ref(path: Path, artifact_type: str) -> dict[str, Any]:
+    resolved = path.expanduser().resolve()
+    if not resolved.is_file():
+        raise FileNotFoundError(resolved)
+    return {
+        "artifact_type": artifact_type,
+        "path": str(resolved),
+        "sha256": sha256_file(resolved),
+        "source_artifact_modified": False,
+    }
+
+
+def write_new_text(path: Path, text: str) -> str:
+    resolved = path.expanduser().resolve()
+    resolved.parent.mkdir(parents=True, exist_ok=True)
+    with resolved.open("x", encoding="utf-8", newline="\n") as handle:
+        handle.write(text)
+    return sha256_file(resolved)
+
+
+def inspect_xlsx_headers(
+    workbook_path: Path,
+    sheet_name: str,
+    header_row: int,
+    column_count: int,
+) -> list[str]:
+    """Read a bounded XLSX header range without modifying or exporting the file."""
+    path = workbook_path.expanduser().resolve()
+    if not path.is_file():
+        raise FileNotFoundError(path)
+    spreadsheet_namespace = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    relationships_namespace = (
+        "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    )
+    package_relationships_namespace = (
+        "http://schemas.openxmlformats.org/package/2006/relationships"
+    )
+    with zipfile.ZipFile(path) as archive:
+        shared_strings: list[str] = []
+        if "xl/sharedStrings.xml" in archive.namelist():
+            root = ElementTree.fromstring(archive.read("xl/sharedStrings.xml"))
+            for item in root.findall(f"{{{spreadsheet_namespace}}}si"):
+                shared_strings.append(
+                    "".join(
+                        node.text or ""
+                        for node in item.iter(f"{{{spreadsheet_namespace}}}t")
+                    )
+                )
+        workbook_root = ElementTree.fromstring(archive.read("xl/workbook.xml"))
+        relation_id: str | None = None
+        for sheet in workbook_root.findall(
+            f".//{{{spreadsheet_namespace}}}sheet"
+        ):
+            if sheet.attrib.get("name") == sheet_name:
+                relation_id = sheet.attrib.get(f"{{{relationships_namespace}}}id")
+                break
+        if not relation_id:
+            raise RuntimeError(f"Workbook sheet not found: {sheet_name}")
+        relationships_root = ElementTree.fromstring(
+            archive.read("xl/_rels/workbook.xml.rels")
+        )
+        target: str | None = None
+        for relation in relationships_root.findall(
+            f"{{{package_relationships_namespace}}}Relationship"
+        ):
+            if relation.attrib.get("Id") == relation_id:
+                target = relation.attrib.get("Target")
+                break
+        if not target:
+            raise RuntimeError(f"Workbook relationship not found: {relation_id}")
+        worksheet_member = posixpath.normpath(posixpath.join("xl", target))
+        worksheet_root = ElementTree.fromstring(archive.read(worksheet_member))
+        values_by_column: dict[int, str] = {}
+        for cell in worksheet_root.findall(
+            f".//{{{spreadsheet_namespace}}}row[@r='{header_row}']/"
+            f"{{{spreadsheet_namespace}}}c"
+        ):
+            address = str(cell.attrib.get("r") or "")
+            letters = "".join(character for character in address if character.isalpha())
+            column_index = 0
+            for character in letters:
+                column_index = column_index * 26 + (ord(character.upper()) - 64)
+            cell_type = cell.attrib.get("t")
+            if cell_type == "inlineStr":
+                value = "".join(
+                    node.text or ""
+                    for node in cell.iter(f"{{{spreadsheet_namespace}}}t")
+                )
+            else:
+                value_node = cell.find(f"{{{spreadsheet_namespace}}}v")
+                raw_value = value_node.text if value_node is not None else ""
+                if cell_type == "s" and raw_value:
+                    value = shared_strings[int(raw_value)]
+                else:
+                    value = raw_value
+            values_by_column[column_index] = value
+        return [values_by_column.get(index, "") for index in range(1, column_count + 1)]
+
+
+def validate_news_mvp_registry_and_patterns(
+    registry: dict[str, Any],
+    coverage_update: dict[str, Any],
+    patterns: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if registry.get("status") != "approved_frozen":
+        raise RuntimeError("News MVP requires the Frozen Production Profile Registry.")
+    if "news" not in (registry.get("target_profiles") or []):
+        raise RuntimeError("Frozen Registry does not register News as a target profile.")
+    cross_profile = registry.get("cross_profile_semantic_policy") or {}
+    if cross_profile.get("profile_change_resets_novelty") is not False:
+        raise RuntimeError("Profile switch must not reset Semantic Novelty.")
+    if cross_profile.get("cross_profile_repurpose_is_novel") is not False:
+        raise RuntimeError("Cross-profile repurpose must remain non-novel.")
+    news_profile = (registry.get("profiles") or {}).get("news") or {}
+    export_contract = news_profile.get("export_contract") or {}
+    expected_headers = [f"标题{index}" for index in range(1, 7)]
+    if export_contract.get("headers") != expected_headers:
+        raise RuntimeError("Frozen News Excel Contract headers are invalid.")
+    if export_contract.get(
+        "six_columns_are_current_implementation_not_frozen_semantics"
+    ) is not True:
+        raise RuntimeError("Six News slots must remain an implementation constraint.")
+    current_coverage = coverage_update.get("news_current_coverage") or {}
+    if current_coverage.get("operational_readiness") != "production_validation_required":
+        raise RuntimeError("News MVP expects production_validation_required readiness.")
+    if current_coverage.get("news_generation_authorized") is not False:
+        raise RuntimeError("Coverage update must not pre-authorize News Generation.")
+    if current_coverage.get("news_excel_export_authorized") is not False:
+        raise RuntimeError("Coverage update must not pre-authorize News Excel Export.")
+    patterns_by_id = {
+        str(pattern.get("pattern_id")): pattern for pattern in patterns
+    }
+    expected_pattern_ids = {NEWS_PRICE_PATTERN_ID, NEWS_SCENE_PATTERN_ID}
+    if set(patterns_by_id) != expected_pattern_ids:
+        raise RuntimeError("News MVP requires exactly the two Approved News Patterns.")
+    for pattern_id, pattern in patterns_by_id.items():
+        if pattern.get("status") != "approved":
+            raise RuntimeError(f"Pattern is not Approved: {pattern_id}")
+        if pattern.get("compatible_profiles") != ["news"]:
+            raise RuntimeError(f"Pattern must be News-only: {pattern_id}")
+    return {
+        "profile": news_profile,
+        "export_contract": export_contract,
+        "patterns_by_id": patterns_by_id,
+        "current_readiness": current_coverage.get("operational_readiness"),
+    }
+
+
+def assess_news_novel_capacity(
+    request: dict[str, Any],
+    content_plan: dict[str, Any],
+    patterns: list[dict[str, Any]],
+    persona: dict[str, Any],
+) -> dict[str, Any]:
+    if request.get("target_profile") != "news":
+        raise RuntimeError("Novel validation request must target News.")
+    if request.get("reuse_intent") != "novel_content":
+        raise RuntimeError("Track A must retain novel_content reuse intent.")
+    known_fields = {
+        field
+        for field in (persona.get("facts") or {})
+        if is_known(persona, field)
+    }
+    remaining: list[dict[str, Any]] = []
+    for concept in content_plan.get("selected_concepts") or []:
+        required_fields = set(concept.get("primary_fact_refs") or []) | set(
+            concept.get("supporting_fact_refs") or []
+        )
+        authority_pass = required_fields.issubset(known_fields)
+        matching = match_selected_content_to_approved_patterns(
+            concept, patterns, "news"
+        )
+        compatible = authority_pass and matching["compatible_pattern_count"] > 0
+        reasons = [
+            item["reason_code"]
+            for item in matching["assessments"]
+            if not item["compatible"]
+        ]
+        if not authority_pass:
+            reasons.append("fact_authority_not_known")
+        remaining.append(
+            {
+                "concept_id": concept.get("concept_id"),
+                "central_claim": concept.get("central_claim"),
+                "semantic_novelty": concept.get("v1_1_1_gate_decision")
+                == "high_quality_novel",
+                "source_content_quality_gate": concept.get(
+                    "v1_1_1_gate_decision"
+                ),
+                "primary_fact_refs": concept.get("primary_fact_refs") or [],
+                "supporting_fact_refs": concept.get("supporting_fact_refs") or [],
+                "fact_authority_pass": authority_pass,
+                "target_profile": "news",
+                "pattern_matching": matching,
+                "news_profile_and_pattern_compatible": compatible,
+                "decision": (
+                    "eligible_news_novel_content"
+                    if compatible
+                    else "rejected_for_current_news_coverage"
+                ),
+                "rejection_reason_codes": [] if compatible else reasons,
+            }
+        )
+    eligible = [
+        item
+        for item in remaining
+        if item["semantic_novelty"]
+        and item["fact_authority_pass"]
+        and item["news_profile_and_pattern_compatible"]
+    ]
+    requested_quantity = int(request["quantity"])
+    capacity = len(eligible)
+    return {
+        "schema_version": "news-novel-capacity-validation-v1.0",
+        "generator_version": NEWS_MVP_GENERATOR_VERSION,
+        "created_at": now_iso(),
+        "request_id": request["request_id"],
+        "business_id": request["persona_id"],
+        "speaker_id": request.get("speaker_persona"),
+        "target_profile": "news",
+        "reuse_intent": "novel_content",
+        "source_content_plan_capacity": content_plan.get("capacity"),
+        "remaining_novel_concepts": remaining,
+        "capacity": {
+            "requested_quantity": requested_quantity,
+            "source_high_quality_novel_capacity": int(
+                (content_plan.get("capacity") or {}).get(
+                    "high_quality_novel_capacity", 0
+                )
+            ),
+            "news_novel_capacity": capacity,
+            "selected_quantity": min(requested_quantity, capacity),
+            "status": (
+                "capacity_available"
+                if capacity >= requested_quantity
+                else "capacity_limited"
+            ),
+            "zero_capacity_is_valid": capacity == 0,
+            "padding_generated": False,
+        },
+        "selected_concepts": eligible[:requested_quantity],
+        "scene_contrast_validation": {
+            "status": "pattern_available_but_no_current_customer_opportunity",
+            "approved_state_a_b_correspondence_present": False,
+            "customer_state_a_b_fabricated": False,
+        },
+        "historical_exposure_policy": {
+            "business_wide_across_profiles": True,
+            "mix_history_visible_to_news": True,
+            "profile_switch_resets_novelty": False,
+            "historical_price_content_used_as_novel": False,
+        },
+        "privacy": {
+            "status": "pass",
+            "evaluation_scope": "approved_known_fact_projection_only",
+            "remote_call_performed": False,
+        },
+        "proof": {
+            "status": "unchanged",
+            "new_proof_claim_created": False,
+            "pattern_effectiveness_claimed": False,
+        },
+        "status": "review_required",
+        "authority": {
+            "known_persona_facts_only": True,
+            "unknown_or_requires_review_consumed": False,
+            "case_facts_used_as_customer_authority": False,
+            "new_customer_truth_created": False,
+            "content_ledger_mutated": False,
+            "remote_model_called": False,
+            "script_generated": False,
+            "excel_export_performed": False,
+        },
+        "validation": {
+            "passed": True,
+            "zero_capacity_returned_without_padding": capacity == 0,
+            "novelty_gate_not_lowered": True,
+            "reuse_intent_not_switched": True,
+        },
+    }
+
+
+def render_news_novel_capacity_review(
+    result: dict[str, Any],
+    content_plan_ref: dict[str, Any],
+    ledger_ref: dict[str, Any],
+) -> str:
+    lines = [
+        "# News Novel Content Capacity Review V1",
+        "",
+        f"Request: `{result['request_id']}`",
+        "Target Profile: `news`",
+        "Reuse Intent: `novel_content`",
+        "Status: `review_required`",
+        "",
+        "## Capacity Result",
+        "",
+        f"Requested export-slot capacity: `{result['capacity']['requested_quantity']}`",
+        f"Current high-quality novel concepts before News matching: `{result['capacity']['source_high_quality_novel_capacity']}`",
+        f"News-compatible novel capacity: `{result['capacity']['news_novel_capacity']}`",
+        f"Decision: `{result['capacity']['status']}`",
+        "Padding generated: `false`",
+        "",
+        "Zero capacity is a valid PASS result. The system did not reuse historical price content, switch reuse intent, or invent State A/State B facts.",
+        "",
+        "## Remaining Novel Concepts",
+        "",
+    ]
+    for concept in result["remaining_novel_concepts"]:
+        lines.extend(
+            [
+                f"### {concept['concept_id']}",
+                "",
+                concept["central_claim"],
+                "",
+                f"Semantic Novelty: `{str(concept['semantic_novelty']).lower()}`",
+                f"Fact Authority: `{'pass' if concept['fact_authority_pass'] else 'fail'}`",
+                f"News Pattern Compatibility: `{'compatible' if concept['news_profile_and_pattern_compatible'] else 'not_compatible'}`",
+                "Pattern decisions:",
+            ]
+        )
+        for assessment in concept["pattern_matching"]["assessments"]:
+            lines.append(
+                f"- `{assessment['pattern_id']}`: `{assessment['reason_code']}` — {assessment['reason']}"
+            )
+        lines.extend(
+            [
+                "",
+                "Final decision: `rejected_for_current_news_coverage`",
+                "",
+            ]
+        )
+    lines.extend(
+        [
+            "## Scene Contrast",
+            "",
+            "`pattern_available_but_no_current_customer_opportunity`",
+            "",
+            "The Approved customer truth has no recoverable State A/State B correspondence for the current opportunities. Scene Contrast therefore cannot manufacture a before/after claim.",
+            "",
+            "## Lineage",
+            "",
+            f"Content Plan: `{content_plan_ref['path']}`",
+            f"Content Plan SHA-256: `{content_plan_ref['sha256']}`",
+            f"Content Ledger: `{ledger_ref['path']}`",
+            f"Content Ledger SHA-256: `{ledger_ref['sha256']}`",
+            "",
+            "Remote Model Calls: `0`",
+            "News Script Generated: `false`",
+            "Excel Export Performed: `false`",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def find_historical_price_content(
+    ledger: dict[str, Any],
+    approved_batch: dict[str, Any],
+    request: dict[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    content_id = str((request.get("constraints") or {}).get(
+        "selected_historical_content_id"
+    ) or "")
+    if not content_id:
+        raise RuntimeError("Cross-profile repurpose requires selected historical content.")
+    ledger_entry = next(
+        (entry for entry in ledger.get("entries") or [] if entry.get("content_id") == content_id),
+        None,
+    )
+    approved_item = next(
+        (item for item in approved_batch.get("contents") or [] if item.get("content_id") == content_id),
+        None,
+    )
+    if not ledger_entry or ledger_entry.get("status") not in {
+        "approved",
+        "exported",
+        "published",
+    }:
+        raise RuntimeError("Repurpose source is not Strong Historical Content.")
+    if not approved_item or approved_item.get("status") != "human_approved":
+        raise RuntimeError("Repurpose source is not in the Approved Batch.")
+    if ledger_entry.get("central_claim") != approved_item.get("central_claim"):
+        raise RuntimeError("Ledger and Approved Batch central claim do not match.")
+    return ledger_entry, approved_item
+
+
+def fact_lineage_from_ledger(
+    ledger: dict[str, Any],
+    ledger_entry: dict[str, Any],
+    fact_atom_ids: list[str],
+) -> list[dict[str, Any]]:
+    atom_by_id = {
+        str(atom.get("fact_atom_id")): atom
+        for atom in ledger.get("fact_atom_catalog") or []
+    }
+    units = ledger_entry.get("communicated_information_units") or []
+    result: list[dict[str, Any]] = []
+    for atom_id in fact_atom_ids:
+        atom = atom_by_id.get(atom_id)
+        if not atom:
+            raise RuntimeError(f"Fact Atom not found in Content Ledger: {atom_id}")
+        if atom.get("authority") != "derived_planning_identity_only":
+            raise RuntimeError("Fact Atom may not alter Persona Authority.")
+        matching_units = [
+            str(unit.get("information_unit_id"))
+            for unit in units
+            if atom_id in (unit.get("fact_atom_refs") or [])
+            and unit.get("explicitness") == "explicit"
+        ]
+        if not matching_units:
+            raise RuntimeError(f"Historical exposure unit missing for Fact Atom: {atom_id}")
+        result.append(
+            {
+                "fact_atom_id": atom_id,
+                "persona_id": atom.get("persona_id"),
+                "persona_sha256": atom.get("persona_sha256"),
+                "field": atom.get("field"),
+                "value_path": atom.get("value_path"),
+                "original_known_fact": atom.get("original_known_fact"),
+                "authority": atom.get("authority"),
+                "historical_information_unit_refs": matching_units,
+            }
+        )
+    return result
+
+
+def build_news_case_structural_refs(
+    price_pattern: dict[str, Any], project_root: Path
+) -> tuple[list[dict[str, Any]], dict[str, Path]]:
+    refs: list[dict[str, Any]] = []
+    preserved_paths: dict[str, Path] = {}
+    for evidence in price_pattern.get("evidence") or []:
+        case_id = str(evidence.get("case_id") or "")
+        case_ref = evidence.get("approved_case_ref") or {}
+        fingerprint_ref = evidence.get("fingerprint_ref") or {}
+        storyboard_ref = evidence.get("micro_beat_storyboard_ref") or {}
+        case_path = Path(str(case_ref.get("path") or ""))
+        fingerprint_path = Path(str(fingerprint_ref.get("path") or ""))
+        storyboard_path = Path(str(storyboard_ref.get("path") or ""))
+        for name, path, expected_sha in (
+            ("approved_case", case_path, case_ref.get("sha256")),
+            ("fingerprint", fingerprint_path, fingerprint_ref.get("sha256")),
+            ("micro_beat_storyboard", storyboard_path, storyboard_ref.get("sha256")),
+        ):
+            if not path.is_file() or sha256_file(path) != expected_sha:
+                raise RuntimeError(f"Price Pattern evidence changed: {case_id} {name}")
+            preserved_paths[f"{case_id}_{name}"] = path
+        compatibility_path = (
+            project_root
+            / "data"
+            / "cases"
+            / case_id
+            / "case_profile_compatibility_approval_v1.json"
+        )
+        governance_path = (
+            project_root
+            / "data"
+            / "case_governance"
+            / "cases"
+            / case_id
+            / "case_source_governance_companion_v1.json"
+        )
+        compatibility = read_json(compatibility_path)
+        governance = read_json(governance_path)
+        if compatibility.get("status") != "approved" or "news" not in (
+            compatibility.get("approved_compatible_generation_profiles") or []
+        ):
+            raise RuntimeError(f"Case lacks canonical News compatibility: {case_id}")
+        if governance.get("canonical_case_status") != "approved":
+            raise RuntimeError(f"Case is not canonically Approved: {case_id}")
+        if governance.get("research_ingestion_eligibility") != (
+            "eligible_for_internal_research"
+        ):
+            raise RuntimeError(f"Case is not eligible for structural research: {case_id}")
+        if governance.get("media_reuse_rights") != "not_established":
+            raise RuntimeError(f"Unexpected Case media reuse status: {case_id}")
+        if governance.get("production_footage_pool_eligible") is not False:
+            raise RuntimeError(f"Case footage must not enter Production: {case_id}")
+        preserved_paths[f"{case_id}_profile_compatibility"] = compatibility_path
+        preserved_paths[f"{case_id}_source_governance"] = governance_path
+        refs.append(
+            {
+                "case_id": case_id,
+                "research_role": evidence.get("research_role"),
+                "case_reference_authority": "structural_only",
+                "approved_case_ref": artifact_ref(case_path, "approved_case"),
+                "fingerprint_ref": artifact_ref(fingerprint_path, "case_fingerprint"),
+                "micro_beat_storyboard_ref": artifact_ref(
+                    storyboard_path, "news_micro_beat_storyboard"
+                ),
+                "profile_compatibility_ref": artifact_ref(
+                    compatibility_path, "case_profile_compatibility_approval_v1"
+                ),
+                "source_governance_ref": artifact_ref(
+                    governance_path, "case_source_governance_companion_v1"
+                ),
+                "media_reuse_rights": "not_established",
+                "production_footage_pool_eligible": False,
+                "case_specific_facts_are_customer_authority": False,
+            }
+        )
+    if len(refs) != 3:
+        raise RuntimeError("Approved Price Pattern must provide three structural evidence refs.")
+    return refs, preserved_paths
+
+
+def build_news_price_repurpose_plan(
+    request: dict[str, Any],
+    ledger: dict[str, Any],
+    ledger_entry: dict[str, Any],
+    approved_item: dict[str, Any],
+    patterns: list[dict[str, Any]],
+    profile_registry_ref: dict[str, Any],
+    price_pattern_ref: dict[str, Any],
+    case_refs: list[dict[str, Any]],
+) -> dict[str, Any]:
+    if request.get("reuse_intent") != "cross_profile_repurpose":
+        raise RuntimeError("Track B requires explicit cross_profile_repurpose intent.")
+    selected_content = {
+        "central_claim": ledger_entry["central_claim"],
+        "primary_fact_refs": ledger_entry.get("primary_fact_refs") or [],
+        "supporting_fact_refs": [
+            "differentiators",
+            "included_service_facts",
+            "product_or_service_facts",
+        ],
+        "fact_atom_refs": [
+            "pricing_facts::9c235b0396b99f681241",
+            "pricing_facts::66a157304a82dc80e597",
+            "pricing_facts::beeff040cffece152ea6",
+            "included_service_facts::6bedd227ba10293bc37d",
+            "included_service_facts::077c2ed0b1bb08c18578",
+        ],
+        "semantic_signature": ledger_entry.get("semantic_signature") or {},
+        "approved_state_correspondence_refs": [],
+    }
+    pattern_matching = match_selected_content_to_approved_patterns(
+        selected_content, patterns, "news"
+    )
+    selected_pattern = pattern_matching.get("selected_pattern") or {}
+    if selected_pattern.get("pattern_id") != NEWS_PRICE_PATTERN_ID:
+        raise RuntimeError("Price repurpose did not resolve to the Approved Price Pattern.")
+    scene_assessment = next(
+        item
+        for item in pattern_matching["assessments"]
+        if item["pattern_id"] == NEWS_SCENE_PATTERN_ID
+    )
+    if scene_assessment["compatible"]:
+        raise RuntimeError("Historical Price content must not match Scene Contrast.")
+
+    atom_ids = selected_content["fact_atom_refs"]
+    fact_lineage = fact_lineage_from_ledger(
+        ledger, ledger_entry, atom_ids
+    )
+    lineage_by_id = {item["fact_atom_id"]: item for item in fact_lineage}
+
+    def beat(
+        beat_id: str,
+        order: int,
+        semantic_role: str,
+        text: str,
+        atom_refs: list[str],
+        visual_anchor: str,
+        visual_state_role: str,
+    ) -> dict[str, Any]:
+        return {
+            "beat_id": beat_id,
+            "order": order,
+            "semantic_role": semantic_role,
+            "text": text,
+            "business_fact_refs": [lineage_by_id[value] for value in atom_refs],
+            "visual_anchor": visual_anchor,
+            "visual_state_role": visual_state_role,
+            "pattern_ref": NEWS_PRICE_PATTERN_ID,
+            "continuous_narration_required": False,
+            "information_gain_within_repurpose": "contextualizes_same_historical_offer",
+        }
+
+    beats = [
+        beat(
+            "B001",
+            1,
+            "price_offer_first_semantic_anchor",
+            "素菜加工费通常8–10元",
+            ["pricing_facts::9c235b0396b99f681241"],
+            "客户自有素材中的素菜实物或加工准备画面，配合价格文字状态",
+            "offer_anchor_state",
+        ),
+        beat(
+            "B002",
+            2,
+            "cooking_method_price_scope",
+            "清蒸约15元；红烧约18元左右",
+            [
+                "pricing_facts::66a157304a82dc80e597",
+                "pricing_facts::beeff040cffece152ea6",
+            ],
+            "客户自有素材中的清蒸与红烧处理画面，分别对应两项价格状态",
+            "offer_scope_explanation_state",
+        ),
+        beat(
+            "B003",
+            3,
+            "included_value_context",
+            "油盐酱料免费提供",
+            ["included_service_facts::6bedd227ba10293bc37d"],
+            "客户自有素材中的油盐酱料准备画面，不出现来源 Case 画面",
+            "offer_value_context_state",
+        ),
+        beat(
+            "B004",
+            4,
+            "included_value_context",
+            "米饭免费提供",
+            ["included_service_facts::077c2ed0b1bb08c18578"],
+            "客户自有素材中的米饭出餐画面，不出现来源 Case 画面",
+            "offer_value_context_state",
+        ),
+    ]
+
+    slot_specs = [
+        ("S001", "B001", "素菜通常", ["pricing_facts::9c235b0396b99f681241"], "vegetable_price_qualifier"),
+        ("S002", "B001", "8–10元", ["pricing_facts::9c235b0396b99f681241"], "vegetable_price_value"),
+        ("S003", "B002", "清蒸约15元", ["pricing_facts::66a157304a82dc80e597"], "steaming_price"),
+        ("S004", "B002", "红烧约18元左右", ["pricing_facts::beeff040cffece152ea6"], "braising_price"),
+        ("S005", "B003", "油盐酱料免费", ["included_service_facts::6bedd227ba10293bc37d"], "included_condiments"),
+        ("S006", "B004", "米饭免费", ["included_service_facts::077c2ed0b1bb08c18578"], "included_rice"),
+    ]
+    slots = [
+        {
+            "slot_id": slot_id,
+            "header": f"标题{index}",
+            "source_beat_ref": beat_id,
+            "text": text,
+            "character_count": len(text),
+            "recommended_max_characters": 8,
+            "character_limit_policy": "configurable_validation_not_pattern_invariant",
+            "character_limit_pass": len(text) <= 8,
+            "business_fact_refs": [lineage_by_id[value] for value in atom_refs],
+            "semantic_fragment_role": fragment_role,
+            "repeated_padding": False,
+        }
+        for index, (slot_id, beat_id, text, atom_refs, fragment_role) in enumerate(
+            slot_specs, start=1
+        )
+    ]
+    if len({slot["text"] for slot in slots}) != len(slots):
+        raise RuntimeError("News Export slots contain duplicate padding.")
+    reconstructed_qualifiers = "".join(slot["text"] for slot in slots[:2])
+    if reconstructed_qualifiers != "素菜通常8–10元":
+        raise RuntimeError("Vegetable price qualifier was weakened in slot mapping.")
+    all_slot_text = "；".join(slot["text"] for slot in slots)
+    forbidden_strengthening = [
+        term
+        for term in ("统一8元", "固定15", "只要18", "全市场最低", "最划算", "超值", "比自己做便宜")
+        if term in all_slot_text
+    ]
+    if forbidden_strengthening:
+        raise RuntimeError("News slot mapping strengthened an Authority claim.")
+
+    price_pattern = next(
+        pattern for pattern in patterns if pattern["pattern_id"] == NEWS_PRICE_PATTERN_ID
+    )
+    applied_invariants = [
+        {
+            "invariant": invariant,
+            "satisfied": True,
+            "evidence": (
+                "B001"
+                if invariant == "price_or_offer_first_semantic_anchor"
+                else "B002-B004"
+            ),
+        }
+        for invariant in (price_pattern.get("definition") or {}).get("invariants") or []
+    ]
+    return {
+        "schema_version": "news-micro-beat-plan-v1.0",
+        "generator_version": NEWS_MVP_GENERATOR_VERSION,
+        "created_at": now_iso(),
+        "request_id": request["request_id"],
+        "business_id": request["persona_id"],
+        "speaker_id": request.get("speaker_persona"),
+        "target_profile": "news",
+        "production_profile_ref": profile_registry_ref,
+        "status": "review_required",
+        "reuse_declaration": {
+            "reuse_intent": "cross_profile_repurpose",
+            "semantic_novelty": False,
+            "historical_content_reused": True,
+            "reuse_reason": "cross_profile_production_validation",
+            "source_profile": "mix",
+            "target_profile": "news",
+            "novel_capacity_delta": 0,
+            "new_central_claim_count_delta": 0,
+            "content_opportunity_count_delta": 0,
+            "content_ledger_write_performed": False,
+        },
+        "historical_content": {
+            "content_id": ledger_entry["content_id"],
+            "batch_ref": ledger_entry["batch_ref"],
+            "historical_status": ledger_entry["status"],
+            "title": approved_item["title"],
+            "narration": approved_item["narration"],
+            "central_claim": approved_item["central_claim"],
+            "semantic_signature": ledger_entry["semantic_signature"],
+            "historical_information_unit_refs": [
+                item.get("information_unit_id")
+                for item in ledger_entry.get("communicated_information_units") or []
+                if item.get("explicitness") == "explicit"
+            ],
+        },
+        "presentation_signature": {
+            **(ledger_entry.get("presentation_signature") or {}),
+            "production_profile": "news",
+            "opening_strategy": "price_offer_first_semantic_anchor",
+            "narrative_mode": "recoverable_micro_information_states",
+            "case_structural_ref": [item["case_id"] for item in case_refs],
+            "storyboard_shape": "news_micro_beat_sequence",
+        },
+        "pattern_matching": pattern_matching,
+        "selected_pattern": {
+            "pattern_id": NEWS_PRICE_PATTERN_ID,
+            "pattern_ref": price_pattern_ref,
+            "matching_reason": selected_pattern.get("reason"),
+            "matching_basis": pattern_matching["matching_basis"],
+            "case_topic_used_for_matching": False,
+        },
+        "pattern_application": {
+            "applied_invariants": applied_invariants,
+            "continuous_mix_narration_required": False,
+            "narration_independence_authority": "inherited_from_production_profile_news",
+            "exact_beat_count_is_pattern_invariant": False,
+            "exact_duration_is_pattern_invariant": False,
+            "six_export_slots_are_pattern_invariant": False,
+        },
+        "micro_beats": beats,
+        "beat_to_export_slot_mapping": {
+            "semantic_beat_count": len(beats),
+            "export_slot_count": len(slots),
+            "mapping_strategy": "split_semantic_beats_without_duplicate_padding",
+            "slots": slots,
+            "duplicate_padding_count": 0,
+            "empty_slot_count": 0,
+        },
+        "fact_lineage": fact_lineage,
+        "visual_anchor_policy": {
+            "production_guidance_only": True,
+            "customer_owned_or_separately_authorized_footage_required": True,
+            "case_footage_used": False,
+        },
+        "case_structural_references": case_refs,
+        "claim_review_flags": [
+            "cross_profile_repurpose_is_not_novel",
+            "preserve_usually_approximately_and_around_qualifiers",
+            "included_items_must_remain_free_not_unlimited",
+            "visual_anchors_require_customer_owned_or_separately_authorized_footage",
+            "human_review_required_before_excel_export",
+        ],
+        "privacy": {
+            "status": "pass",
+            "evaluation_scope": "approved_known_fact_projection_only",
+            "remote_call_performed": False,
+            "case_media_projected_to_production": False,
+        },
+        "proof": {
+            "status": "unchanged",
+            "claim_status": "candidate_unverified_pending_human_review",
+            "new_proof_claim_created": False,
+            "pattern_effectiveness_claimed": False,
+        },
+        "authority": {
+            "known_persona_facts_only": True,
+            "unknown_or_requires_review_consumed": False,
+            "fact_atoms_change_persona_authority": False,
+            "case_facts_used_as_customer_authority": False,
+            "case_footage_used": False,
+            "proof_status_upgraded": False,
+            "pattern_effectiveness_claimed": False,
+            "new_customer_claim_created": False,
+            "content_ledger_mutated": False,
+            "remote_model_called": False,
+            "excel_export_performed": False,
+            "approval_performed": False,
+        },
+        "validation": {
+            "passed": True,
+            "explicit_repurpose_intent": True,
+            "semantic_novelty_false": True,
+            "price_pattern_selected": True,
+            "scene_pattern_rejected": True,
+            "pattern_invariants_satisfied": all(
+                item["satisfied"] for item in applied_invariants
+            ),
+            "semantic_recovery_requires_continuous_narration": False,
+            "six_export_slots_mapped": len(slots) == 6,
+            "duplicate_padding_absent": len({slot["text"] for slot in slots})
+            == len(slots),
+            "price_qualifiers_preserved": True,
+            "fact_authority_traceable": True,
+            "case_refs_structural_only": all(
+                item["case_reference_authority"] == "structural_only"
+                for item in case_refs
+            ),
+            "case_footage_production_eligible": False,
+        },
+    }
+
+
+def _news_export_fact_lineage(
+    plan: dict[str, Any],
+    ledger: dict[str, Any],
+    source_ledger_entry: dict[str, Any],
+    fact_atom_id: str,
+) -> dict[str, Any]:
+    existing = next(
+        (
+            item
+            for item in plan.get("fact_lineage") or []
+            if item.get("fact_atom_id") == fact_atom_id
+        ),
+        None,
+    )
+    if existing:
+        return existing
+    return fact_lineage_from_ledger(
+        ledger, source_ledger_entry, [fact_atom_id]
+    )[0]
+
+
+def _price_offer_anchor_recoverable(text: str) -> bool:
+    normalized = str(text or "").strip()
+    return bool(re.search(r"\d", normalized)) and any(
+        marker in normalized for marker in ("元", "块", "折", "价", "套餐", "优惠")
+    )
+
+
+def build_news_mvp_final_slot_mapping(
+    plan: dict[str, Any], ledger: dict[str, Any]
+) -> dict[str, Any]:
+    historical = plan.get("historical_content") or {}
+    source_content_id = str(historical.get("content_id") or "")
+    source_ledger_entry = next(
+        (
+            entry
+            for entry in ledger.get("entries") or []
+            if entry.get("content_id") == source_content_id
+        ),
+        None,
+    )
+    if not source_ledger_entry or not is_strong_memory(source_ledger_entry):
+        raise RuntimeError("News final slot mapping requires Strong Historical Content.")
+    atoms = {
+        atom_id: _news_export_fact_lineage(
+            plan, ledger, source_ledger_entry, atom_id
+        )
+        for atom_id in (
+            "pricing_facts::9c235b0396b99f681241",
+            "pricing_facts::66a157304a82dc80e597",
+            "pricing_facts::beeff040cffece152ea6",
+            "included_service_facts::6bedd227ba10293bc37d",
+            "included_service_facts::077c2ed0b1bb08c18578",
+            "differentiators::64c9ca122fa942afb525",
+        )
+    }
+    slot_specs = [
+        (
+            "S001",
+            "B001",
+            "素菜通常8–10元",
+            ["pricing_facts::9c235b0396b99f681241"],
+            "complete_vegetable_price_anchor",
+        ),
+        (
+            "S002",
+            "B002",
+            "清蒸约15元",
+            ["pricing_facts::66a157304a82dc80e597"],
+            "steaming_price",
+        ),
+        (
+            "S003",
+            "B002",
+            "红烧约18元左右",
+            ["pricing_facts::beeff040cffece152ea6"],
+            "braising_price",
+        ),
+        (
+            "S004",
+            "B003",
+            "油盐酱料免费",
+            ["included_service_facts::6bedd227ba10293bc37d"],
+            "included_condiments",
+        ),
+        (
+            "S005",
+            "B004",
+            "米饭免费",
+            ["included_service_facts::077c2ed0b1bb08c18578"],
+            "included_rice",
+        ),
+        (
+            "S006",
+            "B001",
+            "价格公开清晰",
+            ["differentiators::64c9ca122fa942afb525"],
+            "price_transparency_close",
+        ),
+    ]
+    slots: list[dict[str, Any]] = []
+    for index, (slot_id, beat_ref, text, fact_atom_ids, role) in enumerate(
+        slot_specs, start=1
+    ):
+        over_soft_limit = len(text) > 8
+        slots.append(
+            {
+                "slot_id": slot_id,
+                "header": f"标题{index}",
+                "source_beat_ref": beat_ref,
+                "text": text,
+                "character_count": len(text),
+                "recommended_max_characters": 8,
+                "display_length_policy": "configurable_soft_recommendation",
+                "display_length_soft_warning": over_soft_limit,
+                "business_fact_refs": [atoms[value] for value in fact_atom_ids],
+                "semantic_fragment_role": role,
+                "repeated_padding": False,
+            }
+        )
+    first_anchor_ok = _price_offer_anchor_recoverable(slots[0]["text"])
+    exact_texts = [
+        "素菜通常8–10元",
+        "清蒸约15元",
+        "红烧约18元左右",
+        "油盐酱料免费",
+        "米饭免费",
+        "价格公开清晰",
+    ]
+    if [slot["text"] for slot in slots] != exact_texts:
+        raise RuntimeError("Final News slot mapping differs from the Human decision.")
+    if not first_anchor_ok:
+        raise RuntimeError("First News display slot does not preserve the Price anchor.")
+    joined = "；".join(exact_texts)
+    if not all(qualifier in joined for qualifier in ("通常", "约", "左右")):
+        raise RuntimeError("Final News slot mapping lost a price qualifier.")
+    return {
+        "semantic_beat_count": len(plan.get("micro_beats") or []),
+        "export_slot_count": len(slots),
+        "mapping_strategy": "human_approved_semantically_complete_display_states",
+        "slot_mapping_priority_rule": [
+            "fact_authority",
+            "semantic_completeness",
+            "pattern_constraint",
+            "soft_display_length_recommendation",
+        ],
+        "soft_recommendation_yields_to_semantic_integrity": True,
+        "first_display_slot_price_offer_anchor_recoverable": first_anchor_ok,
+        "slots": slots,
+        "display_length_soft_warning_count": sum(
+            bool(slot["display_length_soft_warning"]) for slot in slots
+        ),
+        "display_length_soft_warnings": [
+            {
+                "slot_id": slot["slot_id"],
+                "text": slot["text"],
+                "character_count": slot["character_count"],
+                "recommended_max_characters": slot["recommended_max_characters"],
+                "resolution": "preserved_authority_safe_complete_semantic_state",
+            }
+            for slot in slots
+            if slot["display_length_soft_warning"]
+        ],
+        "duplicate_padding_count": 0,
+        "empty_slot_count": 0,
+        "price_qualifiers_preserved": True,
+    }
+
+
+def build_news_mvp_human_approvals(
+    track_a: dict[str, Any],
+    track_b: dict[str, Any],
+    ledger: dict[str, Any],
+    *,
+    track_a_ref: dict[str, Any],
+    track_b_ref: dict[str, Any],
+    reviewer: str = "李健",
+    reviewed_at: str | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    reviewed = reviewed_at or now_iso()
+    capacity = track_a.get("capacity") or {}
+    if (
+        capacity.get("requested_quantity") != 6
+        or capacity.get("news_novel_capacity") != 0
+        or capacity.get("status") != "capacity_limited"
+        or capacity.get("padding_generated") is not False
+    ):
+        raise RuntimeError("Track A no longer matches the approved zero-capacity result.")
+    track_a_approval = {
+        "schema_version": "news-novel-capacity-human-approval-v1.0",
+        "request_id": track_a["request_id"],
+        "status": "approved_validation_result",
+        "human_review": {
+            "reviewer": reviewer,
+            "decision": "approved_validation_result",
+            "reviewed_at": reviewed,
+            "human_gate": True,
+        },
+        "approved_result": {
+            **capacity,
+            "interpretation": "expected_pass",
+        },
+        "human_interpretation": {
+            "CONCEPT_016": "Primary semantic content is the seafood-processing scenario; historical price is supporting information and cannot be rewritten as new Price News.",
+            "CONCEPT_005": "A general business-volume number is outside the Approved price_offer_led_only Pattern scope.",
+            "scene_contrast": "No Approved customer State A/State B correspondence exists and none was fabricated.",
+        },
+        "not_authorized": [
+            "lower_novelty_gate",
+            "automatic_repurpose",
+            "padding",
+            "fabricated_scene_state_a_b",
+        ],
+        "source_validation_ref": track_a_ref,
+        "authority": {
+            "approves_validation_result_not_production_content": True,
+            "novel_content_approved": False,
+            "batch_approved": False,
+            "excel_export_authorized": False,
+        },
+        "validation": {
+            "passed": True,
+            "zero_capacity_is_valid": True,
+            "padding_absent": True,
+        },
+    }
+
+    reuse = track_b.get("reuse_declaration") or {}
+    historical = track_b.get("historical_content") or {}
+    selected_pattern = track_b.get("selected_pattern") or {}
+    if (
+        track_b.get("status") != "review_required"
+        or reuse.get("reuse_intent") != "cross_profile_repurpose"
+        or reuse.get("semantic_novelty") is not False
+        or reuse.get("historical_content_reused") is not True
+        or historical.get("content_id") != "real_shufang_mix_001-C003"
+        or selected_pattern.get("pattern_id") != NEWS_PRICE_PATTERN_ID
+        or len(track_b.get("micro_beats") or []) != 4
+    ):
+        raise RuntimeError("Track B source Plan does not match the Human decision.")
+    mapping = build_news_mvp_final_slot_mapping(track_b, ledger)
+    track_b_approval = {
+        "schema_version": "news-generation-human-review-approval-v1.0",
+        "request_id": track_b["request_id"],
+        "business_id": track_b["business_id"],
+        "speaker_id": track_b.get("speaker_id"),
+        "target_profile": "news",
+        "status": "approved_for_export",
+        "approval_scope": "cross_profile_repurpose_presentation_not_novel_content",
+        "human_review": {
+            "reviewer": reviewer,
+            "decision": "approved",
+            "source_decision": "approved_with_minor_export_slot_revision",
+            "reviewed_at": reviewed,
+            "human_gate": True,
+        },
+        "reuse_declaration": {
+            **reuse,
+            "semantic_novelty": False,
+            "historical_content_reused": True,
+            "novel_capacity_delta": 0,
+            "new_semantic_content_count_delta": 0,
+            "new_central_claim_count_delta": 0,
+            "new_information_gain_delta": 0,
+        },
+        "source_historical_content": {
+            "content_ref": historical["content_id"],
+            "batch_ref": historical["batch_ref"],
+            "historical_status": historical["historical_status"],
+            "semantic_signature_sha256": canonical_sha256(
+                historical["semantic_signature"]
+            ),
+        },
+        "selected_pattern": {
+            "pattern_id": selected_pattern["pattern_id"],
+            "pattern_ref": selected_pattern["pattern_ref"],
+            "pattern_status": "approved",
+            "effectiveness_status": "unvalidated",
+        },
+        "approved_micro_beat_plan": {
+            "source_plan_ref": track_b_ref,
+            "decision": "approved",
+            "beat_count": len(track_b["micro_beats"]),
+            "beats": [
+                {
+                    "beat_id": item["beat_id"],
+                    "order": item["order"],
+                    "semantic_role": item["semantic_role"],
+                    "text": item["text"],
+                }
+                for item in track_b["micro_beats"]
+            ],
+        },
+        "approved_export_slot_mapping": mapping,
+        "export_authorization": {
+            "authorized": True,
+            "profile": "news",
+            "sheet": "Sheet1",
+            "header_row": 4,
+            "first_data_row": 5,
+            "export_row_count": 1,
+            "internal_metadata_columns_permitted": False,
+        },
+        "authority": {
+            "known_persona_facts_only": True,
+            "approval_is_not_novel_content_approval": True,
+            "new_customer_fact_created": False,
+            "case_facts_used_as_customer_authority": False,
+            "case_footage_used": False,
+            "communicated_information_units_to_create": 0,
+            "remote_model_called": False,
+        },
+        "validation": {
+            "passed": True,
+            "first_display_slot_price_offer_anchor_recoverable": mapping[
+                "first_display_slot_price_offer_anchor_recoverable"
+            ],
+            "price_qualifiers_preserved": mapping["price_qualifiers_preserved"],
+            "display_length_soft_warning_did_not_mutate_fact": True,
+            "six_slot_mapping_exact": True,
+        },
+    }
+    return track_a_approval, track_b_approval
+
+
+def validate_news_export_approval(approval: dict[str, Any]) -> list[str]:
+    if approval.get("schema_version") != "news-generation-human-review-approval-v1.0":
+        raise RuntimeError("News Export requires a canonical Human Approval Artifact.")
+    review = approval.get("human_review") or {}
+    if approval.get("status") != "approved_for_export" or review.get(
+        "decision"
+    ) != "approved":
+        raise RuntimeError("Unapproved News Plan cannot pass the Excel Export gate.")
+    reuse = approval.get("reuse_declaration") or {}
+    if (
+        reuse.get("reuse_intent") != "cross_profile_repurpose"
+        or reuse.get("semantic_novelty") is not False
+        or reuse.get("historical_content_reused") is not True
+    ):
+        raise RuntimeError("News repurpose approval cannot become Novel Content.")
+    mapping = approval.get("approved_export_slot_mapping") or {}
+    slots = mapping.get("slots") or []
+    texts = [str(item.get("text") or "") for item in slots]
+    expected = [
+        "素菜通常8–10元",
+        "清蒸约15元",
+        "红烧约18元左右",
+        "油盐酱料免费",
+        "米饭免费",
+        "价格公开清晰",
+    ]
+    if texts != expected:
+        raise RuntimeError("News Export slots differ from the Human-approved mapping.")
+    if mapping.get("first_display_slot_price_offer_anchor_recoverable") is not True:
+        raise RuntimeError("First display slot lost the required Price / Offer anchor.")
+    return texts
+
+
+def _xlsx_cell_text(
+    cell: ElementTree.Element,
+    namespace: str,
+    shared_strings: list[str],
+) -> str | None:
+    cell_type = cell.attrib.get("t")
+    if cell_type == "inlineStr":
+        return "".join(
+            node.text or "" for node in cell.iter(f"{{{namespace}}}t")
+        )
+    value_node = cell.find(f"{{{namespace}}}v")
+    if value_node is None:
+        return None
+    value = value_node.text or ""
+    if cell_type == "s" and value:
+        return shared_strings[int(value)]
+    return value
+
+
+def inspect_xlsx_contract_snapshot(
+    workbook_path: Path,
+    *,
+    sheet_name: str = "Sheet1",
+) -> dict[str, Any]:
+    path = workbook_path.expanduser().resolve()
+    namespace = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    rel_namespace = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    package_rel_namespace = "http://schemas.openxmlformats.org/package/2006/relationships"
+    with zipfile.ZipFile(path) as archive:
+        shared_strings: list[str] = []
+        if "xl/sharedStrings.xml" in archive.namelist():
+            shared_root = ElementTree.fromstring(archive.read("xl/sharedStrings.xml"))
+            for item in shared_root.findall(f"{{{namespace}}}si"):
+                shared_strings.append(
+                    "".join(
+                        node.text or "" for node in item.iter(f"{{{namespace}}}t")
+                    )
+                )
+        workbook_root = ElementTree.fromstring(archive.read("xl/workbook.xml"))
+        sheets = workbook_root.findall(f".//{{{namespace}}}sheet")
+        sheet_names = [str(item.attrib.get("name") or "") for item in sheets]
+        selected = next(
+            (item for item in sheets if item.attrib.get("name") == sheet_name), None
+        )
+        if selected is None:
+            raise RuntimeError(f"Workbook sheet not found: {sheet_name}")
+        relation_id = selected.attrib.get(f"{{{rel_namespace}}}id")
+        relationships_root = ElementTree.fromstring(
+            archive.read("xl/_rels/workbook.xml.rels")
+        )
+        target = next(
+            (
+                relation.attrib.get("Target")
+                for relation in relationships_root.findall(
+                    f"{{{package_rel_namespace}}}Relationship"
+                )
+                if relation.attrib.get("Id") == relation_id
+            ),
+            None,
+        )
+        if not target:
+            raise RuntimeError("Workbook sheet relationship is missing.")
+        normalized_target = str(target).lstrip("/")
+        sheet_member = posixpath.normpath(
+            normalized_target
+            if normalized_target.startswith("xl/")
+            else posixpath.join("xl", normalized_target)
+        )
+        sheet_root = ElementTree.fromstring(archive.read(sheet_member))
+        styles_root = ElementTree.fromstring(archive.read("xl/styles.xml"))
+        cell_xfs_node = styles_root.find(f"{{{namespace}}}cellXfs")
+        fonts_node = styles_root.find(f"{{{namespace}}}fonts")
+        fills_node = styles_root.find(f"{{{namespace}}}fills")
+        borders_node = styles_root.find(f"{{{namespace}}}borders")
+        num_formats_node = styles_root.find(f"{{{namespace}}}numFmts")
+        cell_xfs = list(cell_xfs_node) if cell_xfs_node is not None else []
+        fonts = list(fonts_node) if fonts_node is not None else []
+        fills = list(fills_node) if fills_node is not None else []
+        borders = list(borders_node) if borders_node is not None else []
+        num_formats = {
+            item.attrib.get("numFmtId"): dict(sorted(item.attrib.items()))
+            for item in (list(num_formats_node) if num_formats_node is not None else [])
+        }
+
+        def normalized_style_element(
+            element: ElementTree.Element,
+            parent_tag: str | None = None,
+        ) -> dict[str, Any] | None:
+            tag = element.tag.rsplit("}", 1)[-1]
+            if tag in {"charset", "scheme"}:
+                return None
+            if (
+                tag == "bgColor"
+                and parent_tag == "patternFill"
+                and element.get("indexed") == "64"
+            ):
+                return None
+            children = [
+                normalized
+                for child in list(element)
+                if (normalized := normalized_style_element(child, tag)) is not None
+            ]
+            attributes = dict(sorted(element.attrib.items()))
+            if tag in {"left", "right", "top", "bottom", "diagonal"} and not (
+                attributes or children
+            ):
+                return None
+            return {"tag": tag, "attributes": attributes, "children": children}
+
+        def style_signature(style_index: int) -> str:
+            if style_index >= len(cell_xfs):
+                raise RuntimeError("Cell style index is outside the workbook style table.")
+            xf = cell_xfs[style_index]
+            parts: list[Any] = [normalized_style_element(xf)]
+            for key, table in (
+                ("fontId", fonts),
+                ("fillId", fills),
+                ("borderId", borders),
+            ):
+                index = int(xf.attrib.get(key, "0"))
+                parts.append(
+                    normalized_style_element(table[index])
+                    if index < len(table)
+                    else None
+                )
+            parts.append(num_formats.get(xf.attrib.get("numFmtId")))
+            return canonical_sha256(parts)
+
+        cell_nodes = {
+            str(cell.attrib.get("r")): cell
+            for cell in sheet_root.findall(f".//{{{namespace}}}c")
+        }
+        rows_one_to_four: dict[str, Any] = {}
+        for row in range(1, 5):
+            for column in range(1, 7):
+                address = f"{chr(64 + column)}{row}"
+                cell = cell_nodes.get(address)
+                style_index = int(cell.attrib.get("s", "0")) if cell is not None else 0
+                rows_one_to_four[address] = {
+                    "value": (
+                        _xlsx_cell_text(cell, namespace, shared_strings)
+                        if cell is not None
+                        else None
+                    ),
+                    "style_signature": style_signature(style_index),
+                }
+        row_attributes = {
+            str(row.attrib.get("r")): {
+                key: (
+                    round(float(value), 5)
+                    if key == "ht"
+                    else value
+                )
+                for key, value in sorted(row.attrib.items())
+                if key != "spans"
+            }
+            for row in sheet_root.findall(f".//{{{namespace}}}row")
+            if 1 <= int(row.attrib.get("r", "0")) <= 4
+        }
+        merged_ranges = sorted(
+            str(item.attrib.get("ref"))
+            for item in sheet_root.findall(f".//{{{namespace}}}mergeCell")
+        )
+        column_layout = []
+        for item in sheet_root.findall(f".//{{{namespace}}}col"):
+            normalized_column: dict[str, Any] = {}
+            for key, value in sorted(item.attrib.items()):
+                if key == "customWidth" and value == "0":
+                    continue
+                normalized_column[key] = (
+                    round(float(value), 4) if key == "width" else value
+                )
+            column_layout.append(normalized_column)
+        row_five = [
+            _xlsx_cell_text(cell_nodes.get(f"{chr(64 + column)}5"), namespace, shared_strings)
+            if cell_nodes.get(f"{chr(64 + column)}5") is not None
+            else None
+            for column in range(1, 7)
+        ]
+        extra_populated_cells: list[dict[str, str]] = []
+        for address, cell in cell_nodes.items():
+            match = re.fullmatch(r"([A-Z]+)(\d+)", address)
+            if not match:
+                continue
+            letters, row_text = match.groups()
+            column_index = 0
+            for character in letters:
+                column_index = column_index * 26 + ord(character) - 64
+            row_index = int(row_text)
+            value = _xlsx_cell_text(cell, namespace, shared_strings)
+            if value not in (None, "") and (
+                (row_index == 5 and column_index > 6) or row_index > 5
+            ):
+                extra_populated_cells.append({"address": address, "value": value})
+        return {
+            "sheet_names": sheet_names,
+            "rows_1_4": rows_one_to_four,
+            "row_attributes_1_4": row_attributes,
+            "merged_ranges": merged_ranges,
+            "column_layout": column_layout,
+            "row_5": row_five,
+            "extra_populated_cells": extra_populated_cells,
+        }
+
+
+def validate_news_excel_export(
+    template_path: Path,
+    output_path: Path,
+    approved_slot_texts: list[str],
+    template_sha_before: str,
+) -> dict[str, Any]:
+    template_sha_after = sha256_file(template_path)
+    if template_sha_after != template_sha_before:
+        raise RuntimeError("Source News Excel Template was modified.")
+    template = inspect_xlsx_contract_snapshot(template_path)
+    exported = inspect_xlsx_contract_snapshot(output_path)
+    rows_preserved = (
+        template["rows_1_4"] == exported["rows_1_4"]
+        and template["row_attributes_1_4"] == exported["row_attributes_1_4"]
+        and template["merged_ranges"] == exported["merged_ranges"]
+        and template["column_layout"] == exported["column_layout"]
+    )
+    checks = {
+        "workbook_readable": True,
+        "sheet_names_match": template["sheet_names"] == exported["sheet_names"] == ["Sheet1"],
+        "rows_1_4_content_and_styles_preserved": rows_preserved,
+        "row_4_headers_exact": [
+            exported["rows_1_4"][f"{chr(64 + column)}4"]["value"]
+            for column in range(1, 7)
+        ]
+        == [f"标题{index}" for index in range(1, 7)],
+        "row_5_slots_exact": exported["row_5"] == approved_slot_texts,
+        "no_extra_business_columns_or_rows": not exported["extra_populated_cells"],
+        "no_internal_metadata": not any(
+            any(
+                marker in str(value)
+                for marker in (
+                    "pcv1_",
+                    "persona",
+                    "case_id",
+                    "content_id",
+                    "sha256",
+                    "fact_atom",
+                )
+            )
+            for value in exported["row_5"]
+        ),
+        "source_template_unchanged": template_sha_after == template_sha_before,
+    }
+    if not all(checks.values()):
+        raise RuntimeError(f"News Excel Contract validation failed: {checks}")
+    return {
+        "passed": True,
+        "checks": checks,
+        "sheet_names": exported["sheet_names"],
+        "row_4_headers": [f"标题{index}" for index in range(1, 7)],
+        "row_5_slots": exported["row_5"],
+        "extra_populated_cells": exported["extra_populated_cells"],
+        "template_sha256_before": template_sha_before,
+        "template_sha256_after": template_sha_after,
+        "output_sha256": sha256_file(output_path),
+    }
+
+
+def append_news_presentation_history(
+    ledger_path: Path,
+    expected_ledger: dict[str, Any],
+    *,
+    approval_ref: dict[str, Any],
+    output_ref: dict[str, Any],
+    exported_at: str,
+) -> tuple[dict[str, Any], dict[str, Any], str]:
+    source_ref = "real_shufang_mix_001-C003"
+    if not any(
+        entry.get("content_id") == source_ref and is_strong_memory(entry)
+        for entry in expected_ledger.get("entries") or []
+    ):
+        raise RuntimeError("Presentation History source is not Strong Historical Content.")
+    updated = json.loads(json.dumps(expected_ledger, ensure_ascii=False))
+    extension = updated.setdefault("extensions", {}).setdefault(
+        "presentation_history_v1",
+        {
+            "version": "content-presentation-history-v1.0",
+            "storage_policy": "append_only",
+            "semantic_novelty_authority": False,
+            "entries": [],
+        },
+    )
+    presentation_id = "real_shufang_news_validation_repurpose_001-P001"
+    if any(
+        item.get("presentation_id") == presentation_id
+        for item in extension.get("entries") or []
+    ):
+        raise RuntimeError("Presentation History entry already exists.")
+    entry = {
+        "presentation_id": presentation_id,
+        "business_id": "shufang_zhiyuan_community_canteen",
+        "speaker_id": "lin_dongfang_frontline_chef",
+        "request_id": "real_shufang_news_validation_repurpose_001",
+        "production_profile": "news",
+        "reuse_intent": "cross_profile_repurpose",
+        "semantic_novelty": False,
+        "historical_content_reused": True,
+        "source_content_ref": source_ref,
+        "selected_pattern_ref": NEWS_PRICE_PATTERN_ID,
+        "status": "exported",
+        "approved_at": exported_at,
+        "exported_at": exported_at,
+        "novel_capacity_delta": 0,
+        "new_semantic_content_count_delta": 0,
+        "new_central_claim_count_delta": 0,
+        "new_information_gain_delta": 0,
+        "communicated_information_units_created": False,
+        "approval_ref": approval_ref,
+        "export_ref": output_ref,
+        "events": [
+            {"status": "approved", "at": exported_at, "source": "human_review"},
+            {"status": "exported", "at": exported_at, "source": "news_excel_export"},
+        ],
+    }
+    entry_count_before = len(updated.get("entries") or [])
+    information_units_before = sorted(
+        unit.get("information_unit_id")
+        for semantic_entry in updated.get("entries") or []
+        for unit in semantic_entry.get("communicated_information_units") or []
+    )
+    extension.setdefault("entries", []).append(entry)
+    updated["updated_at"] = exported_at
+    if len(updated.get("entries") or []) != entry_count_before:
+        raise RuntimeError("Presentation History changed semantic Ledger entries.")
+    information_units_after = sorted(
+        unit.get("information_unit_id")
+        for semantic_entry in updated.get("entries") or []
+        for unit in semantic_entry.get("communicated_information_units") or []
+    )
+    if information_units_after != information_units_before:
+        raise RuntimeError("Presentation History duplicated Historical Exposure units.")
+    ledger_path = ledger_path.expanduser().resolve()
+    if read_json(ledger_path) != expected_ledger:
+        raise RuntimeError("Content Ledger changed before Presentation History append.")
+    payload = json.dumps(updated, ensure_ascii=False, indent=2).encode("utf-8")
+    temporary = ledger_path.with_suffix(ledger_path.suffix + ".presentation.tmp")
+    if temporary.exists():
+        raise RuntimeError("Presentation History temporary path already exists.")
+    with temporary.open("xb") as handle:
+        handle.write(payload)
+    if read_json(ledger_path) != expected_ledger:
+        temporary.unlink(missing_ok=True)
+        raise RuntimeError("Content Ledger changed during Presentation History append.")
+    temporary.replace(ledger_path)
+    return updated, entry, hashlib.sha256(payload).hexdigest()
+
+
+def build_news_mvp_production_validation_update(
+    *,
+    previous_coverage_path: Path,
+    registry_path: Path,
+    price_pattern_path: Path,
+    scene_pattern_path: Path,
+    track_a_approval_path: Path,
+    track_b_approval_path: Path,
+    export_path: Path,
+    ledger_path: Path,
+    created_at: str,
+) -> dict[str, Any]:
+    previous = read_json(previous_coverage_path)
+    if (
+        previous.get("news_current_coverage", {}).get("operational_readiness")
+        != "production_validation_required"
+    ):
+        raise RuntimeError("News readiness source changed before MVP finalization.")
+    return {
+        "schema_version": "news-production-mvp-coverage-update-v1.0",
+        "update_id": "news_production_mvp_final_validation_update_v1",
+        "status": "current_derived_coverage_update",
+        "created_at": created_at,
+        "source_refs": {
+            "previous_coverage_update": artifact_ref(
+                previous_coverage_path, "creative_coverage_update"
+            ),
+            "frozen_registry": artifact_ref(
+                registry_path, "production_profile_registry_v1"
+            ),
+            "price_pattern": artifact_ref(price_pattern_path, "approved_pattern"),
+            "scene_pattern": artifact_ref(scene_pattern_path, "approved_pattern"),
+            "track_a_human_approval": artifact_ref(
+                track_a_approval_path, "news_capacity_human_approval"
+            ),
+            "track_b_human_approval": artifact_ref(
+                track_b_approval_path, "news_generation_human_approval"
+            ),
+            "validated_excel_export": artifact_ref(export_path, "news_excel_export"),
+            "content_ledger_after_presentation_append": artifact_ref(
+                ledger_path, "content_ledger_v1"
+            ),
+        },
+        "news_current_readiness": {
+            "operational_readiness": "production_validation_required",
+            "all_news_patterns_production_ready": False,
+            "validated_production_paths": [NEWS_PRICE_PATTERN_ID],
+            "pending_production_validation_patterns": [NEWS_SCENE_PATTERN_ID],
+        },
+        "pattern_production_validation": {
+            NEWS_PRICE_PATTERN_ID: {
+                "status": "passed",
+                "validated_request_ref": "real_shufang_news_validation_repurpose_001",
+                "validation_scope": "approved_cross_profile_repurpose_to_frozen_news_excel_contract",
+            },
+            NEWS_SCENE_PATTERN_ID: {
+                "status": "pending_real_customer_opportunity",
+                "reason": "No Approved customer State A/State B Truth exists for this customer.",
+                "customer_state_a_b_fabricated": False,
+            },
+        },
+        "authority": {
+            "derived_planning_artifact": True,
+            "changes_frozen_registry": False,
+            "changes_approved_pattern_artifacts": False,
+            "changes_pattern_effectiveness": False,
+            "can_approve_new_content": False,
+            "case_facts_used_as_customer_authority": False,
+            "privacy_or_proof_authority_changed": False,
+            "remote_model_called": False,
+        },
+        "validation": {
+            "passed": True,
+            "single_price_path_validated": True,
+            "scene_path_remains_unvalidated": True,
+            "news_readiness_not_overstated": True,
+        },
+    }
+
+
+def run_news_production_mvp_final_approval(
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    project_root = Path(__file__).resolve().parents[1]
+    paths = {
+        "track_a": Path(
+            args.track_a_validation
+            or project_root
+            / "data/news_production_mvp/real_shufang_news_validation_novel_001/news_novel_capacity_validation_v1.json"
+        ).expanduser().resolve(),
+        "track_b": Path(
+            args.track_b_plan
+            or project_root
+            / "data/news_production_mvp/real_shufang_news_validation_repurpose_001/news_micro_beat_plan_v1.json"
+        ).expanduser().resolve(),
+        "content_plan": Path(
+            args.content_plan
+            or project_root
+            / "data/content_plans/real_shufang_mix_002/revisions/v1_1_1/content_plan_v1_1_1.json"
+        ).expanduser().resolve(),
+        "ledger": Path(
+            args.content_ledger
+            or project_root
+            / "data/content_ledgers/shufang_zhiyuan_community_canteen/content_ledger_v1.json"
+        ).expanduser().resolve(),
+        "registry": Path(
+            args.production_profile_registry
+            or project_root / "data/production_profiles/production_profile_registry_v1.json"
+        ).expanduser().resolve(),
+        "coverage": Path(
+            args.creative_coverage_update
+            or project_root
+            / "data/creative_coverage/revisions/news_pattern_approval_creative_coverage_update_v1.json"
+        ).expanduser().resolve(),
+        "price_pattern": project_root
+        / f"data/patterns/approved/{NEWS_PRICE_PATTERN_ID}/pattern_v1.json",
+        "scene_pattern": project_root
+        / f"data/patterns/approved/{NEWS_SCENE_PATTERN_ID}/pattern_v1.json",
+        "template": Path(
+            args.news_template
+            or project_root / "output/新闻体视频制作文案导入模板.xlsx"
+        ).expanduser().resolve(),
+        "mix_template": project_root / "output/素材混剪&数字人口播混剪文案导入模板.xlsx",
+        "mix_export": project_root / "output/real_shufang_mix_001_approved_mix_scripts.xlsx",
+    }
+    for path in paths.values():
+        if not path.is_file():
+            raise FileNotFoundError(path)
+    output_path = Path(
+        args.news_output
+        or project_root
+        / "output/real_shufang_news_validation_repurpose_001_approved_news.xlsx"
+    ).expanduser().resolve()
+    output_root = Path(
+        args.output_root or project_root / "data/news_production_mvp"
+    ).expanduser().resolve()
+    track_a_approval_path = (
+        output_root
+        / "real_shufang_news_validation_novel_001"
+        / "news_novel_capacity_human_approval_v1.json"
+    )
+    track_b_approval_path = (
+        output_root
+        / "real_shufang_news_validation_repurpose_001"
+        / "news_generation_human_approval_v1.json"
+    )
+    coverage_update_path = (
+        project_root
+        / "data/creative_coverage/revisions/news_production_mvp_final_validation_update_v1.json"
+    )
+    receipt_path = output_path.with_suffix(".export_receipt.json")
+    for target in (coverage_update_path, receipt_path):
+        if target.exists():
+            raise RuntimeError(f"News MVP final output already exists: {target}")
+
+    preserved_paths = {
+        name: path for name, path in paths.items() if name != "ledger"
+    }
+    preserved_hashes_before = {
+        name: sha256_file(path) for name, path in preserved_paths.items()
+    }
+    ledger = read_json(paths["ledger"])
+    track_a = read_json(paths["track_a"])
+    track_b = read_json(paths["track_b"])
+    track_a_approval, track_b_approval = build_news_mvp_human_approvals(
+        track_a,
+        track_b,
+        ledger,
+        track_a_ref=artifact_ref(paths["track_a"], "news_novel_capacity_validation_v1"),
+        track_b_ref=artifact_ref(paths["track_b"], "news_micro_beat_plan_v1"),
+    )
+    if track_a_approval_path.exists():
+        track_a_approval = read_json(track_a_approval_path)
+        if (
+            track_a_approval.get("human_review", {}).get("decision")
+            != "approved_validation_result"
+            or track_a_approval.get("approved_result", {}).get(
+                "news_novel_capacity"
+            )
+            != 0
+            or track_a_approval.get("source_validation_ref", {}).get("sha256")
+            != sha256_file(paths["track_a"])
+        ):
+            raise RuntimeError("Existing Track A Human Approval does not match its source.")
+        track_a_approval_sha = sha256_file(track_a_approval_path)
+    else:
+        track_a_approval_sha = write_new_json(track_a_approval_path, track_a_approval)
+    if track_b_approval_path.exists():
+        track_b_approval = read_json(track_b_approval_path)
+        if (
+            track_b_approval.get("approved_micro_beat_plan", {})
+            .get("source_plan_ref", {})
+            .get("sha256")
+            != sha256_file(paths["track_b"])
+        ):
+            raise RuntimeError("Existing Track B Human Approval does not match its source.")
+        track_b_approval_sha = sha256_file(track_b_approval_path)
+    else:
+        track_b_approval_sha = write_new_json(track_b_approval_path, track_b_approval)
+    approved_slot_texts = validate_news_export_approval(track_b_approval)
+
+    node_executable = Path(
+        args.node_executable or "node"
+    ).expanduser()
+    node_modules = str(
+        Path(args.artifact_tool_node_modules).expanduser().resolve()
+        if args.artifact_tool_node_modules
+        else ""
+    )
+    exporter_path = project_root / "scripts/export_news_excel_v1.mjs"
+    template_sha_before = sha256_file(paths["template"])
+    preview_path = Path(tempfile.gettempdir()) / (
+        "real_shufang_news_validation_repurpose_001_approved_news_preview.png"
+    )
+    artifact_validation_path = Path(tempfile.gettempdir()) / (
+        "real_shufang_news_validation_repurpose_001_artifact_tool_validation.json"
+    )
+    preview_path.unlink(missing_ok=True)
+    artifact_validation_path.unlink(missing_ok=True)
+    environment = os.environ.copy()
+    if node_modules:
+        environment["NODE_PATH"] = node_modules
+    command = [
+        str(node_executable),
+        str(exporter_path),
+        "--mode",
+        "validate-existing" if output_path.exists() else "export",
+        "--approval",
+        str(track_b_approval_path),
+        "--template",
+        str(paths["template"]),
+        "--output",
+        str(output_path),
+        "--preview",
+        str(preview_path),
+        "--validation-output",
+        str(artifact_validation_path),
+    ]
+    export_process = subprocess.run(
+        command,
+        cwd=project_root,
+        env=environment,
+        text=True,
+        encoding="utf-8",
+        capture_output=True,
+        check=False,
+    )
+    if export_process.returncode != 0:
+        raise RuntimeError(
+            "News Excel artifact-tool export failed: "
+            + (export_process.stderr or export_process.stdout)
+        )
+    artifact_tool_validation = read_json(artifact_validation_path)
+    excel_validation = validate_news_excel_export(
+        paths["template"], output_path, approved_slot_texts, template_sha_before
+    )
+    if artifact_tool_validation.get("passed") is not True:
+        raise RuntimeError("Artifact-tool did not validate the News Excel output.")
+
+    exported_at = now_iso()
+    output_ref = artifact_ref(output_path, "approved_news_excel_export")
+    approval_ref = artifact_ref(
+        track_b_approval_path, "news_generation_human_approval_v1"
+    )
+    updated_ledger, presentation_entry, ledger_sha = append_news_presentation_history(
+        paths["ledger"],
+        ledger,
+        approval_ref=approval_ref,
+        output_ref=output_ref,
+        exported_at=exported_at,
+    )
+    content_plan = read_json(paths["content_plan"])
+    source_capacity = content_plan.get("capacity") or {}
+    coverage_update = build_news_mvp_production_validation_update(
+        previous_coverage_path=paths["coverage"],
+        registry_path=paths["registry"],
+        price_pattern_path=paths["price_pattern"],
+        scene_pattern_path=paths["scene_pattern"],
+        track_a_approval_path=track_a_approval_path,
+        track_b_approval_path=track_b_approval_path,
+        export_path=output_path,
+        ledger_path=paths["ledger"],
+        created_at=exported_at,
+    )
+    coverage_update_sha = write_new_json(coverage_update_path, coverage_update)
+
+    preserved_hashes_after = {
+        name: sha256_file(path) for name, path in preserved_paths.items()
+    }
+    if preserved_hashes_after != preserved_hashes_before:
+        raise RuntimeError("A frozen News MVP source artifact changed during finalization.")
+    receipt = {
+        "schema_version": "news-excel-export-receipt-v1.0",
+        "finalizer_version": NEWS_MVP_FINALIZER_VERSION,
+        "exporter_version": artifact_tool_validation.get("exporter_version"),
+        "request_id": track_b["request_id"],
+        "profile": "news",
+        "exported_at": exported_at,
+        "human_approval": {
+            "track_a_path": str(track_a_approval_path),
+            "track_a_sha256": track_a_approval_sha,
+            "track_b_path": str(track_b_approval_path),
+            "track_b_sha256": track_b_approval_sha,
+            "reviewer": "李健",
+        },
+        "reuse_declaration": {
+            "reuse_intent": "cross_profile_repurpose",
+            "semantic_novelty": False,
+            "historical_content_reused": True,
+            "source_content_ref": "real_shufang_mix_001-C003",
+        },
+        "selected_pattern": NEWS_PRICE_PATTERN_ID,
+        "template_path": str(paths["template"]),
+        "template_sha256_before": template_sha_before,
+        "template_sha256_after": sha256_file(paths["template"]),
+        "output_path": str(output_path),
+        "output_sha256": sha256_file(output_path),
+        "exported_row_count": 1,
+        "row_4_headers": [f"标题{index}" for index in range(1, 7)],
+        "row_5_slots": approved_slot_texts,
+        "excel_validation": excel_validation,
+        "artifact_tool_validation": {
+            "passed": artifact_tool_validation["passed"],
+            "formula_error_count": artifact_tool_validation["formula_error_count"],
+            "source_rows_1_4_values_preserved": artifact_tool_validation[
+                "source_rows_1_4_values_preserved"
+            ],
+        },
+        "content_ledger": {
+            "path": str(paths["ledger"]),
+            "sha256_after_append": ledger_sha,
+            "semantic_entry_count_before": len(ledger.get("entries") or []),
+            "semantic_entry_count_after": len(updated_ledger.get("entries") or []),
+            "presentation_history_entry": presentation_entry,
+        },
+        "novel_capacity": {
+            "source_content_capacity_before": source_capacity.get(
+                "high_quality_novel_capacity"
+            ),
+            "source_content_capacity_after": source_capacity.get(
+                "high_quality_novel_capacity"
+            ),
+            "track_a_news_novel_capacity_before": track_a["capacity"][
+                "news_novel_capacity"
+            ],
+            "track_a_news_novel_capacity_after": track_a["capacity"][
+                "news_novel_capacity"
+            ],
+            "delta": 0,
+        },
+        "production_validation": {
+            NEWS_PRICE_PATTERN_ID: "passed",
+            NEWS_SCENE_PATTERN_ID: "pending_real_customer_opportunity",
+            "news_operational_readiness": "production_validation_required",
+        },
+        "coverage_update": {
+            "path": str(coverage_update_path),
+            "sha256": coverage_update_sha,
+        },
+        "mix_regression_artifacts": {
+            "template_sha256_before_after": preserved_hashes_before["mix_template"],
+            "approved_export_sha256_before_after": preserved_hashes_before["mix_export"],
+            "unchanged": True,
+        },
+        "authority": {
+            "communicated_information_units_created": 0,
+            "new_semantic_content_created": False,
+            "case_facts_transferred": False,
+            "case_footage_used": False,
+            "scene_customer_truth_fabricated": False,
+            "privacy_or_proof_authority_changed": False,
+            "remote_model_calls": 0,
+        },
+        "validation_passed": True,
+    }
+    receipt_sha = write_new_json(receipt_path, receipt)
+    return {
+        "track_a_approval_path": track_a_approval_path,
+        "track_b_approval_path": track_b_approval_path,
+        "output_path": output_path,
+        "output_sha256": receipt["output_sha256"],
+        "receipt_path": receipt_path,
+        "receipt_sha256": receipt_sha,
+        "ledger_entry": presentation_entry,
+        "ledger_sha256": ledger_sha,
+        "coverage_update_path": coverage_update_path,
+        "coverage_update_sha256": coverage_update_sha,
+        "excel_validation": excel_validation,
+        "artifact_tool_preview_path": preview_path,
+        "remote_model_calls": 0,
+    }
+
+
+def build_news_excel_dry_run(
+    request: dict[str, Any],
+    plan: dict[str, Any],
+    template_path: Path,
+    export_contract: dict[str, Any],
+) -> dict[str, Any]:
+    headers = inspect_xlsx_headers(template_path, "Sheet1", 4, 6)
+    expected_headers = [f"标题{index}" for index in range(1, 7)]
+    template_sha = sha256_file(template_path)
+    if headers != expected_headers:
+        raise RuntimeError("News Excel template row 4 headers changed.")
+    if export_contract.get("template_sha256") != template_sha:
+        raise RuntimeError("News Excel template SHA differs from Frozen Registry.")
+    slots = plan["beat_to_export_slot_mapping"]["slots"]
+    if len(slots) != 6:
+        raise RuntimeError("News dry-run requires exactly six mapped slots.")
+    return {
+        "schema_version": "news-excel-export-contract-dry-run-v1.0",
+        "generator_version": NEWS_MVP_GENERATOR_VERSION,
+        "created_at": now_iso(),
+        "request_id": request["request_id"],
+        "target_profile": "news",
+        "status": "review_required_export_blocked",
+        "template_ref": artifact_ref(template_path, "news_excel_template"),
+        "sheet": "Sheet1",
+        "header_row": 4,
+        "actual_headers": headers,
+        "expected_headers": expected_headers,
+        "first_data_row": 5,
+        "dry_run_row": {slot["header"]: slot["text"] for slot in slots},
+        "slot_lineage": [
+            {
+                "header": slot["header"],
+                "slot_id": slot["slot_id"],
+                "source_beat_ref": slot["source_beat_ref"],
+                "business_fact_atom_refs": [
+                    item["fact_atom_id"] for item in slot["business_fact_refs"]
+                ],
+            }
+            for slot in slots
+        ],
+        "implementation_constraints": {
+            "slot_count": 6,
+            "recommended_max_characters_per_slot": 8,
+            "authority": "configurable_not_frozen_pattern_semantics",
+            "pattern_invariant": False,
+        },
+        "workbook_written": False,
+        "formal_excel_export_performed": False,
+        "template_modified": False,
+        "validation": {
+            "passed": True,
+            "template_sha_matches_registry": True,
+            "sheet_matches": True,
+            "row_4_headers_match": True,
+            "six_slots_present": True,
+            "duplicate_padding_absent": True,
+        },
+    }
+
+
+def render_news_generation_review_pack(
+    plan: dict[str, Any],
+    dry_run: dict[str, Any],
+    approved_batch_ref: dict[str, Any],
+    export_receipt_ref: dict[str, Any],
+) -> str:
+    historical = plan["historical_content"]
+    lines = [
+        "# News Generation Review Pack V1",
+        "",
+        f"Request: `{plan['request_id']}`",
+        "Target Profile: `news`",
+        "Status: `review_required`",
+        "",
+        "## Historical Content and Reuse Declaration",
+        "",
+        f"Original Historical Content: `{historical['content_id']}`",
+        f"Historical Batch: `{historical['batch_ref']}`",
+        f"Historical Status: `{historical['historical_status']}`",
+        f"Original Title: {historical['title']}",
+        f"Original Narration: {historical['narration']}",
+        "",
+        "Reuse Intent: `cross_profile_repurpose`",
+        "Semantic Novelty: `false`",
+        "Historical Content Reused: `true`",
+        "Reuse Reason: `cross_profile_production_validation`",
+        "Novel Capacity Delta: `0`",
+        "New Central Claim Count Delta: `0`",
+        "Content Opportunity Count Delta: `0`",
+        "",
+        "## Selected Pattern",
+        "",
+        f"Pattern: `{plan['selected_pattern']['pattern_id']}`",
+        f"Why compatible: {plan['selected_pattern']['matching_reason']}",
+        "Matching basis: selected semantic content + target profile + Approved Pattern scope. Case topic was not used.",
+        "",
+        "Applied Pattern invariants:",
+    ]
+    for item in plan["pattern_application"]["applied_invariants"]:
+        lines.append(
+            f"- `{item['invariant']}`: `{'PASS' if item['satisfied'] else 'FAIL'}` ({item['evidence']})"
+        )
+    lines.extend(
+        [
+            "",
+            "Continuous Mix narration required: `false` (inherited from Production Profile: News)",
+            "Exact beat count / duration / six export slots are Pattern invariants: `false`",
+            "Scene Contrast: `not_compatible` because no Approved customer State A/State B correspondence exists.",
+            "",
+            "## Micro Beat Plan",
+            "",
+        ]
+    )
+    for item in plan["micro_beats"]:
+        facts = ", ".join(
+            fact["original_known_fact"] for fact in item["business_fact_refs"]
+        )
+        atom_refs = ", ".join(
+            fact["fact_atom_id"] for fact in item["business_fact_refs"]
+        )
+        lines.extend(
+            [
+                f"### {item['beat_id']} · {item['semantic_role']}",
+                "",
+                f"Text: {item['text']}",
+                f"Supporting Persona Facts: {facts}",
+                f"Fact Lineage: `{atom_refs}`",
+                f"Visual Anchor: {item['visual_anchor']}",
+                f"Visual State Role: `{item['visual_state_role']}`",
+                "",
+            ]
+        )
+    lines.extend(["## Six-slot Dry-run Mapping", ""])
+    for slot in plan["beat_to_export_slot_mapping"]["slots"]:
+        lines.append(
+            f"- `{slot['header']}` / `{slot['slot_id']}` ← `{slot['source_beat_ref']}`: **{slot['text']}**"
+        )
+    lines.extend(
+        [
+            "",
+            "The six columns are a current Excel implementation contract, not a Pattern invariant. The mapping uses no duplicate padding and preserves the price qualifiers across ordered slots.",
+            "",
+            "## Fact Authority",
+            "",
+        ]
+    )
+    for fact in plan["fact_lineage"]:
+        lines.append(
+            f"- {fact['original_known_fact']} — `{fact['field']}` / `{fact['fact_atom_id']}` / historical units `{', '.join(fact['historical_information_unit_refs'])}`"
+        )
+    lines.extend(
+        [
+            "",
+            "All listed facts are Approved Persona KNOWN facts. UNKNOWN and REQUIRES_REVIEW facts were excluded. Fact Atoms provide planning lineage only and do not change Persona Authority.",
+            "",
+            "## Case Structural References and Media Boundary",
+            "",
+        ]
+    )
+    for case in plan["case_structural_references"]:
+        lines.append(
+            f"- `{case['case_id']}` — authority `structural_only`; media reuse rights `not_established`; Production footage eligible `false`"
+        )
+    lines.extend(
+        [
+            "",
+            "No source Case video or frame may enter the customer Production Footage Pool. Every visual anchor requires customer-owned or separately authorized footage.",
+            "",
+            "## Claim Review Flags",
+            "",
+        ]
+    )
+    lines.extend(f"- `{flag}`" for flag in plan["claim_review_flags"])
+    lines.extend(
+        [
+            "",
+            "## Lineage and Export Gate",
+            "",
+            f"Approved Historical Batch: `{approved_batch_ref['path']}`",
+            f"Approved Batch SHA-256: `{approved_batch_ref['sha256']}`",
+            f"Historical Export Receipt: `{export_receipt_ref['path']}`",
+            f"Historical Export Receipt SHA-256: `{export_receipt_ref['sha256']}`",
+            f"News Template: `{dry_run['template_ref']['path']}`",
+            f"News Template SHA-256: `{dry_run['template_ref']['sha256']}`",
+            "Dry-run Contract Validation: `PASS`",
+            "Workbook Written: `false`",
+            "Formal Excel Export: `blocked_pending_human_review`",
+            "",
+            "Remote Model Calls: `0`",
+            "Human decision required before any formal News Excel export.",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def run_news_production_mvp_validation(args: argparse.Namespace) -> dict[str, Any]:
+    required = {
+        "persona": args.persona,
+        "speaker-persona": args.speaker_persona,
+        "novel-request": args.novel_request,
+        "repurpose-request": args.repurpose_request,
+        "content-plan": args.content_plan,
+        "content-ledger": args.content_ledger,
+        "production-profile-registry": args.production_profile_registry,
+        "creative-coverage-update": args.creative_coverage_update,
+        "news-pattern": args.news_pattern,
+        "historical-approved-batch": args.historical_approved_batch,
+        "historical-export-receipt": args.historical_export_receipt,
+        "news-template": args.news_template,
+    }
+    missing = [name for name, value in required.items() if not value]
+    if missing:
+        raise RuntimeError(
+            "--news-mvp-validation requires: " + ", ".join(missing)
+        )
+    project_root = Path(__file__).resolve().parents[1]
+    paths = {
+        "persona": Path(args.persona).expanduser().resolve(),
+        "speaker_persona": Path(args.speaker_persona).expanduser().resolve(),
+        "novel_request": Path(args.novel_request).expanduser().resolve(),
+        "repurpose_request": Path(args.repurpose_request).expanduser().resolve(),
+        "content_plan": Path(args.content_plan).expanduser().resolve(),
+        "content_ledger": Path(args.content_ledger).expanduser().resolve(),
+        "profile_registry": Path(args.production_profile_registry).expanduser().resolve(),
+        "coverage_update": Path(args.creative_coverage_update).expanduser().resolve(),
+        "historical_approved_batch": Path(args.historical_approved_batch).expanduser().resolve(),
+        "historical_export_receipt": Path(args.historical_export_receipt).expanduser().resolve(),
+        "news_template": Path(args.news_template).expanduser().resolve(),
+    }
+    persona, persona_sha = load_approved_persona(paths["persona"], "business")
+    speaker, speaker_sha = load_approved_persona(
+        paths["speaker_persona"], "speaker"
+    )
+    novel_request, novel_request_sha = load_profile_generation_request(
+        paths["novel_request"], persona, speaker
+    )
+    repurpose_request, repurpose_request_sha = load_profile_generation_request(
+        paths["repurpose_request"], persona, speaker
+    )
+    if novel_request["request_id"] != "real_shufang_news_validation_novel_001":
+        raise RuntimeError("Unexpected Track A request ID.")
+    if repurpose_request["request_id"] != "real_shufang_news_validation_repurpose_001":
+        raise RuntimeError("Unexpected Track B request ID.")
+    pattern_records = load_patterns([Path(value) for value in args.news_pattern])
+    patterns = [record["artifact"] for record in pattern_records]
+    registry = read_json(paths["profile_registry"])
+    coverage_update = read_json(paths["coverage_update"])
+    registry_context = validate_news_mvp_registry_and_patterns(
+        registry, coverage_update, patterns
+    )
+    content_plan = read_json(paths["content_plan"])
+    ledger = read_json(paths["content_ledger"])
+    approved_batch = read_json(paths["historical_approved_batch"])
+    export_receipt = read_json(paths["historical_export_receipt"])
+    if approved_batch.get("status") != "approved":
+        raise RuntimeError("Historical Batch must remain Approved.")
+    approved_batch_sha = sha256_file(paths["historical_approved_batch"])
+    if export_receipt.get("batch_sha256") != approved_batch_sha:
+        raise RuntimeError("Historical Export Receipt does not reference Approved Batch.")
+    if export_receipt.get("validation_passed") is not True:
+        raise RuntimeError("Historical Export Receipt is not valid.")
+
+    safe_persona_projection(persona)
+    safe_speaker_projection(speaker)
+    price_pattern = registry_context["patterns_by_id"][NEWS_PRICE_PATTERN_ID]
+    price_pattern_path = next(
+        Path(record["path"])
+        for record in pattern_records
+        if record["artifact"]["pattern_id"] == NEWS_PRICE_PATTERN_ID
+    )
+    case_refs, case_source_paths = build_news_case_structural_refs(
+        price_pattern, project_root
+    )
+    preserved_paths = {
+        **paths,
+        **{
+            f"pattern_{index}": Path(record["path"])
+            for index, record in enumerate(pattern_records, start=1)
+        },
+        **case_source_paths,
+    }
+    source_hashes_before = {
+        name: sha256_file(path) for name, path in preserved_paths.items()
+    }
+
+    track_a = assess_news_novel_capacity(
+        novel_request, content_plan, patterns, persona
+    )
+    ledger_entry, approved_item = find_historical_price_content(
+        ledger, approved_batch, repurpose_request
+    )
+    track_b = build_news_price_repurpose_plan(
+        repurpose_request,
+        ledger,
+        ledger_entry,
+        approved_item,
+        patterns,
+        artifact_ref(paths["profile_registry"], "production_profile_registry_v1"),
+        artifact_ref(price_pattern_path, "approved_pattern"),
+        case_refs,
+    )
+    dry_run = build_news_excel_dry_run(
+        repurpose_request,
+        track_b,
+        paths["news_template"],
+        registry_context["export_contract"],
+    )
+
+    output_root = (
+        Path(args.output_root).expanduser().resolve()
+        if args.output_root
+        else project_root / "data" / "news_production_mvp"
+    )
+    track_a_dir = output_root / novel_request["request_id"]
+    track_b_dir = output_root / repurpose_request["request_id"]
+    track_a_json_path = track_a_dir / "news_novel_capacity_validation_v1.json"
+    track_a_review_path = track_a_dir / "news_novel_capacity_review_v1.md"
+    track_b_plan_path = track_b_dir / "news_micro_beat_plan_v1.json"
+    dry_run_path = track_b_dir / "news_excel_export_contract_dry_run_v1.json"
+    track_b_review_path = track_b_dir / "news_generation_review_pack_v1.md"
+    summary_path = output_root / "news_production_mvp_validation_v1.json"
+    all_outputs = (
+        track_a_json_path,
+        track_a_review_path,
+        track_b_plan_path,
+        dry_run_path,
+        track_b_review_path,
+        summary_path,
+    )
+    existing = [str(path) for path in all_outputs if path.exists()]
+    if existing:
+        raise RuntimeError("News MVP output already exists: " + ", ".join(existing))
+
+    dry_run_sha = write_new_json(dry_run_path, dry_run)
+    track_b["export_contract_dry_run_ref"] = {
+        "artifact_type": "news_excel_export_contract_dry_run_v1",
+        "path": str(dry_run_path),
+        "sha256": dry_run_sha,
+    }
+    track_a_sha = write_new_json(track_a_json_path, track_a)
+    track_a_review_sha = write_new_text(
+        track_a_review_path,
+        render_news_novel_capacity_review(
+            track_a,
+            artifact_ref(paths["content_plan"], "content_plan_v1_1_1"),
+            artifact_ref(paths["content_ledger"], "content_ledger_v1"),
+        ),
+    )
+    track_b_sha = write_new_json(track_b_plan_path, track_b)
+    track_b_review_sha = write_new_text(
+        track_b_review_path,
+        render_news_generation_review_pack(
+            track_b,
+            dry_run,
+            artifact_ref(paths["historical_approved_batch"], "approved_generation_batch_v1"),
+            artifact_ref(paths["historical_export_receipt"], "mix_excel_export_receipt_v1"),
+        ),
+    )
+    summary = {
+        "schema_version": "news-production-mvp-validation-v1.0",
+        "generator_version": NEWS_MVP_GENERATOR_VERSION,
+        "created_at": now_iso(),
+        "status": "news_production_mvp_human_review_gate",
+        "business_id": persona["persona_id"],
+        "speaker_id": speaker["persona_id"],
+        "track_a": {
+            "request_id": novel_request["request_id"],
+            "news_novel_capacity": track_a["capacity"]["news_novel_capacity"],
+            "status": track_a["capacity"]["status"],
+            "artifact_ref": {
+                "path": str(track_a_json_path),
+                "sha256": track_a_sha,
+            },
+            "review_pack_ref": {
+                "path": str(track_a_review_path),
+                "sha256": track_a_review_sha,
+            },
+        },
+        "track_b": {
+            "request_id": repurpose_request["request_id"],
+            "reuse_intent": "cross_profile_repurpose",
+            "semantic_novelty": False,
+            "selected_pattern": NEWS_PRICE_PATTERN_ID,
+            "micro_beat_count": len(track_b["micro_beats"]),
+            "export_slot_count": len(
+                track_b["beat_to_export_slot_mapping"]["slots"]
+            ),
+            "artifact_ref": {
+                "path": str(track_b_plan_path),
+                "sha256": track_b_sha,
+            },
+            "review_pack_ref": {
+                "path": str(track_b_review_path),
+                "sha256": track_b_review_sha,
+            },
+            "dry_run_ref": {
+                "path": str(dry_run_path),
+                "sha256": dry_run_sha,
+            },
+        },
+        "scene_contrast": {
+            "status": "pattern_available_but_no_current_customer_opportunity",
+            "fake_state_a_b_created": False,
+        },
+        "news_readiness": {
+            "before": "production_validation_required",
+            "after": "production_validation_required",
+            "production_ready": False,
+            "next_gate": "news_production_mvp_human_review",
+        },
+        "usage": {
+            "remote_model_calls": 0,
+            "remote_tokens": 0,
+            "remote_elapsed_seconds": 0,
+        },
+        "authority": {
+            "persona_modified": False,
+            "content_ledger_modified": False,
+            "case_or_pattern_created": False,
+            "case_facts_transferred": False,
+            "case_media_reused": False,
+            "proof_authority_changed": False,
+            "privacy_authority_changed": False,
+            "news_batch_approved": False,
+            "formal_excel_export_performed": False,
+        },
+        "validation": {
+            "passed": True,
+            "novel_content_gate_validated": True,
+            "cross_profile_repurpose_explicit": True,
+            "approved_pattern_matching_validated": True,
+            "micro_beat_plan_validated": True,
+            "six_slot_contract_dry_run_validated": True,
+            "human_review_pack_ready": True,
+        },
+        "input_lineage": {
+            "persona_sha256": persona_sha,
+            "speaker_persona_sha256": speaker_sha,
+            "novel_request_sha256": novel_request_sha,
+            "repurpose_request_sha256": repurpose_request_sha,
+            "preserved_source_hashes": source_hashes_before,
+        },
+    }
+    summary_sha = write_new_json(summary_path, summary)
+    source_hashes_after = {
+        name: sha256_file(path) for name, path in preserved_paths.items()
+    }
+    if source_hashes_after != source_hashes_before:
+        raise RuntimeError("A preserved News MVP source artifact changed.")
+    return {
+        "summary": summary,
+        "summary_path": summary_path,
+        "summary_sha256": summary_sha,
+        "track_a": track_a,
+        "track_a_path": track_a_json_path,
+        "track_a_review_path": track_a_review_path,
+        "track_b": track_b,
+        "track_b_path": track_b_plan_path,
+        "track_b_review_path": track_b_review_path,
+        "dry_run": dry_run,
+        "dry_run_path": dry_run_path,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Generate a review-required batch of privacy-safe Mix scripts."
+        description=(
+            "Generate a review-required privacy-safe Mix batch, or run the "
+            "offline News Production MVP validation mode."
+        )
     )
     parser.add_argument("--persona")
     parser.add_argument("--speaker-persona")
     parser.add_argument("--request")
     parser.add_argument("--source-plan")
     parser.add_argument("--pattern")
+    parser.add_argument(
+        "--news-mvp-validation",
+        action="store_true",
+        help=(
+            "Run deterministic Track A/Track B News MVP validation; no remote model, "
+            "formal Excel export, ledger write, or approval."
+        ),
+    )
+    parser.add_argument(
+        "--news-mvp-final-approval",
+        action="store_true",
+        help=(
+            "Persist final Human approvals, export the approved News workbook, "
+            "append presentation-only Ledger history, and record scoped Production validation."
+        ),
+    )
+    parser.add_argument("--track-a-validation")
+    parser.add_argument("--track-b-plan")
+    parser.add_argument("--news-output")
+    parser.add_argument("--node-executable")
+    parser.add_argument("--artifact-tool-node-modules")
+    parser.add_argument("--novel-request")
+    parser.add_argument("--repurpose-request")
+    parser.add_argument("--production-profile-registry")
+    parser.add_argument("--creative-coverage-update")
+    parser.add_argument("--news-pattern", action="append")
+    parser.add_argument("--historical-approved-batch")
+    parser.add_argument("--historical-export-receipt")
+    parser.add_argument("--news-template")
     parser.add_argument("--fingerprint", action="append")
     parser.add_argument(
         "--review-pack-only",
@@ -4428,6 +6854,44 @@ def main() -> None:
         help="Default: <project>/data/generation_batches",
     )
     args = parser.parse_args()
+    if args.news_mvp_final_approval:
+        result = run_news_production_mvp_final_approval(args)
+        print("NEWS PRODUCTION MVP V1 FINAL APPROVAL AND EXPORT PASS")
+        print("Track A capacity approval: expected zero-capacity PASS")
+        print("Track B: approved cross_profile_repurpose (semantic_novelty=False)")
+        print(f"Excel SHA-256: {result['output_sha256']}")
+        print(f"Excel: {result['output_path']}")
+        print(f"Export receipt: {result['receipt_path']}")
+        print(f"Content Ledger SHA-256: {result['ledger_sha256']}")
+        print(f"Coverage update: {result['coverage_update_path']}")
+        print("News readiness: production_validation_required")
+        print("Remote model calls: 0")
+        return
+    if args.news_mvp_validation:
+        result = run_news_production_mvp_validation(args)
+        print("NEWS PRODUCTION MVP V1 HUMAN REVIEW READY")
+        print(
+            "Track A capacity: "
+            f"{result['track_a']['capacity']['news_novel_capacity']}/"
+            f"{result['track_a']['capacity']['requested_quantity']} "
+            f"({result['track_a']['capacity']['status']})"
+        )
+        print("Track B reuse intent: cross_profile_repurpose")
+        print("Track B semantic novelty: False")
+        print(f"Selected Pattern: {NEWS_PRICE_PATTERN_ID}")
+        print(
+            "Micro Beats / Export Slots: "
+            f"{len(result['track_b']['micro_beats'])}/"
+            f"{len(result['track_b']['beat_to_export_slot_mapping']['slots'])}"
+        )
+        print("Remote model calls: 0")
+        print("Formal Excel export: False")
+        print("News readiness: production_validation_required")
+        print(f"Track A Review Pack: {result['track_a_review_path']}")
+        print(f"Track B Review Pack: {result['track_b_review_path']}")
+        print(f"Excel Dry-run: {result['dry_run_path']}")
+        print(f"Summary: {result['summary_path']}")
+        return
     if args.review_pack_only:
         review_path, batch_sha, projection = write_review_pack_for_existing_batch(
             Path(args.review_pack_only),

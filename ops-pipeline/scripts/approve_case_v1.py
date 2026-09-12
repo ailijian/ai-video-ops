@@ -65,6 +65,14 @@ def main() -> None:
         "--note",
         default="Human review passed against the source video and Reverse Storyboard V1.1.",
     )
+    parser.add_argument(
+        "--governance-policy",
+        default=None,
+        help=(
+            "Approved/Frozen Case Source Governance V1 policy. Required for Cases "
+            "that contain the legacy source_rights_gate field."
+        ),
+    )
     args = parser.parse_args()
 
     case_path = Path(args.case).expanduser().resolve()
@@ -85,6 +93,7 @@ def main() -> None:
     pattern_state = case.get("pattern_state", {})
     privacy_gate = case.get("privacy_gate", {})
     source_artifacts = case.get("source_artifacts", {})
+    governance_context: dict[str, Any] | None = None
 
     if lifecycle.get("status") != "review_required":
         errors.append(
@@ -168,6 +177,70 @@ def main() -> None:
             continue
         frozen_paths[receipt_name] = path
 
+    if case.get("source_rights_gate") is not None:
+        if not args.governance_policy:
+            errors.append(
+                "Case has a legacy source_rights_gate field; approved/frozen "
+                "Case Source Governance V1 policy is required."
+            )
+        else:
+            policy_path = Path(args.governance_policy).expanduser().resolve()
+            if not policy_path.is_file():
+                errors.append(f"Governance policy does not exist: {policy_path}")
+            else:
+                policy = read_json(policy_path)
+                if (
+                    policy.get("schema_version")
+                    != "case-source-governance-policy-v1.0"
+                    or policy.get("status") != "approved_frozen"
+                    or policy.get("version") != "V1.0"
+                ):
+                    errors.append("Case Source Governance policy is not Approved/Frozen V1.0.")
+                if policy.get("reviewer") != args.reviewer:
+                    errors.append("Case reviewer does not match Governance policy reviewer.")
+                decisions = policy.get("pending_case_human_governance_decisions") or []
+                decision = next(
+                    (
+                        item
+                        for item in decisions
+                        if str(item.get("case_id")) == str(case.get("case_id"))
+                    ),
+                    None,
+                )
+                if not decision:
+                    errors.append("Governance policy has no Human decision for this Case.")
+                elif (
+                    decision.get("canonical_case_decision") != "approve"
+                    or decision.get("research_ingestion_eligibility")
+                    != "eligible_for_internal_research"
+                    or decision.get("media_reuse_rights") != "not_established"
+                    or decision.get("human_structural_profile_decision") != "pass"
+                ):
+                    errors.append("Governance policy decision is not eligible for Case approval.")
+                source_video = (case.get("source_evidence") or {}).get("video") or {}
+                source_path = Path(str(source_video.get("path") or "")).expanduser().resolve()
+                source_url = str((case.get("identity") or {}).get("source_url") or "")
+                case_id = str(case.get("case_id") or "")
+                recorded_source_sha = str(source_video.get("sha256") or "").lower()
+                if not case_id or not source_url or not source_path.is_file():
+                    errors.append("Governance source provenance is incomplete.")
+                elif not recorded_source_sha or sha256_file(source_path) != recorded_source_sha:
+                    errors.append("Governance local source SHA-256 is missing or changed.")
+                governance_context = {
+                    "policy_path": str(policy_path),
+                    "policy_sha256": sha256_file(policy_path),
+                    "policy_version": policy.get("version"),
+                    "research_ingestion_eligibility": (
+                        (decision or {}).get("research_ingestion_eligibility")
+                    ),
+                    "media_reuse_rights": (decision or {}).get("media_reuse_rights"),
+                    "case_approval_scope": (
+                        (policy.get("canonical_case_approval") or {}).get(
+                            "authorization_scope"
+                        )
+                    ),
+                }
+
     privacy_path = frozen_paths.get("privacy_projection_v1")
     if privacy_path is not None:
         privacy_projection = read_json(privacy_path)
@@ -225,6 +298,9 @@ def main() -> None:
         ],
         "human_gate": True,
     }
+    if governance_context is not None:
+        case["approval"]["source_governance"] = governance_context
+        case["approval"]["media_reuse_authorized"] = False
 
     case.setdefault("quality", {})
     case["quality"]["human_review_required"] = False
@@ -257,6 +333,9 @@ def main() -> None:
             for name, path in frozen_paths.items()
         },
     }
+    if governance_context is not None:
+        receipt["source_governance"] = governance_context
+        receipt["case_approval_grants_media_reuse"] = False
 
     receipt_path = case_path.parent / "approval_receipt.json"
     write_atomic_json(receipt_path, receipt)
