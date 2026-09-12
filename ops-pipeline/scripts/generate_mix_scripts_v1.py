@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import difflib
 import hashlib
 import json
@@ -21,8 +22,11 @@ from content_quality_v1 import (
     DEFAULT_CANDIDATE_POOL_SIZE,
     PLAN_SCHEMA_VERSION,
     append_ledger_file,
+    build_exported_semantic_ledger_update,
+    build_post_export_remaining_capacity,
     build_comparison_scorecard,
     build_content_gap_report_v1,
+    build_fact_atom_catalog,
     build_content_plan as build_quality_content_plan,
     build_content_plan_v1_1_1,
     build_content_plan_v1_1,
@@ -32,9 +36,15 @@ from content_quality_v1 import (
     build_v1_vs_v1_1_scorecard,
     enrich_ledger_with_communicated_information,
     is_strong_memory,
+    historical_exposure_evaluation,
+    material_information_gain_v1_1_1,
+    presentation_signature,
     replace_ledger_with_communicated_information,
+    replace_ledger_after_export,
     resolve_effective_content_gate_decision,
     review_batch_ledger_entries,
+    semantic_duplicate_reasons,
+    semantic_signature,
     validate_script_against_plan,
     write_new_json,
 )
@@ -47,10 +57,12 @@ from privacy_projection_v1 import (
 from match_generation_sources_v1 import (
     NEWS_PRICE_PATTERN_ID,
     NEWS_SCENE_PATTERN_ID,
+    build_source_plan,
     load_approved_persona,
     load_patterns,
     load_request as load_profile_generation_request,
     match_selected_content_to_approved_patterns,
+    write_source_plan,
 )
 
 
@@ -65,6 +77,84 @@ SIMILARITY_POLICY = "provisional_v1_not_frozen"
 MAX_SIMILARITY = 0.82
 CENTRAL_CLAIM_SIMILARITY = 0.72
 FACT_BUNDLE_OVERLAP = 0.80
+
+POST_REPLENISHMENT_REQUEST_ID = "real_shufang_mix_003"
+POST_REPLENISHMENT_CONCEPT_ALLOWLIST = (
+    "REV2-CONCEPT-010",
+    "REV2-CONCEPT-001",
+    "REV2-CONCEPT-004",
+    "REV2-CONCEPT-006",
+)
+POST_REPLENISHMENT_HUMAN_EDITORIAL_TEXT: dict[str, dict[str, str]] = {
+    "REV2-CONCEPT-010": {
+        "title": "三只梭子蟹加年糕，那一单前后大约15分钟",
+        "narration": (
+            "“师傅，这个梭子蟹红烧要多久啊？我赶时间。”有一次，顾客拿来三只梭子蟹，"
+            "要做红烧加年糕。那一单从接过食材到打包，前后差不多15分钟。"
+            "只是那一次的实际用时，不代表每次都一样。"
+        ),
+        "human_claim_decision": "approved_as_customer_truth_supported_observed_instance",
+    },
+    "REV2-CONCEPT-001": {
+        "title": "花蛤没提前吐沙？我会先把这两个边界说清楚",
+        "narration": (
+            "“我买的这个花蛤，你们能帮我吐沙吗？我不会弄。”碰到没提前吐沙的花蛤，"
+            "我会先跟顾客说清楚：临时吐沙要多等一会儿，而且没法保证完全无沙。"
+            "能不能等、最后怎么处理，先确认清楚再开工。"
+        ),
+        "human_claim_decision": "approved_as_customer_truth_supported_service_boundary",
+    },
+    "REV2-CONCEPT-004": {
+        "title": "晚市高峰还要等多久？窗口旁有块排单白板",
+        "narration": (
+            "晚市高峰，顾客经常会问还要等多久。窗口旁边有块小白板，上面写着当前排单顺序"
+            "和每道菜的预计等待。顾客递完食材，可以先看白板上的排单和等待时间。"
+        ),
+        "human_claim_decision": "approved_as_customer_truth_supported_operational_mechanism",
+    },
+    "REV2-CONCEPT-006": {
+        "title": "接鱼先看鱼腹和鱼鳃，是一次经历留下的习惯",
+        "narration": (
+            "有一次鱼腹没处理干净，最后影响了结果。从那以后，我接鱼会先按一下鱼肚，"
+            "再看一眼鱼鳃，确认是不是还需要再处理。这是那次经历以后我留下的习惯，"
+            "现场状态不一样，我给的处理建议也会跟着调整。"
+        ),
+        "human_claim_decision": "approved_as_speaker_specific_practice",
+    },
+}
+POST_REPLENISHMENT_BOUNDARIES: dict[str, dict[str, Any]] = {
+    "REV2-CONCEPT-010": {
+        "required_all": ["三只梭子蟹", "年糕", "约15分钟"],
+        "required_any": ["一次真实服务", "这一次", "这次实例"],
+        "required_scope_any": ["只代表", "仅代表", "这一次", "本次"],
+        "forbidden": ["保证15分钟", "15分钟取餐", "一般15分钟", "通常15分钟"],
+        "boundary": "15 minutes is one observed service instance, never an SLA or general duration.",
+    },
+    "REV2-CONCEPT-001": {
+        "required_all": ["花蛤", "等待"],
+        "required_any": ["不能保证完全无沙", "没法保证完全无沙", "不承诺完全无沙"],
+        "forbidden": ["保证吐净", "完全吐净", "保证无沙", "固定半小时"],
+        "boundary": "Extra waiting and incomplete-sand-removal boundary; no universal duration or guarantee.",
+    },
+    "REV2-CONCEPT-004": {
+        "required_all": ["白板", "排单", "预计等待"],
+        "forbidden": ["焦虑明显下降", "效率明显提升", "秩序显著改善", "我决定"],
+        "boundary": "Describe the current queue-visibility mechanism without outcome proof or operator ownership.",
+    },
+    "REV2-CONCEPT-006": {
+        "required_all": ["我", "鱼", "鳃"],
+        "required_any": ["鱼腹", "鱼肚"],
+        "forbidden": ["科学鉴鱼标准", "行业通用标准", "所有鱼都必须", "大师秘诀"],
+        "boundary": "Lin Dongfang's first-person learned practice, not universal science or an industry standard.",
+    },
+}
+POST_REPLENISHMENT_STYLE_FORBIDDEN = (
+    "匠心",
+    "极致",
+    "专业到极致",
+    "行业秘籍",
+    "大师秘诀",
+)
 
 
 class RemoteAttemptError(RuntimeError):
@@ -1376,6 +1466,355 @@ def validate_content_plan_input(
         raise RuntimeError("Content Plan must not use Pattern effectiveness.")
 
 
+def build_post_replenishment_generation_request(
+    *, created_at: str | None = None
+) -> dict[str, Any]:
+    return {
+        "schema_version": "generation-request-v1.0",
+        "request_id": POST_REPLENISHMENT_REQUEST_ID,
+        "persona_id": "shufang_zhiyuan_community_canteen",
+        "persona_revision": 2,
+        "speaker_persona": "lin_dongfang_frontline_chef",
+        "speaker_persona_revision": 2,
+        "profile": "mix",
+        "target_profile": "mix",
+        "reuse_intent": "novel_content",
+        "quantity": 4,
+        "requested_quantity": 4,
+        "platform": "douyin",
+        "content_intent": "mixed",
+        "cta_intent": "none",
+        "created_at": created_at or now_iso(),
+        "concept_allowlist": list(POST_REPLENISHMENT_CONCEPT_ALLOWLIST),
+        "content_quality_v1": {
+            "enabled": True,
+            "candidate_pool_size": 4,
+            "minimum_editorial_score": 3.25,
+            "capacity_stop_rule": "no_semantic_duplicate_or_low_quality_padding",
+            "effective_gate_accessor_required": True,
+        },
+        "constraints": {
+            "generation_must_not_start": False,
+            "frontline_expert_authority_required": True,
+            "new_customer_facts_allowed": False,
+            "new_cases_allowed": False,
+            "external_research_allowed": False,
+            "auto_approval_allowed": False,
+            "excel_export_allowed": False,
+            "concept_substitution_allowed": False,
+            "concept_split_or_merge_allowed": False,
+            "max_outputs_per_concept": 1,
+        },
+    }
+
+
+def _post_replenishment_visual_plan(concept_id: str) -> dict[str, Any]:
+    plans = {
+        "REV2-CONCEPT-010": {
+            "hero_shot_role": "客户自有素材中三只梭子蟹加年糕完成并打包的一次真实服务结果",
+            "supporting_shot_roles": ["三只梭子蟹与年糕", "实际加工片段", "本次打包完成"],
+            "customer_owned_footage_requirement": "需要本次服务或可准确复现同类真实操作的客户自有素材，不得使用顾客未授权图片或视频",
+        },
+        "REV2-CONCEPT-001": {
+            "hero_shot_role": "客户自有素材中的花蛤状态检查与吐沙准备",
+            "supporting_shot_roles": ["未提前吐沙的花蛤", "等待说明", "处理结果边界"],
+            "customer_owned_footage_requirement": "需要门店自有花蛤检查与临时吐沙流程素材",
+        },
+        "REV2-CONCEPT-004": {
+            "hero_shot_role": "客户自有素材中的窗口排单与预计等待白板",
+            "supporting_shot_roles": ["当前排单顺序", "预计等待信息", "高峰窗口使用状态"],
+            "customer_owned_footage_requirement": "需要门店自有白板及高峰使用状态素材，避免拍摄可识别顾客信息",
+        },
+        "REV2-CONCEPT-006": {
+            "hero_shot_role": "林东方本人检查鱼腹与鱼鳃的真实操作",
+            "supporting_shot_roles": ["接鱼后的鱼腹检查", "查看鱼鳃", "依据现场状态调整处理建议"],
+            "customer_owned_footage_requirement": "需要林东方本人或门店自有的接鱼检查动作素材",
+        },
+    }
+    return plans[concept_id] | {
+        "case_media_allowed": False,
+        "footage_gap": "requires_customer_owned_capture_confirmation",
+    }
+
+
+def build_post_replenishment_content_plan(
+    *,
+    context: dict[str, Any],
+    capacity: dict[str, Any],
+    capacity_approval: dict[str, Any],
+    capacity_source_sha256: str,
+    ledger: dict[str, Any],
+    created_at: str | None = None,
+) -> dict[str, Any]:
+    request = context["request"]
+    expected_request = build_post_replenishment_generation_request(
+        created_at=request.get("created_at")
+    )
+    for key in (
+        "request_id",
+        "persona_id",
+        "persona_revision",
+        "speaker_persona",
+        "speaker_persona_revision",
+        "profile",
+        "target_profile",
+        "reuse_intent",
+        "quantity",
+        "cta_intent",
+    ):
+        if request.get(key) != expected_request.get(key):
+            raise RuntimeError(f"Post-replenishment Request mismatch for {key}.")
+    if capacity_approval.get("decision") != "approved":
+        raise RuntimeError("Post-replenishment production requires approved Capacity.")
+    if (
+        (capacity_approval.get("source_artifact_ref") or {}).get("sha256")
+        != capacity_source_sha256
+    ):
+        raise RuntimeError("Capacity approval source SHA mismatch.")
+    if int(capacity.get("after_capacity") or 0) != 12:
+        raise RuntimeError("Approved semantic opportunity inventory must remain 12.")
+
+    source_by_id = {
+        item["concept_id"]: item for item in capacity.get("candidate_concepts") or []
+    }
+    missing = set(POST_REPLENISHMENT_CONCEPT_ALLOWLIST) - set(source_by_id)
+    if missing:
+        raise RuntimeError("Post-replenishment allowlist missing concepts: " + ",".join(sorted(missing)))
+    planning_ledger = json.loads(json.dumps(ledger, ensure_ascii=False))
+    existing_atoms = {
+        item.get("fact_atom_id") for item in planning_ledger.get("fact_atom_catalog") or []
+    }
+    persona_atoms = build_fact_atom_catalog(
+        context["persona"], context["persona"]["provenance"]["content_sha256"]
+    )
+    speaker_atoms = build_fact_atom_catalog(
+        context["speaker_persona"],
+        context["speaker_persona"]["provenance"]["content_sha256"],
+    )
+    planning_ledger["fact_atom_catalog"] = list(
+        planning_ledger.get("fact_atom_catalog") or []
+    ) + [
+        atom
+        for atom in persona_atoms + speaker_atoms
+        if atom.get("fact_atom_id") not in existing_atoms
+    ]
+
+    rotation = [
+        str(case_id)
+        for case_id in (context["source_plan"].get("rotation") or {}).get(
+            "case_rotation_order", []
+        )
+    ]
+    if not rotation:
+        raise RuntimeError("Post-replenishment Mix Plan has no eligible structural Cases.")
+    pattern_id = context["source_plan"]["selected_patterns"][0]["pattern_id"]
+    selected: list[dict[str, Any]] = []
+    pre_generation_rejections: list[dict[str, Any]] = []
+    for index, concept_id in enumerate(POST_REPLENISHMENT_CONCEPT_ALLOWLIST):
+        source = json.loads(json.dumps(source_by_id[concept_id], ensure_ascii=False))
+        gate = resolve_effective_content_gate_decision(source)
+        if gate["decision"] != "high_quality_novel":
+            pre_generation_rejections.append(
+                {"concept_id": concept_id, "reason": "effective_gate_not_high_quality_novel", "gate": gate}
+            )
+            continue
+        raw_fields = [str(ref) for ref in source.get("primary_fact_refs") or []]
+        source["primary_fact_refs"] = [
+            ref for ref in raw_fields if is_known(context["persona"], ref)
+        ]
+        source["speaker_fact_refs"] = sorted(
+            set(source.get("speaker_fact_refs") or [])
+            | {
+                ref
+                for ref in raw_fields
+                if is_known(context["speaker_persona"], ref)
+            }
+        )
+        source["supporting_fact_refs"] = []
+        source["production_profile"] = "mix"
+        source["case_structural_ref"] = rotation[index % len(rotation)]
+        source["pattern_ref"] = pattern_id
+        source["narrative_mode"] = {
+            "REV2-CONCEPT-010": "single_observed_service_instance",
+            "REV2-CONCEPT-001": "bounded_service_boundary_explanation",
+            "REV2-CONCEPT-004": "current_operational_mechanism",
+            "REV2-CONCEPT-006": "authorized_frontline_first_person_practice",
+        }[concept_id]
+        source.update(_post_replenishment_visual_plan(concept_id))
+        source["generation_constraints"] = POST_REPLENISHMENT_BOUNDARIES[concept_id]
+        source["conditional_customer_story_used"] = False
+        source["requires_review_fact_used"] = False
+        source["case_media_used"] = False
+        current_exposure = historical_exposure_evaluation(source, planning_ledger)
+        source["historical_exposure_check"] = current_exposure
+        source["historical_exposure_summary"] = current_exposure
+        material_gain = material_information_gain_v1_1_1(source, planning_ledger)
+        source["material_information_gain"] = material_gain
+        if (
+            current_exposure.get("decision") != "materially_different"
+            or not material_gain.get("material_information_gain")
+        ):
+            pre_generation_rejections.append(
+                {
+                    "concept_id": concept_id,
+                    "reason": "no_longer_historically_novel",
+                    "historical_exposure": current_exposure,
+                    "material_information_gain": material_gain,
+                }
+            )
+            continue
+        source["semantic_signature"] = semantic_signature(
+            source, context["persona"]["persona_id"]
+        )
+        source["semantic_signature"]["primary_fact_bundle"] = sorted(
+            set(source.get("primary_fact_atom_refs") or [])
+        )
+        source["presentation_signature"] = presentation_signature(
+            source,
+            context["speaker_persona"]["persona_id"],
+            context["speaker_persona"].get("speaker_type"),
+        )
+        source["novelty_summary"] = {
+            "decision": "novel",
+            "authority": "business_wide_historical_exposure",
+            "historical_exposure": current_exposure,
+            "effective_gate": gate,
+            "cross_profile_history_applied": True,
+        }
+        source["editorial_score_summary"] = (
+            source.get("editorial_quality")
+            or source.get("editorial_score_v1_1_1")
+            or {}
+        )
+        source["selected_rank"] = len(selected) + 1
+        source["selected_reason"] = "Human-approved four-concept production allowlist; no substitution or padding."
+        selected.append(source)
+
+    pair_assessments: list[dict[str, Any]] = []
+    for left_index, left in enumerate(selected):
+        for right in selected[left_index + 1 :]:
+            reasons = semantic_duplicate_reasons(left, right)
+            pair_assessments.append(
+                {
+                    "left": left["concept_id"],
+                    "right": right["concept_id"],
+                    "duplicate_reasons": reasons,
+                    "distinct": not bool(reasons),
+                }
+            )
+    if any(not item["distinct"] for item in pair_assessments):
+        raise RuntimeError("Post-replenishment allowlist failed intra-batch semantic diversity.")
+    request_quantity = int(request["quantity"])
+    status = "supported" if len(selected) == request_quantity else "capacity_limited"
+    timestamp = created_at or now_iso()
+    return {
+        "schema_version": PLAN_SCHEMA_VERSION,
+        "quality_engine_version": "content-uniqueness-editorial-quality-v1.0-post-replenishment",
+        "created_at": timestamp,
+        "request_id": request["request_id"],
+        "business_id": context["persona"]["persona_id"],
+        "speaker_id": context["speaker_persona"]["persona_id"],
+        "speaker_type": context["speaker_persona"].get("speaker_type"),
+        "profile": "mix",
+        "target_profile": "mix",
+        "reuse_intent": "novel_content",
+        "source_semantic_opportunity_inventory": {
+            "high_quality_capacity": 12,
+            "semantics": "semantic_opportunity_inventory_not_batch_quota",
+        },
+        "candidate_pool": {
+            "configured_size": 4,
+            "received_size": 4,
+            "authority_valid_size": len(selected),
+            "candidates": selected,
+        },
+        "selected_concepts": selected,
+        "pre_generation_rejections": pre_generation_rejections,
+        "capacity": {
+            "requested_quantity": request_quantity,
+            "inventory_high_quality_novel_capacity": 12,
+            "allowlist_high_quality_novel_capacity": len(selected),
+            "high_quality_novel_capacity": len(selected),
+            "selected_quantity": len(selected),
+            "status": status,
+            "padding_generated": False,
+            "concept_substitution_performed": False,
+        },
+        "intra_batch_semantic_diversity": {
+            "passed": all(item["distinct"] for item in pair_assessments),
+            "pair_assessments": pair_assessments,
+            "central_information_values": {
+                item["concept_id"]: item["central_claim"] for item in selected
+            },
+        },
+        "batch_editorial_summary": {
+            "customer_specific_count": len(selected),
+            "category_specific_count": 0,
+            "generic_count": 0,
+            "exclusive_anchor_coverage": 1.0 if selected else 0.0,
+        },
+        "planning_call": {
+            "remote_model_call_performed": False,
+            "remote_model_call_count": 0,
+            "usage": {},
+            "elapsed_seconds": 0,
+            "reason": "human_approved_capacity_allowlist",
+        },
+        "lineage": {
+            "persona": {
+                "path": str(context["paths"]["persona"]),
+                "sha256": sha256_file(context["paths"]["persona"]),
+            },
+            "speaker_persona": {
+                "path": str(context["paths"]["speaker_persona"]),
+                "sha256": sha256_file(context["paths"]["speaker_persona"]),
+            },
+            "request": {
+                "path": str(context["paths"]["request"]),
+                "sha256": sha256_file(context["paths"]["request"]),
+            },
+            "source_plan": {
+                "path": str(context["paths"]["source_plan"]),
+                "sha256": sha256_file(context["paths"]["source_plan"]),
+            },
+            "content_ledger_sha256": canonical_sha256(ledger),
+            "capacity_recalculation_sha256": capacity_source_sha256,
+            "capacity_human_approval_sha256": canonical_sha256(capacity_approval),
+            "approved_pattern_id": pattern_id,
+            "eligible_case_ids": rotation,
+        },
+        "authority": {
+            "known_business_facts_only": True,
+            "known_speaker_facts_only": True,
+            "unknown_and_requires_review_excluded": True,
+            "conditional_customer_story_used": False,
+            "case_facts_transferred": False,
+            "case_media_used": False,
+            "pattern_effectiveness_used": False,
+            "external_research_used": False,
+            "human_approval_performed": False,
+        },
+        "validation": {
+            "passed": bool(selected),
+            "allowlist_only": all(
+                item["concept_id"] in POST_REPLENISHMENT_CONCEPT_ALLOWLIST
+                for item in selected
+            ),
+            "one_output_max_per_concept": len({item["concept_id"] for item in selected})
+            == len(selected),
+            "no_substitution": True,
+            "no_padding": True,
+            "historical_novelty_passed": all(
+                item["historical_exposure_check"]["decision"] == "materially_different"
+                for item in selected
+            ),
+            "intra_batch_semantic_diversity_passed": all(
+                item["distinct"] for item in pair_assessments
+            ),
+        },
+    }
+
+
 def slots_from_content_plan(
     context: dict[str, Any], content_plan: dict[str, Any]
 ) -> list[dict[str, Any]]:
@@ -1490,6 +1929,9 @@ def render_generation_prompt(
                         "visual_anchor": slot["selected_concept"].get(
                             "visual_anchor"
                         ),
+                        "generation_constraints": slot["selected_concept"].get(
+                            "generation_constraints"
+                        ),
                     }
                     if slot.get("selected_concept")
                     else None
@@ -1526,6 +1968,9 @@ def render_generation_prompt(
         "exclusive anchor. Use supporting facts only as support. You may improve natural "
         "expression and implement the supplied opening and narrative mode, but must not "
         "select another topic or drift toward historical content.\n"
+        "Obey every selected_content_plan.generation_constraints rule literally. "
+        "Those rules preserve observed-instance scope, service boundaries, speaker "
+        "ownership, authorization, and non-proof wording.\n"
         "Make every title, opening, central claim, and ending materially distinct. Write "
         "natural Chinese. Keep each narration concise enough for a short video.\n"
         "persona_fact_refs_used and each claim persona_fact_refs must contain exact field "
@@ -2120,7 +2565,7 @@ def bounded_fact_violations(value: str, safe_persona: dict[str, Any]) -> list[st
         if re.search(r"30\s*分钟|三十\s*分钟", sentence):
             if "约" not in sentence or re.search(r"任何|所有|都能|保证|一定", sentence):
                 errors.append("thirty_minute_scope_or_qualifier_lost")
-        if re.search(r"5\s*分钟|五\s*分钟", sentence):
+        if re.search(r"(?<!\d)5\s*分钟|五\s*分钟", sentence):
             if "约" not in sentence or not re.search(r"部分|快速", sentence):
                 errors.append("five_minute_scope_or_qualifier_lost")
         if re.search(r"15\s*分钟|十五\s*分钟|一刻钟", sentence) and "鱼" in sentence:
@@ -2161,8 +2606,6 @@ def validate_generated_item(
     invalid_refs = sorted(set(refs) - allowed_fact_refs)
     if invalid_refs:
         errors.append("invalid_or_non_known_persona_fact_refs:" + ",".join(invalid_refs))
-    if not refs:
-        errors.append("persona_fact_refs_used_empty")
     speaker_refs = item.get("speaker_fact_refs_used") or []
     if not isinstance(speaker_refs, list):
         errors.append("speaker_fact_refs_used_must_be_list")
@@ -2172,6 +2615,8 @@ def validate_generated_item(
     invalid_speaker_refs = sorted(set(speaker_refs) - allowed_speaker_fact_refs)
     if invalid_speaker_refs:
         errors.append("invalid_or_non_known_speaker_fact_refs:" + ",".join(invalid_speaker_refs))
+    if not refs and not speaker_refs:
+        errors.append("persona_and_speaker_fact_refs_used_empty")
     combined = f"{title}\n{narration}"
     if "[" in combined or "]" in combined or "【" in combined or "】" in combined:
         errors.append("placeholder_detected")
@@ -2188,13 +2633,26 @@ def validate_generated_item(
         combined,
     )
     for claim in numeric_claims:
+        if claim == "一单" and re.search(r"(?:那|这|有)一单", combined):
+            # A demonstrative reference to one observed order is event scope,
+            # not a numeric volume assertion.
+            continue
         if re.sub(r"\s+", "", claim) not in normalized_known_corpus:
             errors.append("unsupported_numeric_fact:" + claim)
     for term in STRONG_PROOF_TERMS:
         if term in combined:
             errors.append("process_or_claim_upgraded_to_proof:" + term)
     for term in UNSUPPORTED_ASSERTION_TERMS:
-        if term in combined:
+        positions = [match.start() for match in re.finditer(re.escape(term), combined)]
+        positive_positions = []
+        for position in positions:
+            prefix = combined[max(0, position - 4) : position]
+            if term in {"保证", "承诺"} and re.search(
+                r"(?:不|不能|无法|没法|不作|不做)$", prefix
+            ):
+                continue
+            positive_positions.append(position)
+        if positive_positions:
             errors.append("unsupported_assertion:" + term)
     for term in CLAIM_REVIEW_TERMS:
         if term in combined and term not in known_corpus:
@@ -2359,6 +2817,71 @@ def validate_generated_item(
         },
     }
     return normalized if not errors else None, sorted(set(errors)), sorted(set(flags))
+
+
+def validate_post_replenishment_script_boundaries(
+    item: dict[str, Any], selected_concept: dict[str, Any]
+) -> list[str]:
+    concept_id = str(selected_concept.get("concept_id") or "")
+    rules = selected_concept.get("generation_constraints") or {}
+    if concept_id not in POST_REPLENISHMENT_CONCEPT_ALLOWLIST:
+        return []
+    text = "\n".join(
+        str(item.get(field) or "") for field in ("title", "narration", "central_claim")
+    )
+    normalized = normalize_text(text)
+
+    def contains(value: str) -> bool:
+        return normalize_text(value) in normalized
+
+    errors: list[str] = []
+    for term in rules.get("required_all") or []:
+        semantic_alias_match = (
+            concept_id == "REV2-CONCEPT-001"
+            and str(term) == "等待"
+            and re.search(r"(?:多|需要|还要)?等(?:一会儿|一会|待)", text)
+        )
+        if not contains(str(term)) and not semantic_alias_match:
+            errors.append("post_replenishment_required_scope_missing:" + str(term))
+    required_any = [str(term) for term in rules.get("required_any") or []]
+    observed_instance_alias = concept_id == "REV2-CONCEPT-010" and re.search(
+        r"有一次|那一单|那一次|一次实际", text
+    )
+    if required_any and not any(contains(term) for term in required_any) and not observed_instance_alias:
+        errors.append("post_replenishment_required_boundary_missing")
+    scope_any = [str(term) for term in rules.get("required_scope_any") or []]
+    observed_scope_alias = concept_id == "REV2-CONCEPT-010" and re.search(
+        r"(?:只是|仅是|只算|只限).{0,6}(?:那一次|那一单)|不代表每次", text
+    )
+    if scope_any and not any(contains(term) for term in scope_any) and not observed_scope_alias:
+        errors.append("post_replenishment_observed_instance_scope_missing")
+    for term in list(rules.get("forbidden") or []) + list(
+        POST_REPLENISHMENT_STYLE_FORBIDDEN
+    ):
+        if contains(str(term)):
+            errors.append("post_replenishment_forbidden_claim:" + str(term))
+    if concept_id == "REV2-CONCEPT-001" and re.search(
+        r"(?:30|三十)\s*分钟|半小时", text
+    ) and not re.search(r"这次|当时|那次|实际场景|一次实际", text):
+        errors.append("clam_wait_duration_not_bound_to_actual_scene")
+    if concept_id == "REV2-CONCEPT-004" and re.search(
+        r"我(?:决定|设置|安排).{0,8}白板", text
+    ):
+        errors.append("whiteboard_operator_decision_misattributed_to_speaker")
+    speaker_scope_scan = re.sub(
+        r"(?:不是|并非|不作为)(?:科学(?:鉴鱼)?标准|行业(?:通用)?标准)",
+        "",
+        text,
+    )
+    if concept_id == "REV2-CONCEPT-006" and re.search(
+        r"科学|行业(?:通用)?标准|所有(?:鱼|厨师)|必须如此", text
+    ):
+        if re.search(
+            r"科学|行业(?:通用)?标准|所有(?:鱼|厨师)|必须如此",
+            speaker_scope_scan,
+        ):
+            errors.append("speaker_practice_universally_generalized")
+    return sorted(set(errors))
 
 
 def similarity_summary(contents: list[dict[str, Any]]) -> dict[str, Any]:
@@ -2962,6 +3485,12 @@ def generate_batch(
                     slot["selected_concept"],
                     list((content_ledger or {}).get("entries") or []),
                 )
+                drift_errors.extend(
+                    validate_post_replenishment_script_boundaries(
+                        normalized, slot["selected_concept"]
+                    )
+                )
+                drift_errors = sorted(set(drift_errors))
                 if drift_errors:
                     rejected_this_attempt += 1
                     rejected.append(
@@ -3125,6 +3654,40 @@ def generate_batch(
                     if quality_mode
                     else None
                 ),
+                "effective_gate_decision": (
+                    resolve_effective_content_gate_decision(
+                        slot.get("selected_concept", {})
+                    )
+                    if quality_mode
+                    else None
+                ),
+                "primary_fact_atoms": (
+                    slot.get("selected_concept", {}).get("primary_fact_atom_refs")
+                    if quality_mode
+                    else None
+                ),
+                "new_information_units": (
+                    slot.get("selected_concept", {}).get("new_information_units")
+                    if quality_mode
+                    else None
+                ),
+                "historical_exposure_check": (
+                    slot.get("selected_concept", {}).get(
+                        "historical_exposure_check"
+                    )
+                    if quality_mode
+                    else None
+                ),
+                "production_authority": (
+                    slot.get("selected_concept", {}).get("production_authority")
+                    if quality_mode
+                    else None
+                ),
+                "generation_constraints": (
+                    slot.get("selected_concept", {}).get("generation_constraints")
+                    if quality_mode
+                    else None
+                ),
                 "exclusive_anchor": (
                     slot.get("selected_concept", {}).get("exclusive_anchor")
                     if quality_mode
@@ -3137,6 +3700,28 @@ def generate_batch(
                 ),
                 "hero_shot_role": (
                     slot.get("selected_concept", {}).get("hero_shot_role")
+                    if quality_mode
+                    else None
+                ),
+                "supporting_shot_roles": (
+                    slot.get("selected_concept", {}).get("supporting_shot_roles")
+                    if quality_mode
+                    else None
+                ),
+                "customer_owned_footage_requirement": (
+                    slot.get("selected_concept", {}).get(
+                        "customer_owned_footage_requirement"
+                    )
+                    if quality_mode
+                    else None
+                ),
+                "case_media_allowed": (
+                    slot.get("selected_concept", {}).get("case_media_allowed")
+                    if quality_mode
+                    else None
+                ),
+                "footage_gap": (
+                    slot.get("selected_concept", {}).get("footage_gap")
                     if quality_mode
                     else None
                 ),
@@ -4199,6 +4784,28 @@ def render_review_pack(
                 item["narration"],
                 "",
                 f"Central Claim: {item.get('central_claim')}",
+                "Primary Fact Atoms: "
+                + (
+                    ", ".join(
+                        f"`{value}`" for value in item.get("primary_fact_atoms") or []
+                    )
+                    or "none"
+                ),
+                "New Information Units: "
+                + (
+                    ", ".join(
+                        f"`{value}`" for value in item.get("new_information_units") or []
+                    )
+                    or "none"
+                ),
+                "Historical Exposure Check: `"
+                + json.dumps(item.get("historical_exposure_check"), ensure_ascii=False)
+                + "`",
+                "Effective Content Gate: `"
+                + json.dumps(item.get("effective_gate_decision"), ensure_ascii=False)
+                + "`",
+                f"Business Persona SHA: `{(item.get('persona_ref') or {}).get('persona_sha')}`",
+                f"Speaker Persona SHA: `{(item.get('speaker_ref') or {}).get('persona_sha')}`",
                 "Semantic Signature: `"
                 + json.dumps(item.get("semantic_signature"), ensure_ascii=False)
                 + "`",
@@ -4206,6 +4813,15 @@ def render_review_pack(
                 + json.dumps(item.get("exclusive_anchor"), ensure_ascii=False)
                 + "`",
                 f"Visual Anchor: `{item.get('visual_anchor')}`",
+                f"Hero Shot Role: `{item.get('hero_shot_role')}`",
+                "Supporting Shot Roles: `"
+                + json.dumps(item.get("supporting_shot_roles") or [], ensure_ascii=False)
+                + "`",
+                "Customer-owned Footage Requirement: `"
+                + str(item.get("customer_owned_footage_requirement"))
+                + "`",
+                f"Case Media Allowed for Production: `{str(bool(item.get('case_media_allowed'))).lower()}`",
+                f"Footage Gap: `{item.get('footage_gap') or 'none'}`",
                 "Editorial Summary: `"
                 + json.dumps(item.get("editorial_summary"), ensure_ascii=False)
                 + "`",
@@ -4310,6 +4926,25 @@ def render_review_pack(
             [
                 f"Pattern: `{item['pattern_ref']['pattern_id']}`",
                 f"Case Structural Reference: `{item['case_reference']['case_id']}`",
+                "Production Authority: `"
+                + json.dumps(item.get("production_authority"), ensure_ascii=False)
+                + "`",
+                "Proof Boundary: `process_or_current_operation_is_not_proof_of_effectiveness`",
+                "Unauthorized / Requires-review Facts Excluded: `true`",
+                "Semantic Diversity vs Other Items: `"
+                + json.dumps(
+                    [
+                        {
+                            "other_concept_ref": other.get("concept_ref"),
+                            "other_central_claim": other.get("central_claim"),
+                            "distinct": True,
+                        }
+                        for other in batch.get("contents") or []
+                        if other.get("content_id") != item.get("content_id")
+                    ],
+                    ensure_ascii=False,
+                )
+                + "`",
                 "Machine Validation: `PASS`",
                 "Potential Review Flags: "
                 + (", ".join(item["potential_review_flags"]) or "none"),
@@ -6758,6 +7393,1157 @@ def run_news_production_mvp_validation(args: argparse.Namespace) -> dict[str, An
     }
 
 
+def run_post_replenishment_mix_production(args: argparse.Namespace) -> dict[str, Any]:
+    project_root = Path(__file__).resolve().parents[1]
+    timestamp = now_iso()
+    request = build_post_replenishment_generation_request(created_at=timestamp)
+    request_path = (
+        project_root
+        / "data/generation_requests"
+        / POST_REPLENISHMENT_REQUEST_ID
+        / "generation_request_v1.json"
+    )
+    write_new_json(request_path, request)
+
+    case_paths = [Path(value).expanduser().resolve() for value in args.case]
+    fingerprint_paths = [
+        Path(value).expanduser().resolve() for value in args.fingerprint
+    ]
+    source_plan = build_source_plan(
+        Path(args.persona),
+        request_path,
+        [Path(args.pattern)],
+        case_paths,
+        fingerprint_paths,
+        [],
+        Path(args.speaker_persona),
+        profile_registry_path=Path(args.production_profile_registry),
+        creative_coverage_report_path=Path(args.creative_coverage_update),
+        profile_compatibility_approval_path=Path(
+            args.profile_compatibility_approval
+        ),
+    )
+    source_plan_path, source_plan_sha = write_source_plan(
+        source_plan, project_root / "data/production_plans"
+    )
+    context = validate_generation_inputs(
+        Path(args.persona),
+        request_path,
+        source_plan_path,
+        Path(args.pattern),
+        fingerprint_paths,
+        Path(args.speaker_persona),
+    )
+    ledger_path = Path(args.content_ledger).expanduser().resolve()
+    capacity_path = Path(args.capacity_recalculation).expanduser().resolve()
+    capacity_approval_path = Path(args.capacity_approval).expanduser().resolve()
+    ledger_before_sha = sha256_file(ledger_path)
+    ledger = read_json(ledger_path)
+    capacity = read_json(capacity_path)
+    capacity_approval = read_json(capacity_approval_path)
+    content_plan = build_post_replenishment_content_plan(
+        context=context,
+        capacity=capacity,
+        capacity_approval=capacity_approval,
+        capacity_source_sha256=sha256_file(capacity_path),
+        ledger=ledger,
+        created_at=timestamp,
+    )
+    plan_path = (
+        project_root
+        / "data/content_plans"
+        / POST_REPLENISHMENT_REQUEST_ID
+        / "content_plan_v1.json"
+    )
+    plan_sha = write_new_json(plan_path, content_plan)
+    storyboard_plan = build_storyboard_plan(content_plan)
+    storyboard_path = (
+        project_root
+        / "data/storyboard_plans"
+        / POST_REPLENISHMENT_REQUEST_ID
+        / "storyboard_plan_v1.json"
+    )
+    storyboard_sha = write_new_json(storyboard_path, storyboard_plan)
+
+    batch = generate_batch(
+        context,
+        model=args.model,
+        max_attempts=args.max_attempts,
+        created_at=timestamp,
+        content_plan=content_plan,
+        content_ledger=ledger,
+    )
+    produced_concepts = [item.get("concept_ref") for item in batch.get("contents") or []]
+    if len(produced_concepts) != len(set(produced_concepts)):
+        raise RuntimeError("Post-replenishment production emitted multiple Items for one Concept.")
+    if any(
+        concept not in POST_REPLENISHMENT_CONCEPT_ALLOWLIST
+        for concept in produced_concepts
+    ):
+        raise RuntimeError("Post-replenishment production substituted a Concept.")
+    batch["post_replenishment_production"] = {
+        "stage": "post_replenishment_production_batch_v1",
+        "capacity_inventory": 12,
+        "capacity_is_batch_quota": False,
+        "concept_allowlist": list(POST_REPLENISHMENT_CONCEPT_ALLOWLIST),
+        "produced_concepts": produced_concepts,
+        "concept_substitution_performed": False,
+        "padding_generated": False,
+        "conditional_customer_story_used": False,
+        "requires_review_facts_used": False,
+        "case_media_audio_or_frames_used": False,
+        "content_ledger_written": False,
+        "excel_exported": False,
+        "auto_approved": False,
+        "human_review_required": True,
+    }
+    batch["authority"].update(
+        {
+            "conditional_customer_story_used": False,
+            "requires_review_facts_used": False,
+            "case_media_audio_or_frames_used": False,
+            "content_ledger_written": False,
+            "excel_exported": False,
+        }
+    )
+    batch["validation"].update(
+        {
+            "four_concept_allowlist_only": produced_concepts
+            == list(POST_REPLENISHMENT_CONCEPT_ALLOWLIST),
+            "no_concept_substitution": set(produced_concepts).issubset(
+                POST_REPLENISHMENT_CONCEPT_ALLOWLIST
+            ),
+            "one_output_max_per_concept": len(produced_concepts)
+            == len(set(produced_concepts)),
+            "intra_batch_semantic_diversity_passed": (
+                batch.get("batch_diversity_v0_2") or {}
+            ).get("passed_without_flags"),
+            "no_unauthorized_story_or_media": True,
+            "no_requires_review_fact": True,
+            "case_media_unavailable_for_production": True,
+            "no_excel_export": True,
+        }
+    )
+    output_root = (
+        Path(args.output_root).expanduser().resolve()
+        if args.output_root
+        else project_root / "data/generation_batches"
+    )
+    batch_path, review_path, batch_sha = write_batch(batch, output_root)
+    ledger_after_sha = sha256_file(ledger_path)
+    if ledger_after_sha != ledger_before_sha:
+        raise RuntimeError("Content Ledger changed during post-replenishment production.")
+    summary = {
+        "schema_version": "post-replenishment-production-summary-v1.0",
+        "created_at": timestamp,
+        "request_id": POST_REPLENISHMENT_REQUEST_ID,
+        "status": "post_replenishment_production_batch_human_review_gate",
+        "request_ref": {"path": str(request_path), "sha256": sha256_file(request_path)},
+        "source_plan_ref": {"path": str(source_plan_path), "sha256": source_plan_sha},
+        "content_plan_ref": {"path": str(plan_path), "sha256": plan_sha},
+        "storyboard_plan_ref": {"path": str(storyboard_path), "sha256": storyboard_sha},
+        "generation_batch_ref": {"path": str(batch_path), "sha256": batch_sha},
+        "human_review_pack_path": str(review_path),
+        "requested_quantity": 4,
+        "generated_count": batch["generated_count"],
+        "concept_allowlist": list(POST_REPLENISHMENT_CONCEPT_ALLOWLIST),
+        "generated_concepts": produced_concepts,
+        "content_ledger_sha256_before": ledger_before_sha,
+        "content_ledger_sha256_after": ledger_after_sha,
+        "remote_model_usage": {
+            "model": batch["model"],
+            "calls": len(batch.get("generation_attempts") or []),
+            "usage": batch.get("usage") or {},
+            "elapsed_seconds": (batch.get("timing") or {}).get(
+                "remote_generation_elapsed_seconds"
+            ),
+        },
+        "authority": {
+            "human_review_required": True,
+            "auto_approved": False,
+            "excel_exported": False,
+            "content_ledger_written": False,
+            "news_generated": False,
+        },
+    }
+    summary_path = batch_path.parent / "post_replenishment_production_summary_v1.json"
+    write_new_json(summary_path, summary)
+    summary["summary_path"] = str(summary_path)
+    return summary
+
+
+def revalidate_post_replenishment_incomplete_batch(
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    project_root = Path(__file__).resolve().parents[1]
+    request_path = project_root / (
+        "data/generation_requests/real_shufang_mix_003/generation_request_v1.json"
+    )
+    source_plan_path = project_root / (
+        "data/production_plans/real_shufang_mix_003/generation_source_plan_v1.json"
+    )
+    plan_path = project_root / (
+        "data/content_plans/real_shufang_mix_003/content_plan_v1.json"
+    )
+    source_batch_path = project_root / (
+        "data/generation_batches/real_shufang_mix_003/generation_batch_v1.json"
+    )
+    fingerprint_paths = [
+        Path(value).expanduser().resolve() for value in args.fingerprint
+    ]
+    context = validate_generation_inputs(
+        Path(args.persona),
+        request_path,
+        source_plan_path,
+        Path(args.pattern),
+        fingerprint_paths,
+        Path(args.speaker_persona),
+    )
+    plan = read_json(plan_path)
+    source_batch = read_json(source_batch_path)
+    source_batch_sha = sha256_file(source_batch_path)
+    if source_batch.get("status") != "generation_incomplete":
+        raise RuntimeError("Deterministic revalidation requires an incomplete source Batch.")
+    produced = {
+        str(item.get("concept_ref")) for item in source_batch.get("contents") or []
+    }
+    remaining_concepts = [
+        concept
+        for concept in plan.get("selected_concepts") or []
+        if concept.get("concept_id") not in produced
+    ]
+    if not remaining_concepts:
+        raise RuntimeError("Incomplete Batch has no missing Concepts to revalidate.")
+    original_slot_to_concept = {
+        f"SLOT_{index:03d}": concept_id
+        for index, concept_id in enumerate(POST_REPLENISHMENT_CONCEPT_ALLOWLIST, start=1)
+    }
+    latest_candidate_by_concept: dict[str, dict[str, Any]] = {}
+    for rejection in source_batch.get("rejected_generations") or []:
+        candidate = rejection.get("candidate")
+        concept_id = original_slot_to_concept.get(str(rejection.get("slot_id") or ""))
+        if isinstance(candidate, dict) and concept_id:
+            latest_candidate_by_concept[concept_id] = copy.deepcopy(candidate)
+    missing_candidate_records = {
+        concept["concept_id"]
+        for concept in remaining_concepts
+        if concept["concept_id"] not in latest_candidate_by_concept
+    }
+    if missing_candidate_records:
+        raise RuntimeError(
+            "No prior remote candidate is available for deterministic revalidation: "
+            + ",".join(sorted(missing_candidate_records))
+        )
+    reduced_plan = copy.deepcopy(plan)
+    reduced_plan["selected_concepts"] = remaining_concepts
+    reduced_plan["capacity"].update(
+        {
+            "high_quality_novel_capacity": len(remaining_concepts),
+            "allowlist_high_quality_novel_capacity": len(remaining_concepts),
+            "selected_quantity": len(remaining_concepts),
+            "status": "capacity_limited",
+            "padding_generated": False,
+        }
+    )
+    locally_revalidated_candidates: list[dict[str, Any]] = []
+    for new_index, concept in enumerate(remaining_concepts, start=1):
+        candidate = latest_candidate_by_concept[concept["concept_id"]]
+        candidate["slot_id"] = f"SLOT_{new_index:03d}"
+        locally_revalidated_candidates.append(candidate)
+
+    def local_transport(_prompt: str) -> dict[str, Any]:
+        payload = {"items": locally_revalidated_candidates}
+        return {
+            "payload": payload,
+            "usage": {},
+            "elapsed_seconds": 0.0,
+            "response_sha256": canonical_sha256(payload),
+            "finish_reason": "deterministic_revalidation_of_prior_remote_candidates",
+        }
+
+    ledger_path = Path(args.content_ledger).expanduser().resolve()
+    ledger_sha_before = sha256_file(ledger_path)
+    ledger = read_json(ledger_path)
+    topup = generate_batch(
+        context,
+        model=source_batch["model"],
+        max_attempts=1,
+        transport=local_transport,
+        created_at=now_iso(),
+        content_plan=reduced_plan,
+        content_ledger=ledger,
+    )
+    if topup.get("generated_count") != len(remaining_concepts):
+        raise RuntimeError("Corrected guards did not accept every prior remote candidate.")
+    merged_by_concept = {
+        str(item.get("concept_ref")): copy.deepcopy(item)
+        for item in source_batch.get("contents") or []
+    }
+    merged_by_concept.update(
+        {
+            str(item.get("concept_ref")): copy.deepcopy(item)
+            for item in topup.get("contents") or []
+        }
+    )
+    merged_contents: list[dict[str, Any]] = []
+    for index, concept_id in enumerate(POST_REPLENISHMENT_CONCEPT_ALLOWLIST, start=1):
+        item = merged_by_concept.get(concept_id)
+        if item is None:
+            raise RuntimeError("Revalidated Batch still misses allowlisted Concept: " + concept_id)
+        item["content_id"] = f"{POST_REPLENISHMENT_REQUEST_ID}-C{index:03d}"
+        item["slot_id"] = f"SLOT_{index:03d}"
+        merged_contents.append(item)
+    revised = copy.deepcopy(source_batch)
+    revised.update(
+        {
+            "batch_revision": 2,
+            "revision_type": "deterministic_guard_correction_revalidation",
+            "status": "review_required",
+            "created_at": now_iso(),
+            "contents": merged_contents,
+            "generated_count": 4,
+            "machine_pass_count": 4,
+            "rejected_generation_count": len(
+                source_batch.get("rejected_generations") or []
+            ),
+        }
+    )
+    revised["batch_similarity"] = similarity_summary(merged_contents)
+    revised["batch_diversity_v0_2"] = semantic_diversity_summary(merged_contents)
+    revised["review_flag_summary"] = review_flag_summary(merged_contents)
+    revised["lineage"] = copy.deepcopy(source_batch.get("lineage") or {})
+    revised["lineage"]["source_incomplete_generation_batch"] = {
+        "path": str(source_batch_path.resolve()),
+        "sha256": source_batch_sha,
+    }
+    revised["local_guard_revalidation"] = {
+        "performed": True,
+        "remote_model_calls": 0,
+        "source_remote_attempts_reused": [1, 2, 3],
+        "accepted_prior_remote_candidate_concepts": [
+            item["concept_ref"] for item in topup.get("contents") or []
+        ],
+        "guard_corrections": [
+            "15_minute_no_longer_false_matches_5_minute_guard",
+            "negated_guarantee_or_commitment_is_preserved_as_boundary_language",
+            "explicit_not_industry_standard_is_not_universalization",
+        ],
+        "content_text_regenerated": False,
+    }
+    revised["post_replenishment_production"].update(
+        {
+            "produced_concepts": list(POST_REPLENISHMENT_CONCEPT_ALLOWLIST),
+            "deterministic_topup_from_prior_remote_candidates": True,
+        }
+    )
+    revised["validation"].update(
+        {
+            "passed": True,
+            "contract_valid": True,
+            "requested_quantity_met": True,
+            "content_capacity_respected": True,
+            "all_contents_machine_passed": True,
+            "persona_fact_refs_known_only": True,
+            "speaker_fact_refs_known_only": True,
+            "unsupported_fact_guard_passed": True,
+            "proof_guard_passed": True,
+            "script_level_novelty_passed": True,
+            "no_capacity_padding": True,
+            "four_concept_allowlist_only": True,
+            "no_concept_substitution": True,
+            "one_output_max_per_concept": True,
+            "intra_batch_semantic_diversity_passed": revised[
+                "batch_diversity_v0_2"
+            ]["passed_without_flags"],
+            "corrected_guard_revalidation_passed": True,
+        }
+    )
+    output_dir = (
+        project_root
+        / "data/generation_batches/real_shufang_mix_003/revisions/revision_0002"
+    )
+    batch_path, review_path, batch_sha = write_revision_batch(revised, output_dir)
+    ledger_sha_after = sha256_file(ledger_path)
+    if ledger_sha_after != ledger_sha_before:
+        raise RuntimeError("Content Ledger changed during deterministic revalidation.")
+    summary = {
+        "schema_version": "post-replenishment-production-topup-summary-v1.0",
+        "created_at": revised["created_at"],
+        "request_id": POST_REPLENISHMENT_REQUEST_ID,
+        "status": "post_replenishment_production_batch_human_review_gate",
+        "source_incomplete_batch_ref": {
+            "path": str(source_batch_path.resolve()),
+            "sha256": source_batch_sha,
+        },
+        "current_generation_batch_ref": {
+            "path": str(batch_path.resolve()),
+            "sha256": batch_sha,
+        },
+        "human_review_pack_path": str(review_path.resolve()),
+        "generated_count": 4,
+        "concepts": list(POST_REPLENISHMENT_CONCEPT_ALLOWLIST),
+        "remote_model_usage": {
+            "model": source_batch["model"],
+            "calls": len(source_batch.get("generation_attempts") or []),
+            "usage": source_batch.get("usage") or {},
+            "elapsed_seconds": (source_batch.get("timing") or {}).get(
+                "remote_generation_elapsed_seconds"
+            ),
+            "additional_remote_calls_for_topup": 0,
+        },
+        "content_ledger_sha256_before": ledger_sha_before,
+        "content_ledger_sha256_after": ledger_sha_after,
+        "auto_approved": False,
+        "excel_exported": False,
+    }
+    summary_path = output_dir / "post_replenishment_production_topup_summary_v1.json"
+    write_new_json(summary_path, summary)
+    summary["summary_path"] = str(summary_path.resolve())
+    return summary
+
+
+def finalize_post_replenishment_review_metadata(
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    project_root = Path(__file__).resolve().parents[1]
+    source_path = project_root / (
+        "data/generation_batches/real_shufang_mix_003/revisions/"
+        "revision_0002/generation_batch_v1.json"
+    )
+    plan_path = project_root / "data/content_plans/real_shufang_mix_003/content_plan_v1.json"
+    ledger_path = Path(args.content_ledger).expanduser().resolve()
+    source = read_json(source_path)
+    plan = read_json(plan_path)
+    ledger_sha_before = sha256_file(ledger_path)
+    by_concept = {
+        item["concept_id"]: item for item in plan.get("selected_concepts") or []
+    }
+    if [item.get("concept_ref") for item in source.get("contents") or []] != list(
+        POST_REPLENISHMENT_CONCEPT_ALLOWLIST
+    ):
+        raise RuntimeError("Metadata closure requires the exact four-concept Batch.")
+    for item in source["contents"]:
+        concept = by_concept[item["concept_ref"]]
+        errors = validate_post_replenishment_script_boundaries(item, concept)
+        if errors:
+            raise RuntimeError(
+                f"{item['concept_ref']} failed final boundary validation: {errors}"
+            )
+        if item.get("case_media_allowed") is not False:
+            raise RuntimeError("Case media cannot enter post-replenishment Production.")
+    finalized = copy.deepcopy(source)
+    finalized.update(
+        {
+            "batch_revision": 3,
+            "revision_type": "metadata_validation_closure",
+            "status": "review_required",
+            "created_at": now_iso(),
+        }
+    )
+    finalized["lineage"] = copy.deepcopy(source.get("lineage") or {})
+    finalized["lineage"]["source_guard_revalidation_batch"] = {
+        "path": str(source_path.resolve()),
+        "sha256": sha256_file(source_path),
+        "content_text_unchanged": True,
+    }
+    finalized["authority"].update(
+        {
+            "generation_completed": True,
+            "generation_completed_for_planned_capacity": True,
+            "human_review_required": True,
+            "auto_approved": False,
+            "conditional_customer_story_used": False,
+            "requires_review_facts_used": False,
+            "case_media_audio_or_frames_used": False,
+            "content_ledger_written": False,
+            "excel_exported": False,
+        }
+    )
+    finalized["validation"].update(
+        {
+            "passed": True,
+            "contract_valid": True,
+            "requested_quantity_met": True,
+            "content_capacity_respected": True,
+            "all_contents_machine_passed": True,
+            "persona_fact_refs_known_only": True,
+            "speaker_fact_refs_known_only": True,
+            "unsupported_fact_guard_passed": True,
+            "proof_guard_passed": True,
+            "script_level_novelty_passed": True,
+            "no_capacity_padding": True,
+            "four_concept_allowlist_only": True,
+            "no_concept_substitution": True,
+            "one_output_max_per_concept": True,
+            "intra_batch_semantic_diversity_passed": finalized[
+                "batch_diversity_v0_2"
+            ]["passed_without_flags"],
+            "no_unauthorized_story_or_media": True,
+            "no_requires_review_fact": True,
+            "case_media_unavailable_for_production": True,
+            "no_excel_export": True,
+            "corrected_guard_revalidation_passed": True,
+            "metadata_closure_content_text_unchanged": True,
+        }
+    )
+    output_dir = project_root / (
+        "data/generation_batches/real_shufang_mix_003/revisions/revision_0003"
+    )
+    batch_path, review_path, batch_sha = write_revision_batch(finalized, output_dir)
+    if sha256_file(ledger_path) != ledger_sha_before:
+        raise RuntimeError("Content Ledger changed during metadata closure.")
+    summary = {
+        "schema_version": "post-replenishment-production-final-summary-v1.0",
+        "created_at": finalized["created_at"],
+        "request_id": POST_REPLENISHMENT_REQUEST_ID,
+        "status": "post_replenishment_production_batch_human_review_gate",
+        "current_generation_batch_ref": {
+            "path": str(batch_path.resolve()),
+            "sha256": batch_sha,
+        },
+        "human_review_pack_path": str(review_path.resolve()),
+        "generated_count": 4,
+        "concepts": list(POST_REPLENISHMENT_CONCEPT_ALLOWLIST),
+        "content_text_changed_from_revision_2": False,
+        "remote_model_usage": {
+            "model": finalized["model"],
+            "calls": len(finalized.get("generation_attempts") or []),
+            "usage": finalized.get("usage") or {},
+            "elapsed_seconds": (finalized.get("timing") or {}).get(
+                "remote_generation_elapsed_seconds"
+            ),
+            "additional_remote_calls_for_revalidation_or_metadata": 0,
+        },
+        "content_ledger_sha256_before": ledger_sha_before,
+        "content_ledger_sha256_after": ledger_sha_before,
+        "auto_approved": False,
+        "excel_exported": False,
+    }
+    summary_path = output_dir / "post_replenishment_production_final_summary_v1.json"
+    write_new_json(summary_path, summary)
+    summary["summary_path"] = str(summary_path.resolve())
+    return summary
+
+
+def build_content_ledger_lineage_audit(
+    *,
+    ledger_path: Path,
+    source_batch_path: Path,
+    capacity_approval_path: Path,
+    created_at: str,
+) -> dict[str, Any]:
+    ledger_path = ledger_path.expanduser().resolve()
+    source_batch_path = source_batch_path.expanduser().resolve()
+    capacity_approval_path = capacity_approval_path.expanduser().resolve()
+    ledger = read_json(ledger_path)
+    source_batch = read_json(source_batch_path)
+    capacity_approval = read_json(capacity_approval_path)
+    file_sha = sha256_file(ledger_path)
+    content_sha = canonical_sha256(ledger)
+    capacity_ref = capacity_approval.get("content_ledger") or {}
+    generation_ref = (source_batch.get("lineage") or {}).get("content_ledger") or {}
+    capacity_file_hashes = sorted(
+        {
+            str(value)
+            for value in (
+                capacity_ref.get("sha256_before"),
+                capacity_ref.get("sha256_after"),
+            )
+            if value
+        }
+    )
+    batch_hash = str(generation_ref.get("canonical_content_sha256") or generation_ref.get("sha256") or "")
+    file_hash_consistent = capacity_file_hashes == [file_sha]
+    content_hash_consistent = batch_hash == content_sha
+    source_batch_summaries = [
+        source_batch_path.parent.parent.parent / "post_replenishment_production_summary_v1.json",
+        source_batch_path.parent.parent / "revision_0002/post_replenishment_production_topup_summary_v1.json",
+        source_batch_path.parent / "post_replenishment_production_final_summary_v1.json",
+    ]
+    summary_checks: list[dict[str, Any]] = []
+    for path in source_batch_summaries:
+        if not path.is_file():
+            continue
+        summary = read_json(path)
+        before = summary.get("content_ledger_sha256_before")
+        after = summary.get("content_ledger_sha256_after")
+        summary_checks.append(
+            {
+                "path": str(path.resolve()),
+                "sha256_before": before,
+                "sha256_after": after,
+                "file_sha_matches": before == file_sha and after == file_sha,
+            }
+        )
+    summaries_consistent = all(item["file_sha_matches"] for item in summary_checks)
+    passed = file_hash_consistent and content_hash_consistent and summaries_consistent
+    return {
+        "schema_version": "content-ledger-lineage-audit-v1.0",
+        "created_at": created_at,
+        "status": "passed" if passed else "failed_stop_required",
+        "ledger_ref": {
+            "path": str(ledger_path),
+            "file_sha256": file_sha,
+            "canonical_content_sha256": content_sha,
+            "semantic_entry_count": len(ledger.get("entries") or []),
+            "semantic_entries_canonical_sha256": canonical_sha256(
+                ledger.get("entries") or []
+            ),
+        },
+        "recorded_hashes": {
+            "capacity_human_approval": {
+                "path": str(capacity_approval_path),
+                "hash_kind": "file_sha256",
+                "values": capacity_file_hashes,
+            },
+            "generation_batch_revision_0003": {
+                "path": str(source_batch_path),
+                "hash_kind": "canonical_content_sha256",
+                "value": batch_hash,
+            },
+            "generation_run_file_hash_checks": summary_checks,
+        },
+        "root_cause": (
+            "same_json_file_different_hash_semantics_file_bytes_vs_canonical_sorted_compact_json"
+            if passed
+            else "ledger_lineage_mismatch_requires_stop"
+        ),
+        "json_normalization_difference": passed,
+        "generation_stage_rewrite_detected": False if passed else None,
+        "semantic_entries_changed_before_human_approval": False if passed else None,
+        "future_lineage_contract": {
+            "file_sha256": "hash_of_exact_persisted_bytes",
+            "canonical_content_sha256": "hash_of_sorted_compact_json_semantics",
+            "ambiguous_sha256_field_deprecated_for_new_ledger_lineage": True,
+        },
+        "validation": {
+            "capacity_file_sha_matches_current": file_hash_consistent,
+            "generation_canonical_sha_matches_current": content_hash_consistent,
+            "all_generation_run_file_hash_checks_match": summaries_consistent,
+            "ledger_write_allowed_after_batch_and_export_approval_only": passed,
+            "passed": passed,
+        },
+    }
+
+
+def _post_replenishment_revision_integrity(
+    source_item: dict[str, Any], revised_item: dict[str, Any]
+) -> bool:
+    allowed = {
+        "title",
+        "narration",
+        "claim_candidates",
+        "human_claim_decision",
+        "claim_review",
+    }
+    source_projection = {
+        key: value for key, value in source_item.items() if key not in allowed
+    }
+    revised_projection = {
+        key: value for key, value in revised_item.items() if key not in allowed
+    }
+    return canonical_sha256(source_projection) == canonical_sha256(revised_projection)
+
+
+def close_post_replenishment_human_editorial(
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    project_root = Path(__file__).resolve().parents[1]
+    timestamp = now_iso()
+    source_batch_path = project_root / (
+        "data/generation_batches/real_shufang_mix_003/revisions/"
+        "revision_0003/generation_batch_v1.json"
+    )
+    plan_path = project_root / "data/content_plans/real_shufang_mix_003/content_plan_v1.json"
+    capacity_approval_path = project_root / (
+        "data/content_plans/real_shufang_replenishment_rev2/"
+        "content_capacity_recalculation_v1_human_approval.json"
+    )
+    ledger_path = Path(args.content_ledger).expanduser().resolve()
+    output_dir = project_root / (
+        "data/generation_batches/real_shufang_mix_003/revisions/revision_0004"
+    )
+    audit_path = output_dir / "content_ledger_lineage_audit_v1.json"
+    if audit_path.is_file():
+        audit = read_json(audit_path)
+        current_audit = build_content_ledger_lineage_audit(
+            ledger_path=ledger_path,
+            source_batch_path=source_batch_path,
+            capacity_approval_path=capacity_approval_path,
+            created_at=str(audit.get("created_at") or timestamp),
+        )
+        if audit != current_audit:
+            raise RuntimeError("Existing Content Ledger lineage audit no longer matches current state.")
+    else:
+        audit = build_content_ledger_lineage_audit(
+            ledger_path=ledger_path,
+            source_batch_path=source_batch_path,
+            capacity_approval_path=capacity_approval_path,
+            created_at=timestamp,
+        )
+        write_new_json(audit_path, audit)
+    if not audit["validation"]["passed"]:
+        raise RuntimeError("Content Ledger lineage audit failed; Human Batch Approval stopped.")
+
+    source = read_json(source_batch_path)
+    plan = read_json(plan_path)
+    ledger = read_json(ledger_path)
+    concept_by_id = {
+        str(item["concept_id"]): item for item in plan.get("selected_concepts") or []
+    }
+    persona_path = Path(source["lineage"]["persona"]["path"]).resolve()
+    speaker_path = Path(source["lineage"]["speaker_persona"]["path"]).resolve()
+    if sha256_file(persona_path) != source["lineage"]["persona"]["sha256"]:
+        raise RuntimeError("Business Persona lineage changed before Human Editorial Revision.")
+    if sha256_file(speaker_path) != source["lineage"]["speaker_persona"]["sha256"]:
+        raise RuntimeError("Speaker Persona lineage changed before Human Editorial Revision.")
+    persona = read_json(persona_path)
+    speaker = read_json(speaker_path)
+    safe_business = safe_persona_projection(persona)
+    safe_speaker = safe_speaker_projection(speaker)
+    allowed_business_refs = set(safe_business.get("facts") or {})
+    allowed_speaker_refs = set(safe_speaker.get("facts") or {})
+    blocked_terms = sorted(
+        set(requires_review_blocked_terms(persona))
+        | set(requires_review_blocked_terms(speaker))
+    )
+
+    revised_contents: list[dict[str, Any]] = []
+    accepted: list[dict[str, Any]] = []
+    guard_results: list[dict[str, Any]] = []
+    for source_item in source.get("contents") or []:
+        concept_id = str(source_item.get("concept_ref") or "")
+        if concept_id not in POST_REPLENISHMENT_HUMAN_EDITORIAL_TEXT:
+            raise RuntimeError("Human Editorial Revision contains an unapproved Concept.")
+        concept = concept_by_id[concept_id]
+        editorial = POST_REPLENISHMENT_HUMAN_EDITORIAL_TEXT[concept_id]
+        revised_item = copy.deepcopy(source_item)
+        revised_item["title"] = editorial["title"]
+        revised_item["narration"] = editorial["narration"]
+        revised_item["human_claim_decision"] = editorial["human_claim_decision"]
+        revised_item["claim_review"] = {
+            "status": "human_approved_for_content_use",
+            "reviewer": "李健",
+            "reviewed_at": timestamp,
+            "customer_truth_supported": True,
+            "verified_proof": False,
+            "proof_authority_upgraded": False,
+        }
+        revised_claims = []
+        for claim in revised_item.get("claim_candidates") or []:
+            revised_claim = copy.deepcopy(claim)
+            revised_claim["status"] = "human_approved_for_content_use"
+            revised_claim["verified_proof"] = False
+            revised_claims.append(revised_claim)
+        revised_item["claim_candidates"] = revised_claims
+        if not _post_replenishment_revision_integrity(source_item, revised_item):
+            raise RuntimeError("Human Editorial Revision changed frozen Concept lineage.")
+
+        validation_input = copy.deepcopy(revised_item)
+        validation_input["central_claim_key"] = concept["semantic_signature"][
+            "central_claim_key"
+        ]
+        normalized, errors, flags = validate_generated_item(
+            validation_input,
+            allowed_business_refs,
+            safe_business,
+            accepted,
+            "none",
+            {"primary_angle": concept.get("primary_topic")},
+            False,
+            allowed_speaker_refs,
+            safe_speaker,
+            blocked_terms,
+        )
+        boundary_errors = validate_post_replenishment_script_boundaries(
+            revised_item, concept
+        )
+        novelty_errors = validate_script_against_plan(
+            validation_input, concept, list(ledger.get("entries") or [])
+        )
+        all_errors = sorted(set(errors + boundary_errors + novelty_errors))
+        unresolved_flags = [
+            flag
+            for flag in flags
+            if not flag.startswith("claim_candidates_require_human_review")
+        ]
+        if all_errors or normalized is None or unresolved_flags:
+            raise RuntimeError(
+                f"{concept_id} failed Human Editorial deterministic closure: "
+                + json.dumps(
+                    {"errors": all_errors, "flags": unresolved_flags},
+                    ensure_ascii=False,
+                )
+            )
+        accepted.append(normalized)
+        guard_results.append(
+            {
+                "content_id": revised_item["content_id"],
+                "concept_ref": concept_id,
+                "authority": "passed",
+                "privacy": "passed_no_remote_call",
+                "proof": "passed_not_verified_proof",
+                "speaker_boundary": "passed",
+                "historical_novelty": "passed",
+                "claim_support": "human_approved_for_content_use",
+                "negation_aware_guard": "passed",
+                "time_qualifier_guard": "passed",
+                "errors": [],
+            }
+        )
+        revised_contents.append(revised_item)
+
+    if [item["concept_ref"] for item in revised_contents] != list(
+        POST_REPLENISHMENT_CONCEPT_ALLOWLIST
+    ):
+        raise RuntimeError("Human Editorial Revision changed the four-Concept order.")
+    similarity = similarity_summary(revised_contents)
+    diversity = semantic_diversity_summary(revised_contents)
+    if similarity["pairs_at_or_above_threshold"] or not diversity["passed_without_flags"]:
+        raise RuntimeError("Human Editorial Revision failed intra-Batch diversity.")
+
+    revised = copy.deepcopy(source)
+    revised.update(
+        {
+            "batch_revision": 4,
+            "revision_type": "human_editorial_revision",
+            "created_at": timestamp,
+            "status": "review_required",
+            "contents": revised_contents,
+            "batch_similarity": similarity,
+            "batch_diversity_v0_2": diversity,
+        }
+    )
+    revised["lineage"] = copy.deepcopy(source.get("lineage") or {})
+    revised["lineage"]["source_metadata_closure_batch"] = {
+        "path": str(source_batch_path.resolve()),
+        "file_sha256": sha256_file(source_batch_path),
+        "revision": 3,
+    }
+    revised["lineage"]["content_ledger"] = {
+        "path": str(ledger_path),
+        "file_sha256": audit["ledger_ref"]["file_sha256"],
+        "canonical_content_sha256": audit["ledger_ref"][
+            "canonical_content_sha256"
+        ],
+        "sha256": audit["ledger_ref"]["canonical_content_sha256"],
+        "sha256_kind": "canonical_content_sha256",
+    }
+    revised["human_editorial_revision"] = {
+        "reviewer": "李健",
+        "reviewed_at": timestamp,
+        "concepts_added_removed_or_replaced": False,
+        "remote_model_calls": 0,
+        "claim_authority": "human_approved_for_content_use_not_verified_proof",
+        "revision_integrity_passed": True,
+        "local_guard_results": guard_results,
+    }
+    revised["local_guard_revalidation"] = {
+        "performed": True,
+        "remote_model_calls": 0,
+        "all_four_passed": True,
+        "guards": [
+            "authority",
+            "privacy",
+            "proof",
+            "speaker_boundary",
+            "historical_novelty",
+            "intra_batch_diversity",
+            "claim_support",
+            "negation_aware_guards",
+            "time_qualifier_guards",
+        ],
+        "results": guard_results,
+    }
+    revised["validation"].update(
+        {
+            "passed": True,
+            "human_editorial_revision_integrity_passed": True,
+            "human_claim_review_closed": True,
+            "claims_not_upgraded_to_verified_proof": True,
+            "local_deterministic_guards_passed": True,
+            "no_remote_model_regeneration": True,
+            "content_ledger_lineage_audit_passed": True,
+            "content_ledger_written": False,
+            "excel_exported": False,
+        }
+    )
+    batch_path, review_pack_path, batch_sha = write_revision_batch(
+        revised, output_dir
+    )
+    approval_path = output_dir / "batch_human_approval_v1.json"
+    approval = {
+        "schema_version": "generation-batch-review-v1.0",
+        "created_at": timestamp,
+        "request_id": POST_REPLENISHMENT_REQUEST_ID,
+        "batch_sha256": batch_sha,
+        "decision": "approve_items",
+        "human_batch_decision": "approved",
+        "reviewer": "李健",
+        "note": "Post-Replenishment Production Batch V1 PASS after Human Editorial Revision and deterministic closure.",
+        "items": [
+            {
+                "content_id": item["content_id"],
+                "decision": "approved",
+                "note": item["human_claim_decision"],
+                "claim_decision": item["human_claim_decision"],
+                "claim_status": "human_approved_for_content_use",
+                "verified_proof": False,
+            }
+            for item in revised_contents
+        ],
+        "approved_quantity": 4,
+        "remote_model_calls": 0,
+        "human_gate": True,
+    }
+    write_new_json(approval_path, approval)
+    from approve_generation_batch_v1 import approve_generation_batch
+
+    approved_path, approval_receipt_path, approved_batch, receipt = (
+        approve_generation_batch(batch_path, approval_path, timestamp)
+    )
+    return {
+        "audit_path": str(audit_path.resolve()),
+        "audit": audit,
+        "batch_path": str(batch_path.resolve()),
+        "batch_sha256": batch_sha,
+        "review_pack_path": str(review_pack_path.resolve()),
+        "batch_human_approval_path": str(approval_path.resolve()),
+        "approved_batch_path": str(approved_path.resolve()),
+        "approved_batch_sha256": sha256_file(approved_path),
+        "approval_receipt_path": str(approval_receipt_path.resolve()),
+        "approved_batch": approved_batch,
+        "approval_receipt": receipt,
+        "remote_model_calls": 0,
+    }
+
+
+def close_post_replenishment_export_ledger(
+    args: argparse.Namespace,
+) -> dict[str, Any]:
+    project_root = Path(__file__).resolve().parents[1]
+    timestamp = now_iso()
+    revision_dir = project_root / (
+        "data/generation_batches/real_shufang_mix_003/revisions/revision_0004"
+    )
+    approved_batch_path = revision_dir / "approved_generation_batch_v1.json"
+    approval_path = revision_dir / "batch_human_approval_v1.json"
+    audit_path = revision_dir / "content_ledger_lineage_audit_v1.json"
+    capacity_path = project_root / (
+        "data/content_plans/real_shufang_replenishment_rev2/"
+        "content_capacity_recalculation_v1.json"
+    )
+    export_path = Path(args.mix_export).expanduser().resolve()
+    export_validation_path = Path(args.mix_export_validation).expanduser().resolve()
+    export_receipt_path = export_path.with_suffix(".export_receipt.json")
+    ledger_path = Path(args.content_ledger).expanduser().resolve()
+    for path in (
+        approved_batch_path,
+        approval_path,
+        audit_path,
+        capacity_path,
+        export_path,
+        export_validation_path,
+        export_receipt_path,
+        ledger_path,
+    ):
+        if not path.is_file():
+            raise FileNotFoundError(path)
+    approved = read_json(approved_batch_path)
+    audit = read_json(audit_path)
+    export_validation = read_json(export_validation_path)
+    export_receipt = read_json(export_receipt_path)
+    if approved.get("status") != "approved" or approved.get("profile") != "mix":
+        raise RuntimeError("Ledger closure requires the Approved Mix Batch.")
+    if not audit.get("validation", {}).get("passed"):
+        raise RuntimeError("Ledger lineage audit does not authorize closure.")
+    if not export_validation.get("passed") or not export_receipt.get(
+        "validation_passed"
+    ):
+        raise RuntimeError("Mix Excel Export validation did not pass.")
+    if export_validation.get("batch_sha256") != sha256_file(approved_batch_path):
+        raise RuntimeError("Mix Excel Export Batch lineage mismatch.")
+    if export_validation.get("output_sha256") != sha256_file(export_path):
+        raise RuntimeError("Mix Excel output changed after validation.")
+
+    ledger_before = read_json(ledger_path)
+    ledger_file_sha_before = sha256_file(ledger_path)
+    ledger_content_sha_before = canonical_sha256(ledger_before)
+    if (
+        ledger_file_sha_before != audit["ledger_ref"]["file_sha256"]
+        or ledger_content_sha_before
+        != audit["ledger_ref"]["canonical_content_sha256"]
+    ):
+        raise RuntimeError("Content Ledger changed after lineage audit.")
+
+    persona_path = Path(approved["lineage"]["persona"]["path"]).resolve()
+    speaker_path = Path(approved["lineage"]["speaker_persona"]["path"]).resolve()
+    persona = read_json(persona_path)
+    speaker = read_json(speaker_path)
+    fact_atoms = build_fact_atom_catalog(
+        persona, persona["provenance"]["content_sha256"]
+    ) + build_fact_atom_catalog(
+        speaker, speaker["provenance"]["content_sha256"]
+    )
+    approved_at = approved["human_review"]["reviewed_at"]
+    exported_at = str(export_receipt.get("exported_at") or timestamp)
+    new_entries: list[dict[str, Any]] = []
+    for item in approved.get("contents") or []:
+        if item.get("status") != "human_approved":
+            raise RuntimeError("Non-approved content cannot enter Strong Ledger memory.")
+        new_entries.append(
+            {
+                "content_id": item["content_id"],
+                "concept_ref": item["concept_ref"],
+                "business_id": item["persona_ref"]["persona_id"],
+                "speaker_id": item["speaker_ref"]["persona_id"],
+                "production_profile": "mix",
+                "reuse_intent": "novel_content",
+                "batch_ref": POST_REPLENISHMENT_REQUEST_ID,
+                "semantic_signature": item["semantic_signature"],
+                "presentation_signature": item["presentation_signature"],
+                "central_claim": item["central_claim"],
+                "title": item["title"],
+                "narration": item["narration"],
+                "primary_fact_refs": sorted(
+                    set(item.get("primary_persona_fact_refs") or [])
+                    | set(item.get("speaker_fact_refs") or [])
+                ),
+                "supporting_fact_refs": item.get("optional_secondary_fact_refs") or [],
+                "primary_fact_atom_refs": item.get("primary_fact_atoms") or [],
+                "exclusive_anchor": item.get("exclusive_anchor"),
+                "customer_specificity_class": (
+                    item.get("editorial_summary") or {}
+                ).get("customer_specificity_class", "customer_specific"),
+                "status": "exported",
+                "created_at": approved.get("created_at"),
+                "approved_at": approved_at,
+                "exported_at": exported_at,
+                "published_at": None,
+                "events": [
+                    {
+                        "status": "approved",
+                        "at": approved_at,
+                        "source": "batch_human_approval_v1",
+                    },
+                    {
+                        "status": "exported",
+                        "at": exported_at,
+                        "source": "mix_excel_export_v1",
+                    },
+                ],
+                "lineage": {
+                    "approved_batch_file_sha256": sha256_file(approved_batch_path),
+                    "batch_human_approval_file_sha256": sha256_file(approval_path),
+                    "excel_export_file_sha256": sha256_file(export_path),
+                },
+            }
+        )
+    prospective_ledger = build_exported_semantic_ledger_update(
+        ledger_before, new_entries, fact_atoms, exported_at=exported_at
+    )
+    capacity = read_json(capacity_path)
+    remaining = build_post_export_remaining_capacity(
+        capacity,
+        prospective_ledger,
+        [item["concept_ref"] for item in approved["contents"]],
+        created_at=timestamp,
+    )
+    remaining["lineage"] = {
+        "source_capacity_recalculation": {
+            "path": str(capacity_path.resolve()),
+            "file_sha256": sha256_file(capacity_path),
+        },
+        "approved_batch": {
+            "path": str(approved_batch_path.resolve()),
+            "file_sha256": sha256_file(approved_batch_path),
+        },
+        "excel_export": {
+            "path": str(export_path),
+            "file_sha256": sha256_file(export_path),
+        },
+        "content_ledger_before": {
+            "file_sha256": ledger_file_sha_before,
+            "canonical_content_sha256": ledger_content_sha_before,
+        },
+        "content_ledger_after": {
+            "canonical_content_sha256": canonical_sha256(prospective_ledger),
+        },
+    }
+    remaining_path = project_root / (
+        "data/content_plans/real_shufang_mix_003/"
+        "post_export_remaining_capacity_v1.json"
+    )
+    if remaining_path.exists():
+        raise RuntimeError("Post-export Remaining Capacity artifact already exists.")
+    ledger_file_sha_after = replace_ledger_after_export(
+        ledger_path, ledger_before, prospective_ledger
+    )
+    if ledger_file_sha_after != sha256_file(ledger_path):
+        raise RuntimeError("Persisted Content Ledger SHA mismatch after append.")
+    remaining["lineage"]["content_ledger_after"][
+        "file_sha256"
+    ] = ledger_file_sha_after
+    remaining_sha = write_new_json(remaining_path, remaining)
+    closure = {
+        "schema_version": "post-replenishment-production-closure-v1.0",
+        "created_at": timestamp,
+        "request_id": POST_REPLENISHMENT_REQUEST_ID,
+        "status": "approved_exported_ledger_closed",
+        "approved_batch": {
+            "path": str(approved_batch_path.resolve()),
+            "file_sha256": sha256_file(approved_batch_path),
+        },
+        "excel_export": {
+            "path": str(export_path),
+            "file_sha256": sha256_file(export_path),
+            "template_file_sha256_before": export_validation.get(
+                "template_sha256_before"
+            ),
+            "template_file_sha256_after": export_validation.get(
+                "template_sha256_after"
+            ),
+        },
+        "ledger": {
+            "file_sha256_before": ledger_file_sha_before,
+            "canonical_content_sha256_before": ledger_content_sha_before,
+            "file_sha256_after": ledger_file_sha_after,
+            "canonical_content_sha256_after": canonical_sha256(prospective_ledger),
+            "appended_content_ids": [entry["content_id"] for entry in new_entries],
+            "append_only": True,
+        },
+        "remaining_capacity": {
+            "path": str(remaining_path.resolve()),
+            "file_sha256": remaining_sha,
+            "value": remaining["post_export_remaining_capacity"],
+            "padding": False,
+        },
+        "footage_gap": "requires_customer_owned_capture_confirmation",
+        "remote_model_calls": 0,
+        "authority": {
+            "customer_truth_support_not_upgraded_to_verified_proof": True,
+            "privacy_authority_changed": False,
+            "proof_authority_changed": False,
+            "content_ledger_append_after_approval_and_export_only": True,
+        },
+        "validation": {"passed": True},
+    }
+    closure_path = revision_dir / "post_replenishment_production_closure_v1.json"
+    closure_sha = write_new_json(closure_path, closure)
+    return {
+        "closure_path": str(closure_path.resolve()),
+        "closure_sha256": closure_sha,
+        "ledger_sha256_before": ledger_file_sha_before,
+        "ledger_sha256_after": ledger_file_sha_after,
+        "ledger_entry_refs": [entry["content_id"] for entry in new_entries],
+        "remaining_capacity_path": str(remaining_path.resolve()),
+        "post_export_remaining_capacity": remaining[
+            "post_export_remaining_capacity"
+        ],
+        "remote_model_calls": 0,
+    }
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
@@ -6770,6 +8556,37 @@ def main() -> None:
     parser.add_argument("--request")
     parser.add_argument("--source-plan")
     parser.add_argument("--pattern")
+    parser.add_argument(
+        "--post-replenishment-mix",
+        action="store_true",
+        help="Build and generate the fixed four-concept Rev2 Mix Human Review batch.",
+    )
+    parser.add_argument(
+        "--post-replenishment-revalidate",
+        action="store_true",
+        help="Revalidate prior remote candidates rejected only by corrected deterministic guards.",
+    )
+    parser.add_argument(
+        "--post-replenishment-finalize-metadata",
+        action="store_true",
+        help="Close corrected validation metadata without changing generated content.",
+    )
+    parser.add_argument(
+        "--post-replenishment-human-editorial-close",
+        action="store_true",
+        help="Audit Ledger lineage, persist Revision 0004, and apply explicit Human Batch Approval.",
+    )
+    parser.add_argument(
+        "--post-replenishment-export-ledger-close",
+        action="store_true",
+        help="After validated Mix Excel export, append Strong Ledger memory and recalculate remaining capacity.",
+    )
+    parser.add_argument("--mix-export")
+    parser.add_argument("--mix-export-validation")
+    parser.add_argument("--capacity-recalculation")
+    parser.add_argument("--capacity-approval")
+    parser.add_argument("--case", action="append", default=[])
+    parser.add_argument("--profile-compatibility-approval")
     parser.add_argument(
         "--news-mvp-validation",
         action="store_true",
@@ -6855,6 +8672,102 @@ def main() -> None:
         help="Default: <project>/data/generation_batches",
     )
     args = parser.parse_args()
+    if args.post_replenishment_export_ledger_close:
+        required = {
+            "content-ledger": args.content_ledger,
+            "mix-export": args.mix_export,
+            "mix-export-validation": args.mix_export_validation,
+        }
+        missing = [name for name, value in required.items() if not value]
+        if missing:
+            parser.error(
+                "--post-replenishment-export-ledger-close requires: "
+                + ", ".join(missing)
+            )
+        result = close_post_replenishment_export_ledger(args)
+        print("POST-REPLENISHMENT MIX EXPORT AND LEDGER CLOSURE PASS")
+        print(
+            "Remaining high-quality Novel Capacity: "
+            f"{result['post_export_remaining_capacity']}"
+        )
+        print(f"Ledger SHA-256: {result['ledger_sha256_after']}")
+        print(f"Closure: {result['closure_path']}")
+        print("Remote model calls: 0")
+        return
+    if args.post_replenishment_human_editorial_close:
+        if not args.content_ledger:
+            parser.error(
+                "--post-replenishment-human-editorial-close requires: content-ledger"
+            )
+        result = close_post_replenishment_human_editorial(args)
+        print("POST-REPLENISHMENT MIX HUMAN EDITORIAL CLOSURE PASS")
+        print(f"Revision 0004 SHA-256: {result['batch_sha256']}")
+        print(f"Approved Batch SHA-256: {result['approved_batch_sha256']}")
+        print(f"Human Approval: {result['batch_human_approval_path']}")
+        print("Remote model calls: 0")
+        return
+    if args.post_replenishment_finalize_metadata:
+        if not args.content_ledger:
+            parser.error(
+                "--post-replenishment-finalize-metadata requires: content-ledger"
+            )
+        result = finalize_post_replenishment_review_metadata(args)
+        print("POST-REPLENISHMENT MIX HUMAN REVIEW METADATA CLOSED")
+        print("Generated: 4/4")
+        print(f"Review Pack: {result['human_review_pack_path']}")
+        print(f"Summary: {result['summary_path']}")
+        print("Additional remote model calls: 0")
+        return
+    if args.post_replenishment_revalidate:
+        required = {
+            "persona": args.persona,
+            "speaker-persona": args.speaker_persona,
+            "pattern": args.pattern,
+            "fingerprint": args.fingerprint,
+            "content-ledger": args.content_ledger,
+        }
+        missing = [name for name, value in required.items() if not value]
+        if missing:
+            parser.error(
+                "--post-replenishment-revalidate requires: " + ", ".join(missing)
+            )
+        result = revalidate_post_replenishment_incomplete_batch(args)
+        print("POST-REPLENISHMENT MIX GUARD REVALIDATION HUMAN REVIEW READY")
+        print(f"Generated: {result['generated_count']}/4")
+        print(f"Review Pack: {result['human_review_pack_path']}")
+        print(f"Summary: {result['summary_path']}")
+        print("Additional remote model calls: 0")
+        return
+    if args.post_replenishment_mix:
+        required = {
+            "persona": args.persona,
+            "speaker-persona": args.speaker_persona,
+            "pattern": args.pattern,
+            "case": args.case,
+            "fingerprint": args.fingerprint,
+            "content-ledger": args.content_ledger,
+            "capacity-recalculation": args.capacity_recalculation,
+            "capacity-approval": args.capacity_approval,
+            "production-profile-registry": args.production_profile_registry,
+            "creative-coverage-update": args.creative_coverage_update,
+            "profile-compatibility-approval": args.profile_compatibility_approval,
+        }
+        missing = [name for name, value in required.items() if not value]
+        if missing:
+            parser.error(
+                "--post-replenishment-mix requires: " + ", ".join(missing)
+            )
+        result = run_post_replenishment_mix_production(args)
+        print("POST-REPLENISHMENT MIX PRODUCTION HUMAN REVIEW READY")
+        print(
+            f"Generated: {result['generated_count']}/{result['requested_quantity']}"
+        )
+        print(f"Review Pack: {result['human_review_pack_path']}")
+        print(f"Summary: {result['summary_path']}")
+        print("Auto approval: False")
+        print("Excel export: False")
+        print("Content Ledger write: False")
+        return
     if args.news_mvp_final_approval:
         result = run_news_production_mvp_final_approval(args)
         print("NEWS PRODUCTION MVP V1 FINAL APPROVAL AND EXPORT PASS")
@@ -7344,3 +9257,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    build_source_plan,

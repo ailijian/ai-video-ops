@@ -1261,6 +1261,11 @@ def build_storyboard_plan(content_plan: dict[str, Any]) -> dict[str, Any]:
                     concept.get("avoid_recent_visual_anchor")
                 ),
                 "storyboard_shape": concept.get("storyboard_shape"),
+                "customer_owned_footage_requirement": concept.get(
+                    "customer_owned_footage_requirement"
+                ),
+                "case_media_allowed": concept.get("case_media_allowed", False),
+                "footage_gap": concept.get("footage_gap"),
             }
             for concept in content_plan.get("selected_concepts") or []
         ]
@@ -1688,6 +1693,266 @@ def append_ledger_file(
         raise RuntimeError("Content Ledger changed during append.")
     temporary.replace(path)
     return updated, hashlib.sha256(payload).hexdigest()
+
+
+def build_exported_semantic_ledger_update(
+    ledger: dict[str, Any],
+    new_entries: list[dict[str, Any]],
+    fact_atom_additions: list[dict[str, Any]],
+    *,
+    exported_at: str,
+) -> dict[str, Any]:
+    """Build an append-only Strong Memory update without touching Persona Authority."""
+    updated = json.loads(json.dumps(ledger, ensure_ascii=False))
+    atom_by_id = {
+        str(atom["fact_atom_id"]): atom
+        for atom in updated.get("fact_atom_catalog") or []
+    }
+    for atom in fact_atom_additions:
+        atom_id = str(atom.get("fact_atom_id") or "")
+        if not atom_id:
+            raise ValueError("Fact Atom addition is missing fact_atom_id.")
+        existing = atom_by_id.get(atom_id)
+        if existing is not None and canonical_sha256(existing) != canonical_sha256(atom):
+            raise ValueError("Fact Atom identity collision changed planning lineage.")
+        atom_by_id.setdefault(atom_id, json.loads(json.dumps(atom, ensure_ascii=False)))
+    updated["fact_atom_catalog"] = [
+        atom_by_id[atom_id] for atom_id in sorted(atom_by_id)
+    ]
+
+    enriched_entries: list[dict[str, Any]] = []
+    for source in new_entries:
+        entry = json.loads(json.dumps(source, ensure_ascii=False))
+        derived_units = communicated_units_for_entry(
+            entry, updated["fact_atom_catalog"]
+        )
+        primary_atom_refs = sorted(
+            set(entry.get("primary_fact_atom_refs") or [])
+        )
+        if primary_atom_refs:
+            concept_unit = {
+                "information_unit_id": "ciu::"
+                + canonical_sha256(
+                    {
+                        "version": COMMUNICATED_INFORMATION_VERSION,
+                        "source_content_id": entry.get("content_id"),
+                        "normalized_meaning": entry.get("central_claim"),
+                        "fact_atom_refs": primary_atom_refs,
+                    }
+                )[:20],
+                "normalized_meaning": entry.get("central_claim"),
+                "fact_atom_refs": primary_atom_refs,
+                "source_text_excerpt": entry.get("narration"),
+                "communication_role": "primary",
+                "explicitness": "explicit",
+                "source_content_id": entry.get("content_id"),
+            }
+            derived_units = [concept_unit] + [
+                unit
+                for unit in derived_units
+                if unit.get("information_unit_id")
+                != concept_unit["information_unit_id"]
+            ]
+        entry["communicated_information_units"] = derived_units
+        # Compatibility alias requested by the export-closure contract. The
+        # canonical Novelty reader remains communicated_information_units.
+        entry["information_units"] = json.loads(
+            json.dumps(derived_units, ensure_ascii=False)
+        )
+        enriched_entries.append(entry)
+
+    updated = append_ledger_entries(updated, enriched_entries)
+    updated["updated_at"] = exported_at
+    explicit_units = [
+        unit
+        for entry in updated.get("entries") or []
+        if is_strong_memory(entry)
+        for unit in entry.get("communicated_information_units") or []
+        if unit.get("explicitness") == "explicit"
+    ]
+    updated["historical_exposure_summary"] = {
+        "explicit_fact_atom_refs": sorted(
+            {
+                ref
+                for unit in explicit_units
+                for ref in unit.get("fact_atom_refs") or []
+            }
+        ),
+        "communication_role_distribution": dict(
+            sorted(
+                Counter(
+                    unit.get("communication_role") for unit in explicit_units
+                ).items()
+            )
+        ),
+        "strong_content_count": sum(
+            is_strong_memory(entry) for entry in updated.get("entries") or []
+        ),
+        "explicit_information_unit_count": len(explicit_units),
+    }
+    return updated
+
+
+def replace_ledger_after_export(
+    path: Path,
+    expected_current: dict[str, Any],
+    replacement: dict[str, Any],
+) -> str:
+    """Atomically persist one validated append-only export closure."""
+    path = path.expanduser().resolve()
+    if read_json(path) != expected_current:
+        raise RuntimeError("Content Ledger changed before exported-content append.")
+    existing_ids = {
+        str(entry.get("content_id")) for entry in expected_current.get("entries") or []
+    }
+    replacement_ids = [
+        str(entry.get("content_id")) for entry in replacement.get("entries") or []
+    ]
+    if replacement_ids[: len(existing_ids)] != [
+        str(entry.get("content_id"))
+        for entry in expected_current.get("entries") or []
+    ]:
+        raise RuntimeError("Content Ledger append attempted to rewrite historical entries.")
+    if len(replacement_ids) <= len(existing_ids) or len(replacement_ids) != len(
+        set(replacement_ids)
+    ):
+        raise RuntimeError("Content Ledger exported-content append is incomplete or duplicated.")
+    payload = json.dumps(replacement, ensure_ascii=False, indent=2).encode("utf-8")
+    temporary = path.with_suffix(path.suffix + ".export.tmp")
+    if temporary.exists():
+        raise RuntimeError("Content Ledger export temporary path already exists.")
+    with temporary.open("xb") as handle:
+        handle.write(payload)
+    if read_json(path) != expected_current:
+        temporary.unlink(missing_ok=True)
+        raise RuntimeError("Content Ledger changed during exported-content append.")
+    temporary.replace(path)
+    return hashlib.sha256(payload).hexdigest()
+
+
+def build_post_export_remaining_capacity(
+    capacity_recalculation: dict[str, Any],
+    ledger_after_export: dict[str, Any],
+    exported_concept_refs: list[str],
+    *,
+    created_at: str | None = None,
+) -> dict[str, Any]:
+    """Re-run Historical Exposure and Editorial gates after an actual export."""
+    exported = set(exported_concept_refs)
+    candidates = [
+        json.loads(json.dumps(candidate, ensure_ascii=False))
+        for candidate in capacity_recalculation.get("candidate_concepts") or []
+        if candidate.get("replenishment_gate_decision") == "high_quality_novel"
+    ]
+    candidate_ids = {str(candidate.get("concept_id")) for candidate in candidates}
+    if not exported or not exported <= candidate_ids:
+        raise RuntimeError("Exported Concepts are not a subset of approved capacity inventory.")
+
+    reevaluated: list[dict[str, Any]] = []
+    rejection_reasons: list[dict[str, Any]] = []
+    minimum_score = 3.25
+    for candidate in candidates:
+        concept_id = str(candidate.get("concept_id"))
+        exposure = historical_exposure_evaluation(candidate, ledger_after_export)
+        candidate["post_export_historical_exposure_check"] = exposure
+        if concept_id in exported:
+            decision = "exported_now_strong_historical_memory"
+            material = material_information_gain_v1_1_1(
+                candidate, ledger_after_export
+            )
+            score = None
+        else:
+            candidate["historical_exposure_summary"] = exposure
+            material = material_information_gain_v1_1_1(
+                candidate, ledger_after_export
+            )
+            lineage = audience_need_lineage_v1_1_1(
+                candidate, list(ledger_after_export.get("fact_atom_catalog") or [])
+            )
+            score = editorial_score_v1_1_1(candidate, lineage, material)
+            authority = candidate.get("production_authority") or {}
+            authority_ok = authority.get("status") in {
+                "approved_known",
+                "approved_known_production_eligible",
+            }
+            speaker_ok = (candidate.get("speaker_fit") or {}).get(
+                "authority_pass", True
+            ) is True
+            if not material.get("material_information_gain"):
+                decision = "historical_exposure_rejected"
+            elif not authority_ok:
+                decision = "production_authority_rejected"
+            elif not speaker_ok:
+                decision = "speaker_authority_rejected"
+            elif float((score or {}).get("weighted_total") or 0) < minimum_score:
+                decision = "editorial_quality_rejected"
+            else:
+                decision = "high_quality_novel_remaining"
+        candidate["post_export_material_information_gain"] = material
+        candidate["post_export_editorial_quality"] = score
+        candidate["post_export_gate_decision"] = decision
+        reevaluated.append(candidate)
+        if decision != "high_quality_novel_remaining":
+            rejection_reasons.append(
+                {
+                    "concept_id": concept_id,
+                    "decision": decision,
+                    "historical_exposure_reason": exposure.get("reason"),
+                    "material_information_gain_reason": material.get("reason"),
+                }
+            )
+
+    remaining = [
+        candidate
+        for candidate in reevaluated
+        if candidate["post_export_gate_decision"]
+        == "high_quality_novel_remaining"
+    ]
+    before_capacity = int(capacity_recalculation.get("after_capacity") or 0)
+    return {
+        "schema_version": "post-export-remaining-content-capacity-v1.0",
+        "created_at": created_at or now_iso(),
+        "business_id": capacity_recalculation.get("business_id"),
+        "speaker_id": capacity_recalculation.get("speaker_id"),
+        "requested_quantity": capacity_recalculation.get("requested_quantity"),
+        "before_export_high_quality_capacity": before_capacity,
+        "exported_novel_content_count": len(exported),
+        "arithmetic_upper_bound_after_export": before_capacity - len(exported),
+        "post_export_remaining_capacity": len(remaining),
+        "capacity_status": (
+            "supported"
+            if len(remaining)
+            >= int(capacity_recalculation.get("requested_quantity") or 0)
+            else "capacity_limited"
+        ),
+        "padding": False,
+        "recalculation_method": (
+            "historical_exposure_plus_material_information_gain_plus_editorial_quality"
+        ),
+        "exported_concept_refs": sorted(exported),
+        "remaining_high_quality_concepts": remaining,
+        "candidate_re_evaluations": reevaluated,
+        "rejection_reasons": rejection_reasons,
+        "conditional_story_opportunities": capacity_recalculation.get(
+            "conditional_story_opportunities"
+        )
+        or [],
+        "remaining_content_gaps": capacity_recalculation.get(
+            "remaining_content_gaps"
+        )
+        or [],
+        "authority": {
+            "approved_production_eligible_facts_only": True,
+            "content_ledger_used_as_business_wide_historical_exposure": True,
+            "interview_treated_as_published_content": False,
+            "profile_resets_semantic_novelty": False,
+            "conditional_story_inflated_capacity": False,
+            "padding_generated": False,
+            "remote_model_called": False,
+        },
+        "remote_model_calls": 0,
+        "status": "post_export_content_capacity_human_review_gate",
+    }
 
 
 def _flatten_atomic_known_values(value: Any, path: str = "value") -> list[tuple[str, Any]]:

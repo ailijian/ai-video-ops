@@ -1172,6 +1172,17 @@ class ContentQualityV1Tests(unittest.TestCase):
         )
         v1_1 = json.loads(v1_1_path.read_text(encoding="utf-8"))
         ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
+        # V1.1.1 is an immutable historical diagnostic.  Replaying it after a
+        # later production export must use the ledger view that existed at the
+        # time, not semantic exposure appended by real_shufang_mix_003.
+        ledger = {
+            **ledger,
+            "entries": [
+                entry
+                for entry in ledger["entries"]
+                if entry.get("batch_ref") != "real_shufang_mix_003"
+            ],
+        }
         request = json.loads(request_path.read_text(encoding="utf-8"))
         plan = build_content_plan_v1_1_1(
             v1_1_plan=v1_1,
@@ -1179,7 +1190,7 @@ class ContentQualityV1Tests(unittest.TestCase):
             request=request,
             source_artifact_hashes={
                 "content_plan_v1_1": sha256(v1_1_path),
-                "content_ledger_v1": sha256(ledger_path),
+                "content_ledger_v1": canonical_sha256(ledger),
             },
             created_at="2026-09-11T00:00:00+00:00",
         )
@@ -1494,7 +1505,23 @@ class ContentQualityV1Tests(unittest.TestCase):
             / "content_ledger_v1.json"
         )
         ledger = json.loads(ledger_path.read_text(encoding="utf-8"))
-        self.assertEqual(len(ledger["entries"]), 17)
+        historical_entries = [
+            entry
+            for entry in ledger["entries"]
+            if entry.get("batch_ref") != "real_shufang_mix_003"
+        ]
+        appended_entries = [
+            entry
+            for entry in ledger["entries"]
+            if entry.get("batch_ref") == "real_shufang_mix_003"
+        ]
+        self.assertEqual(len(historical_entries), 17)
+        self.assertEqual(
+            canonical_sha256(historical_entries),
+            "00a032eb10c4398031687a55c4ef2827170c42c002c1dea06aa360bb63adafda",
+        )
+        self.assertEqual(len(appended_entries), 4)
+        self.assertEqual({entry["status"] for entry in appended_entries}, {"exported"})
         history = ledger["extensions"]["presentation_history_v1"]
         self.assertEqual(history["storage_policy"], "append_only")
         self.assertFalse(history["semantic_novelty_authority"])

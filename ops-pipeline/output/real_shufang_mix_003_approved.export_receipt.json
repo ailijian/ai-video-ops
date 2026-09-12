@@ -1,0 +1,20 @@
+{
+  "schema_version": "mix-excel-export-receipt-v1.0",
+  "exporter_version": "export_mix_excel_v1.mjs@1.0",
+  "exported_at": "2026-09-12T18:00:56.999Z",
+  "batch_path": "E:\\projects\\ai-video-ops\\ops-pipeline\\data\\generation_batches\\real_shufang_mix_003\\revisions\\revision_0004\\approved_generation_batch_v1.json",
+  "batch_sha256": "387590b6ec9e624e5b9603c208f43ff0e0bf568c7bc20797a0502da3944982db",
+  "template_path": "E:\\projects\\ai-video-ops\\ops-pipeline\\output\\素材混剪&数字人口播混剪文案导入模板.xlsx",
+  "template_sha256": "598b12a7a87dd498e48b1022c51a0a9f54402cd8ec5ea5d68913c06cad7c4d67",
+  "output_path": "E:\\projects\\ai-video-ops\\ops-pipeline\\output\\real_shufang_mix_003_approved.xlsx",
+  "output_sha256": "ee8cc066319e2c908c34ace9b57cbfef706c4a8ee074922883af0ba036c01e4e",
+  "exported_row_count": 4,
+  "row_4_headers": [
+    "视频制作标题",
+    "视频制作口播内容"
+  ],
+  "first_data_row": 5,
+  "internal_metadata_columns_added": false,
+  "source_template_modified": false,
+  "validation_passed": true
+}
