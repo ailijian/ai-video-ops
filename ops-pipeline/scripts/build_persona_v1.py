@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 from datetime import datetime, timezone
@@ -9,7 +10,7 @@ from typing import Any
 
 
 SCHEMA_VERSION = "persona-v1.0"
-BUILDER_VERSION = "build_persona_v1.py@0.2"
+BUILDER_VERSION = "build_persona_v1.py@0.3"
 FACT_STATES = {"known", "unknown", "requires_review"}
 PERSONA_SCOPES = {"business", "speaker"}
 SPEAKER_TYPES = {"owner_founder", "frontline_expert", "brand", "generic"}
@@ -174,17 +175,20 @@ def validate_required_fact_authority(persona: dict[str, Any]) -> list[str]:
 
 
 def persona_content_hash(persona: dict[str, Any]) -> str:
-    return canonical_sha256(
-        {
-            "persona_id": persona.get("persona_id"),
-            "revision": persona.get("revision"),
-            "persona_scope": persona.get("persona_scope", "business"),
-            "speaker_type": persona.get("speaker_type"),
-            "business_persona_ref": persona.get("business_persona_ref"),
-            "speaker_authority": persona.get("speaker_authority"),
-            "facts": persona.get("facts", {}),
-        }
-    )
+    content = {
+        "persona_id": persona.get("persona_id"),
+        "revision": persona.get("revision"),
+        "persona_scope": persona.get("persona_scope", "business"),
+        "speaker_type": persona.get("speaker_type"),
+        "business_persona_ref": persona.get("business_persona_ref"),
+        "speaker_authority": persona.get("speaker_authority"),
+        "facts": persona.get("facts", {}),
+    }
+    # This optional control-layer extension is deliberately excluded for legacy
+    # Personas so their already-approved content hashes remain byte-for-byte valid.
+    if "persona_control_layer" in persona:
+        content["persona_control_layer"] = persona["persona_control_layer"]
+    return canonical_sha256(content)
 
 
 def write_new_json(path: Path, value: dict[str, Any]) -> str:
@@ -253,6 +257,17 @@ def render_persona_review_pack(persona: dict[str, Any]) -> str:
                 indent=2,
             )
         )
+        if persona.get("persona_control_layer"):
+            lines.extend(["", "## Derived Speaker Authority Constraints", ""])
+            lines.append("```json")
+            lines.append(
+                json.dumps(
+                    persona["persona_control_layer"],
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+            lines.append("```")
         lines.extend(["", "## Speaker cannot say", ""])
         lines.append(
             json.dumps(
@@ -358,6 +373,17 @@ def build_persona(
         for state in sorted(FACT_STATES)
     }
     timestamp = created_at or now_iso()
+    persona_control_layer = source.get("persona_control_layer")
+    if persona_control_layer is not None:
+        if persona_scope != "speaker" or not isinstance(persona_control_layer, dict):
+            raise RuntimeError(
+                "persona_control_layer is an optional Speaker Persona control extension."
+            )
+        constraints = persona_control_layer.get("derived_authority_constraints")
+        if not isinstance(constraints, list) or not constraints:
+            raise RuntimeError(
+                "Speaker persona_control_layer requires derived_authority_constraints."
+            )
     persona: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "persona_id": persona_id,
@@ -423,8 +449,11 @@ def build_persona(
             "remote_model_call_performed": False,
             "persona_scope_valid": True,
             "speaker_business_facts_copied": False,
+            "derived_authority_constraints_are_not_content_facts": True,
         },
     }
+    if persona_control_layer is not None:
+        persona["persona_control_layer"] = copy.deepcopy(persona_control_layer)
     persona["validation"]["required_fact_approval_blockers"] = (
         validate_required_fact_authority(persona)
     )

@@ -33,6 +33,7 @@ from content_quality_v1 import (
     enrich_ledger_with_communicated_information,
     is_strong_memory,
     replace_ledger_with_communicated_information,
+    resolve_effective_content_gate_decision,
     review_batch_ledger_entries,
     validate_script_against_plan,
     write_new_json,
@@ -1358,7 +1359,8 @@ def validate_content_plan_input(
     if capacity.get("padding_generated") is not False:
         raise RuntimeError("Content Plan capacity padding must be false.")
     for concept in selected_concepts:
-        if concept.get("gate_decision") != "high_quality_novel":
+        effective_gate = resolve_effective_content_gate_decision(concept)
+        if effective_gate["decision"] != "high_quality_novel":
             raise RuntimeError("Content Plan contains a non-passing selected concept.")
         signature = concept.get("semantic_signature") or {}
         if signature.get("business_id") != context["persona"].get("persona_id"):
@@ -4543,6 +4545,7 @@ def assess_news_novel_capacity(
     }
     remaining: list[dict[str, Any]] = []
     for concept in content_plan.get("selected_concepts") or []:
+        effective_gate = resolve_effective_content_gate_decision(concept)
         required_fields = set(concept.get("primary_fact_refs") or []) | set(
             concept.get("supporting_fact_refs") or []
         )
@@ -4562,11 +4565,9 @@ def assess_news_novel_capacity(
             {
                 "concept_id": concept.get("concept_id"),
                 "central_claim": concept.get("central_claim"),
-                "semantic_novelty": concept.get("v1_1_1_gate_decision")
+                "semantic_novelty": effective_gate["decision"]
                 == "high_quality_novel",
-                "source_content_quality_gate": concept.get(
-                    "v1_1_1_gate_decision"
-                ),
+                "source_content_quality_gate": effective_gate,
                 "primary_fact_refs": concept.get("primary_fact_refs") or [],
                 "supporting_fact_refs": concept.get("supporting_fact_refs") or [],
                 "fact_authority_pass": authority_pass,

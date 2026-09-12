@@ -28,6 +28,16 @@ CONTENT_REPLENISHMENT_INTAKE_SCHEMA_VERSION = (
 FACT_ATOM_VERSION = "fact-atom-v1.1"
 COMMUNICATED_INFORMATION_VERSION = "communicated-information-units-v1.1"
 
+# Newer quality passes may deliberately supersede an earlier diagnostic gate while
+# retaining every historical field for audit.  All production consumers must use
+# this precedence rather than interpreting a legacy field in isolation.
+CONTENT_GATE_DECISION_PRECEDENCE = (
+    ("replenishment_gate_decision", "content_capacity_replenishment_v1"),
+    ("v1_1_1_gate_decision", "content_quality_v1_1_1"),
+    ("v1_1_gate_decision", "content_quality_v1_1"),
+    ("gate_decision", "content_quality_v1"),
+)
+
 LEDGER_STATUSES = {
     "generated",
     "review_required",
@@ -108,6 +118,33 @@ def canonical_sha256(value: Any) -> str:
         separators=(",", ":"),
     ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
+
+
+def resolve_effective_content_gate_decision(
+    concept: dict[str, Any],
+) -> dict[str, Any]:
+    """Resolve the governing gate without erasing historical diagnostics."""
+
+    diagnostics = {
+        field: concept.get(field)
+        for field, _policy in CONTENT_GATE_DECISION_PRECEDENCE
+        if concept.get(field) is not None
+    }
+    for field, policy in CONTENT_GATE_DECISION_PRECEDENCE:
+        value = concept.get(field)
+        if value is not None:
+            return {
+                "decision": value,
+                "source_field": field,
+                "policy": policy,
+                "historical_diagnostics": diagnostics,
+            }
+    return {
+        "decision": None,
+        "source_field": None,
+        "policy": None,
+        "historical_diagnostics": diagnostics,
+    }
 
 
 def normalize_text(value: Any) -> str:
@@ -1744,6 +1781,7 @@ def build_fact_atom_catalog(
                     "original_known_fact": original,
                     "normalized_meaning": normalized,
                     "semantic_markers": semantic_markers(original),
+                    "source_refs": list(fact.get("source_refs") or []),
                     "authority": "derived_planning_identity_only",
                 }
             )
@@ -2041,15 +2079,22 @@ def historical_exposure_evaluation(
 ) -> dict[str, Any]:
     fact_atoms = list(ledger.get("fact_atom_catalog") or [])
     exposed_refs, explicit_units = _explicit_exposure_index(ledger)
+    explicit_primary_refs = [
+        atom_id
+        for atom_id in concept.get("primary_fact_atom_refs") or []
+        if atom_id in {atom["fact_atom_id"] for atom in fact_atoms}
+    ]
     primary_fields = set(concept.get("primary_fact_refs") or []) | set(
         _anchor_fact_refs(concept.get("exclusive_anchor"))
     )
-    core_refs = _concept_atom_refs(
-        concept,
-        fact_atoms,
-        primary_fields,
-        ("exclusive_anchor",),
-    )
+    core_refs = explicit_primary_refs
+    if not core_refs:
+        core_refs = _concept_atom_refs(
+            concept,
+            fact_atoms,
+            primary_fields,
+            ("exclusive_anchor",),
+        )
     if not core_refs:
         core_refs = _concept_atom_refs(
             concept,
@@ -2682,6 +2727,57 @@ def _matching_fact_atom_ids(
 def audience_need_lineage_v1_1_1(
     concept: dict[str, Any], fact_atoms: list[dict[str, Any]]
 ) -> dict[str, Any]:
+    atom_ids = {atom["fact_atom_id"] for atom in fact_atoms}
+    declared_refs = [
+        atom_id
+        for atom_id in concept.get("audience_need_source_refs") or []
+        if atom_id in atom_ids
+    ]
+    declared_origin = str(concept.get("audience_need_origin") or "")
+    origin_fields = {
+        "known_customer_pain": {"customer_pains"},
+        "known_customer_question": {"customer_questions", "customer_use_cases"},
+        "known_use_case": {"customer_use_cases"},
+        "authorized_feedback": {"authorized_customer_cases_or_feedback"},
+        "service_decision_need": {
+            "pricing_facts",
+            "included_service_facts",
+            "service_time_facts",
+            "time_efficiency_fact",
+            "primary_products_or_services",
+            "product_or_service_facts",
+            "service_process",
+            "process_facts",
+            "differentiators",
+            "service_boundaries",
+            "service_limitations",
+            "important_turning_points",
+        },
+    }
+    atom_by_id = {atom["fact_atom_id"]: atom for atom in fact_atoms}
+    origin_refs = [
+        atom_id
+        for atom_id in declared_refs
+        if declared_origin in origin_fields
+        and atom_by_id[atom_id].get("field") in origin_fields[declared_origin]
+    ]
+    if origin_refs:
+        return {
+            "origin": declared_origin,
+            "audience_need_source_refs": sorted(set(origin_refs)),
+            "source_type": "fact_atom",
+            "authority": "approved_persona_known_fact_lineage",
+            "source_lineage": _fact_atom_lineage(origin_refs, fact_atoms),
+            "hypothesis_basis_fact_atom_refs": [],
+            "customer_need_claimed_as_known": declared_origin
+            in {
+                "known_customer_pain",
+                "known_customer_question",
+                "known_use_case",
+                "authorized_feedback",
+            },
+            "service_decision_need_source_valid": True,
+        }
     primary_fields = set(concept.get("primary_fact_refs") or [])
     supporting_fields = set(concept.get("supporting_fact_refs") or [])
     direct_origins = (
@@ -2776,9 +2872,15 @@ def material_information_gain_v1_1_1(
     primary_fields = set(concept.get("primary_fact_refs") or []) | set(
         _anchor_fact_refs(concept.get("exclusive_anchor"))
     )
-    primary_atom_refs = _matching_fact_atom_ids(
-        concept, fact_atoms, primary_fields
-    )
+    primary_atom_refs = [
+        atom_id
+        for atom_id in concept.get("primary_fact_atom_refs") or []
+        if atom_id in atom_by_id
+    ]
+    if not primary_atom_refs:
+        primary_atom_refs = _matching_fact_atom_ids(
+            concept, fact_atoms, primary_fields
+        )
     if not primary_atom_refs:
         primary_atom_refs = list(base.get("core_fact_atom_refs") or [])
     novel_atom_refs = sorted(set(primary_atom_refs) - exposed_refs)
@@ -2829,6 +2931,7 @@ def material_information_gain_v1_1_1(
         "process_facts",
         "operational_facts",
         "peak_handling_facts",
+        "important_turning_points",
     }
     story_fields = {"authorized_customer_cases_or_feedback"}
     non_audience_novel = novel_fields - audience_only_fields

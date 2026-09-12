@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,7 +15,7 @@ from build_persona_v1 import (
 )
 
 
-APPROVER_VERSION = "approve_persona_v1.py@0.2"
+APPROVER_VERSION = "approve_persona_v1.py@0.3"
 
 
 def now_iso() -> str:
@@ -41,6 +42,7 @@ def approve_persona(
     reviewer: str,
     note: str,
     approved_at: str | None = None,
+    decision_metadata: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any], Path]:
     persona_path = persona_path.expanduser().resolve()
     if not persona_path.is_file():
@@ -82,6 +84,21 @@ def approve_persona(
     if errors:
         raise RuntimeError("Persona approval blocked: " + " ".join(errors))
 
+    metadata = copy.deepcopy(decision_metadata or {})
+    allowed_metadata = {
+        "approved_delta_refs",
+        "lineage_only_refs",
+        "excluded_review_refs",
+        "derived_constraint_refs",
+        "decision_artifact_ref",
+    }
+    unexpected_metadata = sorted(set(metadata) - allowed_metadata)
+    if unexpected_metadata:
+        raise ValueError(
+            "Unsupported Persona approval decision metadata: "
+            + ", ".join(unexpected_metadata)
+        )
+
     timestamp = approved_at or now_iso()
     lifecycle.update(
         {
@@ -102,6 +119,8 @@ def approve_persona(
         "human_gate": True,
         "approver_version": APPROVER_VERSION,
     }
+    if metadata:
+        persona["approval"]["review_decision_metadata"] = metadata
     persona["validation"]["human_approval_completed"] = True
     persona["validation"]["auto_approved"] = False
     after_sha = write_atomic_json(persona_path, persona)
@@ -123,6 +142,8 @@ def approve_persona(
             "previous_approved_revision"
         ),
     }
+    if metadata:
+        receipt["review_decision_metadata"] = metadata
     write_new_json(receipt_path, receipt)
     return persona, receipt, receipt_path
 
