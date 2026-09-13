@@ -1,11 +1,15 @@
 # AI 短视频代运营生产工作流与案例资产架构 V0.1｜Working Architecture
 
 > **Status**：Working Architecture  
+> **Lifecycle**：Historical / Superseded
 > **Maturity**：MVP Validation  
 > **Planning Ready**：No  
 > **Frozen**：No  
 > **适用对象**：产品、运营、内容、AI 工程、未来 Codex 实施者  
 > **目的**：在产品化之前，约束“人工 + 脚本 + AI”验证过程，沉淀稳定架构原则、已验证事实、候选方案与开放问题；避免边实验边漂移，也避免过早把尚未验证的实现细节冻结为长期事实。
+> **Current Authority**：[AI Video Ops MVP V1 Frozen Operations Baseline](AI%20Video%20Ops%20MVP%20V1｜End-to-End%20System%20Map%20&%20Operations%20Baseline.md)
+> **Current Operations**：[Operations RUNBOOK](../operations/RUNBOOK.md)
+> 本文不是当前 RUNBOOK；请勿将其中的 Working/Candidate 状态覆盖当前 Approved/Frozen Authority。
 
 ---
 

@@ -4,6 +4,8 @@
 **Scope：Production Profile / Case Library / Pattern Coverage / Creative Matching / Storyboard Contract**
 **Not in Scope：新的客户事实采集、Content Novelty 重设计、运营效果学习、最终视频制作**
 
+> **Current Operational Status Pointer（2026-09-13）：** 本文保留其历史冻结设计内容。News research / coverage 状态已由后续 Approved Patterns 与 active derived coverage artifact 更新；当前运营判断以 [Frozen Operations Baseline](../product/AI%20Video%20Ops%20MVP%20V1｜End-to-End%20System%20Map%20&%20Operations%20Baseline.md)、[Operations RUNBOOK](../operations/RUNBOOK.md) 和 Current Status Read Model 为准。
+
 ---
 
 # 0. 本文解决什么问题

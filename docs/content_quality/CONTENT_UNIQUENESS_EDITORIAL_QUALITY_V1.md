@@ -9,6 +9,8 @@
 - Regression Baseline: **129 tests PASS**
 - Real-customer baseline: `shufang_zhiyuan_community_canteen`
 
+Current operations consume this authority through the [Frozen Operations Baseline](../product/AI%20Video%20Ops%20MVP%20V1｜End-to-End%20System%20Map%20&%20Operations%20Baseline.md) and [Operations RUNBOOK](../operations/RUNBOOK.md).
+
 本文件将已通过 V1、V1.1、V1.1.1 实验验证的规则固化为长期 Product Authority。它不重新定义内容战略，也不改变 Persona、Case、Pattern、Privacy、Proof 或 Human Approval Authority。
 
 ## Frozen Principles

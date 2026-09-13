@@ -55,17 +55,55 @@ def first_match(directory: Path, patterns: list[str]) -> Path | None:
     matches: list[Path] = []
     for pattern in patterns:
         matches.extend(p for p in directory.glob(pattern) if p.is_file())
-    if not matches:
+    unique_matches = set(matches)
+    if not unique_matches:
         return None
-    return sorted(set(matches), key=lambda p: (len(p.name), p.name.lower()))[0]
+    if len(unique_matches) > 1:
+        candidates = ", ".join(sorted(p.name for p in unique_matches))
+        raise RuntimeError(
+            "Ambiguous Case companion discovery. Provide an explicit companion "
+            f"path instead of relying on filename order. Candidates: {candidates}"
+        )
+    return unique_matches.pop()
 
 
-def companion_assets(video: Path) -> dict[str, Path | None]:
+def resolve_companion(
+    explicit_path: Path | None,
+    directory: Path,
+    patterns: list[str],
+) -> Path | None:
+    if explicit_path is not None:
+        resolved = explicit_path.expanduser().resolve()
+        if not resolved.is_file():
+            raise FileNotFoundError(resolved)
+        return resolved
+    return first_match(directory, patterns)
+
+
+def companion_assets(
+    video: Path,
+    *,
+    music: Path | None = None,
+    cover: Path | None = None,
+    metadata: Path | None = None,
+) -> dict[str, Path | None]:
     parent = video.parent
     return {
-        "music": first_match(parent, ["*_music.mp3", "*music*.mp3", "*.m4a", "*.wav", "*.mp3"]),
-        "cover": first_match(parent, ["*_cover.jpg", "*cover*.jpg", "*.jpg", "*.jpeg", "*.png", "*.webp"]),
-        "metadata": first_match(parent, ["*_data.json", "*data*.json", "*metadata*.json"]),
+        "music": resolve_companion(
+            music,
+            parent,
+            ["*_music.mp3", "*music*.mp3", "*.m4a", "*.wav", "*.mp3"],
+        ),
+        "cover": resolve_companion(
+            cover,
+            parent,
+            ["*_cover.jpg", "*cover*.jpg", "*.jpg", "*.jpeg", "*.png", "*.webp"],
+        ),
+        "metadata": resolve_companion(
+            metadata,
+            parent,
+            ["*_data.json", "*data*.json", "*metadata*.json"],
+        ),
     }
 
 
@@ -110,6 +148,18 @@ def main() -> None:
     parser.add_argument("--shot-boundaries", required=True)
     parser.add_argument("--storyboard-v1", required=True)
     parser.add_argument("--privacy-projection", required=True)
+    parser.add_argument(
+        "--music",
+        help="Explicit companion music/audio path; required when discovery is ambiguous.",
+    )
+    parser.add_argument(
+        "--cover",
+        help="Explicit companion cover path; required when discovery is ambiguous.",
+    )
+    parser.add_argument(
+        "--metadata",
+        help="Explicit companion metadata path; required when discovery is ambiguous.",
+    )
     parser.add_argument("--source-url", default=None)
     parser.add_argument("--output-root", default=None)
     args = parser.parse_args()
@@ -449,7 +499,12 @@ def main() -> None:
             print(f"ERROR: {error}")
         raise SystemExit(2)
 
-    companions = companion_assets(video)
+    companions = companion_assets(
+        video,
+        music=Path(args.music) if args.music else None,
+        cover=Path(args.cover) if args.cover else None,
+        metadata=Path(args.metadata) if args.metadata else None,
+    )
 
     duration = max(
         float(audio.get("duration_seconds") or 0),

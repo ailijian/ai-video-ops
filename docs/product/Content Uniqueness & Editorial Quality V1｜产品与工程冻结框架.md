@@ -2,6 +2,8 @@
 
 **Status：Freeze Candidate V0.1 · Pending Approval**
 
+> **Lifecycle：Historical Freeze Candidate / Superseded.** 当前 Content Uniqueness Authority 为 [CONTENT_UNIQUENESS_EDITORIAL_QUALITY_V1.md](../content_quality/CONTENT_UNIQUENESS_EDITORIAL_QUALITY_V1.md)；系统运行入口见 [Operations RUNBOOK](../operations/RUNBOOK.md)。本文保留为历史诊断与设计证据，不是当前 RUNBOOK。
+
 ## 一、B0 优化前基线正式冻结
 
 这一轮优化不得修改现有真实客户 Approved Batch，而是把它作为对照组。

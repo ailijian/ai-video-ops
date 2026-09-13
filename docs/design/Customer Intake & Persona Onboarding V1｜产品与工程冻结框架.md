@@ -4,6 +4,8 @@
 **Scope：首次客户采集 → Fact Extraction → Business/Speaker Persona → Human Approval → Production Readiness**
 **Not in Scope：内容生成、Case/Pattern Research、最终视频制作、Performance Learning**
 
+> **Lifecycle：Historical Design Record / Superseded for current operations.** 当前 Authority 与实际操作入口见 [Frozen Operations Baseline](../product/AI%20Video%20Ops%20MVP%20V1｜End-to-End%20System%20Map%20&%20Operations%20Baseline.md) 和 [Operations RUNBOOK](../operations/RUNBOOK.md)。本文不是当前 RUNBOOK。
+
 ---
 
 # 0. 本文解决什么问题

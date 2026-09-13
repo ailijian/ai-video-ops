@@ -1,5 +1,10 @@
 # AI 短视频案例逆向工程 MVP｜团队演示操作手册 V0.1
 
+> **Status：Historical / Non-canonical**
+> **Warning：Contains obsolete commands. Do not use for current production.**
+> **Current Operations：** [docs/operations/RUNBOOK.md](../docs/operations/RUNBOOK.md)
+> 本文仅作为历史演示与调查记录保留，不是 Current Authority，也不是当前 RUNBOOK。
+
 > **用途**：团队内部现场演示  
 > **目标**：从一条抖音案例开始，依次完成下载、旁白识别、视觉抽取、多帧视觉理解、确定性音画对齐、语义融合，并最终输出一份可读的逆向分镜脚本。  
 > **当前原则**：先用脚本把真实业务流程跑通，再决定哪些环节交给 Codex 产品化/自动化。
