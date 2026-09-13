@@ -1,6 +1,7 @@
 # 《AI Video Ops MVP V1｜End-to-End System Map & Operations Baseline》
 
-**Status：Approved / Frozen V0.1**
+**Status：Approved / Frozen**
+**Baseline Version：V1.0**
 **Baseline Date：2026-09-13**
 **Reference Checkpoint：`9674b3ae0f84132576a6206ac630e7257f24f0be`**
 **Scope：AI Video Ops MVP 当前已经成立的 Customer Truth → Content → Pre-production 生产链，以及后续视频生产链的明确接口。**
