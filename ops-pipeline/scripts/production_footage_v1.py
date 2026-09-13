@@ -808,6 +808,24 @@ def _event_fit(requirement: dict[str, Any], asset: dict[str, Any]) -> dict[str, 
     }
 
 
+def _speaker_specific_visual_fit(
+    requirement: dict[str, Any], asset: dict[str, Any]
+) -> dict[str, Any]:
+    if not str(requirement.get("semantic_role", "")).startswith("speaker_specific_"):
+        return {"level": "full", "reason": "not_speaker_specific"}
+    if asset.get("speaker_present") is True:
+        return {
+            "level": "full",
+            "reason": "required_speaker_is_recorded_as_operation_subject",
+            "identifiable_face_required": False,
+        }
+    return {
+        "level": "partial",
+        "reason": "other_or_unconfirmed_operator_cannot_full_match_speaker_specific_hero",
+        "required_relationship_for_reenactment": "illustrative_same_process",
+    }
+
+
 def match_production_assets_v1(
     requirement_plan: dict[str, Any],
     inventory: dict[str, Any],
@@ -825,6 +843,7 @@ def match_production_assets_v1(
             )
             semantic = _semantic_fit(requirement, asset)
             event = _event_fit(requirement, asset)
+            speaker_specific_visual = _speaker_specific_visual_fit(requirement, asset)
             candidate = {
                 "asset_id": asset.get("asset_id"),
                 "semantic_fit": semantic,
@@ -838,6 +857,7 @@ def match_production_assets_v1(
                     else asset.get("privacy_status", "review_required")
                 },
                 "event_relationship_fit": event,
+                "speaker_specific_visual_fit": speaker_specific_visual,
                 "visual_truth_boundary": {
                     "claim_authority_upgraded": False,
                     "proof_authority_upgraded": False,
@@ -857,6 +877,7 @@ def match_production_assets_v1(
             for item in candidates
             if item["semantic_fit"]["level"] == "full"
             and item["event_relationship_fit"]["level"] == "full"
+            and item["speaker_specific_visual_fit"]["level"] == "full"
         ]
         partial = [item for item in candidates if item not in full]
         if full:
@@ -883,6 +904,9 @@ def match_production_assets_v1(
                 "privacy_fit": [item["privacy_fit"] for item in selected],
                 "event_relationship_fit": [
                     item["event_relationship_fit"] for item in selected
+                ],
+                "speaker_specific_visual_fit": [
+                    item["speaker_specific_visual_fit"] for item in selected
                 ],
                 "match_decision": decision,
                 "candidate_details": selected,
@@ -1045,14 +1069,14 @@ def build_customer_capture_missions_v1(
     specs = {
         "REV2-CONCEPT-010": {
             "mission_id": "MISSION-001",
-            "capture_goal": "用一段连续素材说明三只梭子蟹加年糕的食材、加工与完成状态",
+            "capture_goal": "用同一次真实加工过程的多个原始视频，共同说明三只梭子蟹加年糕的食材、加工与完成状态",
             "must_capture": [
                 "三只梭子蟹的数量清楚可见",
                 "年糕与梭子蟹在同一加工流程中",
                 "真实加工动作",
                 "完成或打包状态",
             ],
-            "nice_to_have": ["一段完整流程", "必要时补一段成品特写"],
+            "nice_to_have": ["必要时补一段成品特写"],
             "avoid": [
                 "小孙或其他顾客出镜",
                 "使用小孙历史照片或视频",
@@ -1062,6 +1086,19 @@ def build_customer_capture_missions_v1(
             "alternative_capture": [
                 "现在按同类真实流程补拍，明确记录为同类流程说明素材"
             ],
+            "capture_file_relationship": {
+                "capture_mission_equals_one_media_file": False,
+                "multiple_original_files_allowed": True,
+                "same_real_process_may_span_files": True,
+                "suggested_segment_coverage": [
+                    "ingredient_state",
+                    "actual_processing",
+                    "rice_cake_added",
+                    "completed_or_packed_state",
+                ],
+                "each_key_action_duration_guidance_seconds": "about_8_to_12",
+                "precut_before_submission": False,
+            },
             "event_relationship_instruction": {
                 "preferred": "exact_event_footage_if_authorized_and_available",
                 "current_new_capture_label": "illustrative_same_process",
@@ -1143,15 +1180,25 @@ def build_customer_capture_missions_v1(
                 "包装成行业教程或科学判断标准",
                 "未确认授权就拍到林东方可识别正脸",
                 "只有鱼的展示镜头而没有检查动作",
+                "把其他工作人员复现当成林东方本人实践的完整画面",
             ],
             "alternative_capture": [
-                "未确认或不愿清晰出镜时，只拍手部、鱼、第一视角或背影"
+                "未确认或不愿清晰出镜时，仍由林东方本人操作，只拍他的手部、鱼、第一视角或背影",
+                "如由其他工作人员复现，只能作为同类动作补充说明，不能补齐林东方本人实践的主画面",
             ],
             "event_relationship_instruction": {
                 "preferred": "actual_current_operation",
                 "recreated_capture_label": "illustrative_same_process",
-                "customer_wording": "优先拍真实接鱼检查；专门复现时标为同类动作说明。",
+                "customer_wording": "完整表达林东方本人实践时，操作主体必须是林东方；其他工作人员复现只能作为同类动作说明。",
                 "visual_does_not_create_universal_rule": True,
+                "speaker_specific_hero_requires_subject_ref": "lin_dongfang_frontline_chef",
+                "non_identifying_views_allowed_for_subject": [
+                    "hands_only",
+                    "pov",
+                    "back_view",
+                ],
+                "other_staff_reenactment_relationship": "illustrative_same_process",
+                "other_staff_can_fully_match_speaker_specific_hero": False,
             },
             "subject_authorization_requirement": {
                 "subject_ref": "lin_dongfang_frontline_chef",
@@ -1196,12 +1243,14 @@ def build_customer_capture_missions_v1(
         "mission_count": len(missions),
         "internal_requirement_count": len(requirement_plan["requirements"]),
         "mapping_cardinality": "one_mission_may_cover_many_requirements",
+        "capture_mission_equals_one_media_file": False,
         "missions": missions,
         "authority": {
             "derived_from_shot_requirements": True,
             "new_customer_truth_or_proof_authority": False,
             "shot_requirements_deleted_or_replaced": False,
             "one_requirement_requires_one_file": False,
+            "one_capture_mission_requires_one_media_file": False,
             "guidance_is_configurable": True,
         },
     }
@@ -1389,7 +1438,7 @@ def render_customer_capture_pack_v1(
         "",
         f"状态：{'可以发送，尚未发送' if status == 'ready_to_send' else '等待内部确认'}",
         "",
-        "这次一共拍 4 组素材。每组尽量用一段连续素材覆盖完整动作，不需要为每个小画面单独拍一个文件。",
+        "这次一共拍 4 组素材。一个拍摄任务不等于一个视频文件：同一次真实过程可以提交多个原始视频，分别覆盖不同关键动作。",
         "",
         "## 本批统一拍摄建议",
         "",

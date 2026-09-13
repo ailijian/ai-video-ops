@@ -315,6 +315,8 @@ class ProductionFootageV1Tests(unittest.TestCase):
         self.assertIn("只拍手部、食材和操作动作", markdown)
         self.assertIn("A：林东方确认同意本批视频清晰出镜后拍摄", markdown)
         self.assertIn("B：没有确认或不愿清晰出镜时", markdown)
+        self.assertIn("仍由林东方本人操作", markdown)
+        self.assertIn("其他工作人员复现", markdown)
 
     def test_19_case_research_roots_are_explicitly_excluded(self) -> None:
         inventory = audit_production_asset_inventory_v1(
@@ -473,6 +475,7 @@ class ProductionFootageV1Tests(unittest.TestCase):
         ]
         expected = [item["requirement_id"] for item in self.plan["requirements"]]
         self.assertEqual(missions["mission_count"], 4)
+        self.assertFalse(missions["capture_mission_equals_one_media_file"])
         self.assertEqual(len(expected), 14)
         self.assertEqual(sorted(covered), sorted(expected))
         self.assertEqual(len(covered), len(set(covered)))
@@ -490,6 +493,7 @@ class ProductionFootageV1Tests(unittest.TestCase):
             self.plan, coverage, missions, status="ready_to_send"
         )
         self.assertIn("这次一共拍 4 组素材", markdown)
+        self.assertIn("一个拍摄任务不等于一个视频文件", markdown)
         self.assertEqual(markdown.count("**拍什么：**"), 4)
         self.assertNotIn("14 个", markdown)
         self.assertIn("可以发送，尚未发送", markdown)
@@ -555,6 +559,66 @@ class ProductionFootageV1Tests(unittest.TestCase):
         self.assertIn("真实白板上的排单结构或预计等待结构", board["must_capture"])
         self.assertIn(
             "把完全虚构的演示白板当成当前真实使用状态", board["avoid"]
+        )
+
+    def test_37_c001_mission_allows_multiple_raw_files_for_one_process(self) -> None:
+        missions = build_customer_capture_missions_v1(self.plan)
+        crab = next(
+            item for item in missions["missions"] if item["mission_id"] == "MISSION-001"
+        )
+        relationship = crab["capture_file_relationship"]
+        self.assertFalse(relationship["capture_mission_equals_one_media_file"])
+        self.assertTrue(relationship["multiple_original_files_allowed"])
+        self.assertTrue(relationship["same_real_process_may_span_files"])
+        self.assertEqual(
+            relationship["each_key_action_duration_guidance_seconds"],
+            "about_8_to_12",
+        )
+        self.assertFalse(relationship["precut_before_submission"])
+        self.assertEqual(len(relationship["suggested_segment_coverage"]), 4)
+
+    def test_38_other_operator_cannot_full_match_speaker_specific_hero(self) -> None:
+        fish = self.requirement("REV2-CONCEPT-006")
+        plan = {**self.plan, "requirements": [fish]}
+        observables = [
+            "fish",
+            "press_fish_belly",
+            "inspect_gills",
+            "same_inspection_sequence",
+        ]
+        other_operator = self.asset(
+            observable_content=observables,
+            speaker_present=False,
+            event_relationship="actual_current_operation",
+        )
+        result = match_production_assets_v1(plan, self.inventory([other_operator]))
+        match = result["matches"][0]
+        self.assertEqual(match["match_decision"], "partial")
+        self.assertEqual(
+            match["speaker_specific_visual_fit"][0]["required_relationship_for_reenactment"],
+            "illustrative_same_process",
+        )
+
+    def test_39_non_identifying_lin_operation_can_full_match_hero(self) -> None:
+        fish = self.requirement("REV2-CONCEPT-006")
+        plan = {**self.plan, "requirements": [fish]}
+        lin_hands_only = self.asset(
+            observable_content=[
+                "fish",
+                "press_fish_belly",
+                "inspect_gills",
+                "same_inspection_sequence",
+            ],
+            people_present=True,
+            identifiable_people=False,
+            speaker_present=True,
+            event_relationship="actual_current_operation",
+        )
+        result = match_production_assets_v1(plan, self.inventory([lin_hands_only]))
+        match = result["matches"][0]
+        self.assertEqual(match["match_decision"], "matched")
+        self.assertFalse(
+            match["speaker_specific_visual_fit"][0]["identifiable_face_required"]
         )
 
 
