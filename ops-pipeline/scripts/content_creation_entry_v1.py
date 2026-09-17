@@ -15,10 +15,14 @@ from production_profile_v1 import (
 from show_customer_status_v1 import (
     AuthorityResolutionError,
     load_content_ledger,
+    load_export_receipts,
     resolve_batches,
     resolve_capacity,
     resolve_current_persona,
+    resolve_recorded_path,
     resolve_speaker_persona,
+    sha256_file,
+    validate_approved_batch,
 )
 
 SCHEMA_VERSION = "content-creation-entry-v1.0"
@@ -142,31 +146,144 @@ def load_profile_registry(
     )
 
 
-def existing_generation_requests(
+def _request_business_id(
+    pipeline_root: Path,
+    request_id: str,
+) -> str | None:
+    """Best-effort ownership probe used only to scope canonical validation."""
+    if not request_id:
+        return None
+
+    request_path = (
+        pipeline_root
+        / "data"
+        / "generation_requests"
+        / request_id
+        / "generation_request_v1.json"
+    )
+
+    if not request_path.is_file():
+        return None
+
+    try:
+        request = read_json(request_path)
+    except ContentCreationEntryError:
+        return None
+
+    return str(request.get("persona_id") or request.get("business_id") or "")
+
+
+def has_ledger_worthy_historical_exposure(
     pipeline_root: Path,
     business_id: str,
-) -> list[Path]:
-    root = pipeline_root / "data" / "generation_requests"
+) -> bool:
+    """Return True only when canonical Approved + Exported content exists.
 
-    if not root.exists():
-        return []
+    Generation Request alone is NOT ledger-worthy historical exposure.
+    Source Planning Handoff / Content Plan / orchestration artifacts alone
+    are NOT ledger-worthy historical exposure.
+    Approved but not Exported Batch is NOT ledger-worthy historical exposure:
+    the canonical Content Ledger is the authority for business-wide semantic
+    history and Export is the point where durable published history is
+    established.
 
-    matches: list[Path] = []
+    Canonical validation is reused from show_customer_status_v1. An Approved
+    Batch or export receipt that belongs to this business but fails canonical
+    validation is authority corruption, not "no history": fail closed with
+    CONTENT_HISTORY_AUTHORITY_INVALID.
+    """
+    try:
+        exports = load_export_receipts(pipeline_root)
+    except AuthorityResolutionError as exc:
+        raise ContentCreationEntryError(
+            "CONTENT_HISTORY_AUTHORITY_INVALID",
+            (
+                "Export receipts cannot be safely "
+                "resolved while the canonical Content "
+                f"Ledger is missing: {exc}"
+            ),
+        ) from exc
 
-    for path in root.glob("*/generation_request_v1.json"):
-        try:
-            request = read_json(path)
-        except ContentCreationEntryError:
-            raise
+    batches_root = pipeline_root / "data" / "generation_batches"
 
-        recorded_business = str(
-            request.get("persona_id") or request.get("business_id") or ""
+    if batches_root.exists():
+        for path in batches_root.glob(
+            "*/revisions/*/approved_generation_batch_v1.json"
+        ):
+            try:
+                batch = read_json(path)
+            except ContentCreationEntryError as exc:
+                raise ContentCreationEntryError(
+                    "CONTENT_HISTORY_AUTHORITY_INVALID",
+                    (f"Approved Batch artifact is unreadable: {path}"),
+                ) from exc
+
+            owner = _request_business_id(
+                pipeline_root,
+                str(batch.get("request_id") or ""),
+            )
+
+            if owner is not None and owner != business_id:
+                continue
+
+            try:
+                candidate = validate_approved_batch(
+                    pipeline_root,
+                    path,
+                    exports,
+                )
+            except AuthorityResolutionError as exc:
+                raise ContentCreationEntryError(
+                    "CONTENT_HISTORY_AUTHORITY_INVALID",
+                    (
+                        "Approved Batch authority is invalid "
+                        "while the canonical Content Ledger "
+                        f"is missing: {exc}"
+                    ),
+                ) from exc
+
+            if candidate["business_id"] != business_id:
+                continue
+
+            if candidate["export_status"] == "EXPORTED":
+                return True
+
+    for _, receipt in exports:
+        if receipt.get("schema_version") != "news-excel-export-receipt-v1.0":
+            continue
+
+        owner = _request_business_id(
+            pipeline_root,
+            str(receipt.get("request_id") or ""),
         )
 
-        if recorded_business == business_id:
-            matches.append(path)
+        if owner != business_id:
+            continue
 
-    return sorted(matches)
+        try:
+            output_path = resolve_recorded_path(
+                pipeline_root,
+                str(receipt.get("output_path") or ""),
+            )
+        except AuthorityResolutionError as exc:
+            raise ContentCreationEntryError(
+                "CONTENT_HISTORY_AUTHORITY_INVALID",
+                (
+                    "News export output cannot be resolved "
+                    "while the canonical Content Ledger "
+                    f"is missing: {exc}"
+                ),
+            ) from exc
+
+        if sha256_file(output_path) != receipt.get("output_sha256"):
+            raise ContentCreationEntryError(
+                "CONTENT_HISTORY_AUTHORITY_INVALID",
+                (f"News export output SHA-256 mismatch: {output_path}"),
+            )
+
+        return True
+
+    return False
 
 
 def resolve_capacity_preview(
@@ -191,23 +308,22 @@ def resolve_capacity_preview(
     # Initial customer:
     # no Content Ledger means no Historical Exposure yet.
     #
-    # Before treating it as "new", make sure a generation
-    # request does not already exist. This prevents an absent
-    # or lost Ledger from silently resetting novelty.
+    # Generation Request existence alone does NOT constitute
+    # Historical Exposure. Only canonical Approved + Exported
+    # semantic content that should already be recorded in the
+    # Content Ledger can trigger CONTENT_HISTORY_WITHOUT_LEDGER.
     # ---------------------------------------------------------
 
     if not ledger_path.is_file():
-        historical_requests = existing_generation_requests(
+        if has_ledger_worthy_historical_exposure(
             pipeline_root,
             business_id,
-        )
-
-        if historical_requests:
+        ):
             raise ContentCreationEntryError(
                 "CONTENT_HISTORY_WITHOUT_LEDGER",
                 (
-                    "Generation history exists but "
-                    "the canonical Content Ledger "
+                    "Approved and exported content exists "
+                    "but the canonical Content Ledger "
                     "is missing. Capacity must not "
                     "be reset to an empty history."
                 ),
@@ -232,7 +348,7 @@ def resolve_capacity_preview(
             "evidence_paths": [],
             "authority": {
                 "empty_history_assumed": (True),
-                "existing_generation_history_checked": (True),
+                "ledger_worthy_historical_exposure_checked": (True),
                 "content_ledger_written": (False),
             },
         }

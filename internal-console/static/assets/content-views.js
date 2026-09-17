@@ -14,6 +14,462 @@ export function createContentViews({
   renderLoadError,
 }) {
   let options = null;
+  let confirmationKey = null;
+
+  function lockEntryForm(
+    submitLabel =
+      "Generation Request 已建立",
+  ) {
+    const entryForm =
+      document.querySelector(
+        "#content-entry-form",
+      );
+
+    if (!entryForm) return;
+
+    entryForm.classList.add(
+      "completed",
+    );
+
+    entryForm
+      .querySelectorAll(
+        "input, select, button",
+      )
+      .forEach((control) => {
+        if (
+          control.id ===
+          "create-business"
+        ) {
+          return;
+        }
+
+        control.disabled = true;
+      });
+
+    const submitButton =
+      entryForm.querySelector(
+        "#check-content-capacity",
+      );
+
+    if (submitButton) {
+      submitButton.textContent =
+        submitLabel;
+    }
+  }
+
+
+  function unlockEntryForm() {
+    const entryForm =
+      document.querySelector(
+        "#content-entry-form",
+      );
+
+    if (!entryForm) return;
+
+    entryForm.classList.remove(
+      "completed",
+    );
+
+    entryForm
+      .querySelectorAll(
+        "input, select, button",
+      )
+      .forEach((control) => {
+        control.disabled = false;
+      });
+
+    const submitButton =
+      entryForm.querySelector(
+        "#check-content-capacity",
+      );
+
+    if (submitButton) {
+      submitButton.textContent =
+        "检查内容容量";
+    }
+  }
+
+  function renderRequestEstablished(
+    host,
+    {
+      requestId,
+      profile,
+      confirmedQuantity,
+      handoffReady,
+    },
+  ) {
+    const profileLabel =
+      profile === "news"
+        ? "News"
+        : "Mix";
+
+    host.innerHTML = `
+      <section class="card generation-request-result">
+        <span class="generation-request-kicker">
+          Generation Request 已建立
+        </span>
+
+        <h2>
+          已确认生成
+          ${Number(confirmedQuantity)}
+          条
+        </h2>
+
+        <div class="generation-request-summary">
+          <div class="generation-request-meta">
+            <span>Request ID</span>
+            <code>${escapeHtml(
+              requestId,
+            )}</code>
+          </div>
+
+          <div class="generation-request-meta">
+            <span>Profile</span>
+            <strong>${escapeHtml(
+              profileLabel,
+            )}</strong>
+          </div>
+
+          <div class="generation-request-meta">
+            <span>确认数量</span>
+            <strong>
+              ${Number(confirmedQuantity)} 条
+            </strong>
+          </div>
+        </div>
+
+        <div class="source-planning-handoff">
+          <strong>
+            ${
+              handoffReady === false
+                ? "Source Planning Handoff 待建立"
+                : "Source Planning Handoff 已准备"
+            }
+          </strong>
+
+          <p>
+            下一步将解析 Approved Pattern、
+            Approved Case 与 Fingerprint，
+            再建立 Generation Source Plan。
+          </p>
+
+          ${
+            handoffReady === false
+              ? `
+                <button
+                  id="recover-source-handoff"
+                  class="btn btn-secondary btn-wide"
+                  type="button"
+                >
+                  恢复 Source Planning Handoff
+                </button>`
+              : ""
+          }
+        </div>
+
+        <div class="capacity-authority-note">
+          <strong>
+            当前仍未开始生成
+          </strong>
+
+          <span>
+            没有调用远程模型，
+            没有生成脚本，
+            没有创建 Generation Batch，
+            没有写入 Content Ledger。
+          </span>
+        </div>
+
+        <p class="generation-request-footnote">
+          Generation Request 是不可静默覆盖的
+          canonical artifact。
+        </p>
+      </section>`;
+  }
+
+  async function restoreActiveRequest() {
+    const businessSelect =
+      document.querySelector(
+        "#create-business",
+      );
+
+    if (!businessSelect) return;
+
+    const host =
+      document.querySelector(
+        "#capacity-preview-result",
+      );
+
+    if (!host) return;
+
+    let active = null;
+
+    try {
+      const response = await api(
+        "/api/create/active-request" +
+          `?business_id=${encodeURIComponent(
+            businessSelect.value,
+          )}`,
+      );
+
+      active =
+        response.active_request;
+
+    } catch (error) {
+      host.innerHTML = `
+        <section
+          class="card capacity-result blocked"
+        >
+          <span class="capacity-kicker">
+            暂时无法确认当前创作状态
+          </span>
+
+          <h2>
+            为避免重复创建 Request，
+            当前已停止继续操作
+          </h2>
+
+          <p>
+            ${escapeHtml(
+              error.detail?.next_action ||
+                error.message,
+            )}
+          </p>
+        </section>`;
+
+      lockEntryForm(
+        "暂时无法继续",
+      );
+
+      showToast(
+        error.detail?.next_action ||
+          error.message,
+      );
+
+      return;
+    }
+
+    if (!active) {
+      unlockEntryForm();
+      return;
+    }
+
+    const speakerSelect =
+      document.querySelector(
+        "#create-speaker",
+      );
+
+    if (
+      speakerSelect
+      && active.speaker_id
+    ) {
+      const found =
+        Array.from(
+          speakerSelect.options,
+        ).some(
+          (option) =>
+            option.value ===
+            active.speaker_id,
+        );
+
+      if (!found) {
+        host.innerHTML = `
+          <section
+            class="card capacity-result blocked"
+          >
+            <span class="capacity-kicker">
+              Active Request Authority 异常
+            </span>
+
+            <h2>
+              当前 Request 的出镜人
+              无法在客户 Authority 中恢复
+            </h2>
+          </section>`;
+
+        lockEntryForm(
+          "暂时无法继续",
+        );
+
+        return;
+      }
+
+      speakerSelect.value =
+        active.speaker_id;
+    }
+
+    const profileRadio =
+      document.querySelector(
+        'input[name="create-profile"]' +
+          `[value="${active.profile}"]`,
+      );
+
+    if (profileRadio) {
+      profileRadio.checked = true;
+
+      document
+        .querySelectorAll(
+          ".profile-choice",
+        )
+        .forEach((label) => {
+          label.classList.toggle(
+            "selected",
+            label.querySelector(
+              "input",
+            ).checked,
+          );
+        });
+    }
+
+    const quantityInput =
+      document.querySelector(
+        "#create-quantity",
+      );
+
+    if (
+      quantityInput
+      && active.requested_quantity
+    ) {
+      quantityInput.value =
+        String(
+          active.requested_quantity
+        );
+    }
+
+    renderRequestEstablished(
+      host,
+      {
+        requestId:
+          active.request_id,
+        profile:
+          active.profile,
+        confirmedQuantity:
+          active.confirmed_quantity,
+        handoffReady:
+          active.handoff_ready,
+      },
+    );
+
+    lockEntryForm();
+
+    if (
+      active.handoff_ready
+      === false
+    ) {
+      const recoverButton =
+        document.querySelector(
+          "#recover-source-handoff",
+        );
+
+      if (recoverButton) {
+        recoverButton.addEventListener(
+          "click",
+          async () => {
+            recoverButton.disabled =
+              true;
+
+            recoverButton.textContent =
+              "正在恢复…";
+
+            try {
+              const response =
+                await api(
+                  "/api/create/confirm",
+                  {
+                    method: "POST",
+                    body:
+                      JSON.stringify({
+                        business_id:
+                          active.business_id,
+                        speaker_id:
+                          active.speaker_id,
+                        profile:
+                          active.profile,
+                        requested_quantity:
+                          Number(
+                            active
+                              .requested_quantity,
+                          ),
+                        confirmed_quantity:
+                          Number(
+                            active
+                              .confirmed_quantity,
+                          ),
+                        idempotency_key:
+                          newConfirmationKey(),
+                      }),
+                  },
+                );
+
+              const result =
+                response.result;
+
+              renderRequestEstablished(
+                host,
+                {
+                  requestId:
+                    result.request_id,
+                  profile:
+                    active.profile,
+                  confirmedQuantity:
+                    result
+                      .confirmed_quantity,
+                  handoffReady: true,
+                },
+              );
+
+              lockEntryForm();
+
+              showToast(
+                "Source Planning Handoff 已恢复。",
+              );
+
+            } catch (error) {
+              showToast(
+                error.detail
+                  ?.next_action ||
+                  error.message,
+              );
+
+              if (
+                recoverButton
+                  .isConnected
+              ) {
+                recoverButton.disabled =
+                  false;
+
+                recoverButton.textContent =
+                  (
+                    "恢复 Source "
+                    + "Planning Handoff"
+                  );
+              }
+            }
+          },
+        );
+      }
+    }
+  }
+
+    function newConfirmationKey() {
+    if (
+        globalThis.crypto
+        ?.randomUUID
+    ) {
+        return (
+        globalThis.crypto
+            .randomUUID()
+        );
+    }
+
+    return [
+        "console",
+        Date.now(),
+        Math.random()
+        .toString(36)
+        .slice(2, 14),
+    ].join("_");
+    }
 
   function selectedCustomer(
     businessId,
@@ -62,6 +518,8 @@ export function createContentViews({
     const profileState =
       preview.profiles?.[profile] ||
       {};
+
+    confirmationKey = null;
 
     if (
       recommendation.status ===
@@ -147,6 +605,9 @@ export function createContentViews({
     const limited =
       recommendation.status ===
       "capacity_limited";
+
+    confirmationKey =
+        newConfirmationKey();
 
     const gaps =
       capacity
@@ -239,8 +700,8 @@ export function createContentViews({
               </button>
 
               <p class="field-hint capacity-temporary-note">
-                当前阶段停在 Capacity Check。
-                点击不会生成脚本；下一阶段将从这里创建 Generation Request。
+                点击后会建立 immutable Generation Request 与 Source Planning Handoff；
+                仍不会调用模型或生成脚本。
               </p>`
             : ""
         }
@@ -252,15 +713,81 @@ export function createContentViews({
       );
 
     if (nextButton) {
-      nextButton.addEventListener(
-        "click",
-        () => {
-          showToast(
-            "容量已经确认。下一阶段将从这里创建 Generation Request；当前尚未生成脚本。",
-          );
-        },
-      );
-    }
+        nextButton.addEventListener(
+            "click",
+            async () => {
+            const key =
+                confirmationKey ||
+                newConfirmationKey();
+
+            confirmationKey = key;
+
+            nextButton.disabled = true;
+            nextButton.textContent =
+                "正在建立 Generation Request…";
+
+            try {
+                const response = await api(
+                "/api/create/confirm",
+                {
+                    method: "POST",
+                    body: JSON.stringify({
+                    business_id:
+                        preview.business
+                        .business_id,
+                    speaker_id:
+                        preview.speaker
+                        .speaker_id,
+                    profile,
+                    requested_quantity:
+                        requested,
+                    confirmed_quantity:
+                        recommended,
+                    idempotency_key:
+                        key,
+                    }),
+                },
+                );
+
+                const result =
+                response.result;
+
+                renderRequestEstablished(
+                host,
+                {
+                    requestId:
+                    result.request_id,
+                    profile,
+                    confirmedQuantity:
+                    result.confirmed_quantity,
+                    handoffReady: true,
+                },
+                );
+
+                showToast(
+                result.recovered
+                    ? "已恢复现有 Generation Request。"
+                    : "Generation Request 已建立。",
+                );
+
+                lockEntryForm();
+            } catch (error) {
+                showToast(
+                error.detail?.next_action ||
+                    error.message,
+                );
+
+                if (
+                nextButton.isConnected
+                ) {
+                nextButton.disabled = false;
+                nextButton.textContent =
+                    `下一步：确认生成 ${recommended} 条`;
+                }
+            }
+            },
+        );
+        }
   }
 
   function renderForm(
@@ -496,17 +1023,18 @@ export function createContentViews({
           <div id="capacity-preview-result"></div>
 
           <section class="card notice-card create-authority-card">
-            <h2>这一步只做 Capacity Check</h2>
+            <h2>先检查容量，再显式建立 Generation Request</h2>
 
             <p>
-              不创建 Generation Request，
-              不调用远程模型，
-              不生成脚本，
-              不写入 Content Ledger。
+            “检查内容容量”保持完全只读。
+            只有在容量结果出来后再次点击确认，
+            才会建立 immutable Generation Request 和 Source Planning Handoff。
             </p>
 
             <p>
-              切换 Mix / News 也不会重置业务级历史内容容量。
+            这一阶段仍不调用远程模型、
+            不生成脚本、不创建 Generation Batch、
+            不写入 Content Ledger。
             </p>
           </section>
         </main>`,
@@ -526,7 +1054,9 @@ export function createContentViews({
 
     businessSelect.addEventListener(
       "change",
-      () => {
+      async () => {
+        unlockEntryForm();
+
         const customer =
           selectedCustomer(
             businessSelect.value,
@@ -559,6 +1089,25 @@ export function createContentViews({
         document.querySelector(
           "#capacity-preview-result",
         ).innerHTML = "";
+
+        confirmationKey = null;
+
+        lockEntryForm(
+          "正在检查现有 Request…",
+        );
+
+        await restoreActiveRequest();
+      },
+    );
+
+    speakerSelect.addEventListener(
+      "change",
+      () => {
+        document.querySelector(
+          "#capacity-preview-result",
+        ).innerHTML = "";
+
+        confirmationKey = null;
       },
     );
 
@@ -588,9 +1137,26 @@ export function createContentViews({
             document.querySelector(
               "#capacity-preview-result",
             ).innerHTML = "";
+
+            confirmationKey = null;
           },
         );
       });
+
+    document
+      .querySelector(
+        "#create-quantity",
+      )
+      .addEventListener(
+        "input",
+        () => {
+          document.querySelector(
+            "#capacity-preview-result",
+          ).innerHTML = "";
+
+          confirmationKey = null;
+        },
+      );
 
     document
       .querySelector(
@@ -652,6 +1218,12 @@ export function createContentViews({
             document.querySelector(
               'input[name="create-profile"]:checked',
             ).value;
+
+          document.querySelector(
+            "#capacity-preview-result",
+          ).innerHTML = "";
+
+          confirmationKey = null;
 
           const button =
             document.querySelector(
@@ -720,6 +1292,12 @@ export function createContentViews({
       renderForm(
         data,
       );
+
+      lockEntryForm(
+        "正在检查现有 Request…",
+      );
+
+      await restoreActiveRequest();
     } catch (error) {
       renderLoadError(
         "创作入口暂时无法读取",

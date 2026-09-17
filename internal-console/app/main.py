@@ -79,6 +79,8 @@ from .speaker_task_service import (
 )
 
 from .content_gateway import (
+    confirm_content_creation,
+    get_active_generation_request,
     list_creation_options,
     preview_content_creation,
 )
@@ -234,6 +236,39 @@ class ContentCapacityPreviewRequest(BaseModel):
     quantity: int = Field(
         ge=1,
         le=20,
+    )
+
+
+class ContentGenerationConfirmRequest(BaseModel):
+    business_id: str = Field(
+        min_length=2,
+        max_length=128,
+    )
+
+    speaker_id: str = Field(
+        min_length=2,
+        max_length=128,
+    )
+
+    profile: Literal[
+        "mix",
+        "news",
+    ]
+
+    requested_quantity: int = Field(
+        ge=1,
+        le=20,
+    )
+
+    confirmed_quantity: int = Field(
+        ge=1,
+        le=20,
+    )
+
+    idempotency_key: str = Field(
+        min_length=8,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9_-]+$",
     )
 
 
@@ -776,6 +811,16 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     ) -> dict[str, Any]:
         return list_creation_options(settings)
 
+    @app.get("/api/create/active-request")
+    def active_generation_request(
+        business_id: str,
+        _: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        return get_active_generation_request(
+            settings,
+            business_id,
+        )
+
     @app.post("/api/create/capacity-preview")
     def content_capacity_preview(
         payload: ContentCapacityPreviewRequest,
@@ -800,6 +845,34 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
         return {
             "preview": preview,
+        }
+
+    @app.post("/api/create/confirm")
+    def confirm_generation_request(
+        payload: ContentGenerationConfirmRequest,
+        x_csrf_token: str | None = Header(
+            default=None,
+            alias="X-CSRF-Token",
+        ),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(
+            session,
+            x_csrf_token,
+        )
+
+        result = confirm_content_creation(
+            settings,
+            business_id=(payload.business_id),
+            speaker_id=(payload.speaker_id),
+            profile=(payload.profile),
+            requested_quantity=(payload.requested_quantity),
+            confirmed_quantity=(payload.confirmed_quantity),
+            idempotency_key=(payload.idempotency_key),
+        )
+
+        return {
+            "result": result,
         }
 
     @app.get("/api/workbench")

@@ -23,6 +23,8 @@ from approve_persona_v1 import (  # noqa: E402
 from build_persona_v1 import (  # noqa: E402
     build_persona,
 )
+import hashlib  # noqa: E402
+
 from content_creation_entry_v1 import (  # noqa: E402
     ContentCreationEntryError,
     build_content_creation_entry,
@@ -333,7 +335,7 @@ def test_news_is_visible_but_not_production_ready(
     assert entry["next_action"] == "CHOOSE_AVAILABLE_PROFILE"
 
 
-def test_existing_generation_history_without_ledger_fails_closed(
+def test_request_only_without_ledger_is_not_historical_exposure(
     tmp_path: Path,
 ):
     prepare(tmp_path)
@@ -351,6 +353,178 @@ def test_existing_generation_history_without_ledger_fails_closed(
         },
     )
 
+    entry = build_content_creation_entry(
+        pipeline_root=tmp_path,
+        business_id=("fixture_pet_store"),
+        speaker_id=("fixture_pet_store_owner"),
+        profile="mix",
+        requested_quantity=3,
+    )
+
+    assert entry["capacity"]["source_mode"] == ("initial_persona_capacity")
+
+    assert entry["authority"]["content_ledger_written"] is False
+
+
+def test_source_planning_only_without_ledger_is_not_historical_exposure(
+    tmp_path: Path,
+):
+    prepare(tmp_path)
+
+    request_root = (
+        tmp_path
+        / "data"
+        / "generation_requests"
+        / "old_request"
+    )
+
+    write_json(
+        request_root / "generation_request_v1.json",
+        {
+            "request_id": ("old_request"),
+            "persona_id": ("fixture_pet_store"),
+            "target_profile": ("mix"),
+        },
+    )
+
+    write_json(
+        request_root / ("generation_source_planning_" "handoff_v1.json"),
+        {
+            "request_id": ("old_request"),
+            "status": ("source_authority_" "resolution_pending"),
+            "authority": {
+                "source_plan_created": True,
+                "script_generation_performed": False,
+                "generation_batch_created": False,
+                "content_ledger_written": False,
+            },
+        },
+    )
+
+    # A real Source Plan artifact exists on disk, but a planning artifact
+    # is still not Approved + Exported semantic history.
+    write_json(
+        tmp_path
+        / "data"
+        / "production_plans"
+        / "old_request"
+        / "generation_source_plan_v1.json",
+        {
+            "schema_version": ("generation-source-plan-v1.0"),
+            "request_id": ("old_request"),
+            "persona_id": ("fixture_pet_store"),
+            "authority": {
+                "script_generation_performed": False,
+                "generation_batch_created": False,
+                "content_ledger_written": False,
+            },
+        },
+    )
+
+    entry = build_content_creation_entry(
+        pipeline_root=tmp_path,
+        business_id=("fixture_pet_store"),
+        speaker_id=("fixture_pet_store_owner"),
+        profile="mix",
+        requested_quantity=3,
+    )
+
+    assert entry["capacity"]["source_mode"] == ("initial_persona_capacity")
+
+
+def _write_exported_batch_lineage(
+    tmp_path: Path,
+) -> None:
+    """Create a canonical Approved + Exported lineage for fixture_pet_store.
+
+    No Content Ledger is written on purpose.
+    """
+    batch_root = (
+        tmp_path
+        / "data"
+        / "generation_batches"
+        / "fixture_batch_001"
+        / "revisions"
+        / "revision_0001"
+    )
+
+    batch = {
+        "schema_version": "approved-generation-batch-v1.0",
+        "request_id": ("fixture_request_001"),
+        "profile": "mix",
+        "status": "approved",
+    }
+
+    write_json(
+        batch_root / "approved_generation_batch_v1.json",
+        batch,
+    )
+
+    batch_sha = hashlib.sha256(
+        (batch_root / "approved_generation_batch_v1.json").read_bytes()
+    ).hexdigest()
+
+    write_json(
+        batch_root / "generation_batch_approval_receipt.json",
+        {
+            "schema_version": "generation-batch-approval-receipt-v1.0",
+            "request_id": ("fixture_request_001"),
+            "status": "approved",
+            "human_gate": True,
+            "approved_batch": {
+                "sha256": batch_sha,
+            },
+        },
+    )
+
+    write_json(
+        tmp_path
+        / "data"
+        / "generation_requests"
+        / "fixture_request_001"
+        / "generation_request_v1.json",
+        {
+            "request_id": ("fixture_request_001"),
+            "persona_id": ("fixture_pet_store"),
+            "target_profile": ("mix"),
+        },
+    )
+
+    output_path = (
+        tmp_path
+        / "output"
+        / "fixture_batch_001_approved_mix_scripts.xlsx"
+    )
+
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    output_path.write_bytes(b"fixture exported workbook")
+
+    write_json(
+        tmp_path / "output" / "fixture_batch_001.export_receipt.json",
+        {
+            "schema_version": "mix-excel-export-receipt-v1.0",
+            "request_id": ("fixture_request_001"),
+            "batch_sha256": batch_sha,
+            "validation_passed": True,
+            "output_path": str(output_path),
+            "output_sha256": hashlib.sha256(
+                output_path.read_bytes()
+            ).hexdigest(),
+        },
+    )
+
+
+def test_exported_history_without_ledger_fails_closed(
+    tmp_path: Path,
+):
+    prepare(tmp_path)
+
+    _write_exported_batch_lineage(tmp_path)
+
     with pytest.raises(ContentCreationEntryError) as exc:
         build_content_creation_entry(
             pipeline_root=tmp_path,
@@ -361,6 +535,133 @@ def test_existing_generation_history_without_ledger_fails_closed(
         )
 
     assert exc.value.code == ("CONTENT_HISTORY_" "WITHOUT_LEDGER")
+
+
+def test_approved_but_not_exported_without_ledger_is_not_historical_exposure(
+    tmp_path: Path,
+):
+    """Approved != Exported != Historical Exposure.
+
+    A canonical Approved Batch without any export receipt must NOT trigger
+    CONTENT_HISTORY_WITHOUT_LEDGER.
+    """
+    prepare(tmp_path)
+
+    batch_root = (
+        tmp_path
+        / "data"
+        / "generation_batches"
+        / "fixture_batch_001"
+        / "revisions"
+        / "revision_0001"
+    )
+
+    batch = {
+        "schema_version": "approved-generation-batch-v1.0",
+        "request_id": ("fixture_request_001"),
+        "profile": "mix",
+        "status": "approved",
+    }
+
+    write_json(
+        batch_root / "approved_generation_batch_v1.json",
+        batch,
+    )
+
+    batch_sha = hashlib.sha256(
+        (batch_root / "approved_generation_batch_v1.json").read_bytes()
+    ).hexdigest()
+
+    write_json(
+        batch_root / "generation_batch_approval_receipt.json",
+        {
+            "schema_version": "generation-batch-approval-receipt-v1.0",
+            "request_id": ("fixture_request_001"),
+            "status": "approved",
+            "human_gate": True,
+            "approved_batch": {
+                "sha256": batch_sha,
+            },
+        },
+    )
+
+    write_json(
+        tmp_path
+        / "data"
+        / "generation_requests"
+        / "fixture_request_001"
+        / "generation_request_v1.json",
+        {
+            "request_id": ("fixture_request_001"),
+            "persona_id": ("fixture_pet_store"),
+            "target_profile": ("mix"),
+        },
+    )
+
+    entry = build_content_creation_entry(
+        pipeline_root=tmp_path,
+        business_id=("fixture_pet_store"),
+        speaker_id=("fixture_pet_store_owner"),
+        profile="mix",
+        requested_quantity=3,
+    )
+
+    assert entry["capacity"]["source_mode"] == ("initial_persona_capacity")
+
+    assert entry["authority"]["content_ledger_written"] is False
+
+
+def test_invalid_approved_batch_authority_fails_closed(
+    tmp_path: Path,
+):
+    """An Approved Batch for this business that fails canonical validation
+    while the Ledger is missing is authority corruption, not empty history."""
+    prepare(tmp_path)
+
+    batch_root = (
+        tmp_path
+        / "data"
+        / "generation_batches"
+        / "fixture_batch_001"
+        / "revisions"
+        / "revision_0001"
+    )
+
+    write_json(
+        batch_root / "approved_generation_batch_v1.json",
+        {
+            "schema_version": "approved-generation-batch-v1.0",
+            "request_id": ("fixture_request_001"),
+            "profile": "mix",
+            "status": "approved",
+        },
+    )
+
+    write_json(
+        tmp_path
+        / "data"
+        / "generation_requests"
+        / "fixture_request_001"
+        / "generation_request_v1.json",
+        {
+            "request_id": ("fixture_request_001"),
+            "persona_id": ("fixture_pet_store"),
+            "target_profile": ("mix"),
+        },
+    )
+
+    # The required batch approval receipt is deliberately missing.
+
+    with pytest.raises(ContentCreationEntryError) as exc:
+        build_content_creation_entry(
+            pipeline_root=tmp_path,
+            business_id=("fixture_pet_store"),
+            speaker_id=("fixture_pet_store_owner"),
+            profile="mix",
+            requested_quantity=3,
+        )
+
+    assert exc.value.code == ("CONTENT_HISTORY_" "AUTHORITY_INVALID")
 
 
 def test_invalid_quantity_fails_closed(

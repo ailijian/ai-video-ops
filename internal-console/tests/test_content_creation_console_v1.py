@@ -240,3 +240,205 @@ def test_capacity_preview_projects_canonical_result(
         assert preview["recommendation"]["recommended_quantity"] == 3
 
         assert preview["capacity"]["padding_allowed"] is False
+
+
+def test_generation_confirm_requires_csrf(
+    content_settings: Settings,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        main_module,
+        "confirm_content_creation",
+        lambda *args, **kwargs: {},
+    )
+
+    with TestClient(main_module.build_app(content_settings)) as client:
+        provision_user(
+            content_settings.database_path,
+            "13800000000",
+        )
+
+        login(client)
+
+        response = client.post(
+            "/api/create/confirm",
+            json={
+                "business_id": ("fixture_pet_store"),
+                "speaker_id": ("speaker_fixture"),
+                "profile": "mix",
+                "requested_quantity": 5,
+                "confirmed_quantity": 3,
+                "idempotency_key": ("console_test_0001"),
+            },
+        )
+
+        assert response.status_code == 403
+
+        assert response.json()["detail"]["code"] == "CSRF_CHECK_FAILED"
+
+
+def test_active_request_projection_found(
+    content_settings: Settings,
+    monkeypatch,
+):
+    projection = {
+        "request_id": ("gen_fixture_001"),
+        "business_id": ("fixture_pet_store"),
+        "speaker_id": ("speaker_fixture"),
+        "profile": "mix",
+        "requested_quantity": 5,
+        "confirmed_quantity": 3,
+        "created_at": ("2026-09-17T10:00:00+00:00"),
+        "lifecycle_status": "created",
+        "handoff_ready": True,
+        "handoff_status": ("source_authority_" "resolution_pending"),
+        "next_action": ("RESOLVE_GENERATION_SOURCES"),
+        "authority": {
+            "script_generation_performed": False,
+            "generation_batch_created": False,
+            "content_ledger_written": False,
+            "remote_model_called": False,
+        },
+    }
+
+    calls = {}
+
+    def fake_active(
+        settings,
+        business_id,
+    ):
+        calls["business_id"] = business_id
+
+        return {"active_request": projection}
+
+    monkeypatch.setattr(
+        main_module,
+        "get_active_generation_request",
+        fake_active,
+    )
+
+    with TestClient(main_module.build_app(content_settings)) as client:
+        provision_user(
+            content_settings.database_path,
+            "13800000000",
+        )
+
+        login(client)
+
+        response = client.get(
+            "/api/create/active-request",
+            params={"business_id": ("fixture_pet_store")},
+        )
+
+        assert response.status_code == 200
+
+        body = response.json()
+
+        assert calls == {"business_id": ("fixture_pet_store")}
+
+        assert body["active_request"]["request_id"] == "gen_fixture_001"
+
+        assert body["active_request"]["confirmed_quantity"] == 3
+
+        assert body["active_request"]["authority"]["remote_model_called"] is False
+
+
+def test_active_request_projection_none(
+    content_settings: Settings,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        main_module,
+        "get_active_generation_request",
+        lambda settings, business_id: {"active_request": None},
+    )
+
+    with TestClient(main_module.build_app(content_settings)) as client:
+        provision_user(
+            content_settings.database_path,
+            "13800000000",
+        )
+
+        login(client)
+
+        response = client.get(
+            "/api/create/active-request",
+            params={"business_id": ("fixture_pet_store")},
+        )
+
+        assert response.status_code == 200
+
+        assert response.json()["active_request"] is None
+
+
+def test_generation_confirm_projects_canonical_request(
+    content_settings: Settings,
+    monkeypatch,
+):
+    calls = {}
+
+    def fake_confirm(
+        settings,
+        **kwargs,
+    ):
+        calls.update(kwargs)
+
+        return {
+            "request_id": ("gen_fixture_001"),
+            "confirmed_quantity": 3,
+            "recovered": False,
+            "next_action": ("RESOLVE_GENERATION_SOURCES"),
+            "authority": {
+                "generation_request_created": (True),
+                "source_matching_performed": (False),
+                "script_generation_performed": (False),
+                "content_ledger_written": (False),
+                "remote_model_called": (False),
+            },
+        }
+
+    monkeypatch.setattr(
+        main_module,
+        "confirm_content_creation",
+        fake_confirm,
+    )
+
+    with TestClient(main_module.build_app(content_settings)) as client:
+        provision_user(
+            content_settings.database_path,
+            "13800000000",
+        )
+
+        csrf = login(client)
+
+        response = client.post(
+            "/api/create/confirm",
+            headers={"X-CSRF-Token": csrf},
+            json={
+                "business_id": ("fixture_pet_store"),
+                "speaker_id": ("speaker_fixture"),
+                "profile": "mix",
+                "requested_quantity": 5,
+                "confirmed_quantity": 3,
+                "idempotency_key": ("console_test_0001"),
+            },
+        )
+
+        assert response.status_code == 200
+
+        result = response.json()["result"]
+
+        assert result["request_id"] == "gen_fixture_001"
+
+        assert result["confirmed_quantity"] == 3
+
+        assert result["authority"]["script_generation_performed"] is False
+
+        assert calls == {
+            "business_id": ("fixture_pet_store"),
+            "speaker_id": ("speaker_fixture"),
+            "profile": "mix",
+            "requested_quantity": 5,
+            "confirmed_quantity": 3,
+            "idempotency_key": ("console_test_0001"),
+        }
