@@ -16,7 +16,6 @@ from urllib.parse import urlsplit, urlunsplit
 
 from .config import Settings
 
-
 BUSINESS_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_]{1,127}$")
 DOUYIN_VIDEO_ID_RE = re.compile(r"(?:/video/|video_id=)(\d{10,24})")
 
@@ -134,7 +133,10 @@ def get_customer_status(settings: Settings, business_id: str) -> dict[str, Any]:
             "客户状态解析器返回了无效结果。",
             "请检查 canonical status resolver 后重试。",
         ) from exc
-    if not isinstance(payload, dict) or payload.get("business", {}).get("business_id") != business_id:
+    if (
+        not isinstance(payload, dict)
+        or payload.get("business", {}).get("business_id") != business_id
+    ):
         raise CanonicalOperationError(
             "STATUS_RESOLVER_INVALID_OUTPUT",
             "客户状态结果与请求不一致。",
@@ -172,10 +174,18 @@ def _project_case(case_path: Path, *, attempt_id: str | None = None) -> CaseProj
     lifecycle = case.get("lifecycle") if isinstance(case.get("lifecycle"), dict) else {}
     identity = case.get("identity") if isinstance(case.get("identity"), dict) else {}
     source_evidence = (
-        case.get("source_evidence") if isinstance(case.get("source_evidence"), dict) else {}
+        case.get("source_evidence")
+        if isinstance(case.get("source_evidence"), dict)
+        else {}
     )
-    video = source_evidence.get("video") if isinstance(source_evidence.get("video"), dict) else {}
-    storyboard = case.get("storyboard") if isinstance(case.get("storyboard"), dict) else {}
+    video = (
+        source_evidence.get("video")
+        if isinstance(source_evidence.get("video"), dict)
+        else {}
+    )
+    storyboard = (
+        case.get("storyboard") if isinstance(case.get("storyboard"), dict) else {}
+    )
     understanding = (
         storyboard.get("video_understanding")
         if isinstance(storyboard.get("video_understanding"), dict)
@@ -215,7 +225,9 @@ def _project_case(case_path: Path, *, attempt_id: str | None = None) -> CaseProj
         title=title,
         summary=summary,
         platform=str(identity.get("platform") or "unknown"),
-        duration_seconds=float(duration) if isinstance(duration, (int, float)) else None,
+        duration_seconds=(
+            float(duration) if isinstance(duration, (int, float)) else None
+        ),
         profile=PROFILE_LABELS.get(
             str(identity.get("analysis_profile") or "unknown").lower(), "待分类"
         ),
@@ -225,14 +237,22 @@ def _project_case(case_path: Path, *, attempt_id: str | None = None) -> CaseProj
         ),
         status=status,
         source_url=str(identity["source_url"]) if identity.get("source_url") else None,
-        approved_at=str(lifecycle["approved_at"]) if lifecycle.get("approved_at") else None,
+        approved_at=(
+            str(lifecycle["approved_at"]) if lifecycle.get("approved_at") else None
+        ),
         attempt_id=attempt_id,
     )
 
 
-def _analysis_states(settings: Settings, case_id: str | None = None) -> list[tuple[Path, dict[str, Any]]]:
+def _analysis_states(
+    settings: Settings, case_id: str | None = None
+) -> list[tuple[Path, dict[str, Any]]]:
     root = settings.pipeline_root / "data" / "case_analysis_attempts"
-    pattern = f"{case_id}/*/case_analysis_attempt_v1.json" if case_id else "*/*/case_analysis_attempt_v1.json"
+    pattern = (
+        f"{case_id}/*/case_analysis_attempt_v1.json"
+        if case_id
+        else "*/*/case_analysis_attempt_v1.json"
+    )
     values: list[tuple[Path, dict[str, Any]]] = []
     for path in root.glob(pattern):
         try:
@@ -244,9 +264,13 @@ def _analysis_states(settings: Settings, case_id: str | None = None) -> list[tup
     return values
 
 
-def _latest_candidate(settings: Settings, case_id: str) -> tuple[Path, dict[str, Any]] | None:
+def _latest_candidate(
+    settings: Settings, case_id: str
+) -> tuple[Path, dict[str, Any]] | None:
     for state_path, state in _analysis_states(settings, case_id):
-        candidate = Path(str((state.get("artifacts") or {}).get("case_candidate_v1") or ""))
+        candidate = Path(
+            str((state.get("artifacts") or {}).get("case_candidate_v1") or "")
+        )
         if state.get("status") == "awaiting_review" and candidate.is_file():
             return candidate, state
     return None
@@ -267,14 +291,18 @@ def list_cases(settings: Settings) -> list[dict[str, Any]]:
         case_id = str(state.get("case_id") or "")
         if not case_id or case_id in canonical_ids or case_id in seen_candidates:
             continue
-        candidate = Path(str((state.get("artifacts") or {}).get("case_candidate_v1") or ""))
+        candidate = Path(
+            str((state.get("artifacts") or {}).get("case_candidate_v1") or "")
+        )
         if state.get("status") != "awaiting_review" or not candidate.is_file():
             continue
         projections.append(
             _project_case(candidate, attempt_id=str(state.get("attempt_id") or ""))
         )
         seen_candidates.add(case_id)
-    projections.sort(key=lambda item: (item.approved_at or "", item.case_id), reverse=True)
+    projections.sort(
+        key=lambda item: (item.approved_at or "", item.case_id), reverse=True
+    )
     return [item.to_dict() for item in projections]
 
 
@@ -309,6 +337,117 @@ def find_duplicate_case(settings: Settings, url: str) -> dict[str, Any] | None:
     return None
 
 
+def resolve_case_source_duplicate(
+    settings: Settings,
+    url: str,
+) -> dict[str, Any] | None:
+    """
+    Resolve deterministic duplicate state for one canonical source identity.
+
+    This does not perform semantic similarity matching.
+    """
+
+    normalized = normalize_source_url(url)
+
+    # Search the raw URL as well, because video_id may live in a query string
+    # that normalize_source_url intentionally removes.
+    match = DOUYIN_VIDEO_ID_RE.search(url)
+    if match is None:
+        match = DOUYIN_VIDEO_ID_RE.search(normalized)
+
+    if match is None:
+        return None
+
+    case_id = match.group(1)
+
+    canonical = settings.pipeline_root / "data" / "cases" / case_id / "case_v1.json"
+
+    if canonical.is_file():
+        projection = _project_case(canonical).to_dict()
+
+        return {
+            "duplicate": True,
+            "duplicate_kind": "source_identity",
+            "state": "approved",
+            "case_id": case_id,
+            "attempt_id": None,
+            "existing_case": projection,
+            "can_reanalyze": False,
+            "message": "这个视频已经在案例库里了。",
+            "next_action": "查看已有案例。",
+        }
+
+    states = _analysis_states(settings, case_id)
+
+    for state_path, state in states:
+        status = str(state.get("status") or "").lower()
+
+        if status not in {
+            "queued",
+            "running",
+            "awaiting_review",
+            "failed",
+            "rejected",
+            "approved",
+        }:
+            continue
+
+        attempt_id = str(state.get("attempt_id") or state_path.parent.name)
+
+        existing_case: dict[str, Any] | None = None
+
+        candidate = Path(
+            str((state.get("artifacts") or {}).get("case_candidate_v1") or "")
+        )
+
+        if candidate.is_file():
+            existing_case = _project_case(
+                candidate,
+                attempt_id=attempt_id,
+            ).to_dict()
+
+            # _project_case reads the Candidate's own lifecycle, which remains
+            # review_required even after a Human rejects the attempt.
+            # The attempt lifecycle is authoritative for the analysis state.
+            if status == "rejected":
+                existing_case["status"] = "rejected"
+
+        if status in {"queued", "running"}:
+            message = "这个视频正在分析。"
+            next_action = "查看任务进度。"
+            can_reanalyze = False
+        elif status == "awaiting_review":
+            message = "这个视频已经分析完成，正在等待审核。"
+            next_action = "去审核案例。"
+            can_reanalyze = False
+        elif status == "approved":
+            message = "这个视频已经在案例库里了。"
+            next_action = "查看已有案例。"
+            can_reanalyze = False
+        elif status == "failed":
+            message = "这个视频之前分析失败。"
+            next_action = "可以显式重新分析。"
+            can_reanalyze = True
+        else:
+            message = "这个案例之前没有收录。"
+            next_action = "如有新的判断，可以显式重新分析。"
+            can_reanalyze = True
+
+        return {
+            "duplicate": True,
+            "duplicate_kind": "source_identity",
+            "state": status,
+            "case_id": case_id,
+            "attempt_id": attempt_id,
+            "existing_case": existing_case,
+            "can_reanalyze": can_reanalyze,
+            "message": message,
+            "next_action": next_action,
+        }
+
+    return None
+
+
 def case_analysis_capability() -> dict[str, Any]:
     return {
         "available": True,
@@ -320,13 +459,23 @@ def case_analysis_capability() -> dict[str, Any]:
 
 def source_case_id(url: str) -> str:
     normalized = normalize_source_url(url)
-    match = DOUYIN_VIDEO_ID_RE.search(normalized)
+
+    # Prefer the original URL because some valid Douyin variants may carry
+    # video_id in the query string, while normalization intentionally removes
+    # query parameters.
+    match = DOUYIN_VIDEO_ID_RE.search(url)
+    if match is None:
+        match = DOUYIN_VIDEO_ID_RE.search(normalized)
+
     if match is None:
         raise ValueError("full video URL required")
+
     return match.group(1)
 
 
-def _find_case_path(settings: Settings, case_id: str) -> tuple[Path, dict[str, Any] | None]:
+def _find_case_path(
+    settings: Settings, case_id: str
+) -> tuple[Path, dict[str, Any] | None]:
     canonical = settings.pipeline_root / "data" / "cases" / case_id / "case_v1.json"
     if canonical.is_file():
         return canonical, None
@@ -361,7 +510,7 @@ def get_case_detail(settings: Settings, case_id: str) -> dict[str, Any]:
         case_path,
         attempt_id=str(attempt.get("attempt_id")) if attempt else None,
     ).to_dict()
-    understanding = ((case.get("storyboard") or {}).get("video_understanding") or {})
+    understanding = (case.get("storyboard") or {}).get("video_understanding") or {}
     metadata = _case_metadata(case)
     sequence = [
         _safe_chinese_text(item.get("description"), max_length=260)
@@ -370,7 +519,9 @@ def get_case_detail(settings: Settings, case_id: str) -> dict[str, Any]:
     ]
     sequence = [value for value in sequence if value]
     shots: list[dict[str, Any]] = []
-    for index, shot in enumerate((case.get("storyboard") or {}).get("shots") or [], start=1):
+    for index, shot in enumerate(
+        (case.get("storyboard") or {}).get("shots") or [], start=1
+    ):
         evidence = shot.get("evidence") or {}
         interpretation = shot.get("interpretation") or {}
         scenes = [
@@ -417,9 +568,13 @@ def get_case_detail(settings: Settings, case_id: str) -> dict[str, Any]:
         "reusable_observations": [
             value
             for value in (
-                _safe_chinese_text(understanding.get("audio_visual_strategy"), max_length=420),
+                _safe_chinese_text(
+                    understanding.get("audio_visual_strategy"), max_length=420
+                ),
                 _safe_chinese_text(understanding.get("audio_role"), max_length=320),
-                _safe_chinese_text(understanding.get("visual_scene_role"), max_length=320),
+                _safe_chinese_text(
+                    understanding.get("visual_scene_role"), max_length=320
+                ),
             )
             if value
         ],
@@ -432,7 +587,8 @@ def get_case_detail(settings: Settings, case_id: str) -> dict[str, Any]:
         },
         "review": {
             "can_review": lifecycle.get("status") == "review_required",
-            "approved": lifecycle.get("status") == "approved" and lifecycle.get("approved") is True,
+            "approved": lifecycle.get("status") == "approved"
+            and lifecycle.get("approved") is True,
             "attempt_id": str(attempt.get("attempt_id")) if attempt else None,
         },
         "media_rights": {
@@ -445,7 +601,11 @@ def get_case_detail(settings: Settings, case_id: str) -> dict[str, Any]:
 def case_media_path(settings: Settings, case_id: str) -> Path:
     case_path, _ = _find_case_path(settings, case_id)
     case = _read_json(case_path)
-    video = Path(str((((case.get("source_evidence") or {}).get("video") or {}).get("path")) or ""))
+    video = Path(
+        str(
+            (((case.get("source_evidence") or {}).get("video") or {}).get("path")) or ""
+        )
+    )
     allowed = (settings.repo_root / "douyin-downloader" / "Downloaded").resolve()
     try:
         resolved = video.resolve(strict=True)
@@ -480,8 +640,17 @@ def _write_atomic(path: Path, value: dict[str, Any]) -> None:
 def _governance_companion(settings: Settings, case_path: Path) -> dict[str, Any]:
     case = _read_json(case_path)
     receipt = case_path.parent / "approval_receipt.json"
-    policy = settings.pipeline_root / "data" / "case_governance" / "case_source_governance_policy_v1.json"
-    source_path = Path(str((((case.get("source_evidence") or {}).get("video") or {}).get("path")) or ""))
+    policy = (
+        settings.pipeline_root
+        / "data"
+        / "case_governance"
+        / "case_source_governance_policy_v1.json"
+    )
+    source_path = Path(
+        str(
+            (((case.get("source_evidence") or {}).get("video") or {}).get("path")) or ""
+        )
+    )
     source_url = str((case.get("identity") or {}).get("source_url") or "")
     return {
         "schema_version": "case-source-governance-companion-v1.0",
@@ -489,8 +658,18 @@ def _governance_companion(settings: Settings, case_path: Path) -> dict[str, Any]
         "companion_id": f"case_source_governance_companion_v1::{case['case_id']}",
         "case_id": case["case_id"],
         "canonical_case_status": "approved",
-        "case_ref": {"artifact_type": "approved_case", "path": str(case_path), "sha256": _sha256(case_path), "source_artifact_modified": False},
-        "case_approval_receipt_ref": {"artifact_type": "case_approval_receipt", "path": str(receipt), "sha256": _sha256(receipt), "source_artifact_modified": False},
+        "case_ref": {
+            "artifact_type": "approved_case",
+            "path": str(case_path),
+            "sha256": _sha256(case_path),
+            "source_artifact_modified": False,
+        },
+        "case_approval_receipt_ref": {
+            "artifact_type": "case_approval_receipt",
+            "path": str(receipt),
+            "sha256": _sha256(receipt),
+            "source_artifact_modified": False,
+        },
         "source_provenance": {
             "status": "traceable",
             "traceable": bool(source_url and source_path.is_file()),
@@ -499,7 +678,9 @@ def _governance_companion(settings: Settings, case_path: Path) -> dict[str, Any]
             "source_url_present": bool(source_url),
             "local_source_path": str(source_path),
             "local_source_exists": source_path.is_file(),
-            "local_source_sha256": _sha256(source_path) if source_path.is_file() else None,
+            "local_source_sha256": (
+                _sha256(source_path) if source_path.is_file() else None
+            ),
             "recorded_source_sha256": None,
             "recorded_sha_matches": None,
             "semantics": "identity_and_evidence_lineage_not_reuse_permission",
@@ -509,9 +690,18 @@ def _governance_companion(settings: Settings, case_path: Path) -> dict[str, Any]
         "media_reuse_rights": "not_established",
         "production_footage_pool_eligible": False,
         "privacy_basis": "embedded_privacy_gate_library_safe",
-        "legacy_source_rights_field_observation": {"present": False, "status": None, "used_as_current_governance_authority": False},
+        "legacy_source_rights_field_observation": {
+            "present": False,
+            "status": None,
+            "used_as_current_governance_authority": False,
+        },
         "governance_policy_version": "V1.0",
-        "governance_policy_ref": {"artifact_type": "case_source_governance_policy_v1", "path": str(policy), "sha256": _sha256(policy), "source_artifact_modified": False},
+        "governance_policy_ref": {
+            "artifact_type": "case_source_governance_policy_v1",
+            "path": str(policy),
+            "sha256": _sha256(policy),
+            "source_artifact_modified": False,
+        },
         "case_approval_changed_media_reuse_rights": False,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
@@ -527,12 +717,18 @@ def approve_case_candidate(
     candidate = _latest_candidate(settings, case_id)
     if candidate is None:
         canonical = settings.pipeline_root / "data" / "cases" / case_id / "case_v1.json"
-        if canonical.is_file() and (_read_json(canonical).get("lifecycle") or {}).get("status") == "approved":
+        if (
+            canonical.is_file()
+            and (_read_json(canonical).get("lifecycle") or {}).get("status")
+            == "approved"
+        ):
             raise CanonicalOperationError(
                 "CASE_ALREADY_APPROVED", "这个案例已经入库。", "请返回案例库查看。"
             )
         raise CanonicalOperationError(
-            "CASE_REVIEW_NOT_READY", "案例还没有可审核的分析结果。", "请等待分析完成后重试。"
+            "CASE_REVIEW_NOT_READY",
+            "案例还没有可审核的分析结果。",
+            "请等待分析完成后重试。",
         )
     candidate_path, state = candidate
     canonical_dir = settings.pipeline_root / "data" / "cases" / case_id
@@ -612,7 +808,9 @@ def approve_case_candidate(
     state["status"] = "approved"
     state["approved_case_path"] = str(canonical_path)
     state["governance_companion_path"] = str(companion_path)
-    state["fingerprint_status"] = "completed" if fingerprint_result.returncode == 0 else "retry_required"
+    state["fingerprint_status"] = (
+        "completed" if fingerprint_result.returncode == 0 else "retry_required"
+    )
     state["updated_at"] = datetime.now(timezone.utc).isoformat()
     state_path = candidate_path.parents[2] / "case_analysis_attempt_v1.json"
     _write_atomic(state_path, state)
@@ -630,7 +828,9 @@ def record_case_review_decision(
     candidate = _latest_candidate(settings, case_id)
     if candidate is None:
         raise CanonicalOperationError(
-            "CASE_REVIEW_NOT_READY", "案例还没有可审核的分析结果。", "请等待分析完成后重试。"
+            "CASE_REVIEW_NOT_READY",
+            "案例还没有可审核的分析结果。",
+            "请等待分析完成后重试。",
         )
     candidate_path, state = candidate
     receipt = {

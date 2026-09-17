@@ -9,8 +9,16 @@ from pathlib import Path
 
 import pytest
 
-
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts" / "case_analysis_v1.py"
+SCRIPTS_DIR = SCRIPT.parent
+
+# case_analysis_v1.py is also an executable script and imports sibling
+# canonical script modules. When this test loads it through importlib instead
+# of running it as a script, Python does not automatically add scripts/ to
+# sys.path, so mirror the real script execution environment explicitly.
+if str(SCRIPTS_DIR) not in sys.path:
+    sys.path.insert(0, str(SCRIPTS_DIR))
+
 SPEC = importlib.util.spec_from_file_location("case_analysis_v1", SCRIPT)
 assert SPEC and SPEC.loader
 module = importlib.util.module_from_spec(SPEC)
@@ -65,7 +73,9 @@ def test_reanalysis_lineage_never_overwrites_approved_case(tmp_path: Path):
     canonical = pipeline / "data" / "cases" / "7682442957798161531" / "case_v1.json"
     canonical.parent.mkdir(parents=True)
     canonical.write_text(
-        json.dumps({"case_id": "7682442957798161531", "lifecycle": {"status": "approved"}}),
+        json.dumps(
+            {"case_id": "7682442957798161531", "lifecycle": {"status": "approved"}}
+        ),
         encoding="utf-8",
     )
     before = sha256(canonical)
@@ -112,7 +122,13 @@ def test_source_acquisition_preserves_privacy_and_media_rights_boundary(tmp_path
     source_dir.mkdir(parents=True)
     (source_dir / f"clip_{case_id}.mp4").write_bytes(b"real-source-placeholder")
     (source_dir / f"clip_{case_id}_data.json").write_text(
-        json.dumps({"aweme_id": case_id, "desc": "公开来源视频", "author": {"nickname": "作者"}}),
+        json.dumps(
+            {
+                "aweme_id": case_id,
+                "desc": "公开来源视频",
+                "author": {"nickname": "作者"},
+            }
+        ),
         encoding="utf-8",
     )
     operation = module.Orchestrator(
@@ -136,7 +152,12 @@ def test_human_approval_is_explicit_and_does_not_grant_media_rights(tmp_path: Pa
     source_case = pipeline / "data" / "cases" / "7683027343636542565" / "case_v1.json"
     case = json.loads(source_case.read_text(encoding="utf-8"))
     case["lifecycle"].update(
-        {"status": "review_required", "approved": False, "approved_at": None, "approved_by": None}
+        {
+            "status": "review_required",
+            "approved": False,
+            "approved_at": None,
+            "approved_by": None,
+        }
     )
     case.pop("approval", None)
     case["quality"]["human_review_required"] = True
@@ -144,7 +165,9 @@ def test_human_approval_is_explicit_and_does_not_grant_media_rights(tmp_path: Pa
     case["validation"]["human_approval_completed"] = False
     case["validation"]["auto_approved"] = False
     candidate = tmp_path / "case_v1.json"
-    candidate.write_text(json.dumps(case, ensure_ascii=False, indent=2), encoding="utf-8")
+    candidate.write_text(
+        json.dumps(case, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
 
     before = json.loads(candidate.read_text(encoding="utf-8"))
     assert before["lifecycle"]["approved"] is False
@@ -168,7 +191,9 @@ def test_human_approval_is_explicit_and_does_not_grant_media_rights(tmp_path: Pa
     )
     assert result.returncode == 0, result.stderr or result.stdout
     approved = json.loads(candidate.read_text(encoding="utf-8"))
-    receipt = json.loads((tmp_path / "approval_receipt.json").read_text(encoding="utf-8"))
+    receipt = json.loads(
+        (tmp_path / "approval_receipt.json").read_text(encoding="utf-8")
+    )
     assert approved["lifecycle"]["approved"] is True
     assert approved["validation"]["auto_approved"] is False
     assert receipt["human_gate"] is True

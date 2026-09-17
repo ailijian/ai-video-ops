@@ -5,7 +5,9 @@ from fastapi.testclient import TestClient
 from conftest import login_and_change_password
 
 
-def test_first_login_forces_password_change_then_exposes_real_workbench(client: TestClient):
+def test_first_login_forces_password_change_then_exposes_real_workbench(
+    client: TestClient,
+):
     login = client.post(
         "/api/auth/login",
         json={"phone": "13800000000", "password": "123456"},
@@ -76,10 +78,15 @@ def test_duplicate_case_resolves_without_creating_a_task(client: TestClient):
     response = client.post(
         "/api/cases/analyze",
         headers={"X-CSRF-Token": csrf},
-        json={"url": "https://www.douyin.com/video/7059858129298803968"},
+        json={
+            "url": "https://www.douyin.com/video/7059858129298803968?share=another-form"
+        },
     )
     assert response.status_code == 200
     assert response.json()["duplicate"] is True
+    assert response.json()["state"] == "approved"
+    assert response.json()["duplicate_kind"] == "source_identity"
+    assert response.json()["can_reanalyze"] is False
     assert response.json()["existing_case"]["case_id"] == "7059858129298803968"
     assert client.get("/api/tasks").json()["tasks"] == []
 

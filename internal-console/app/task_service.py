@@ -136,7 +136,13 @@ def create_case_task(
                 payload_json, created_at, updated_at
             ) VALUES (?, 'case_analysis', ?, 'queued', 0, '等待开始', ?, ?, ?)
             """,
-            (task_id, case_id, json.dumps(payload, ensure_ascii=False), timestamp, timestamp),
+            (
+                task_id,
+                case_id,
+                json.dumps(payload, ensure_ascii=False),
+                timestamp,
+                timestamp,
+            ),
         )
     task = get_task(database_path, task_id)
     assert task is not None
@@ -170,6 +176,51 @@ def update_task(
         connection.execute(
             f"UPDATE tasks SET {', '.join(assignments)} WHERE task_id = ?",
             values,
+        )
+
+
+def patch_task_payload(
+    database_path: Path,
+    task_id: str,
+    patch: dict[str, Any],
+) -> None:
+    if not patch:
+        return
+
+    with transaction(database_path) as connection:
+        row = connection.execute(
+            """
+            SELECT payload_json
+            FROM tasks
+            WHERE task_id = ?
+            """,
+            (task_id,),
+        ).fetchone()
+
+        if row is None:
+            return
+
+        try:
+            payload = json.loads(row["payload_json"])
+        except (json.JSONDecodeError, TypeError):
+            payload = {}
+
+        if not isinstance(payload, dict):
+            payload = {}
+
+        payload.update(patch)
+
+        connection.execute(
+            """
+            UPDATE tasks
+            SET payload_json = ?, updated_at = ?
+            WHERE task_id = ?
+            """,
+            (
+                json.dumps(payload, ensure_ascii=False),
+                iso_utc(),
+                task_id,
+            ),
         )
 
 
@@ -212,7 +263,9 @@ STAGE_LABELS = {
 class CaseTaskRunner:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self.executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="case-analysis")
+        self.executor = ThreadPoolExecutor(
+            max_workers=1, thread_name_prefix="case-analysis"
+        )
         self._scheduled: set[str] = set()
         self._lock = threading.Lock()
 
@@ -277,7 +330,8 @@ class CaseTaskRunner:
                 / "case_analysis_attempt_v1.json"
             )
             command = [
-                self.settings.pipeline_python_executable or self.settings.python_executable,
+                self.settings.pipeline_python_executable
+                or self.settings.python_executable,
                 str(self.settings.pipeline_root / "scripts" / "case_analysis_v1.py"),
                 "--source-url",
                 str(payload["source_url"]),
@@ -315,10 +369,25 @@ class CaseTaskRunner:
                 if state_path.is_file():
                     try:
                         state = json.loads(state_path.read_text(encoding="utf-8"))
+
                         code = str((state.get("error") or {}).get("code") or code)
-                        message = str((state.get("error") or {}).get("message") or message)
+                        message = str(
+                            (state.get("error") or {}).get("message") or message
+                        )
+
+                        duplicate = state.get("duplicate")
+                        if isinstance(duplicate, dict):
+                            patch_task_payload(
+                                self.settings.database_path,
+                                task_id,
+                                {
+                                    "duplicate": duplicate,
+                                },
+                            )
+
                     except (OSError, json.JSONDecodeError):
                         pass
+
                 elif stderr.strip() or stdout.strip():
                     message = (stderr.strip() or stdout.strip()).splitlines()[-1]
                 update_task(

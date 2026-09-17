@@ -26,6 +26,7 @@ from .canonical_gateway import (
     CanonicalOperationError,
     case_analysis_capability,
     find_duplicate_case,
+    resolve_case_source_duplicate,
     approve_case_candidate,
     case_media_path,
     get_case_detail,
@@ -60,6 +61,8 @@ class ChangePasswordRequest(BaseModel):
 
 class CaseAnalysisRequest(BaseModel):
     url: str = Field(min_length=1, max_length=2048)
+    reanalyze: bool = False
+    reason: str = Field(default="", max_length=1000)
 
 
 class CaseReviewRequest(BaseModel):
@@ -138,7 +141,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["Referrer-Policy"] = "same-origin"
-        response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+        response.headers["Permissions-Policy"] = (
+            "camera=(), microphone=(), geolocation=()"
+        )
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; img-src 'self' data:; style-src 'self'; "
             "script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'"
@@ -209,7 +214,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         return {"status": "ok"}
 
     @app.post("/api/auth/login")
-    def login(payload: LoginRequest, request: Request, response: Response) -> dict[str, Any]:
+    def login(
+        payload: LoginRequest, request: Request, response: Response
+    ) -> dict[str, Any]:
         client_host = request.client.host if request.client else "unknown"
         throttle_key = f"{client_host}:{payload.phone.strip()}"
         if not throttle.allowed(throttle_key):
@@ -233,7 +240,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 ),
             )
         throttle.success(throttle_key)
-        token, session = create_session(settings.database_path, user["id"], settings.session_hours)
+        token, session = create_session(
+            settings.database_path, user["id"], settings.session_hours
+        )
         set_session_cookie(response, token)
         return {"user": public_user(session), "csrf_token": session.csrf_token}
 
@@ -302,7 +311,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         business_id: str | None = None,
         _: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
-        return get_customer_status(settings, business_id or settings.default_business_id)
+        return get_customer_status(
+            settings, business_id or settings.default_business_id
+        )
 
     @app.get("/api/workbench")
     def workbench(
@@ -314,14 +325,18 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         return {
             "status": status,
             "attention": {
-                "case_reviews": sum(case["status"] == "awaiting_review" for case in cases),
+                "case_reviews": sum(
+                    case["status"] == "awaiting_review" for case in cases
+                ),
                 "persona_reviews": 0,
                 "content_reviews": sum(
                     task["task_type"] == "content_generation"
                     and task["status"] == "awaiting_review"
                     for task in tasks
                 ),
-                "running_tasks": sum(task["status"] in {"queued", "running"} for task in tasks),
+                "running_tasks": sum(
+                    task["status"] in {"queued", "running"} for task in tasks
+                ),
             },
             "recent_tasks": tasks[:5],
             "capabilities": {"case_analysis": case_analysis_capability()},
@@ -336,10 +351,14 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/cases/analyze")
     def analyze_case(
         payload: CaseAnalysisRequest,
-        x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+        x_csrf_token: str | None = Header(
+            default=None,
+            alias="X-CSRF-Token",
+        ),
         session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
         require_csrf(session, x_csrf_token)
+
         try:
             normalized_url = normalize_source_url(payload.url)
         except ValueError as exc:
@@ -351,15 +370,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                     "请检查链接，并使用抖音视频链接重新尝试。",
                 ),
             ) from exc
-        duplicate = find_duplicate_case(settings, normalized_url)
-        if duplicate is not None:
-            return {
-                "duplicate": True,
-                "message": "这个案例已经分析过了。",
-                "existing_case": duplicate,
-            }
+
         try:
-            case_id = source_case_id(normalized_url)
+            case_id = source_case_id(payload.url)
         except ValueError as exc:
             raise HTTPException(
                 status_code=422,
@@ -369,24 +382,108 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                     "请使用包含视频编号的完整抖音视频链接。",
                 ),
             ) from exc
-        active = find_active_case_task(settings.database_path, case_id)
+
+        duplicate = resolve_case_source_duplicate(
+            settings,
+            payload.url,
+        )
+
+        if duplicate is not None:
+            state = str(duplicate.get("state") or "")
+            allowed_reanalysis = state in {
+                "failed",
+                "rejected",
+            }
+
+            if not payload.reanalyze:
+                existing_task = None
+                attempt_id = duplicate.get("attempt_id")
+
+                if attempt_id:
+                    existing_task = get_task(
+                        settings.database_path,
+                        str(attempt_id),
+                    )
+
+                return {
+                    **duplicate,
+                    "existing_task": existing_task,
+                }
+
+            if not allowed_reanalysis:
+                return {
+                    **duplicate,
+                    "reanalyze_blocked": True,
+                }
+
+            reason = payload.reason.strip()
+
+            if state == "rejected" and not reason:
+                raise HTTPException(
+                    status_code=422,
+                    detail=error_detail(
+                        "CASE_REANALYSIS_REASON_REQUIRED",
+                        "这个案例之前已由人工决定不收录。",
+                        "请填写重新分析的原因后继续。",
+                    ),
+                )
+
+            if not reason:
+                reason = "分析失败后由运营人员显式重新分析。"
+
+            task = create_case_task(
+                settings.database_path,
+                source_url=normalized_url,
+                case_id=case_id,
+                reanalyze=True,
+                reason=reason,
+            )
+            task_runner.schedule(task["task_id"])
+
+            return {
+                "duplicate": False,
+                "reanalyze": True,
+                "task": task,
+                "case_id": case_id,
+                "next_action": ("新的分析 Attempt 已建立；" "原有分析记录不会被覆盖。"),
+            }
+
+        active = find_active_case_task(
+            settings.database_path,
+            case_id,
+        )
+
         if active is not None:
             return {
                 "duplicate": True,
-                "message": "这个案例正在分析或等待审核。",
+                "duplicate_kind": "source_identity",
+                "state": (
+                    "awaiting_review"
+                    if active["status"] == "awaiting_review"
+                    else "running"
+                ),
+                "case_id": case_id,
                 "existing_task": active,
+                "can_reanalyze": False,
+                "message": (
+                    "这个视频已经分析完成，正在等待审核。"
+                    if active["status"] == "awaiting_review"
+                    else "这个视频正在分析。"
+                ),
             }
+
         task = create_case_task(
             settings.database_path,
             source_url=normalized_url,
             case_id=case_id,
         )
         task_runner.schedule(task["task_id"])
+
         return {
             "duplicate": False,
             "task": task,
             "case_id": case_id,
-            "next_action": "可以留在当前页面查看进度，也可以稍后从任务记录继续。",
+            "next_action": ("可以留在当前页面查看进度，" "也可以稍后从任务记录继续。"),
         }
 
     @app.get("/api/cases/{case_id}")

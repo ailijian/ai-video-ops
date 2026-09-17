@@ -12,6 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlsplit
+from case_duplicate_guard_v1 import find_media_identity_duplicate
 
 
 OPERATION_VERSION = "case_analysis_v1.py@1.0"
@@ -406,6 +407,26 @@ class Orchestrator:
             )
             source = self.acquire()
             self.state["artifacts"]["source_acquisition_v1"] = str(acquisition_path)
+
+            media_duplicate = find_media_identity_duplicate(
+                self.pipeline_root,
+                current_case_id=self.case_id,
+                current_attempt_id=self.attempt_id,
+                media_sha256=str(source.get("source_video_sha256") or ""),
+            )
+
+            if media_duplicate is not None:
+                self.state["duplicate"] = media_duplicate
+                self.save()
+
+                raise CaseAnalysisError(
+                    "MEDIA_DUPLICATE_CASE",
+                    (
+                        "The acquired video is byte-identical to an existing Case source: "
+                        f"{media_duplicate['existing_case_id']}."
+                    ),
+                )
+
             self.complete_stage("acquire", recovered=recovered)
 
             video = Path(source["video"])

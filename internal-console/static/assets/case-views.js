@@ -1,6 +1,78 @@
 import { caseCard, caseReviewContent, escapeHtml, progressPanel } from "./case-components.js";
 import { startTaskPolling } from "./task-progress.js";
 
+function duplicateResultHtml(result) {
+  const state = result.state || "";
+
+  if (state === "approved" && result.existing_case) {
+    return `<div class="result-banner">
+      <h3>这个视频已经在案例库里</h3>
+      <p>${escapeHtml(result.existing_case.title || "")}</p>
+      <a class="btn btn-secondary"
+         href="/cases/${encodeURIComponent(result.case_id)}"
+         data-route>
+        查看已有案例
+      </a>
+    </div>`;
+  }
+
+  if (state === "awaiting_review") {
+    return `<div class="result-banner">
+      <h3>这个视频已经分析完成</h3>
+      <p>现在正在等待人工审核，无需重复分析。</p>
+      <a class="btn btn-secondary"
+         href="/cases/${encodeURIComponent(result.case_id)}"
+         data-route>
+        去审核
+      </a>
+    </div>`;
+  }
+
+  if (state === "running" && result.existing_task) {
+    return `<div class="result-banner">
+      <h3>这个视频正在分析</h3>
+      <p>无需重复提交，可以继续查看当前任务。</p>
+      <a class="btn btn-secondary"
+         href="/tasks/${encodeURIComponent(result.existing_task.task_id)}"
+         data-route>
+        查看任务进度
+      </a>
+    </div>`;
+  }
+
+  if (state === "rejected") {
+    return `<div class="result-banner">
+      <h3>这个案例之前没有收录</h3>
+      <p>如果你现在认为值得重新评估，可以显式重新分析。</p>
+      <button class="btn btn-secondary"
+              type="button"
+              data-explicit-reanalysis
+              data-reanalysis-state="rejected">
+        重新分析
+      </button>
+    </div>`;
+  }
+
+  if (state === "failed") {
+    return `<div class="result-banner">
+      <h3>这个视频之前分析失败</h3>
+      <p>可以重新建立一个分析任务；旧记录不会被覆盖。</p>
+      <button class="btn btn-secondary"
+              type="button"
+              data-explicit-reanalysis
+              data-reanalysis-state="failed">
+        重新分析
+      </button>
+    </div>`;
+  }
+
+  return `<div class="result-banner">
+    <h3>${escapeHtml(
+      result.message || "这个视频已经提交过"
+    )}</h3>
+  </div>`;
+}
+
 export function createCaseViews({ app, api, navigate, shell, bindCommonActions, pageHeading, skeletonPage, statusPill, showToast, renderLoadError }) {
   let stopPolling = null;
   const stopTaskPolling = () => { stopPolling?.(); stopPolling = null; };
@@ -78,13 +150,73 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       errorBox.classList.remove("visible"); resultBox.innerHTML = ""; button.disabled = true; button.textContent = "正在提交…";
       try {
         const result = await api("/api/cases/analyze", { method: "POST", body: JSON.stringify({ url: input.value }) });
-        if (result.duplicate && result.existing_case) {
-          resultBox.innerHTML = `<div class="result-banner"><h3>这个案例已经分析过了</h3><p>${escapeHtml(result.existing_case.title)}</p><a class="btn btn-secondary" href="/cases/${encodeURIComponent(result.existing_case.case_id)}" data-route>查看已有案例</a></div>`;
+                if (result.duplicate) {
+          resultBox.innerHTML = duplicateResultHtml(result);
           bindCommonActions();
-        } else if (result.duplicate && result.existing_task) {
-          resultBox.innerHTML = `<div data-live-progress></div>`; bindTaskProgress(result.existing_task);
+
+          const reanalyzeButton = resultBox.querySelector(
+            "[data-explicit-reanalysis]"
+          );
+
+          if (reanalyzeButton) {
+            reanalyzeButton.addEventListener(
+              "click",
+              async () => {
+                const state =
+                  reanalyzeButton.dataset.reanalysisState;
+
+                let reason = "";
+
+                if (state === "rejected") {
+                  reason =
+                    window.prompt(
+                      "请填写为什么需要重新分析这个案例",
+                      ""
+                    )?.trim() || "";
+
+                  if (!reason) return;
+                } else {
+                  reason =
+                    "分析失败后由运营人员显式重新分析。";
+                }
+
+                reanalyzeButton.disabled = true;
+                reanalyzeButton.textContent =
+                  "正在重新提交…";
+
+                try {
+                  const restarted = await api(
+                    "/api/cases/analyze",
+                    {
+                      method: "POST",
+                      body: JSON.stringify({
+                        url: input.value,
+                        reanalyze: true,
+                        reason,
+                      }),
+                    }
+                  );
+
+                  resultBox.innerHTML =
+                    `<div data-live-progress></div>`;
+
+                  bindTaskProgress(restarted.task);
+                } catch (error) {
+                  showToast(
+                    error.detail?.next_action ||
+                    error.message
+                  );
+                  reanalyzeButton.disabled = false;
+                  reanalyzeButton.textContent =
+                    "重新分析";
+                }
+              }
+            );
+          }
         } else {
-          resultBox.innerHTML = `<div data-live-progress></div>`; bindTaskProgress(result.task);
+          resultBox.innerHTML =
+            `<div data-live-progress></div>`;
+          bindTaskProgress(result.task);
         }
       } catch (error) {
         const next = error.detail?.next_action ? `<div class="next-action"><strong>下一步</strong><span>${escapeHtml(error.detail.next_action)}</span></div>` : "";

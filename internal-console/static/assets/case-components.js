@@ -34,13 +34,38 @@ export function progressPanel(task, { compact = false } = {}) {
       <span>${label}</span>
     </li>`;
   }).join("");
+    const mediaDuplicate =
+    failed &&
+    task.error_code === "MEDIA_DUPLICATE_CASE" &&
+    task.payload?.duplicate?.existing_case_id;
+
+  const failureAction = mediaDuplicate
+    ? `<div class="next-action">
+        <strong>这个视频内容已经存在</strong>
+        <span>虽然来源链接不同，但获取到的视频文件与已有案例完全相同。</span>
+        <a class="btn btn-secondary"
+           href="/cases/${encodeURIComponent(
+             task.payload.duplicate.existing_case_id
+           )}"
+           data-route>
+          查看已有案例
+        </a>
+      </div>`
+    : failed
+      ? `<div class="next-action">
+          <strong>下一步</strong>
+          <span>返回添加案例，检查视频链接后重新提交。</span>
+        </div>`
+      : `<p class="progress-note">
+          你可以离开这个页面，任务进度会保留在“任务记录”中。
+        </p>`;
   return `<section class="card task-progress ${compact ? "compact" : ""}" data-task-progress>
     <div class="task-progress-head"><div><h2>${failed ? "案例分析未完成" : terminal ? "分析完成，等待审核" : "案例分析中"}</h2>
       <p>${escapeHtml(failed ? task.error_message || "请稍后重试。" : task.stage || "等待开始")}</p></div>
       <strong>${Number(task.progress || 0)}%</strong></div>
     <div class="progress-track"><span style="width:${Math.max(0, Math.min(100, Number(task.progress || 0)))}%"></span></div>
     <ol class="progress-steps">${stages}</ol>
-    ${failed ? `<div class="next-action"><strong>下一步</strong><span>返回添加案例，检查视频链接后重新提交。</span></div>` : `<p class="progress-note">你可以离开这个页面，任务进度会保留在“任务记录”中。</p>`}
+    ${failureAction}
   </section>`;
 }
 
@@ -102,6 +127,5 @@ export function caseReviewContent(detail, statusPill) {
           <button class="btn btn-quiet btn-wide danger-text" type="button" data-review-action="reject">不收录</button>`}
       </section></aside>
     </section>
-    ${detail.review?.can_review ? `<div class="mobile-review-actions"><button class="btn btn-quiet danger-text" type="button" data-review-action="reject">不收录</button><button class="btn btn-primary" type="button" data-review-action="approve">批准入库</button></div>` : ""}
   </main>`;
 }
