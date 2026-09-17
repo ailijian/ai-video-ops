@@ -544,7 +544,6 @@ def analyze_customer_onboarding(
     created_at: str | None = None,
 ) -> dict[str, Any]:
     request = validate_request(request)
-    timestamp = created_at or now_iso()
 
     root = (
         pipeline_root
@@ -554,128 +553,277 @@ def analyze_customer_onboarding(
         / request["intake_id"]
     )
 
+    intake_path = root / "customer_intake_v1.json"
+    privacy_path = root / "customer_intake_privacy_projection_v1.json"
+    candidates_path = root / "persona_fact_candidates_v1.json"
+    readiness_path = root / "persona_onboarding_readiness_v1.json"
+    audit_path = root / "egress_audit_v1.json"
+    summary_path = root / "customer_onboarding_analysis_v1.json"
+
     raw_answers = build_raw_answers(request)
 
-    intake = build_customer_intake(
-        intake_id=request["intake_id"],
-        intake_type="initial_onboarding",
-        provisional_business_id=request["business_id"],
-        business_ref=None,
-        input_actor="authorized_business_representative",
-        input_sources=[
-            {
-                "source_type": ("internal_console_customer_materials"),
-                "source_ref": (f"{request['business_id']}:" f"{request['intake_id']}"),
-            }
-        ],
-        raw_answers=raw_answers,
-        speaker_selection={
-            "speaker_type": "generic",
-            "selection_status": "deferred",
-        },
-        created_at=timestamp,
-    )
+    # ---------------------------------------------------------
+    # Stage 1 — immutable Raw Customer Intake
+    #
+    # A real retry must reuse the original intake timestamp and
+    # lineage instead of creating a logically different artifact.
+    # ---------------------------------------------------------
 
-    intake_path = root / "customer_intake_v1.json"
-    write_new_or_same(
-        intake_path,
-        intake,
-    )
+    if intake_path.is_file():
+        intake = read_json(intake_path)
 
-    privacy = build_privacy_projection(
-        request,
-        created_at=timestamp,
-    )
+        if (
+            intake.get("intake_id") != request["intake_id"]
+            or intake.get("provisional_business_id") != request["business_id"]
+        ):
+            raise CustomerOnboardingError(
+                "ONBOARDING_ARTIFACT_CONFLICT",
+                ("Existing Customer Intake identity " "does not match this request."),
+            )
 
-    privacy_path = root / "customer_intake_privacy_projection_v1.json"
+        expected_raw_sha = sha256_json(raw_answers)
 
-    write_new_or_same(
-        privacy_path,
-        privacy,
-    )
+        actual_raw_sha = intake.get(
+            "raw_input_contract",
+            {},
+        ).get("raw_answers_sha256")
+
+        if actual_raw_sha != expected_raw_sha:
+            raise CustomerOnboardingError(
+                "ONBOARDING_ARTIFACT_CONFLICT",
+                (
+                    "The same intake_id cannot "
+                    "silently replace its immutable "
+                    "Customer Input."
+                ),
+            )
+
+        timestamp = str(intake.get("created_at") or "")
+
+        if not timestamp:
+            raise CustomerOnboardingError(
+                "ONBOARDING_ARTIFACT_INVALID",
+                ("Existing Customer Intake " "has no created_at."),
+            )
+
+    else:
+        timestamp = created_at or now_iso()
+
+        intake = build_customer_intake(
+            intake_id=request["intake_id"],
+            intake_type="initial_onboarding",
+            provisional_business_id=(request["business_id"]),
+            business_ref=None,
+            input_actor=("authorized_business_representative"),
+            input_sources=[
+                {
+                    "source_type": ("internal_console_" "customer_materials"),
+                    "source_ref": (
+                        f"{request['business_id']}:" f"{request['intake_id']}"
+                    ),
+                }
+            ],
+            raw_answers=raw_answers,
+            speaker_selection={
+                "speaker_type": "generic",
+                "selection_status": "deferred",
+            },
+            created_at=timestamp,
+        )
+
+        write_new_or_same(
+            intake_path,
+            intake,
+        )
+
+    # A completed immutable operation is directly recoverable.
+    # The raw-input lineage above was validated first, so changed
+    # input can never use this fast path.
+    if summary_path.is_file():
+        summary = read_json(summary_path)
+
+        if (
+            summary.get("business_id") != request["business_id"]
+            or summary.get("intake_id") != request["intake_id"]
+        ):
+            raise CustomerOnboardingError(
+                "ONBOARDING_ARTIFACT_CONFLICT",
+                ("Existing onboarding summary " "does not match this request."),
+            )
+
+        return summary
+
+    # ---------------------------------------------------------
+    # Stage 2 — Privacy Projection
+    # ---------------------------------------------------------
+
+    if privacy_path.is_file():
+        privacy = read_json(privacy_path)
+
+        if (
+            privacy.get("business_id") != request["business_id"]
+            or privacy.get("intake_id") != request["intake_id"]
+            or (privacy.get("source") or {}).get("raw_materials_sha256")
+            != sha256_text(request["materials"])
+        ):
+            raise CustomerOnboardingError(
+                "ONBOARDING_ARTIFACT_CONFLICT",
+                (
+                    "Existing privacy projection "
+                    "does not match the immutable "
+                    "Customer Input."
+                ),
+            )
+    else:
+        privacy = build_privacy_projection(
+            request,
+            created_at=timestamp,
+        )
+
+        write_new_or_same(
+            privacy_path,
+            privacy,
+        )
 
     prompt = build_prompt(privacy)
 
     egress_audit = build_egress_audit(
         safe_input=privacy["projection"],
         rendered_prompt=prompt,
-        privacy_context={"privacy_projection_sha256": sha256_json(privacy)},
+        privacy_context={"privacy_projection_sha256": (sha256_json(privacy))},
     )
 
     deterministic = extract_initial_fact_candidates(intake)
 
-    if extractor is None:
-        extracted = extract_remote_facts(
-            privacy,
-        )
+    # ---------------------------------------------------------
+    # Stage 3 — AI Fact Candidates
+    #
+    # This is the important recovery checkpoint:
+    # once the candidate artifact exists, never call the remote
+    # model again merely because the process/app restarted.
+    # ---------------------------------------------------------
+
+    candidates_preexisting = candidates_path.is_file()
+
+    if candidates_preexisting:
+        candidates = read_json(candidates_path)
+
+        candidate_intake_ref = candidates.get("intake_ref") or {}
+
+        if candidate_intake_ref.get("intake_id") != request[
+            "intake_id"
+        ] or candidate_intake_ref.get("raw_answers_sha256") != (
+            intake.get(
+                "raw_input_contract",
+                {},
+            ).get("raw_answers_sha256")
+        ):
+            raise CustomerOnboardingError(
+                "ONBOARDING_ARTIFACT_CONFLICT",
+                (
+                    "Existing Fact Candidates "
+                    "do not match this immutable "
+                    "Customer Intake."
+                ),
+            )
+
+        extracted = {
+            "model": ("recovered_existing_candidates"),
+            "usage": {},
+        }
+
     else:
-        extracted = extractor(privacy)
+        if extractor is None:
+            extracted = extract_remote_facts(
+                privacy,
+            )
+        else:
+            extracted = extractor(privacy)
 
-    if not isinstance(extracted, dict):
-        raise CustomerOnboardingError(
-            "FACT_EXTRACTION_INVALID_RESULT",
-            "Extractor must return a JSON object.",
+        if not isinstance(
+            extracted,
+            dict,
+        ):
+            raise CustomerOnboardingError(
+                "FACT_EXTRACTION_INVALID_RESULT",
+                ("Extractor must return " "a JSON object."),
+            )
+
+        candidates = build_ai_candidates(
+            intake=intake,
+            deterministic_candidates=(deterministic),
+            extracted=extracted,
+            raw_materials=(request["materials"]),
+            safe_materials=(privacy["projection"]["materials_safe_semantic"]),
         )
 
-    candidates = build_ai_candidates(
-        intake=intake,
-        deterministic_candidates=deterministic,
-        extracted=extracted,
-        raw_materials=request["materials"],
-        safe_materials=privacy["projection"]["materials_safe_semantic"],
-    )
+        write_new_or_same(
+            candidates_path,
+            candidates,
+        )
 
-    candidates_path = root / "persona_fact_candidates_v1.json"
+    # ---------------------------------------------------------
+    # Stage 4 — Readiness
+    # ---------------------------------------------------------
 
-    write_new_or_same(
-        candidates_path,
-        candidates,
-    )
+    if readiness_path.is_file():
+        readiness = read_json(readiness_path)
+    else:
+        readiness = assess_persona_onboarding_readiness(
+            intake,
+            candidates,
+            created_at=timestamp,
+        )
 
-    readiness = assess_persona_onboarding_readiness(
-        intake,
-        candidates,
-        created_at=timestamp,
-    )
+        write_new_or_same(
+            readiness_path,
+            readiness,
+        )
 
-    readiness_path = root / "persona_onboarding_readiness_v1.json"
+    # ---------------------------------------------------------
+    # Stage 5 — Egress Audit
+    #
+    # If a crash happened after the Candidate checkpoint but
+    # before this audit was written, recovery records that the
+    # existing Candidate artifact was reused instead of claiming
+    # a second remote call.
+    # ---------------------------------------------------------
 
-    write_new_or_same(
-        readiness_path,
-        readiness,
-    )
+    if not audit_path.is_file():
+        audit = {
+            "schema_version": ("customer-intake-" "egress-audit-v1.0"),
+            "business_id": (request["business_id"]),
+            "intake_id": (request["intake_id"]),
+            "created_at": timestamp,
+            "privacy_policy_version": (PRIVACY_POLICY_VERSION),
+            **egress_audit,
+            "model": extracted.get(
+                "model",
+                "test-extractor",
+            ),
+            "usage": extracted.get(
+                "usage",
+                {},
+            ),
+            "raw_customer_input_sent_directly": (False),
+            "recovered_from_existing_candidates": (candidates_preexisting),
+        }
 
-    audit = {
-        "schema_version": "customer-intake-egress-audit-v1.0",
-        "business_id": request["business_id"],
-        "intake_id": request["intake_id"],
-        "created_at": timestamp,
-        "privacy_policy_version": PRIVACY_POLICY_VERSION,
-        **egress_audit,
-        "model": extracted.get(
-            "model",
-            "test-extractor",
-        ),
-        "usage": extracted.get(
-            "usage",
-            {},
-        ),
-        "raw_customer_input_sent_directly": False,
-    }
+        write_new_or_same(
+            audit_path,
+            audit,
+        )
 
-    audit_path = root / "egress_audit_v1.json"
-
-    write_new_or_same(
-        audit_path,
-        audit,
-    )
+    # ---------------------------------------------------------
+    # Stage 6 — Completed Operation Summary
+    # ---------------------------------------------------------
 
     summary = {
         "schema_version": SCHEMA_VERSION,
-        "operation_version": OPERATION_VERSION,
-        "business_id": request["business_id"],
-        "intake_id": request["intake_id"],
-        "status": "awaiting_fact_review",
+        "operation_version": (OPERATION_VERSION),
+        "business_id": (request["business_id"]),
+        "intake_id": (request["intake_id"]),
+        "status": ("awaiting_fact_review"),
         "created_at": timestamp,
         "artifacts": {
             "customer_intake_v1": str(intake_path.resolve()),
@@ -684,26 +832,26 @@ def analyze_customer_onboarding(
             "readiness_v1": str(readiness_path.resolve()),
             "egress_audit_v1": str(audit_path.resolve()),
         },
-        "candidate_summary": candidates["summary"],
+        "candidate_summary": (candidates["summary"]),
         "readiness": {
             "status": readiness.get("status"),
-            "critical_missing_truth": readiness.get(
-                "critical_missing_truth",
-                [],
+            "critical_missing_truth": (
+                readiness.get(
+                    "critical_missing_truth",
+                    [],
+                )
             ),
         },
         "authority": {
-            "raw_input_is_customer_truth": False,
-            "fact_candidates_are_customer_truth": False,
+            "raw_input_is_customer_truth": (False),
+            "fact_candidates_are_customer_truth": (False),
             "persona_created": False,
             "persona_approved": False,
             "human_review_required": True,
             "case_sources_consumed": False,
         },
-        "next_action": "REVIEW_CUSTOMER_FACTS",
+        "next_action": ("REVIEW_CUSTOMER_FACTS"),
     }
-
-    summary_path = root / "customer_onboarding_analysis_v1.json"
 
     write_new_or_same(
         summary_path,

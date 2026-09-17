@@ -227,3 +227,78 @@ def test_same_intake_cannot_silently_change_raw_materials(
         assert exc.code == "ONBOARDING_ARTIFACT_CONFLICT"
     else:
         raise AssertionError("Changing immutable intake input must fail closed.")
+
+
+def test_partial_real_retry_reuses_existing_candidates_without_remote_recall(
+    tmp_path: Path,
+):
+    request = build_request()
+
+    first_calls = {
+        "count": 0,
+    }
+
+    def first_extractor(
+        payload: dict,
+    ):
+        first_calls["count"] += 1
+        return fixture_extractor(payload)
+
+    first = module.analyze_customer_onboarding(
+        request=request,
+        pipeline_root=tmp_path,
+        extractor=first_extractor,
+    )
+
+    assert first_calls["count"] == 1
+
+    root = (
+        tmp_path
+        / "data"
+        / "customer_intakes"
+        / request["business_id"]
+        / request["intake_id"]
+    )
+
+    candidate_path = root / "persona_fact_candidates_v1.json"
+
+    before_candidate_bytes = candidate_path.read_bytes()
+
+    # Simulate a real process crash after the expensive AI
+    # Candidate checkpoint but before later artifacts/summary
+    # were durably completed.
+    for name in (
+        "persona_onboarding_readiness_v1.json",
+        "egress_audit_v1.json",
+        "customer_onboarding_analysis_v1.json",
+    ):
+        path = root / name
+
+        if path.exists():
+            path.unlink()
+
+    def remote_must_not_run_again(
+        _: dict,
+    ):
+        raise AssertionError(
+            (
+                "A recovered onboarding run "
+                "must reuse the existing "
+                "Fact Candidate checkpoint "
+                "instead of recalling the model."
+            )
+        )
+
+    second = module.analyze_customer_onboarding(
+        request=request,
+        pipeline_root=tmp_path,
+        extractor=remote_must_not_run_again,
+    )
+
+    assert second["status"] == "awaiting_fact_review"
+
+    assert candidate_path.read_bytes() == before_candidate_bytes
+
+    audit = json.loads((root / "egress_audit_v1.json").read_text(encoding="utf-8"))
+
+    assert audit["recovered_from_existing_candidates"] is True
