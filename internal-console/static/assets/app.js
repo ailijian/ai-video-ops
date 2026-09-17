@@ -1,6 +1,8 @@
 import { createApiClient } from "./api-client.js";
 import { createCaseViews } from "./case-views.js";
+import { createCustomerViews } from "./customer-views.js";
 import { progressPanel } from "./case-components.js";
+import { customerProgressPanel } from "./customer-components.js";
 import { matchWorkflowRoute } from "./routes.js";
 
 const app = document.querySelector("#app");
@@ -317,7 +319,7 @@ async function renderWorkbench() {
           <div class="section-head"><div><h2>快捷开始</h2><p>从常用生产入口继续</p></div></div>
           <div class="quick-grid">
             <a class="card quick-card" href="/cases/new" data-route><span class="quick-icon">${icons.link}</span><div><strong>添加案例</strong><span>粘贴真实视频链接</span></div></a>
-            <a class="card quick-card" href="/customers" data-route><span class="quick-icon">${icons.customers}</span><div><strong>新建客户</strong><span>整理已有客户资料</span></div></a>
+            <a class="card quick-card" href="/customers/new" data-route><span class="quick-icon">${icons.customers}</span><div><strong>新建客户</strong><span>整理已有客户资料</span></div></a>
             <a class="card quick-card" href="/create" data-route><span class="quick-icon">${icons.create}</span><div><strong>开始视频创作</strong><span>选择客户与出镜人</span></div></a>
           </div>
         </section>
@@ -347,8 +349,12 @@ async function renderTasks() {
   try {
     const data = await api("/api/tasks");
     const content = data.tasks.length ? `<div class="task-list">${data.tasks.map((task) => `
-      <article class="task-list-item">${progressPanel(task, { compact: true })}<a class="inline-link" href="/tasks/${encodeURIComponent(task.task_id)}" data-route><span>查看任务</span><span aria-hidden="true">›</span></a></article>`).join("")}</div>` : `
-      <section class="card empty-state"><div class="empty-icon">${icons.tasks}</div><h2>暂时没有任务</h2><p>新的案例分析和视频创作都会出现在这里。</p><a class="btn btn-secondary" href="/cases/new" data-route>添加案例</a></section>`;
+      <article class="task-list-item">${
+  task.task_type === "customer_analysis"
+    ? customerProgressPanel(task, { compact: true })
+    : progressPanel(task, { compact: true })
+}<a class="inline-link" href="/tasks/${encodeURIComponent(task.task_id)}" data-route><span>查看任务</span><span aria-hidden="true">›</span></a></article>`).join("")}</div>` : `
+      <section class="card empty-state"><div class="empty-icon">${icons.tasks}</div><h2>暂时没有任务</h2><p>案例分析、客户信息分析和视频创作都会出现在这里。</p><a class="btn btn-secondary" href="/cases/new" data-route>添加案例</a></section>`;
     app.innerHTML = shell("任务记录", `<main class="page">${pageHeading("任务", "任务记录", "这里显示执行进度；案例是否入库仍以人工审核结果为准。")}${content}</main>`);
     bindCommonActions();
   } catch (error) {
@@ -406,9 +412,42 @@ const caseViews = createCaseViews({
   renderLoadError,
 });
 
+const customerViews = createCustomerViews({
+  app,
+  api,
+  navigate,
+  shell,
+  bindCommonActions,
+  pageHeading,
+  skeletonPage,
+  showToast,
+  renderLoadError,
+});
+
+async function renderTaskDetail(taskId) {
+  skeletonPage("任务进度");
+
+  try {
+    const payload = await api(
+      `/api/tasks/${encodeURIComponent(taskId)}`,
+    );
+
+    if (payload.task.task_type === "customer_analysis") {
+      return customerViews.renderCustomerTaskDetail(
+        payload.task,
+      );
+    }
+
+    return caseViews.renderTaskDetail(taskId);
+  } catch (error) {
+    renderLoadError("任务暂时无法读取", error);
+  }
+}
+
 async function renderRoute() {
   const path = location.pathname.replace(/\/+$/, "") || "/";
   caseViews.stopTaskPolling();
+customerViews.stopTaskPolling();
   if (!state.user) {
     if (path !== "/login") return navigate("/login", true);
     return renderLogin();
@@ -422,12 +461,24 @@ async function renderRoute() {
   if (path === "/cases") return caseViews.renderCases();
   if (path === "/cases/new") return caseViews.renderCaseNew();
   if (path === "/tasks") return renderTasks();
-  if (path === "/customers") return renderPlaceholder("customers");
+  if (path === "/customers") return customerViews.renderCustomers();
+if (path === "/customers/new") return customerViews.renderCustomerNew();
   if (path === "/create") return renderPlaceholder("create");
   const workflowRoute = matchWorkflowRoute(path);
-  if (workflowRoute?.name === "case-detail") return caseViews.renderCaseDetail(workflowRoute.value);
-  if (workflowRoute?.name === "task-detail") return caseViews.renderTaskDetail(workflowRoute.value);
-  return navigate("/workbench", true);
+  if (workflowRoute?.name === "case-detail") {
+    return caseViews.renderCaseDetail(workflowRoute.value);
+  }
+  if (workflowRoute?.name === "customer-edit") {
+    return customerViews.renderCustomerEdit(
+      workflowRoute.value,
+    );
+  }
+  if (workflowRoute?.name === "customer-detail") {
+    return customerViews.renderCustomerDetail(workflowRoute.value);
+  }
+  if (workflowRoute?.name === "task-detail") {
+    return renderTaskDetail(workflowRoute.value);
+  }
 }
 
 async function bootstrap() {

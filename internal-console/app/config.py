@@ -19,6 +19,7 @@ class Settings:
     secure_cookies: bool = False
     status_timeout_seconds: int = 30
     case_analysis_worker_enabled: bool = True
+    customer_analysis_worker_enabled: bool = True
     default_business_id: str = "shufang_zhiyuan_community_canteen"
 
     @classmethod
@@ -41,9 +42,18 @@ class Settings:
             session_cookie_name=os.environ.get("AIVO_SESSION_COOKIE", "aivo_session"),
             session_hours=int(os.environ.get("AIVO_SESSION_HOURS", "12")),
             secure_cookies=os.environ.get("AIVO_SECURE_COOKIES", "0") == "1",
-            status_timeout_seconds=int(os.environ.get("AIVO_STATUS_TIMEOUT_SECONDS", "30")),
+            status_timeout_seconds=int(
+                os.environ.get("AIVO_STATUS_TIMEOUT_SECONDS", "30")
+            ),
             case_analysis_worker_enabled=(
                 os.environ.get("AIVO_CASE_ANALYSIS_WORKER", "1") == "1"
+            ),
+            customer_analysis_worker_enabled=(
+                os.environ.get(
+                    "AIVO_CUSTOMER_ANALYSIS_WORKER",
+                    "1",
+                )
+                == "1"
             ),
             default_business_id=os.environ.get(
                 "AIVO_DEFAULT_BUSINESS_ID", "shufang_zhiyuan_community_canteen"

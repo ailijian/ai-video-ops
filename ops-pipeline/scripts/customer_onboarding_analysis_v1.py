@@ -30,7 +30,7 @@ from privacy_projection_v1 import (
 
 SCHEMA_VERSION = "customer-onboarding-analysis-v1.0"
 OPERATION_VERSION = "customer_onboarding_analysis_v1.py@1.0"
-DEFAULT_MODEL = "deepseek-v4-flash"
+ENV_PATH = Path(__file__).resolve().parents[1] / ".env"
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,127}$")
 
@@ -320,17 +320,73 @@ def build_prompt(
 """.strip()
 
 
-def get_client() -> OpenAI:
-    key = os.getenv("DEEPSEEK_API_KEY")
-
-    if not key:
+def load_runtime_env(
+    path: Path = ENV_PATH,
+) -> dict[str, str]:
+    if not path.is_file():
         raise CustomerOnboardingError(
-            "DEEPSEEK_API_KEY_REQUIRED",
-            "DEEPSEEK_API_KEY is required for customer fact extraction.",
+            "PIPELINE_ENV_NOT_FOUND",
+            f"Pipeline env file not found: {path}",
         )
 
+    values: dict[str, str] = {}
+
+    for raw_line in path.read_text(encoding="utf-8-sig").splitlines():
+        line = raw_line.strip()
+
+        if not line or line.startswith("#"):
+            continue
+
+        if line.startswith("export "):
+            line = line[7:].lstrip()
+
+        if "=" not in line:
+            continue
+
+        key, value = line.split(
+            "=",
+            1,
+        )
+
+        key = key.strip()
+        value = value.strip()
+
+        if len(value) >= 2 and value[0] in {'"', "'"} and value[-1] == value[0]:
+            value = value[1:-1]
+
+        if key:
+            values[key] = value
+
+    return values
+
+
+def load_deepseek_runtime_config() -> tuple[str, str]:
+    values = load_runtime_env()
+
+    api_key = str(values.get("DEEPSEEK_API_KEY") or "").strip()
+
+    model = str(values.get("DEEPSEEK_MODEL") or "").strip()
+
+    if not api_key:
+        raise CustomerOnboardingError(
+            "DEEPSEEK_API_KEY_REQUIRED",
+            ("DEEPSEEK_API_KEY is missing " "from ops-pipeline/.env."),
+        )
+
+    if not model:
+        raise CustomerOnboardingError(
+            "DEEPSEEK_MODEL_REQUIRED",
+            ("DEEPSEEK_MODEL is missing " "from ops-pipeline/.env."),
+        )
+
+    return api_key, model
+
+
+def get_client(
+    api_key: str,
+) -> OpenAI:
     return OpenAI(
-        api_key=key,
+        api_key=api_key,
         base_url="https://api.deepseek.com",
         timeout=180.0,
         max_retries=0,
@@ -339,14 +395,14 @@ def get_client() -> OpenAI:
 
 def extract_remote_facts(
     safe_payload: dict[str, Any],
-    *,
-    model: str = DEFAULT_MODEL,
 ) -> dict[str, Any]:
     prompt = build_prompt(safe_payload)
 
     assert_safe_for_external_model(prompt)
 
-    client = get_client()
+    api_key, model = load_deepseek_runtime_config()
+
+    client = get_client(api_key)
 
     response = client.chat.completions.create(
         model=model,

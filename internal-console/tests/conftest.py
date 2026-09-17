@@ -25,6 +25,7 @@ def settings(tmp_path: Path) -> Settings:
         secure_cookies=False,
         status_timeout_seconds=30,
         case_analysis_worker_enabled=False,
+        customer_analysis_worker_enabled=False,
     )
 
 

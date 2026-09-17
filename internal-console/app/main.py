@@ -36,6 +36,22 @@ from .canonical_gateway import (
     record_case_review_decision,
     source_case_id,
 )
+from .customer_gateway import (
+    approve_business_persona,
+    customer_attention_count,
+    get_customer_detail,
+    get_customer_input,
+    list_customers,
+    prepare_customer_onboarding_request,
+    prepare_customer_reanalysis_request,
+    review_customer_facts,
+)
+from .customer_task_service import (
+    CustomerTaskRunner,
+    create_customer_task,
+    find_active_customer_task,
+    mark_customer_task_reviewed,
+)
 from .config import Settings
 from .database import apply_migrations
 from .task_service import (
@@ -68,6 +84,53 @@ class CaseAnalysisRequest(BaseModel):
 class CaseReviewRequest(BaseModel):
     decision: Literal["reject", "reanalyze", "approve"]
     reason: str = Field(default="", max_length=1000)
+
+
+class CustomerAnalysisRequest(BaseModel):
+    customer_name: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+    industry: str = Field(
+        min_length=1,
+        max_length=120,
+    )
+    materials: str = Field(
+        min_length=1,
+        max_length=50000,
+    )
+
+
+class CustomerFactDecision(BaseModel):
+    candidate_id: str = Field(
+        min_length=1,
+        max_length=256,
+    )
+    decision: Literal[
+        "approve",
+        "reject",
+        "edit",
+    ]
+    edited_value: Any | None = None
+    note: str = Field(
+        default="",
+        max_length=1000,
+    )
+
+
+class CustomerFactReviewRequest(BaseModel):
+    decisions: list[CustomerFactDecision]
+    note: str = Field(
+        default="",
+        max_length=2000,
+    )
+
+
+class CustomerPersonaApprovalRequest(BaseModel):
+    note: str = Field(
+        default="",
+        max_length=2000,
+    )
 
 
 class LoginThrottle:
@@ -113,14 +176,18 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     static_path = settings.console_root / "static"
     index_path = static_path / "index.html"
     task_runner = CaseTaskRunner(settings)
+    customer_task_runner = CustomerTaskRunner(settings)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         apply_migrations(settings.database_path, migrations_path)
         task_runner.start()
+        customer_task_runner.start()
+
         try:
             yield
         finally:
+            customer_task_runner.close()
             task_runner.close()
 
     app = FastAPI(
@@ -328,7 +395,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 "case_reviews": sum(
                     case["status"] == "awaiting_review" for case in cases
                 ),
-                "persona_reviews": 0,
+                "persona_reviews": customer_attention_count(settings),
                 "content_reviews": sum(
                     task["task_type"] == "content_generation"
                     and task["status"] == "awaiting_review"
@@ -340,6 +407,362 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             },
             "recent_tasks": tasks[:5],
             "capabilities": {"case_analysis": case_analysis_capability()},
+        }
+
+    @app.get("/api/customers")
+    def customers(
+        _: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        projected = list_customers(settings)
+
+        customer_tasks = {
+            task["subject_ref"]: task
+            for task in list_tasks(
+                settings.database_path,
+                limit=100,
+            )
+            if (task["task_type"] == "customer_analysis")
+        }
+
+        for customer in projected:
+            task = customer_tasks.get(customer["business_id"])
+
+            if task is None:
+                continue
+
+            customer["task"] = task
+
+            if task["status"] in {
+                "queued",
+                "running",
+            }:
+                customer["status"] = "analyzing"
+
+            elif (
+                task["status"] == "failed" and customer["status"] == "analysis_pending"
+            ):
+                customer["status"] = "failed"
+
+        return {
+            "customers": projected,
+        }
+
+    @app.post("/api/customers/analyze")
+    def analyze_customer(
+        payload: CustomerAnalysisRequest,
+        x_csrf_token: str | None = Header(
+            default=None,
+            alias="X-CSRF-Token",
+        ),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(
+            session,
+            x_csrf_token,
+        )
+
+        prepared = prepare_customer_onboarding_request(
+            settings,
+            customer_name=(payload.customer_name),
+            industry=payload.industry,
+            materials=payload.materials,
+        )
+
+        business_id = prepared["business_id"]
+
+        active = find_active_customer_task(
+            settings.database_path,
+            business_id,
+        )
+
+        if active is not None:
+            return {
+                "duplicate": True,
+                "business_id": business_id,
+                "state": (
+                    "awaiting_review"
+                    if active["status"] == "awaiting_review"
+                    else "running"
+                ),
+                "existing_task": active,
+                "existing_customer": (
+                    prepared.get("existing_customer")
+                    or get_customer_detail(
+                        settings,
+                        business_id,
+                    )
+                ),
+            }
+
+        if prepared.get("duplicate"):
+            existing = prepared.get("existing_customer") or get_customer_detail(
+                settings,
+                business_id,
+            )
+
+            # Durable request exists, but task projection
+            # may have been lost. Resume from canonical input.
+            if existing.get("status") == "analysis_pending" and prepared.get(
+                "request_path"
+            ):
+                task = create_customer_task(
+                    settings.database_path,
+                    business_id=business_id,
+                    intake_id=(prepared.get("intake_id") or "intake_0001"),
+                    request_path=prepared["request_path"],
+                    customer_name=(existing["display_name"]),
+                    industry=(existing["industry"]),
+                )
+
+                customer_task_runner.schedule(task["task_id"])
+
+                return {
+                    "duplicate": False,
+                    "resumed": True,
+                    "business_id": (business_id),
+                    "task": task,
+                }
+
+            return {
+                "duplicate": True,
+                "business_id": business_id,
+                "state": existing["status"],
+                "existing_customer": (existing),
+            }
+
+        task = create_customer_task(
+            settings.database_path,
+            business_id=business_id,
+            intake_id=prepared["intake_id"],
+            request_path=prepared["request_path"],
+            customer_name=prepared["customer_name"],
+            industry=prepared["industry"],
+        )
+
+        customer_task_runner.schedule(task["task_id"])
+
+        return {
+            "duplicate": False,
+            "business_id": business_id,
+            "task": task,
+            "next_action": ("客户信息正在后台分析，" "可以离开页面后再回来继续。"),
+        }
+
+    @app.post("/api/customers/{business_id}/reanalyze")
+    def reanalyze_customer(
+        business_id: str,
+        payload: CustomerAnalysisRequest,
+        x_csrf_token: str | None = Header(
+            default=None,
+            alias="X-CSRF-Token",
+        ),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(
+            session,
+            x_csrf_token,
+        )
+
+        active = find_active_customer_task(
+            settings.database_path,
+            business_id,
+        )
+
+        if active is not None:
+            return {
+                "reanalyze": False,
+                "existing_task": active,
+            }
+
+        prepared = prepare_customer_reanalysis_request(
+            settings,
+            business_id=business_id,
+            customer_name=(payload.customer_name),
+            industry=(payload.industry),
+            materials=(payload.materials),
+        )
+
+        task = create_customer_task(
+            settings.database_path,
+            business_id=business_id,
+            intake_id=prepared["intake_id"],
+            request_path=prepared["request_path"],
+            customer_name=(prepared["customer_name"]),
+            industry=prepared["industry"],
+        )
+
+        customer_task_runner.schedule(task["task_id"])
+
+        return {
+            "reanalyze": True,
+            "new_intake": (
+                not prepared.get(
+                    "same_input",
+                    False,
+                )
+            ),
+            "intake_id": (prepared["intake_id"]),
+            "task": task,
+        }
+
+    @app.post("/api/customers/{business_id}/retry")
+    def retry_customer_analysis(
+        business_id: str,
+        x_csrf_token: str | None = Header(
+            default=None,
+            alias="X-CSRF-Token",
+        ),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(
+            session,
+            x_csrf_token,
+        )
+
+        active = find_active_customer_task(
+            settings.database_path,
+            business_id,
+        )
+
+        if active is not None:
+            return {
+                "resumed": False,
+                "existing_task": active,
+            }
+
+        source = get_customer_input(
+            settings,
+            business_id,
+        )
+
+        task = create_customer_task(
+            settings.database_path,
+            business_id=business_id,
+            intake_id=source["intake_id"],
+            request_path=source["request_path"],
+            customer_name=source["customer_name"],
+            industry=source["industry"],
+        )
+
+        customer_task_runner.schedule(task["task_id"])
+
+        return {
+            "resumed": True,
+            "task": task,
+        }
+
+    @app.get("/api/customers/{business_id}/input")
+    def customer_input(
+        business_id: str,
+        _: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        return {
+            "input": get_customer_input(
+                settings,
+                business_id,
+            )
+        }
+
+    @app.get("/api/customers/{business_id}")
+    def customer_detail(
+        business_id: str,
+        _: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        detail = get_customer_detail(
+            settings,
+            business_id,
+        )
+
+        latest_task = next(
+            (
+                task
+                for task in list_tasks(
+                    settings.database_path,
+                    limit=100,
+                )
+                if (
+                    task["task_type"] == "customer_analysis"
+                    and task["subject_ref"] == business_id
+                )
+            ),
+            None,
+        )
+
+        if latest_task is not None:
+            detail["task"] = latest_task
+
+            if latest_task["status"] in {
+                "queued",
+                "running",
+            }:
+                detail["status"] = "analyzing"
+
+            elif (
+                latest_task["status"] == "failed"
+                and detail["status"] == "analysis_pending"
+            ):
+                detail["status"] = "failed"
+
+        return detail
+
+    @app.post("/api/customers/{business_id}/facts/review")
+    def review_customer_fact_candidates(
+        business_id: str,
+        payload: CustomerFactReviewRequest,
+        x_csrf_token: str | None = Header(
+            default=None,
+            alias="X-CSRF-Token",
+        ),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(
+            session,
+            x_csrf_token,
+        )
+
+        result = review_customer_facts(
+            settings,
+            business_id=business_id,
+            decisions=[
+                item.model_dump(exclude_none=True) for item in (payload.decisions)
+            ],
+            reviewer=str(session.user["phone"]),
+            note=payload.note,
+        )
+
+        mark_customer_task_reviewed(
+            settings.database_path,
+            business_id,
+        )
+
+        return {
+            "review": result,
+        }
+
+    @app.post("/api/customers/{business_id}/persona/approve")
+    def approve_customer_persona(
+        business_id: str,
+        payload: CustomerPersonaApprovalRequest,
+        x_csrf_token: str | None = Header(
+            default=None,
+            alias="X-CSRF-Token",
+        ),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(
+            session,
+            x_csrf_token,
+        )
+
+        detail = approve_business_persona(
+            settings,
+            business_id=business_id,
+            reviewer=str(session.user["phone"]),
+            note=payload.note,
+        )
+
+        return {
+            "customer": detail,
         }
 
     @app.get("/api/cases")
