@@ -26,6 +26,7 @@ def settings(tmp_path: Path) -> Settings:
         status_timeout_seconds=30,
         case_analysis_worker_enabled=False,
         customer_analysis_worker_enabled=False,
+        speaker_analysis_worker_enabled=False,
     )
 
 

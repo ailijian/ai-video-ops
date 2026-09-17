@@ -20,6 +20,7 @@ class Settings:
     status_timeout_seconds: int = 30
     case_analysis_worker_enabled: bool = True
     customer_analysis_worker_enabled: bool = True
+    speaker_analysis_worker_enabled: bool = True
     default_business_id: str = "shufang_zhiyuan_community_canteen"
 
     @classmethod
@@ -51,6 +52,13 @@ class Settings:
             customer_analysis_worker_enabled=(
                 os.environ.get(
                     "AIVO_CUSTOMER_ANALYSIS_WORKER",
+                    "1",
+                )
+                == "1"
+            ),
+            speaker_analysis_worker_enabled=(
+                os.environ.get(
+                    "AIVO_SPEAKER_ANALYSIS_WORKER",
                     "1",
                 )
                 == "1"

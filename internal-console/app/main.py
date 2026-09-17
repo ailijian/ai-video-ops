@@ -62,6 +62,83 @@ from .task_service import (
     list_tasks,
     mark_task_reviewed,
 )
+from .speaker_gateway import (
+    approve_speaker_persona,
+    get_speaker_detail,
+    list_speakers,
+    prepare_speaker_onboarding_request,
+    review_speaker_facts,
+    speaker_attention_count,
+)
+
+from .speaker_task_service import (
+    SpeakerTaskRunner,
+    create_speaker_task,
+    find_active_speaker_task,
+    mark_speaker_task_reviewed,
+)
+
+
+class SpeakerAnalysisRequest(BaseModel):
+    speaker_name: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+
+    public_role: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+
+    speaker_type: Literal[
+        "owner_founder",
+        "frontline_expert",
+        "brand",
+        "generic",
+    ]
+
+    materials: str = Field(
+        min_length=1,
+        max_length=50000,
+    )
+
+    forbidden_claims: list[str]
+
+
+class SpeakerFactDecision(BaseModel):
+    candidate_id: str = Field(
+        min_length=1,
+        max_length=256,
+    )
+
+    decision: Literal[
+        "approve",
+        "reject",
+        "edit",
+    ]
+
+    edited_value: Any | None = None
+
+    note: str = Field(
+        default="",
+        max_length=1000,
+    )
+
+
+class SpeakerFactReviewRequest(BaseModel):
+    decisions: list[SpeakerFactDecision]
+
+    note: str = Field(
+        default="",
+        max_length=2000,
+    )
+
+
+class SpeakerPersonaApprovalRequest(BaseModel):
+    note: str = Field(
+        default="",
+        max_length=2000,
+    )
 
 
 class LoginRequest(BaseModel):
@@ -177,16 +254,20 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     index_path = static_path / "index.html"
     task_runner = CaseTaskRunner(settings)
     customer_task_runner = CustomerTaskRunner(settings)
+    speaker_task_runner = SpeakerTaskRunner(settings)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         apply_migrations(settings.database_path, migrations_path)
         task_runner.start()
         customer_task_runner.start()
+        speaker_task_runner.start()
 
         try:
             yield
+
         finally:
+            speaker_task_runner.close()
             customer_task_runner.close()
             task_runner.close()
 
@@ -382,6 +463,286 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             settings, business_id or settings.default_business_id
         )
 
+    @app.get("/api/customers/{business_id}/speakers")
+    def customer_speakers(
+        business_id: str,
+        _: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        customer = get_customer_detail(
+            settings,
+            business_id,
+        )
+
+        business_persona = customer.get("business_persona") or {}
+
+        business_persona_approved = business_persona.get("approved") is True
+
+        if not business_persona_approved:
+            return {
+                "speakers": [],
+                "can_add_speaker": False,
+                "blocker": "BUSINESS_PERSONA_NOT_APPROVED",
+            }
+
+        speakers = list_speakers(
+            settings,
+            business_id,
+        )
+
+        tasks_by_speaker = {
+            task["subject_ref"]: task
+            for task in list_tasks(
+                settings.database_path,
+                limit=100,
+            )
+            if (
+                task["task_type"] == "speaker_analysis"
+                and (task.get("payload", {}).get("business_id") == business_id)
+            )
+        }
+
+        for speaker in speakers:
+            task = tasks_by_speaker.get(speaker["speaker_id"])
+
+            if task is None:
+                continue
+
+            speaker["task"] = task
+
+            if task["status"] in {
+                "queued",
+                "running",
+            }:
+                speaker["status"] = "analyzing"
+
+            elif task["status"] == "failed" and speaker["status"] == "analysis_pending":
+                speaker["status"] = "failed"
+
+        return {
+            "speakers": speakers,
+            "can_add_speaker": True,
+            "blocker": None,
+        }
+
+    @app.post("/api/customers/{business_id}/speakers/analyze")
+    def analyze_speaker(
+        business_id: str,
+        payload: SpeakerAnalysisRequest,
+        x_csrf_token: str | None = Header(
+            default=None,
+            alias="X-CSRF-Token",
+        ),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(
+            session,
+            x_csrf_token,
+        )
+
+        prepared = prepare_speaker_onboarding_request(
+            settings,
+            business_id=business_id,
+            speaker_name=(payload.speaker_name),
+            public_role=(payload.public_role),
+            speaker_type=(payload.speaker_type),
+            materials=(payload.materials),
+            forbidden_claims=(payload.forbidden_claims),
+        )
+
+        speaker_id = prepared["speaker_id"]
+
+        active = find_active_speaker_task(
+            settings.database_path,
+            speaker_id,
+        )
+
+        if active is not None:
+            return {
+                "duplicate": True,
+                "business_id": (business_id),
+                "speaker_id": (speaker_id),
+                "state": (
+                    "awaiting_review"
+                    if active["status"] == "awaiting_review"
+                    else "running"
+                ),
+                "existing_task": (active),
+                "existing_speaker": (
+                    prepared.get("existing_speaker")
+                    or get_speaker_detail(
+                        settings,
+                        business_id,
+                        speaker_id,
+                    )
+                ),
+            }
+
+        if prepared.get("duplicate"):
+            existing = prepared.get("existing_speaker") or get_speaker_detail(
+                settings,
+                business_id,
+                speaker_id,
+            )
+
+            if existing.get("status") == "analysis_pending" and prepared.get(
+                "request_path"
+            ):
+                task = create_speaker_task(
+                    settings.database_path,
+                    business_id=(business_id),
+                    speaker_id=(speaker_id),
+                    intake_id=(prepared.get("intake_id") or "intake_0001"),
+                    request_path=(prepared["request_path"]),
+                    speaker_name=(existing["display_name"]),
+                    public_role=(existing["public_role"]),
+                )
+
+                speaker_task_runner.schedule(task["task_id"])
+
+                return {
+                    "duplicate": False,
+                    "resumed": True,
+                    "business_id": (business_id),
+                    "speaker_id": (speaker_id),
+                    "task": task,
+                }
+
+            return {
+                "duplicate": True,
+                "business_id": (business_id),
+                "speaker_id": (speaker_id),
+                "state": existing["status"],
+                "existing_speaker": (existing),
+            }
+
+        task = create_speaker_task(
+            settings.database_path,
+            business_id=(business_id),
+            speaker_id=(speaker_id),
+            intake_id=(prepared["intake_id"]),
+            request_path=(prepared["request_path"]),
+            speaker_name=(prepared["speaker_name"]),
+            public_role=(prepared["public_role"]),
+        )
+
+        speaker_task_runner.schedule(task["task_id"])
+
+        return {
+            "duplicate": False,
+            "business_id": (business_id),
+            "speaker_id": (speaker_id),
+            "task": task,
+            "next_action": ("出镜人信息正在后台分析，" "可以离开页面后再回来继续。"),
+        }
+
+    @app.get("/api/customers/{business_id}/speakers/{speaker_id}")
+    def speaker_detail(
+        business_id: str,
+        speaker_id: str,
+        _: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        detail = get_speaker_detail(
+            settings,
+            business_id,
+            speaker_id,
+        )
+
+        latest_task = next(
+            (
+                task
+                for task in list_tasks(
+                    settings.database_path,
+                    limit=100,
+                )
+                if (
+                    task["task_type"] == "speaker_analysis"
+                    and task["subject_ref"] == speaker_id
+                )
+            ),
+            None,
+        )
+
+        if latest_task is not None:
+            detail["task"] = latest_task
+
+            if latest_task["status"] in {
+                "queued",
+                "running",
+            }:
+                detail["status"] = "analyzing"
+
+            elif (
+                latest_task["status"] == "failed"
+                and detail["status"] == "analysis_pending"
+            ):
+                detail["status"] = "failed"
+
+        return detail
+
+    @app.post("/api/customers/{business_id}/speakers/{speaker_id}/facts/review")
+    def review_speaker_fact_candidates(
+        business_id: str,
+        speaker_id: str,
+        payload: SpeakerFactReviewRequest,
+        x_csrf_token: str | None = Header(
+            default=None,
+            alias="X-CSRF-Token",
+        ),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(
+            session,
+            x_csrf_token,
+        )
+
+        result = review_speaker_facts(
+            settings,
+            business_id=(business_id),
+            speaker_id=(speaker_id),
+            decisions=[
+                item.model_dump(exclude_none=True) for item in (payload.decisions)
+            ],
+            reviewer=str(session.user["phone"]),
+            note=(payload.note),
+        )
+
+        mark_speaker_task_reviewed(
+            settings.database_path,
+            speaker_id,
+        )
+
+        return {
+            "review": result,
+        }
+
+    @app.post("/api/customers/{business_id}/speakers/{speaker_id}/persona/approve")
+    def approve_customer_speaker_persona(
+        business_id: str,
+        speaker_id: str,
+        payload: SpeakerPersonaApprovalRequest,
+        x_csrf_token: str | None = Header(
+            default=None,
+            alias="X-CSRF-Token",
+        ),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(
+            session,
+            x_csrf_token,
+        )
+
+        detail = approve_speaker_persona(
+            settings,
+            business_id=(business_id),
+            speaker_id=(speaker_id),
+            reviewer=str(session.user["phone"]),
+            note=(payload.note),
+        )
+
+        return {
+            "speaker": detail,
+        }
+
     @app.get("/api/workbench")
     def workbench(
         _: SessionContext = Depends(require_console_access),
@@ -395,7 +756,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 "case_reviews": sum(
                     case["status"] == "awaiting_review" for case in cases
                 ),
-                "persona_reviews": customer_attention_count(settings),
+                "persona_reviews": (
+                    customer_attention_count(settings)
+                    + speaker_attention_count(settings)
+                ),
                 "content_reviews": sum(
                     task["task_type"] == "content_generation"
                     and task["status"] == "awaiting_review"
@@ -702,6 +1066,34 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 and detail["status"] == "analysis_pending"
             ):
                 detail["status"] = "failed"
+
+        # Speaker listing is only meaningful after the Business Persona
+        # itself has been explicitly Human Approved.
+        #
+        # Customer Detail, however, must remain readable during:
+        # - analysis
+        # - failure / retry
+        # - Fact Review
+        # - Business Persona Review
+        business_persona = detail.get("business_persona") or {}
+
+        business_persona_approved = business_persona.get("approved") is True
+
+        if business_persona_approved:
+            speakers = list_speakers(
+                settings,
+                business_id,
+            )
+        else:
+            speakers = []
+
+        detail["speakers"] = speakers
+
+        detail["creation_entry_ready"] = business_persona_approved and any(
+            speaker.get("status") == "approved" for speaker in speakers
+        )
+
+        detail["media_rights_established"] = False
 
         return detail
 

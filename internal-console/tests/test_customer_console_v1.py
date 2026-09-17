@@ -46,6 +46,7 @@ def customer_settings(
         status_timeout_seconds=30,
         case_analysis_worker_enabled=False,
         customer_analysis_worker_enabled=False,
+        speaker_analysis_worker_enabled=False,
         default_business_id=("unused_customer_test"),
     )
 
@@ -240,7 +241,7 @@ def test_failed_customer_projects_failed_state_and_can_retry(
 
     detail = customer_client.get(f"/api/customers/{created['business_id']}")
 
-    assert detail.status_code == 200
+    assert detail.status_code == 200, detail.json()
     assert detail.json()["status"] == "failed"
     assert detail.json()["task"]["task_id"] == old_task["task_id"]
 
