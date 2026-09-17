@@ -59,6 +59,14 @@ def find_companion(video: Path, suffix: str):
     return str(candidate) if candidate.exists() else None
 
 
+def implausible_speech_rate(
+    *, start: float, end: float, word_count: int, maximum_words_per_second: float = 15.0
+) -> tuple[bool, float]:
+    duration = max(0.0, float(end) - float(start))
+    words_per_second = (word_count / duration) if duration > 0 else float("inf")
+    return word_count >= 6 and words_per_second > maximum_words_per_second, words_per_second
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Transcribe one short-video case with faster-whisper."
@@ -87,6 +95,30 @@ def main():
         "--compute-type",
         default=None,
     )
+    parser.add_argument(
+        "--output-root",
+        default=None,
+        help=(
+            "Optional output root. The source stem is appended so callers can "
+            "isolate immutable analysis attempts."
+        ),
+    )
+    parser.add_argument(
+        "--initial-prompt",
+        default=None,
+        help=(
+            "Optional source-provided public caption used only as a Whisper "
+            "transcription hint. It does not replace audio evidence."
+        ),
+    )
+    parser.add_argument(
+        "--filter-implausible-segments",
+        action="store_true",
+        help=(
+            "Drop timestamp-impossible ASR segments while retaining them in "
+            "discarded_segments for evidence lineage."
+        ),
+    )
 
     args = parser.parse_args()
 
@@ -96,7 +128,12 @@ def main():
         raise FileNotFoundError(f"Input not found: {source}")
 
     project_root = Path(__file__).resolve().parents[1]
-    output_dir = project_root / "data" / "analysis" / source.stem
+    output_root = (
+        Path(args.output_root).expanduser().resolve()
+        if args.output_root
+        else project_root / "data" / "analysis"
+    )
+    output_dir = output_root / source.stem
     output_dir.mkdir(parents=True, exist_ok=True)
 
     compute_type = args.compute_type
@@ -125,11 +162,14 @@ def main():
         beam_size=5,
         vad_filter=True,
         word_timestamps=True,
+        initial_prompt=args.initial_prompt or None,
+        hallucination_silence_threshold=2.0,
     )
 
     segments = list(segments_generator)
 
     segment_data = []
+    discarded_segments = []
     raw_lines = []
     srt_blocks = []
 
@@ -138,8 +178,6 @@ def main():
 
         if not text:
             continue
-
-        raw_lines.append(text)
 
         words = []
 
@@ -153,6 +191,30 @@ def main():
                         "probability": getattr(word, "probability", None),
                     }
                 )
+
+        is_implausible, words_per_second = implausible_speech_rate(
+            start=segment.start,
+            end=segment.end,
+            word_count=len(words),
+        )
+        if (
+            args.filter_implausible_segments
+            and is_implausible
+        ):
+            discarded_segments.append(
+                {
+                    "start": segment.start,
+                    "end": segment.end,
+                    "text": text,
+                    "words": words,
+                    "reason": "implausible_speech_rate",
+                    "observed_words_per_second": round(words_per_second, 3),
+                    "maximum_words_per_second": 15.0,
+                }
+            )
+            continue
+
+        raw_lines.append(text)
 
         segment_data.append(
             {
@@ -191,6 +253,10 @@ def main():
                 "language": info.language,
                 "language_probability": info.language_probability,
                 "duration": getattr(info, "duration", None),
+                "initial_prompt": args.initial_prompt or None,
+                "hallucination_silence_threshold": 2.0,
+                "deterministic_timing_guard_enabled": args.filter_implausible_segments,
+                "discarded_segments": discarded_segments,
                 "segments": segment_data,
             },
             ensure_ascii=False,
@@ -221,6 +287,10 @@ def main():
             "model": args.model,
             "language": info.language,
             "language_probability": info.language_probability,
+            "initial_prompt": args.initial_prompt or None,
+            "hallucination_silence_threshold": 2.0,
+            "deterministic_timing_guard_enabled": args.filter_implausible_segments,
+            "discarded_segment_count": len(discarded_segments),
         },
     }
 

@@ -5,6 +5,32 @@
 
 Run commands from the repository root. Replace angle-bracket placeholders with explicit reviewed paths. Never select an authority by file timestamp or filename sorting.
 
+## CASE_ANALYSIS
+
+- **Goal:** Turn one full public Douyin video URL into a traceable, review-required Case Candidate by orchestrating the current acquisition, transcription, visual evidence, privacy, shot-boundary, storyboard, and Case-build implementations.
+- **Required Inputs:** Full URL containing a stable Douyin video ID; immutable attempt ID; observed profile (`mix` or `news`) and industry label.
+- **Authority Preconditions:** Duplicate Case IDs and active/review-ready attempts fail closed. Source acquisition does not grant media rights. Every remote-model input passes through the existing Privacy Projection boundary.
+- **Canonical Entry Point:** `ops-pipeline/scripts/case_analysis_v1.py`.
+- **Execution:** `ops-pipeline/.venv/Scripts/python.exe ops-pipeline/scripts/case_analysis_v1.py --source-url <full_douyin_video_url> --attempt-id <immutable_attempt_id> [--profile mix|news] [--industry <label>] [--reanalyze]`
+- **Recovery:** Re-run the exact command with the same attempt ID. Completed artifact checkpoints are validated and reused; progress remains in `data/case_analysis_attempts/<case_id>/<attempt_id>/case_analysis_attempt_v1.json`.
+- **Human Gate:** Required. Successful analysis stops at `awaiting_review`; this operation never calls `approve_case_v1.py`.
+- **Outputs:** Immutable attempt lineage, source-acquisition receipt, existing canonical evidence artifact types, and one review-required `case_v1.json` under the attempt directory.
+- **Stop Conditions:** Duplicate Case/attempt, ambiguous source identity, privacy failure, unresolved narration/boundary sub-review, invalid lineage, or any canonical stage failure.
+- **Next Action:** Human Case Review, then explicit `APPROVE_CASE`; rejection and reanalysis remain separate reviewed attempts.
+- **Implementation Status:** `IMPLEMENTED / RECOVERABLE ORCHESTRATION`.
+
+## APPROVE_CASE
+
+- **Goal:** Explicitly admit one reviewed Case Candidate to the canonical Case Library without changing source-media rights.
+- **Required Inputs:** Review-required Case Candidate, Human reviewer, decision note, traceable source URL and local source evidence.
+- **Authority Preconditions:** Case validation and privacy gate pass; canonical Approved Case cannot be overwritten; Case Source Governance companion keeps `media_reuse_rights=not_established` and `production_footage_pool_eligible=false`.
+- **Canonical Entry Point:** `ops-pipeline/scripts/approve_case_v1.py`, invoked through the Internal Console's fixed Case approval gateway; deterministic fingerprint follows approval.
+- **Human Gate:** Required and explicit. Analysis completion is never approval.
+- **Outputs:** Approved `data/cases/<case_id>/case_v1.json`, approval receipt, Case Source Governance companion, and deterministic Case fingerprint.
+- **Stop Conditions:** Existing Approved Case, source-governance ambiguity, invalid privacy/proof/lineage checks, or failed canonical approval.
+- **Next Action:** Approved Case Library.
+- **Implementation Status:** `IMPLEMENTED / EXPLICIT HUMAN OPERATION`.
+
 ## NEW_CUSTOMER
 
 - **Goal:** Create approved Customer Truth for a new business and speaker.

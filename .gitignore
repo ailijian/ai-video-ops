@@ -1,2 +1,9 @@
 # Separate open-source project with its own Git repository.
 /douyin-downloader/
+
+# Internal Console local runtime only (accounts, sessions, task projections).
+/internal-console/.venv/
+/internal-console/var/
+/internal-console/.pytest_cache/
+/internal-console/**/__pycache__/
+/internal-console/*.egg-info/

@@ -8,6 +8,13 @@ This repository contains the approved Customer Truth → Content → Pre-product
 2. [Operations RUNBOOK](docs/operations/RUNBOOK.md) — commands and honest implementation status for current operations.
 3. [Current Status Read Model](docs/operations/CURRENT_STATUS_READ_MODEL_V1.md) — read-only customer status and next-action projection.
 
+## Internal Console
+
+The Phase 1 mobile-first operations surface lives in
+[`internal-console`](internal-console/README.md). It is a thin Application/API
+Layer over the canonical operations and stores only internal auth, session, and
+task-projection data.
+
 View the current real-customer status:
 
 ```powershell

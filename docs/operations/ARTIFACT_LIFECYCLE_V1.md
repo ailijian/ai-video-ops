@@ -38,6 +38,7 @@ These classifications describe the role of an artifact. They are not a new workf
 | `data/patterns/approved` | `CURRENT_AUTHORITY`; approval receipts are `VALIDATION_RECEIPT` |
 | `data/patterns/candidates` | `HISTORICAL_IMMUTABLE` or research candidate, never Production Authority |
 | `data/cases`, `data/case_governance`, `data/analysis`, `data/visual`, `data/shots` | Approved structural authority plus preserved research evidence; never Production Asset by location alone |
+| `data/case_analysis_attempts/<case_id>/<attempt_id>` | `HISTORICAL_IMMUTABLE` analysis evidence and progress; a review-required candidate is never Approved Case Authority |
 | `data/production_footage/<request_id>` | Rights/inventory authorities plus active derived plan, mission, pack, match, and coverage artifacts |
 | `data/operations/<business_id>` | Operator Action Control only; not customer status or business truth |
 | `tests/fixtures` and fixture-labelled runtime trees | `FIXTURE_TEST` |
