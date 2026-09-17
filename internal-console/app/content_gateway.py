@@ -20,6 +20,8 @@ from .speaker_gateway import (
 
 GENERATION_REQUEST_SCHEMA = "generation-request-v1.0"
 
+GENERATION_SOURCE_PLAN_SCHEMA = "generation-source-plan-v1.0"
+
 TERMINAL_REQUEST_STATUSES = {
     "completed",
     "exported",
@@ -47,6 +49,169 @@ def _sha256_file(
             )
 
     return digest.hexdigest()
+
+
+def _project_generation_source_plan(
+    settings: Settings,
+    request_id: str,
+    request_path: Path,
+) -> dict[str, Any]:
+    """
+    Read-only projection of the canonical
+    Generation Source Plan.
+
+    Projects data/production_plans/<request_id>/
+    generation_source_plan_v1.json directly.
+    No SQLite orchestration state.
+    """
+
+    empty_projection = {
+        "source_plan_ready": False,
+        "source_plan_status": None,
+        "coverage_status": None,
+        "coverage_code": None,
+        "coverage_reason": None,
+        "selected_pattern_count": 0,
+        "eligible_case_count": 0,
+    }
+
+    plan_path = (
+        settings.pipeline_root
+        / "data"
+        / "production_plans"
+        / request_id
+        / "generation_source_plan_v1.json"
+    )
+
+    if not plan_path.is_file():
+        return empty_projection
+
+    try:
+        plan = json.loads(
+            plan_path.read_text(
+                encoding="utf-8"
+            )
+        )
+
+    except (
+        OSError,
+        json.JSONDecodeError,
+    ) as exc:
+        raise CanonicalOperationError(
+            "GENERATION_SOURCE_PLAN_INVALID",
+            (
+                "Generation Source Plan "
+                "无法读取。"
+            ),
+            (
+                "请检查当前 Generation "
+                "Request 的 Source Plan。"
+            ),
+        ) from exc
+
+    if (
+        not isinstance(
+            plan,
+            dict,
+        )
+        or plan.get(
+            "schema_version"
+        )
+        != GENERATION_SOURCE_PLAN_SCHEMA
+        or str(
+            plan.get(
+                "request_id"
+            )
+            or ""
+        )
+        != request_id
+    ):
+        raise CanonicalOperationError(
+            "GENERATION_SOURCE_PLAN_LINEAGE_MISMATCH",
+            (
+                "Generation Source Plan "
+                "与当前 Generation Request "
+                "lineage 不一致。"
+            ),
+            (
+                "停止继续处理并恢复正确的 "
+                "Generation Source Plan。"
+            ),
+        )
+
+    plan_request = (
+        plan.get("request")
+        or {}
+    )
+
+    if (
+        str(
+            plan_request.get(
+                "request_sha"
+            )
+            or ""
+        )
+        != _sha256_file(
+            request_path
+        )
+    ):
+        raise CanonicalOperationError(
+            (
+                "GENERATION_SOURCE_PLAN_"
+                "LINEAGE_MISMATCH"
+            ),
+            (
+                "Generation Source Plan "
+                "引用的 Generation Request "
+                "SHA-256 与当前 immutable "
+                "Request 不一致。"
+            ),
+            (
+                "停止继续处理并恢复正确的 "
+                "Generation Source Plan。"
+            ),
+        )
+
+    coverage = (
+        plan.get(
+            "coverage"
+        )
+        or {}
+    )
+
+    return {
+        "source_plan_ready": True,
+        "source_plan_status": (
+            "source_matching_completed"
+        ),
+        "coverage_status": (
+            coverage.get(
+                "status"
+            )
+        ),
+        "coverage_code": (
+            coverage.get(
+                "code"
+            )
+        ),
+        "coverage_reason": (
+            coverage.get(
+                "reason"
+            )
+        ),
+        "selected_pattern_count": len(
+            plan.get(
+                "selected_patterns"
+            )
+            or []
+        ),
+        "eligible_case_count": len(
+            plan.get(
+                "eligible_case_pool"
+            )
+            or []
+        ),
+    }
 
 
 def get_active_generation_request(
@@ -313,6 +478,17 @@ def get_active_generation_request(
         or {}
     )
 
+    source_plan = _project_generation_source_plan(
+        settings,
+        str(
+            request.get(
+                "request_id"
+            )
+            or ""
+        ),
+        request_path,
+    )
+
     return {
         "active_request": {
             "request_id": (
@@ -362,8 +538,15 @@ def get_active_generation_request(
             "handoff_status": (
                 handoff_status
             ),
+            **source_plan,
             "next_action": (
-                "RESOLVE_GENERATION_SOURCES"
+                "CREATE_CONTENT_PLAN"
+                if source_plan.get(
+                    "source_plan_ready"
+                )
+                else (
+                    "RESOLVE_GENERATION_SOURCES"
+                )
             ),
             "authority": {
                 "script_generation_performed": bool(
@@ -683,3 +866,85 @@ def confirm_content_creation(
         )
 
     return result
+
+
+def resolve_generation_sources(
+    settings: Settings,
+    request_id: str,
+) -> dict[str, Any]:
+    executable = settings.pipeline_python_executable or settings.python_executable
+
+    command = [
+        executable,
+        str(
+            settings.pipeline_root
+            / "scripts"
+            / ("resolve_generation_" "source_plan_v1.py")
+        ),
+        "--request-id",
+        request_id,
+        "--pipeline-root",
+        str(settings.pipeline_root),
+    ]
+
+    env = os.environ.copy()
+
+    env["PYTHONIOENCODING"] = "utf-8"
+
+    env["PYTHONUTF8"] = "1"
+
+    try:
+        process = subprocess.run(
+            command,
+            cwd=settings.repo_root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60,
+            check=False,
+            env=env,
+        )
+
+    except (
+        OSError,
+        subprocess.TimeoutExpired,
+    ) as exc:
+        raise CanonicalOperationError(
+            "GENERATION_SOURCE_PLAN_UNAVAILABLE",
+            ("Generation Source Plan " "暂时无法解析。"),
+            ("请稍后重试；当前没有" "生成任何脚本。"),
+        ) from exc
+
+    parsed = _parse_json_output(process.stdout)
+
+    if process.returncode != 0:
+        raise CanonicalOperationError(
+            str((parsed or {}).get("code") or ("GENERATION_SOURCE_" "PLAN_FAILED")),
+            "Generation Source Plan 没有完成。",
+            (
+                str((parsed or {}).get("message") or "")
+                or ("请检查 canonical Source " "Authority 后重试。")
+            ),
+        )
+
+    if parsed is None or parsed.get("ok") is not True:
+        raise CanonicalOperationError(
+            "GENERATION_SOURCE_PLAN_INVALID_OUTPUT",
+            ("Generation Source Plan " "返回了无效结果。"),
+            ("请检查 canonical Source " "Plan operation。"),
+        )
+
+    if (
+        parsed.get("remote_model_called") is not False
+        or parsed.get("script_generation_performed") is not False
+        or parsed.get("generation_batch_created") is not False
+        or parsed.get("content_ledger_written") is not False
+    ):
+        raise CanonicalOperationError(
+            "GENERATION_SOURCE_PLAN_BOUNDARY_CROSSED",
+            ("Generation Source Plan 阶段" "越过了允许边界。"),
+            "停止继续处理并检查 canonical operation。",
+        )
+
+    return parsed

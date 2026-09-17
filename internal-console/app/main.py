@@ -83,6 +83,7 @@ from .content_gateway import (
     get_active_generation_request,
     list_creation_options,
     preview_content_creation,
+    resolve_generation_sources,
 )
 
 
@@ -869,6 +870,29 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             requested_quantity=(payload.requested_quantity),
             confirmed_quantity=(payload.confirmed_quantity),
             idempotency_key=(payload.idempotency_key),
+        )
+
+        return {
+            "result": result,
+        }
+
+    @app.post("/api/create/{request_id}/resolve-sources")
+    def resolve_generation_source_plan(
+        request_id: str,
+        x_csrf_token: str | None = Header(
+            default=None,
+            alias="X-CSRF-Token",
+        ),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(
+            session,
+            x_csrf_token,
+        )
+
+        result = resolve_generation_sources(
+            settings,
+            request_id,
         )
 
         return {

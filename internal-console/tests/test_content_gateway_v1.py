@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -13,6 +14,12 @@ from app.canonical_gateway import (
 from app.content_gateway import (
     get_active_generation_request,
 )
+
+
+def sha256_file(path: Path) -> str:
+    return hashlib.sha256(
+        path.read_bytes()
+    ).hexdigest()
 
 
 def write_json(
@@ -288,4 +295,305 @@ def test_missing_handoff_is_recoverable_state(
             "handoff_ready"
         ]
         is False
+    )
+
+
+def make_source_plan(
+    root: Path,
+    request_id: str,
+    *,
+    plan_request_id: str | None = None,
+) -> Path:
+    path = (
+        root
+        / "data"
+        / "production_plans"
+        / request_id
+        / "generation_source_plan_v1.json"
+    )
+
+    request_path = (
+        root
+        / "data"
+        / "generation_requests"
+        / request_id
+        / "generation_request_v1.json"
+    )
+
+    write_json(
+        path,
+        {
+            "schema_version": (
+                "generation-source-plan-v1.0"
+            ),
+            "request_id": (
+                plan_request_id
+                or request_id
+            ),
+            "request": {
+                "request_sha": (
+                    sha256_file(
+                        request_path
+                    )
+                ),
+            },
+            "coverage": {
+                "status": "supported",
+                "code": (
+                    "research_coverage_"
+                    "supported"
+                ),
+                "reason": (
+                    "An Approved Pattern and "
+                    "approved Profile-compatible "
+                    "Case pool pass all hard "
+                    "gates."
+                ),
+            },
+            "selected_patterns": [
+                {
+                    "pattern_id": (
+                        "pcv1_narration_led_"
+                        "process_projection"
+                    )
+                }
+            ],
+            "eligible_case_pool": [
+                {"case_id": "100"},
+                {"case_id": "200"},
+                {"case_id": "300"},
+            ],
+        },
+    )
+
+    return path
+
+
+def test_active_request_projection_reports_source_plan_ready(
+    tmp_path: Path,
+):
+    request = make_request(
+        tmp_path,
+        "gen_fixture_001",
+    )
+
+    make_handoff(request)
+
+    make_source_plan(
+        tmp_path,
+        "gen_fixture_001",
+    )
+
+    result = (
+        get_active_generation_request(
+            settings(
+                tmp_path
+            ),
+            "fixture_business",
+        )
+    )
+
+    active = result[
+        "active_request"
+    ]
+
+    assert (
+        active[
+            "source_plan_ready"
+        ]
+        is True
+    )
+
+    assert (
+        active[
+            "source_plan_status"
+        ]
+        == "source_matching_completed"
+    )
+
+    assert (
+        active[
+            "coverage_status"
+        ]
+        == "supported"
+    )
+
+    assert (
+        active[
+            "coverage_code"
+        ]
+        == (
+            "research_coverage_"
+            "supported"
+        )
+    )
+
+    assert (
+        active[
+            "selected_pattern_count"
+        ]
+        == 1
+    )
+
+    assert (
+        active[
+            "eligible_case_count"
+        ]
+        == 3
+    )
+
+    assert (
+        active[
+            "next_action"
+        ]
+        == "CREATE_CONTENT_PLAN"
+    )
+
+
+def test_active_request_projection_without_plan_is_not_ready(
+    tmp_path: Path,
+):
+    request = make_request(
+        tmp_path,
+        "gen_fixture_001",
+    )
+
+    make_handoff(request)
+
+    result = (
+        get_active_generation_request(
+            settings(
+                tmp_path
+            ),
+            "fixture_business",
+        )
+    )
+
+    active = result[
+        "active_request"
+    ]
+
+    assert (
+        active[
+            "source_plan_ready"
+        ]
+        is False
+    )
+
+    assert (
+        active[
+            "coverage_status"
+        ]
+        is None
+    )
+
+    assert (
+        active[
+            "selected_pattern_count"
+        ]
+        == 0
+    )
+
+    assert (
+        active[
+            "eligible_case_count"
+        ]
+        == 0
+    )
+
+    assert (
+        active[
+            "next_action"
+        ]
+        == "RESOLVE_GENERATION_SOURCES"
+    )
+
+
+def test_source_plan_request_id_mismatch_fails_closed(
+    tmp_path: Path,
+):
+    request = make_request(
+        tmp_path,
+        "gen_fixture_001",
+    )
+
+    make_handoff(request)
+
+    make_source_plan(
+        tmp_path,
+        "gen_fixture_001",
+        plan_request_id=(
+            "gen_someone_else"
+        ),
+    )
+
+    with pytest.raises(
+        CanonicalOperationError
+    ) as exc:
+        get_active_generation_request(
+            settings(
+                tmp_path
+            ),
+            "fixture_business",
+        )
+
+    assert (
+        exc.value.code
+        == (
+            "GENERATION_SOURCE_PLAN_"
+            "LINEAGE_MISMATCH"
+        )
+    )
+
+
+def test_source_plan_request_sha_mismatch_fails_closed(
+    tmp_path: Path,
+):
+    request = make_request(
+        tmp_path,
+        "gen_fixture_001",
+    )
+
+    make_handoff(
+        request
+    )
+
+    plan_path = make_source_plan(
+        tmp_path,
+        "gen_fixture_001",
+    )
+
+    plan = json.loads(
+        plan_path.read_text(
+            encoding="utf-8"
+        )
+    )
+
+    plan[
+        "request"
+    ][
+        "request_sha"
+    ] = "0" * 64
+
+    write_json(
+        plan_path,
+        plan,
+    )
+
+    with pytest.raises(
+        CanonicalOperationError
+    ) as exc:
+        get_active_generation_request(
+            settings(
+                tmp_path
+            ),
+            "fixture_business",
+        )
+
+    assert (
+        exc.value.code
+        == (
+            "GENERATION_SOURCE_PLAN_"
+            "LINEAGE_MISMATCH"
+        )
     )

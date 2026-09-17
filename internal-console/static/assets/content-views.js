@@ -89,6 +89,112 @@ export function createContentViews({
     }
   }
 
+  function renderSourcePlanSection(
+    handoffReady,
+    sourcePlan,
+  ) {
+    if (handoffReady === false) {
+      return "";
+    }
+
+    if (
+      !sourcePlan ||
+      sourcePlan.ready !== true
+    ) {
+      return `
+        <div class="source-planning-handoff">
+          <strong>
+            Generation Source Plan 待解析
+          </strong>
+
+          <p>
+            将解析 Approved Pattern、
+            Approved Case 与 Fingerprint，
+            建立 deterministic
+            Generation Source Plan。
+          </p>
+
+          <button
+            id="resolve-sources"
+            class="btn btn-secondary btn-wide"
+            type="button"
+          >
+            解析创作来源
+          </button>
+        </div>`;
+    }
+
+    if (
+      sourcePlan.coverageStatus !==
+      "supported"
+    ) {
+      return `
+        <div class="source-planning-handoff">
+          <strong>
+            当前 Source Coverage 不足
+          </strong>
+
+          <div class="generation-request-meta">
+            <span>Coverage Code</span>
+            <code>${escapeHtml(
+              String(
+                sourcePlan.coverageCode ||
+                  "unknown",
+              ),
+            )}</code>
+          </div>
+
+          <p>
+            ${escapeHtml(
+              String(
+                sourcePlan.coverageReason ||
+                  "当前 Approved Pattern / " +
+                    "Case 覆盖不足。",
+              ),
+            )}
+          </p>
+
+          <p>
+            没有调用远程模型，
+            没有生成脚本，
+            没有创建 Generation Batch，
+            没有写入 Content Ledger。
+          </p>
+        </div>`;
+    }
+
+    return `
+      <div class="source-planning-handoff">
+        <strong>
+          Generation Source Plan 已完成
+        </strong>
+
+        <div class="generation-request-meta">
+          <span>Coverage</span>
+          <strong>Supported</strong>
+        </div>
+
+        <div class="generation-request-meta">
+          <span>Approved Pattern</span>
+          <strong>
+            ${Number(
+              sourcePlan
+                .selectedPatternCount,
+            )}
+          </strong>
+        </div>
+
+        <div class="generation-request-meta">
+          <span>Eligible Cases</span>
+          <strong>
+            ${Number(
+              sourcePlan.eligibleCaseCount,
+            )}
+          </strong>
+        </div>
+      </div>`;
+  }
+
   function renderRequestEstablished(
     host,
     {
@@ -96,12 +202,19 @@ export function createContentViews({
       profile,
       confirmedQuantity,
       handoffReady,
+      sourcePlan = null,
     },
   ) {
     const profileLabel =
       profile === "news"
         ? "News"
         : "Mix";
+
+    const planCompleted =
+      sourcePlan &&
+      sourcePlan.ready === true &&
+      sourcePlan.coverageStatus ===
+        "supported";
 
     host.innerHTML = `
       <section class="card generation-request-result">
@@ -147,15 +260,14 @@ export function createContentViews({
             }
           </strong>
 
-          <p>
-            下一步将解析 Approved Pattern、
-            Approved Case 与 Fingerprint，
-            再建立 Generation Source Plan。
-          </p>
-
           ${
             handoffReady === false
               ? `
+                <p>
+                  下一步将恢复 Source Planning
+                  Handoff，再解析创作来源。
+                </p>
+
                 <button
                   id="recover-source-handoff"
                   class="btn btn-secondary btn-wide"
@@ -166,6 +278,11 @@ export function createContentViews({
               : ""
           }
         </div>
+
+        ${renderSourcePlanSection(
+          handoffReady,
+          sourcePlan,
+        )}
 
         <div class="capacity-authority-note">
           <strong>
@@ -181,10 +298,74 @@ export function createContentViews({
         </div>
 
         <p class="generation-request-footnote">
-          Generation Request 是不可静默覆盖的
-          canonical artifact。
+          ${
+            planCompleted
+              ? "下一步：Content Plan"
+              : "Generation Request 是不可" +
+                "静默覆盖的 canonical " +
+                "artifact。"
+          }
         </p>
       </section>`;
+  }
+
+  function bindResolveSourcesButton(
+    host,
+    requestId,
+  ) {
+    const resolveButton =
+      host.querySelector(
+        "#resolve-sources",
+      );
+
+    if (!resolveButton) return;
+
+    resolveButton.addEventListener(
+      "click",
+      async () => {
+        resolveButton.disabled = true;
+
+        resolveButton.textContent =
+          "正在解析 Approved Pattern " +
+          "/ Case / Fingerprint…";
+
+        try {
+          await api(
+            "/api/create/" +
+              encodeURIComponent(
+                requestId,
+              ) +
+              "/resolve-sources",
+            {
+              method: "POST",
+            },
+          );
+
+          showToast(
+            "Generation Source Plan 已完成。",
+          );
+
+          await restoreActiveRequest();
+
+        } catch (error) {
+          showToast(
+            error.detail?.next_action ||
+              error.detail?.message ||
+              error.message,
+          );
+
+          if (
+            resolveButton.isConnected
+          ) {
+            resolveButton.disabled =
+              false;
+
+            resolveButton.textContent =
+              "解析创作来源";
+          }
+        }
+      },
+    );
   }
 
   async function restoreActiveRequest() {
@@ -347,6 +528,22 @@ export function createContentViews({
           active.confirmed_quantity,
         handoffReady:
           active.handoff_ready,
+        sourcePlan: {
+          ready:
+            active.source_plan_ready ===
+            true,
+          coverageStatus:
+            active.coverage_status,
+          coverageCode:
+            active.coverage_code,
+          coverageReason:
+            active.coverage_reason,
+          selectedPatternCount:
+            active
+              .selected_pattern_count,
+          eligibleCaseCount:
+            active.eligible_case_count,
+        },
       },
     );
 
@@ -424,6 +621,11 @@ export function createContentViews({
                 "Source Planning Handoff 已恢复。",
               );
 
+              bindResolveSourcesButton(
+                host,
+                result.request_id,
+              );
+
             } catch (error) {
               showToast(
                 error.detail
@@ -448,6 +650,11 @@ export function createContentViews({
           },
         );
       }
+    } else {
+      bindResolveSourcesButton(
+        host,
+        active.request_id,
+      );
     }
   }
 
@@ -762,6 +969,11 @@ export function createContentViews({
                     result.confirmed_quantity,
                     handoffReady: true,
                 },
+                );
+
+                bindResolveSourcesButton(
+                host,
+                result.request_id,
                 );
 
                 showToast(
