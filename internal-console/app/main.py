@@ -78,6 +78,11 @@ from .speaker_task_service import (
     mark_speaker_task_reviewed,
 )
 
+from .content_gateway import (
+    list_creation_options,
+    preview_content_creation,
+)
+
 
 class SpeakerAnalysisRequest(BaseModel):
     speaker_name: str = Field(
@@ -207,6 +212,28 @@ class CustomerPersonaApprovalRequest(BaseModel):
     note: str = Field(
         default="",
         max_length=2000,
+    )
+
+
+class ContentCapacityPreviewRequest(BaseModel):
+    business_id: str = Field(
+        min_length=2,
+        max_length=128,
+    )
+
+    speaker_id: str = Field(
+        min_length=2,
+        max_length=128,
+    )
+
+    profile: Literal[
+        "mix",
+        "news",
+    ]
+
+    quantity: int = Field(
+        ge=1,
+        le=20,
     )
 
 
@@ -741,6 +768,38 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
         return {
             "speaker": detail,
+        }
+
+    @app.get("/api/create/options")
+    def creation_options(
+        _: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        return list_creation_options(settings)
+
+    @app.post("/api/create/capacity-preview")
+    def content_capacity_preview(
+        payload: ContentCapacityPreviewRequest,
+        x_csrf_token: str | None = Header(
+            default=None,
+            alias="X-CSRF-Token",
+        ),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(
+            session,
+            x_csrf_token,
+        )
+
+        preview = preview_content_creation(
+            settings,
+            business_id=(payload.business_id),
+            speaker_id=(payload.speaker_id),
+            profile=(payload.profile),
+            quantity=(payload.quantity),
+        )
+
+        return {
+            "preview": preview,
         }
 
     @app.get("/api/workbench")

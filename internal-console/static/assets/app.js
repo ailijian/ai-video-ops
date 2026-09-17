@@ -12,6 +12,10 @@ import {
   speakerProgressPanel,
 } from "./speaker-components.js";
 
+import {
+  createContentViews,
+} from "./content-views.js";
+
 const app = document.querySelector("#app");
 const toastRegion = document.querySelector("#toast-region");
 
@@ -452,6 +456,17 @@ const speakerViews = createSpeakerViews({
   renderLoadError,
 });
 
+const contentViews = createContentViews({
+  app,
+  api,
+  shell,
+  bindCommonActions,
+  pageHeading,
+  skeletonPage,
+  showToast,
+  renderLoadError,
+});
+
 async function renderTaskDetail(taskId) {
   skeletonPage("任务进度");
 
@@ -506,7 +521,7 @@ async function renderRoute() {
   if (path === "/tasks") return renderTasks();
   if (path === "/customers") return customerViews.renderCustomers();
 if (path === "/customers/new") return customerViews.renderCustomerNew();
-  if (path === "/create") return renderPlaceholder("create");
+  if (path === "/create") return contentViews.renderCreate();
   const workflowRoute = matchWorkflowRoute(path);
   if (
     workflowRoute?.name ===

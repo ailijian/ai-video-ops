@@ -907,6 +907,13 @@ export function createCustomerViews({
 
     const speakers =
       detail.speakers || [];
+    
+    const defaultSpeaker =
+      speakers.find(
+        (speaker) =>
+          speaker.status ===
+          "approved",
+      );
 
     const speakerContent = speakers.length
       ? `
@@ -962,7 +969,11 @@ export function createCustomerViews({
 
             <a
               class="btn btn-primary"
-              href="/create"
+              href="/create?business_id=${encodeURIComponent(
+                detail.business_id,
+              )}&speaker_id=${encodeURIComponent(
+                defaultSpeaker?.speaker_id || "",
+              )}"
               data-route
             >
               开始创作
