@@ -26,7 +26,35 @@ def _row_to_task(row: Any) -> dict[str, Any]:
         payload = {}
     raw_error = row["error_message"]
     public_error = raw_error
+
     if row["error_code"]:
+        task_type = str(row["task_type"] or "")
+
+        lowered = str(raw_error or "").lower()
+
+        if task_type == "customer_analysis":
+            if "privacy" in lowered:
+                public_error = "客户资料隐私检查没有通过，" "分析已停止。"
+            else:
+                public_error = "客户信息分析没有完成。"
+
+        elif task_type == "speaker_analysis":
+            if "privacy" in lowered:
+                public_error = "出镜人资料隐私检查没有通过，" "分析已停止。"
+            else:
+                public_error = "出镜人信息分析没有完成。"
+
+        elif "no audio segments" in lowered or "audio-timeline" in lowered:
+            public_error = "没有识别到可用于结构分析的口播内容。"
+
+        elif "analyze-visual" in lowered or "visual" in lowered:
+            public_error = "画面分析没有完成。"
+
+        elif "privacy" in lowered:
+            public_error = "隐私检查没有通过，分析已停止。"
+
+        else:
+            public_error = "案例分析没有完成。"
         lowered = str(raw_error or "").lower()
         if "no audio segments" in lowered or "audio-timeline" in lowered:
             public_error = "没有识别到可用于结构分析的口播内容。"

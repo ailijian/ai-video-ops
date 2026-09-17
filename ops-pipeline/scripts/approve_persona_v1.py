@@ -14,7 +14,6 @@ from build_persona_v1 import (
     validate_required_fact_authority,
 )
 
-
 APPROVER_VERSION = "approve_persona_v1.py@0.3"
 
 
@@ -52,10 +51,15 @@ def approve_persona(
     persona = json.loads(original_bytes.decode("utf-8"))
     errors: list[str] = []
     lifecycle = persona.get("lifecycle", {})
-    if lifecycle.get("status") != "review_required" or lifecycle.get("approved") is not False:
+    if (
+        lifecycle.get("status") != "review_required"
+        or lifecycle.get("approved") is not False
+    ):
         errors.append("Persona must be review_required and not approved.")
     errors.extend(validate_required_fact_authority(persona))
-    recorded_content_sha = str(persona.get("provenance", {}).get("content_sha256") or "")
+    recorded_content_sha = str(
+        persona.get("provenance", {}).get("content_sha256") or ""
+    )
     actual_content_sha = persona_content_hash(persona)
     if recorded_content_sha != actual_content_sha:
         errors.append("Persona content SHA-256 mismatch.")
@@ -77,7 +81,9 @@ def approve_persona(
                 or business.get("lifecycle", {}).get("status") != "approved"
                 or business.get("lifecycle", {}).get("approved") is not True
             ):
-                errors.append("Speaker must remain bound to an Approved Business Persona.")
+                errors.append(
+                    "Speaker must remain bound to an Approved Business Persona."
+                )
     receipt_path = persona_path.parent / "approval_receipt.json"
     if receipt_path.exists():
         errors.append("Persona approval receipt already exists.")
@@ -170,6 +176,23 @@ def main() -> None:
     print(f"Approved at: {persona['approval']['approved_at']}")
     print(f"Persona SHA-256: {receipt['persona_sha256_after_approval']}")
     print(f"Receipt: {receipt_path}")
+    # Machine-readable final line for Console / canonical callers.
+    # Keep this as the LAST stdout line.
+    print(
+        json.dumps(
+            {
+                "ok": True,
+                "persona_id": persona["persona_id"],
+                "revision": persona["revision"],
+                "status": "approved",
+                "reviewer": args.reviewer,
+                "approved_at": persona["approval"]["approved_at"],
+                "persona_sha256": receipt["persona_sha256_after_approval"],
+                "receipt_path": str(receipt_path),
+            },
+            ensure_ascii=False,
+        )
+    )
 
 
 if __name__ == "__main__":

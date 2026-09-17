@@ -4,6 +4,13 @@ import { createCustomerViews } from "./customer-views.js";
 import { progressPanel } from "./case-components.js";
 import { customerProgressPanel } from "./customer-components.js";
 import { matchWorkflowRoute } from "./routes.js";
+import {
+  createSpeakerViews,
+} from "./speaker-views.js";
+
+import {
+  speakerProgressPanel,
+} from "./speaker-components.js";
 
 const app = document.querySelector("#app");
 const toastRegion = document.querySelector("#toast-region");
@@ -166,6 +173,7 @@ function humanTaskType(value) {
   return {
     case_analysis: "案例分析",
     customer_analysis: "客户信息分析",
+    speaker_analysis: "出镜人信息分析",
     content_generation: "视频创作",
     excel_export: "Excel 导出",
   }[value] || value;
@@ -350,11 +358,19 @@ async function renderTasks() {
     const data = await api("/api/tasks");
     const content = data.tasks.length ? `<div class="task-list">${data.tasks.map((task) => `
       <article class="task-list-item">${
-  task.task_type === "customer_analysis"
-    ? customerProgressPanel(task, { compact: true })
-    : progressPanel(task, { compact: true })
+    task.task_type === "customer_analysis"
+      ? customerProgressPanel(task, {
+          compact: true,
+        })
+      : task.task_type === "speaker_analysis"
+        ? speakerProgressPanel(task, {
+            compact: true,
+          })
+        : progressPanel(task, {
+            compact: true,
+          })
 }<a class="inline-link" href="/tasks/${encodeURIComponent(task.task_id)}" data-route><span>查看任务</span><span aria-hidden="true">›</span></a></article>`).join("")}</div>` : `
-      <section class="card empty-state"><div class="empty-icon">${icons.tasks}</div><h2>暂时没有任务</h2><p>案例分析、客户信息分析和视频创作都会出现在这里。</p><a class="btn btn-secondary" href="/cases/new" data-route>添加案例</a></section>`;
+      <section class="card empty-state"><div class="empty-icon">${icons.tasks}</div><h2>暂时没有任务</h2><p>案例分析、客户信息分析、出镜人分析和视频创作都会出现在这里。</p><a class="btn btn-secondary" href="/cases/new" data-route>添加案例</a></section>`;
     app.innerHTML = shell("任务记录", `<main class="page">${pageHeading("任务", "任务记录", "这里显示执行进度；案例是否入库仍以人工审核结果为准。")}${content}</main>`);
     bindCommonActions();
   } catch (error) {
@@ -424,6 +440,18 @@ const customerViews = createCustomerViews({
   renderLoadError,
 });
 
+const speakerViews = createSpeakerViews({
+  app,
+  api,
+  navigate,
+  shell,
+  bindCommonActions,
+  pageHeading,
+  skeletonPage,
+  showToast,
+  renderLoadError,
+});
+
 async function renderTaskDetail(taskId) {
   skeletonPage("任务进度");
 
@@ -432,13 +460,27 @@ async function renderTaskDetail(taskId) {
       `/api/tasks/${encodeURIComponent(taskId)}`,
     );
 
-    if (payload.task.task_type === "customer_analysis") {
+    if (
+      payload.task.task_type ===
+      "customer_analysis"
+    ) {
       return customerViews.renderCustomerTaskDetail(
         payload.task,
       );
     }
 
-    return caseViews.renderTaskDetail(taskId);
+    if (
+      payload.task.task_type ===
+      "speaker_analysis"
+    ) {
+      return speakerViews.renderSpeakerTaskDetail(
+        payload.task,
+      );
+    }
+
+    return caseViews.renderTaskDetail(
+      taskId,
+    );
   } catch (error) {
     renderLoadError("任务暂时无法读取", error);
   }
@@ -447,7 +489,8 @@ async function renderTaskDetail(taskId) {
 async function renderRoute() {
   const path = location.pathname.replace(/\/+$/, "") || "/";
   caseViews.stopTaskPolling();
-customerViews.stopTaskPolling();
+  customerViews.stopTaskPolling();
+  speakerViews.stopTaskPolling();
   if (!state.user) {
     if (path !== "/login") return navigate("/login", true);
     return renderLogin();
@@ -465,6 +508,24 @@ customerViews.stopTaskPolling();
 if (path === "/customers/new") return customerViews.renderCustomerNew();
   if (path === "/create") return renderPlaceholder("create");
   const workflowRoute = matchWorkflowRoute(path);
+  if (
+    workflowRoute?.name ===
+    "speaker-new"
+  ) {
+    return speakerViews.renderSpeakerNew(
+      workflowRoute.businessId,
+    );
+  }
+
+  if (
+    workflowRoute?.name ===
+    "speaker-detail"
+  ) {
+    return speakerViews.renderSpeakerDetail(
+      workflowRoute.businessId,
+      workflowRoute.speakerId,
+    );
+  }
   if (workflowRoute?.name === "case-detail") {
     return caseViews.renderCaseDetail(workflowRoute.value);
   }

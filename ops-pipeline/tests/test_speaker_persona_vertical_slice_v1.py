@@ -15,6 +15,8 @@ if str(SCRIPTS) not in sys.path:
         str(SCRIPTS),
     )
 
+import approve_persona_v1  # noqa: E402
+
 
 def load_module(
     name: str,
@@ -430,3 +432,53 @@ def test_speaker_analysis_retry_is_idempotent(
     assert first["speaker_id"] == second["speaker_id"]
 
     assert first["created_at"] == second["created_at"]
+
+
+def test_approve_persona_cli_emits_machine_readable_success(
+    tmp_path: Path,
+    monkeypatch,
+    capsys,
+):
+    summary = prepare_analysis(tmp_path)
+
+    result = review.review_speaker_facts(
+        request=review_request(summary),
+        pipeline_root=tmp_path,
+        reviewed_at=("2026-09-17T" "02:00:00+00:00"),
+    )
+
+    persona_path = Path(result["artifacts"]["speaker_persona_v1"])
+
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "approve_persona_v1.py",
+            "--persona",
+            str(persona_path),
+            "--reviewer",
+            "李健",
+            "--note",
+            ("Console first-click " "approval regression."),
+        ],
+    )
+
+    approve_persona_v1.main()
+
+    output = capsys.readouterr().out
+
+    lines = [line.strip() for line in output.splitlines() if line.strip()]
+
+    assert lines
+
+    payload = json.loads(lines[-1])
+
+    assert payload["ok"] is True
+    assert payload["status"] == "approved"
+    assert payload["persona_id"] == summary["speaker_id"]
+
+    approved = json.loads(persona_path.read_text(encoding="utf-8"))
+
+    assert approved["lifecycle"]["approved"] is True
+
+    assert (persona_path.parent / "approval_receipt.json").is_file()

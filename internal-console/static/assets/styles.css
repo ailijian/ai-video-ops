@@ -821,3 +821,147 @@ a { color: inherit; text-decoration: none; }
     justify-content: start;
   }
 }
+
+/* Speaker Persona Vertical Slice V1 */
+
+.field select {
+  width: 100%;
+  min-height: 48px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 13px;
+  background: #fff;
+  color: var(--ink);
+  outline: none;
+  font: inherit;
+}
+
+.field select:focus {
+  border-color: var(--forest);
+  box-shadow: 0 0 0 4px rgba(37, 75, 62, 0.11);
+}
+
+.speaker-list {
+  display: grid;
+  gap: 12px;
+}
+
+.speaker-card {
+  padding: 18px;
+}
+
+.speaker-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.speaker-card-head h3 {
+  margin: 0;
+  font-size: 17px;
+  letter-spacing: -.025em;
+}
+
+.speaker-card-head p {
+  margin: 6px 0 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.speaker-authority-mini {
+  margin: 16px 0 8px;
+  padding: 11px 12px;
+  border-radius: 10px;
+  background: #f2efe8;
+  color: var(--ink-soft);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.speaker-empty-card {
+  padding: 22px;
+}
+
+.speaker-empty-card h3 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.speaker-empty-card p {
+  margin: 8px 0 18px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.speaker-boundary-banner {
+  margin-bottom: 22px;
+  padding: 16px;
+  display: grid;
+  gap: 5px;
+  border: 1px solid #c9d9d0;
+  border-radius: 14px;
+  background: #eef6f1;
+}
+
+.speaker-boundary-banner strong {
+  font-size: 14px;
+}
+
+.speaker-boundary-banner span {
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.creation-ready-card {
+  padding: 22px;
+  display: grid;
+  gap: 18px;
+  border-color: #b8d4c7;
+  background: #eef6f1;
+}
+
+.creation-ready-card h2 {
+  margin: 10px 0 0;
+  font-size: 21px;
+  letter-spacing: -.03em;
+}
+
+.creation-ready-card p {
+  margin: 8px 0 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.65;
+}
+
+.creation-ready-card .creation-rights-note {
+  color: #745f49;
+}
+
+@media (min-width: 680px) {
+  .speaker-list {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+
+  .creation-ready-card {
+    grid-template-columns:
+      minmax(0, 1fr) auto;
+    align-items: center;
+  }
+}
+
+@media (min-width: 1024px) {
+  .speaker-list {
+    grid-template-columns:
+      repeat(3, minmax(0, 1fr));
+  }
+}
+
+.speaker-add-button {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}

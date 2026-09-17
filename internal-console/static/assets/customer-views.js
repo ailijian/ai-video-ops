@@ -7,6 +7,9 @@ import {
   editableFactValue,
   parseEditedFactValue,
 } from "./customer-components.js";
+import {
+  speakerCard,
+} from "./speaker-components.js";
 
 import { escapeHtml } from "./case-components.js";
 import { startTaskPolling } from "./task-progress.js";
@@ -245,7 +248,7 @@ export function createCustomerViews({
                 <h3>这个客户已经存在</h3>
                 <p>无需重新建立，可以直接继续现有流程。</p>
                 <a
-                  class="btn btn-secondary"
+                  class="btn btn-secondary speaker-add-button"
                   href="/customers/${encodeURIComponent(result.business_id)}"
                   data-route
                 >
@@ -896,18 +899,91 @@ export function createCustomerViews({
     }
 
   function renderApprovedCustomer(detail) {
-    const facts = (detail.business_persona?.facts || []).filter(
+    const facts = (
+      detail.business_persona?.facts || []
+    ).filter(
       (fact) => fact.state === "known",
     );
+
+    const speakers =
+      detail.speakers || [];
+
+    const speakerContent = speakers.length
+      ? `
+        <div class="speaker-list">
+          ${speakers
+            .map((speaker) =>
+              speakerCard(
+                speaker,
+                detail.business_id,
+              ),
+            )
+            .join("")}
+        </div>`
+      : `
+        <section class="card speaker-empty-card">
+          <h3>还没有出镜人</h3>
+          <p>
+            客户档案已经批准。下一步可以建立一个独立的 Speaker Persona。
+          </p>
+
+          <a
+            class="btn btn-primary"
+            href="/customers/${encodeURIComponent(
+              detail.business_id,
+            )}/speakers/new"
+            data-route
+          >
+            + 添加出镜人
+          </a>
+        </section>`;
+
+    const readiness = detail.creation_entry_ready
+      ? `
+        <section class="section">
+          <article class="card creation-ready-card">
+            <div>
+              <span class="status-kicker">
+                <span class="status-dot"></span>
+                Persona 条件已完成
+              </span>
+
+              <h2>可以进入创作流程</h2>
+
+              <p>
+                已存在 Approved Business Persona 和至少一个
+                Approved Speaker Persona。
+              </p>
+
+              <p class="creation-rights-note">
+                这不代表肖像、视频或其他生产素材已经获得使用授权。
+              </p>
+            </div>
+
+            <a
+              class="btn btn-primary"
+              href="/create"
+              data-route
+            >
+              开始创作
+            </a>
+          </article>
+        </section>`
+      : "";
 
     app.innerHTML = shell(
       "客户详情",
       `
         <main class="page">
           <div class="case-review-heading">
-            <a class="back-link" href="/customers" data-route>
+            <a
+              class="back-link"
+              href="/customers"
+              data-route
+            >
               ← 返回客户列表
             </a>
+
             ${customerStatusPill(detail.status)}
           </div>
 
@@ -921,14 +997,18 @@ export function createCustomerViews({
             <article class="card customer-overview-card">
               <span>客户档案</span>
               <strong>已批准</strong>
-              <p>Business Persona 已完成 Human Approval。</p>
+              <p>
+                Business Persona 已完成 Human Approval。
+              </p>
             </article>
 
             <article class="card customer-overview-card">
               <span>出镜人设</span>
-              <strong>${Number(detail.speaker_count || 0)} 个</strong>
+              <strong>
+                ${Number(detail.speaker_count || 0)} 个
+              </strong>
               <p>
-                Business Persona 与 Speaker Persona 保持独立。
+                Business Persona 与 Speaker Persona 独立管理。
               </p>
             </article>
           </section>
@@ -936,8 +1016,40 @@ export function createCustomerViews({
           <section class="section">
             <div class="section-head">
               <div>
+                <h2>出镜人</h2>
+                <p>
+                  管理谁可以以什么身份进行第一人称表达。
+                </p>
+              </div>
+
+              ${
+                speakers.length
+                  ? `
+                    <a
+                      class="btn btn-secondary"
+                      href="/customers/${encodeURIComponent(
+                        detail.business_id,
+                      )}/speakers/new"
+                      data-route
+                    >
+                      + 添加出镜人
+                    </a>`
+                  : ""
+              }
+            </div>
+
+            ${speakerContent}
+          </section>
+
+          ${readiness}
+
+          <section class="section">
+            <div class="section-head">
+              <div>
                 <h2>客户信息</h2>
-                <p>当前 Approved Business Persona 中的已知事实。</p>
+                <p>
+                  当前 Approved Business Persona 中的已知事实。
+                </p>
               </div>
             </div>
 
@@ -947,26 +1059,34 @@ export function createCustomerViews({
                   (fact) => `
                     <article class="card fact-card confirmed">
                       <div class="fact-card-head">
-                        <strong>${escapeHtml(
-                          customerFieldLabel(fact.field),
-                        )}</strong>
+                        <strong>
+                          ${escapeHtml(
+                            customerFieldLabel(
+                              fact.field,
+                            ),
+                          )}
+                        </strong>
                       </div>
-                      ${displayFactValue(fact.value)}
+
+                      ${displayFactValue(
+                        fact.value,
+                      )}
                     </article>`,
                 )
                 .join("")}
             </div>
           </section>
 
-          <section class="section">
-            <div class="card notice-card">
-              <h2>下一步：出镜人设</h2>
-              <p>
-                客户档案已经建立，但 Business Persona 不等于 Speaker Persona。
-                下一阶段会在这里添加并审核出镜人。
-              </p>
-            </div>
-          </section>
+          <div class="rights-banner">
+            <strong>
+              出镜人设与媒体使用权是两套 Authority。
+            </strong>
+
+            <span>
+              Speaker Persona Approved 只定义第一人称表达权限，
+              不自动赋予任何照片、视频或肖像素材生产使用权。
+            </span>
+          </div>
         </main>`,
     );
 
