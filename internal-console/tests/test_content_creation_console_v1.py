@@ -442,3 +442,90 @@ def test_generation_confirm_projects_canonical_request(
             "confirmed_quantity": 3,
             "idempotency_key": ("console_test_0001"),
         }
+
+
+def test_resolve_sources_requires_csrf(
+    content_settings: Settings,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        main_module,
+        "resolve_generation_sources",
+        lambda *args, **kwargs: {},
+    )
+
+    with TestClient(main_module.build_app(content_settings)) as client:
+        provision_user(
+            content_settings.database_path,
+            "13800000000",
+        )
+
+        login(client)
+
+        response = client.post(
+            "/api/create/gen_fixture_001/resolve-sources",
+        )
+
+        assert response.status_code == 403
+
+        assert response.json()["detail"]["code"] == "CSRF_CHECK_FAILED"
+
+
+def test_resolve_sources_projects_canonical_result(
+    content_settings: Settings,
+    monkeypatch,
+):
+    calls = {}
+
+    def fake_resolve(
+        settings,
+        request_id,
+    ):
+        calls["request_id"] = request_id
+
+        return {
+            "ok": True,
+            "request_id": request_id,
+            "source_plan_path": "fixture-plan",
+            "source_plan_sha256": "a" * 64,
+            "coverage_status": "supported",
+            "coverage_code": ("research_coverage_" "supported"),
+            "selected_pattern_count": 1,
+            "eligible_case_count": 3,
+            "remote_model_called": False,
+            "script_generation_performed": False,
+            "recovered": False,
+        }
+
+    monkeypatch.setattr(
+        main_module,
+        "resolve_generation_sources",
+        fake_resolve,
+    )
+
+    with TestClient(main_module.build_app(content_settings)) as client:
+        provision_user(
+            content_settings.database_path,
+            "13800000000",
+        )
+
+        csrf = login(client)
+
+        response = client.post(
+            "/api/create/gen_fixture_001/resolve-sources",
+            headers={"X-CSRF-Token": csrf},
+        )
+
+        assert response.status_code == 200
+
+        result = response.json()["result"]
+
+        assert result["request_id"] == "gen_fixture_001"
+
+        assert result["coverage_status"] == "supported"
+
+        assert result["remote_model_called"] is False
+
+        assert result["script_generation_performed"] is False
+
+        assert calls == {"request_id": "gen_fixture_001"}

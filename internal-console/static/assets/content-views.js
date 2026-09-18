@@ -2,6 +2,14 @@ import {
   escapeHtml,
 } from "./case-components.js";
 
+import {
+  createContentDeliveryViews,
+} from "./content-delivery-views.js";
+
+import {
+  createNewsDeliveryViews,
+} from "./news-delivery-views.js";
+
 
 export function createContentViews({
   app,
@@ -15,6 +23,20 @@ export function createContentViews({
 }) {
   let options = null;
   let confirmationKey = null;
+
+  const deliveryViews =
+    createContentDeliveryViews({
+      api,
+      showToast,
+      escapeHtml,
+    });
+
+  const newsDeliveryViews =
+    createNewsDeliveryViews({
+      api,
+      showToast,
+      escapeHtml,
+    });
 
   function lockEntryForm(
     submitLabel =
@@ -39,6 +61,8 @@ export function createContentViews({
         if (
           control.id ===
           "create-business"
+          || control.name ===
+            "create-profile"
         ) {
           return;
         }
@@ -88,6 +112,236 @@ export function createContentViews({
         "检查内容容量";
     }
   }
+
+  function selectedProfileValue() {
+    return (
+      document.querySelector(
+        'input[name="create-profile"]:checked',
+      )?.value || "mix"
+    );
+  }
+
+  function syncProfileSpecificUi() {
+    const news =
+      selectedProfileValue() ===
+      "news";
+
+    const quantityField =
+      document.querySelector(
+        "#create-quantity-field",
+      );
+
+    const quantityInput =
+      document.querySelector(
+        "#create-quantity",
+      );
+
+    if (quantityField) {
+      quantityField.hidden = news;
+    }
+
+    if (quantityInput) {
+      quantityInput.disabled = news;
+    }
+
+    const submitButton =
+      document.querySelector(
+        "#check-content-capacity",
+      );
+
+    if (
+      submitButton &&
+      !submitButton.closest(
+        "form",
+      )?.classList.contains(
+        "completed",
+      )
+    ) {
+      submitButton.textContent =
+        news
+          ? "检查 News 可用内容"
+          : "检查内容容量";
+    }
+
+    const title =
+      document.querySelector(
+        "#create-authority-title",
+      );
+
+    const body =
+      document.querySelector(
+        "#create-authority-body",
+      );
+
+    if (title) {
+      title.textContent = news
+        ? "News V1 只开放已验证的 Price / Offer 路径"
+        : "先检查容量，再显式建立 Generation Request";
+    }
+
+    if (body) {
+      body.textContent = news
+        ? "系统会先查找该客户已经导出的 Strong Historical Content，再推荐 4–8 个 News 信息标题。当前不把 Profile 切换当作新语义内容。"
+        : "“检查内容容量”保持完全只读。只有在容量结果出来后再次点击确认，才会建立 immutable Generation Request 和 Source Planning Handoff。";
+    }
+  }
+
+  async function restoreActiveNewsRequest() {
+    const businessSelect =
+      document.querySelector(
+        "#create-business",
+      );
+
+    const host =
+      document.querySelector(
+        "#capacity-preview-result",
+      );
+
+    if (
+      !businessSelect ||
+      !host
+    ) {
+      return false;
+    }
+
+    try {
+      const response = await api(
+        "/api/create/news/active" +
+          `?business_id=${encodeURIComponent(
+            businessSelect.value,
+          )}`,
+      );
+
+      const active =
+        response.active_request;
+
+      if (!active) {
+        unlockEntryForm();
+        syncProfileSpecificUi();
+        return false;
+      }
+
+      const speakerSelect =
+        document.querySelector(
+          "#create-speaker",
+        );
+
+      if (
+        speakerSelect &&
+        active.speaker_id
+      ) {
+        const found =
+          Array.from(
+            speakerSelect.options,
+          ).some(
+            (option) =>
+              option.value ===
+              active.speaker_id,
+          );
+
+        if (!found) {
+          host.innerHTML = `
+            <section class="card capacity-result blocked">
+              <span class="capacity-kicker">
+                News Request Authority 异常
+              </span>
+
+              <h2>
+                当前 News Request 的出镜人
+                无法从客户 Authority 恢复
+              </h2>
+            </section>`;
+
+          lockEntryForm(
+            "暂时无法继续",
+          );
+
+          return true;
+        }
+
+        speakerSelect.value =
+          active.speaker_id;
+      }
+
+      const newsRadio =
+        document.querySelector(
+          'input[name="create-profile"][value="news"]',
+        );
+
+      if (newsRadio) {
+        newsRadio.checked = true;
+      }
+
+      document
+        .querySelectorAll(
+          ".profile-choice",
+        )
+        .forEach((label) => {
+          label.classList.toggle(
+            "selected",
+            label.querySelector(
+              "input",
+            ).checked,
+          );
+        });
+
+      syncProfileSpecificUi();
+
+      lockEntryForm(
+        "News 内容任务已建立",
+      );
+
+      await newsDeliveryViews.restore(
+        active.request_id,
+        host,
+      );
+
+      return true;
+    } catch (error) {
+      host.innerHTML = `
+        <section class="card capacity-result blocked">
+          <span class="capacity-kicker">
+            暂时无法恢复 News 内容任务
+          </span>
+
+          <h2>当前已停止继续操作</h2>
+
+          <p>
+            ${escapeHtml(
+              error.detail?.next_action ||
+                error.detail?.message ||
+                error.message,
+            )}
+          </p>
+        </section>`;
+
+      lockEntryForm(
+        "暂时无法继续",
+      );
+
+      showToast(
+        error.detail?.next_action ||
+          error.detail?.message ||
+          error.message,
+      );
+
+      return true;
+    }
+  }
+
+  async function restoreSelectedProfileRequest() {
+    if (
+      selectedProfileValue() ===
+      "news"
+    ) {
+      return restoreActiveNewsRequest();
+    }
+
+    await restoreActiveRequest();
+    syncProfileSpecificUi();
+    return true;
+  }
+
 
   function renderSourcePlanSection(
     handoffReady,
@@ -286,27 +540,29 @@ export function createContentViews({
 
         <div class="capacity-authority-note">
           <strong>
-            当前仍未开始生成
+            Generation Request 已锁定
           </strong>
 
           <span>
-            没有调用远程模型，
-            没有生成脚本，
-            没有创建 Generation Batch，
-            没有写入 Content Ledger。
+            后续 Content Plan、Script Generation、
+            Human Review 与 Excel Export
+            都从同一 canonical Request
+            恢复推进，不会静默覆盖本轮事实链。
           </span>
         </div>
 
         <p class="generation-request-footnote">
           ${
             planCompleted
-              ? "下一步：Content Plan"
+              ? "继续下方 Content Delivery"
               : "Generation Request 是不可" +
                 "静默覆盖的 canonical " +
                 "artifact。"
           }
         </p>
-      </section>`;
+      </section>
+
+      <div id="content-delivery-host"></div>`;
   }
 
   function bindResolveSourcesButton(
@@ -345,7 +601,7 @@ export function createContentViews({
             "Generation Source Plan 已完成。",
           );
 
-          await restoreActiveRequest();
+          await restoreSelectedProfileRequest();
 
         } catch (error) {
           showToast(
@@ -406,8 +662,7 @@ export function createContentViews({
           </span>
 
           <h2>
-            为避免重复创建 Request，
-            当前已停止继续操作
+            当前 Mix 创作状态需要处理
           </h2>
 
           <p>
@@ -415,6 +670,12 @@ export function createContentViews({
               error.detail?.next_action ||
                 error.message,
             )}
+          </p>
+
+          <p>
+            这个状态只阻止当前 Mix 路径。
+            你仍然可以切换到 News，
+            系统会独立恢复 News Delivery 状态。
           </p>
         </section>`;
 
@@ -653,6 +914,15 @@ export function createContentViews({
     } else {
       bindResolveSourcesButton(
         host,
+        active.request_id,
+      );
+    }
+
+    if (
+      active.source_plan_ready ===
+      true
+    ) {
+      await deliveryViews.restore(
         active.request_id,
       );
     }
@@ -1194,7 +1464,10 @@ export function createContentViews({
                 </div>
               </div>
 
-              <div class="field">
+              <div
+                class="field"
+                id="create-quantity-field"
+              >
                 <label for="create-quantity">
                   希望生成多少条
                 </label>
@@ -1235,12 +1508,14 @@ export function createContentViews({
           <div id="capacity-preview-result"></div>
 
           <section class="card notice-card create-authority-card">
-            <h2>先检查容量，再显式建立 Generation Request</h2>
+            <h2 id="create-authority-title">
+              先检查容量，再显式建立 Generation Request
+            </h2>
 
-            <p>
-            “检查内容容量”保持完全只读。
-            只有在容量结果出来后再次点击确认，
-            才会建立 immutable Generation Request 和 Source Planning Handoff。
+            <p id="create-authority-body">
+              “检查内容容量”保持完全只读。
+              只有在容量结果出来后再次点击确认，
+              才会建立 immutable Generation Request 和 Source Planning Handoff。
             </p>
 
             <p>
@@ -1253,6 +1528,8 @@ export function createContentViews({
     );
 
     bindCommonActions();
+
+    syncProfileSpecificUi();
 
     const businessSelect =
       document.querySelector(
@@ -1305,10 +1582,10 @@ export function createContentViews({
         confirmationKey = null;
 
         lockEntryForm(
-          "正在检查现有 Request…",
+          "正在检查现有任务…",
         );
 
-        await restoreActiveRequest();
+        await restoreSelectedProfileRequest();
       },
     );
 
@@ -1330,7 +1607,7 @@ export function createContentViews({
       .forEach((input) => {
         input.addEventListener(
           "change",
-          () => {
+          async () => {
             document
               .querySelectorAll(
                 ".profile-choice",
@@ -1351,6 +1628,14 @@ export function createContentViews({
             ).innerHTML = "";
 
             confirmationKey = null;
+
+            syncProfileSpecificUi();
+
+            lockEntryForm(
+              "正在检查现有任务…",
+            );
+
+            await restoreSelectedProfileRequest();
           },
         );
       });
@@ -1388,6 +1673,97 @@ export function createContentViews({
             "visible",
           );
 
+          const profile =
+            selectedProfileValue();
+
+          const speakerId =
+            speakerSelect.value;
+
+          if (!speakerId) {
+            errorBox.textContent =
+              "请选择一个已批准的出镜人。";
+
+            errorBox.classList.add(
+              "visible",
+            );
+
+            return;
+          }
+
+          if (profile === "news") {
+            const host =
+              document.querySelector(
+                "#capacity-preview-result",
+              );
+
+            host.innerHTML = "";
+            confirmationKey = null;
+
+            const button =
+              document.querySelector(
+                "#check-content-capacity",
+              );
+
+            button.disabled = true;
+            button.textContent =
+              "正在检查 News…";
+
+            try {
+              const result =
+                await api(
+                  "/api/create/news/preview",
+                  {
+                    method: "POST",
+                    body:
+                      JSON.stringify({
+                        business_id:
+                          businessSelect.value,
+                        speaker_id:
+                          speakerId,
+                      }),
+                  },
+                );
+
+              newsDeliveryViews.renderPreview(
+                host,
+                result.preview,
+                {
+                  onRequestCreated:
+                    async (requestId) => {
+                      lockEntryForm(
+                        "News 内容任务已建立",
+                      );
+
+                      await newsDeliveryViews.restore(
+                        requestId,
+                        host,
+                      );
+                    },
+                },
+              );
+
+              host?.scrollIntoView({
+                behavior: "smooth",
+                block: "start",
+              });
+            } catch (error) {
+              errorBox.textContent =
+                error.detail?.next_action ||
+                error.detail?.message ||
+                error.message;
+
+              errorBox.classList.add(
+                "visible",
+              );
+            } finally {
+              button.disabled = false;
+              button.textContent =
+                "检查 News 可用内容";
+            }
+
+            return;
+          }
+
           const quantity =
             Number(
               document.querySelector(
@@ -1411,25 +1787,6 @@ export function createContentViews({
 
             return;
           }
-
-          const speakerId =
-            speakerSelect.value;
-
-          if (!speakerId) {
-            errorBox.textContent =
-              "请选择一个已批准的出镜人。";
-
-            errorBox.classList.add(
-              "visible",
-            );
-
-            return;
-          }
-
-          const profile =
-            document.querySelector(
-              'input[name="create-profile"]:checked',
-            ).value;
 
           document.querySelector(
             "#capacity-preview-result",
@@ -1505,11 +1862,13 @@ export function createContentViews({
         data,
       );
 
+      syncProfileSpecificUi();
+
       lockEntryForm(
-        "正在检查现有 Request…",
+        "正在检查现有任务…",
       );
 
-      await restoreActiveRequest();
+      await restoreSelectedProfileRequest();
     } catch (error) {
       renderLoadError(
         "创作入口暂时无法读取",

@@ -818,3 +818,138 @@ def test_request_does_not_write_ledger_or_batch(
     assert result["authority"]["remote_model_called"] is False
 
     assert result["authority"]["script_generation_performed"] is False
+
+
+def test_other_profile_active_request_does_not_block_new_mix(
+    tmp_path: Path,
+    monkeypatch,
+):
+    patch_authority(
+        tmp_path,
+        monkeypatch,
+    )
+
+    news_path = (
+        tmp_path
+        / "data"
+        / "generation_requests"
+        / "legacy_news_001"
+        / "generation_request_v1.json"
+    )
+
+    write_json(
+        news_path,
+        {
+            "schema_version": (
+                "generation-request-v1.0"
+            ),
+            "request_id": (
+                "legacy_news_001"
+            ),
+            "persona_id": (
+                "fixture_pet_store"
+            ),
+            "speaker_persona": (
+                "fixture_pet_store_owner"
+            ),
+            "target_profile": "news",
+            "quantity": 1,
+            "confirmation": {
+                "operator_requested_quantity": 1,
+            },
+            "lifecycle": {
+                "status": "created",
+            },
+        },
+    )
+
+    result = create_request(
+        tmp_path,
+        idempotency_key=(
+            "console_test_mix_after_news"
+        ),
+    )
+
+    assert result[
+        "request_id"
+    ] != "legacy_news_001"
+
+
+def test_human_resolved_mix_request_does_not_block_new_mix(
+    tmp_path: Path,
+    monkeypatch,
+):
+    patch_authority(
+        tmp_path,
+        monkeypatch,
+    )
+
+    first = create_request(
+        tmp_path,
+        idempotency_key=(
+            "console_test_old_mix"
+        ),
+        requested=5,
+        confirmed=3,
+    )
+
+    first_path = Path(
+        first[
+            "request_path"
+        ]
+    )
+
+    write_json(
+        first_path.parent
+        / "generation_request_resolution_v1.json",
+        {
+            "schema_version": (
+                "generation-request-resolution-v1.0"
+            ),
+            "request_id": (
+                first[
+                    "request_id"
+                ]
+            ),
+            "business_id": (
+                "fixture_pet_store"
+            ),
+            "profile": "mix",
+            "disposition": (
+                "abandoned"
+            ),
+            "reviewer": "Human",
+            "reviewed_at": (
+                "2026-09-18T00:00:00+00:00"
+            ),
+            "reason": (
+                "Historical unapproved attempt."
+            ),
+            "human_gate": True,
+            "request_ref": {
+                "sha256": (
+                    subject.sha256_file(
+                        first_path
+                    )
+                ),
+            },
+        },
+    )
+
+    second = create_request(
+        tmp_path,
+        idempotency_key=(
+            "console_test_new_mix"
+        ),
+        requested=10,
+        confirmed=3,
+    )
+
+    assert (
+        second[
+            "request_id"
+        ]
+        != first[
+            "request_id"
+        ]
+    )

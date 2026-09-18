@@ -1525,13 +1525,38 @@ class ContentQualityV1Tests(unittest.TestCase):
         history = ledger["extensions"]["presentation_history_v1"]
         self.assertEqual(history["storage_policy"], "append_only")
         self.assertFalse(history["semantic_novelty_authority"])
-        self.assertEqual(len(history["entries"]), 1)
-        presentation = history["entries"][0]
+
+        # Presentation History is append-only operational history, not a frozen
+        # semantic-entry count. New Human-approved News exports may append new
+        # presentation records while the semantic Content Ledger remains stable.
+        presentations = history["entries"]
+        self.assertGreaterEqual(len(presentations), 1)
+
+        presentation_ids = [
+            item.get("presentation_id")
+            for item in presentations
+        ]
         self.assertEqual(
-            presentation["source_content_ref"], "real_shufang_mix_001-C003"
+            len(presentation_ids),
+            len(set(presentation_ids)),
         )
-        self.assertFalse(presentation["semantic_novelty"])
-        self.assertFalse(presentation["communicated_information_units_created"])
+
+        legacy = [
+            item
+            for item in presentations
+            if item.get("request_id")
+            == "real_shufang_news_validation_repurpose_001"
+        ]
+        self.assertEqual(len(legacy), 1)
+        self.assertEqual(
+            legacy[0]["source_content_ref"], "real_shufang_mix_001-C003"
+        )
+
+        for presentation in presentations:
+            self.assertFalse(presentation["semantic_novelty"])
+            self.assertFalse(
+                presentation["communicated_information_units_created"]
+            )
 
     def test_replenishment_sources_keep_approved_persona_hashes(self) -> None:
         expected = {

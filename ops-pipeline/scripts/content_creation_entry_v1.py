@@ -16,6 +16,7 @@ from show_customer_status_v1 import (
     AuthorityResolutionError,
     load_content_ledger,
     load_export_receipts,
+    iter_approved_generation_batch_paths,
     resolve_batches,
     resolve_capacity,
     resolve_current_persona,
@@ -204,49 +205,46 @@ def has_ledger_worthy_historical_exposure(
             ),
         ) from exc
 
-    batches_root = pipeline_root / "data" / "generation_batches"
+    for path in iter_approved_generation_batch_paths(
+        pipeline_root
+    ):
+        try:
+            batch = read_json(path)
+        except ContentCreationEntryError as exc:
+            raise ContentCreationEntryError(
+                "CONTENT_HISTORY_AUTHORITY_INVALID",
+                (f"Approved Batch artifact is unreadable: {path}"),
+            ) from exc
 
-    if batches_root.exists():
-        for path in batches_root.glob(
-            "*/revisions/*/approved_generation_batch_v1.json"
-        ):
-            try:
-                batch = read_json(path)
-            except ContentCreationEntryError as exc:
-                raise ContentCreationEntryError(
-                    "CONTENT_HISTORY_AUTHORITY_INVALID",
-                    (f"Approved Batch artifact is unreadable: {path}"),
-                ) from exc
+        owner = _request_business_id(
+            pipeline_root,
+            str(batch.get("request_id") or ""),
+        )
 
-            owner = _request_business_id(
+        if owner is not None and owner != business_id:
+            continue
+
+        try:
+            candidate = validate_approved_batch(
                 pipeline_root,
-                str(batch.get("request_id") or ""),
+                path,
+                exports,
             )
+        except AuthorityResolutionError as exc:
+            raise ContentCreationEntryError(
+                "CONTENT_HISTORY_AUTHORITY_INVALID",
+                (
+                    "Approved Batch authority is invalid "
+                    "while the canonical Content Ledger "
+                    f"is missing: {exc}"
+                ),
+            ) from exc
 
-            if owner is not None and owner != business_id:
-                continue
+        if candidate["business_id"] != business_id:
+            continue
 
-            try:
-                candidate = validate_approved_batch(
-                    pipeline_root,
-                    path,
-                    exports,
-                )
-            except AuthorityResolutionError as exc:
-                raise ContentCreationEntryError(
-                    "CONTENT_HISTORY_AUTHORITY_INVALID",
-                    (
-                        "Approved Batch authority is invalid "
-                        "while the canonical Content Ledger "
-                        f"is missing: {exc}"
-                    ),
-                ) from exc
-
-            if candidate["business_id"] != business_id:
-                continue
-
-            if candidate["export_status"] == "EXPORTED":
-                return True
+        if candidate["export_status"] == "EXPORTED":
+            return True
 
     for _, receipt in exports:
         if receipt.get("schema_version") != "news-excel-export-receipt-v1.0":

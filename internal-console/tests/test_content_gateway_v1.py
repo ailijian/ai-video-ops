@@ -54,6 +54,7 @@ def make_request(
     request_id: str,
     *,
     business_id: str = "fixture_business",
+    profile: str = "mix",
 ) -> Path:
     path = (
         root
@@ -74,7 +75,7 @@ def make_request(
             "speaker_persona": (
                 "fixture_speaker"
             ),
-            "target_profile": "mix",
+            "target_profile": profile,
             "quantity": 3,
             "created_at": (
                 "2026-09-18T"
@@ -596,4 +597,103 @@ def test_source_plan_request_sha_mismatch_fails_closed(
             "GENERATION_SOURCE_PLAN_"
             "LINEAGE_MISMATCH"
         )
+    )
+
+
+def test_other_profile_request_does_not_create_mix_ambiguity(
+    tmp_path: Path,
+):
+    mix = make_request(
+        tmp_path,
+        "gen_mix_001",
+        profile="mix",
+    )
+
+    make_handoff(
+        mix
+    )
+
+    make_request(
+        tmp_path,
+        "gen_news_001",
+        profile="news",
+    )
+
+    result = (
+        get_active_generation_request(
+            settings(
+                tmp_path
+            ),
+            "fixture_business",
+        )
+    )
+
+    assert (
+        result[
+            "active_request"
+        ][
+            "request_id"
+        ]
+        == "gen_mix_001"
+    )
+
+
+def test_human_resolution_sidecar_removes_request_from_active_mix_projection(
+    tmp_path: Path,
+):
+    request = make_request(
+        tmp_path,
+        "gen_mix_001",
+        profile="mix",
+    )
+
+    write_json(
+        request.parent
+        / "generation_request_resolution_v1.json",
+        {
+            "schema_version": (
+                "generation-request-resolution-v1.0"
+            ),
+            "request_id": (
+                "gen_mix_001"
+            ),
+            "business_id": (
+                "fixture_business"
+            ),
+            "profile": "mix",
+            "disposition": (
+                "abandoned"
+            ),
+            "reviewer": "Human",
+            "reviewed_at": (
+                "2026-09-18T00:00:00+00:00"
+            ),
+            "reason": (
+                "Historical unapproved attempt."
+            ),
+            "human_gate": True,
+            "request_ref": {
+                "sha256": (
+                    sha256_file(
+                        request
+                    )
+                ),
+            },
+        },
+    )
+
+    result = (
+        get_active_generation_request(
+            settings(
+                tmp_path
+            ),
+            "fixture_business",
+        )
+    )
+
+    assert (
+        result[
+            "active_request"
+        ]
+        is None
     )

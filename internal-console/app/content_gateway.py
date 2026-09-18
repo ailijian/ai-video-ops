@@ -4,6 +4,7 @@ import hashlib
 import json
 import os
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -214,9 +215,188 @@ def _project_generation_source_plan(
     }
 
 
+
+def _effective_generation_request_audit(
+    settings: Settings,
+    business_id: str,
+    profile: str,
+) -> dict[str, Any]:
+    executable = (
+        getattr(
+            settings,
+            "pipeline_python_executable",
+            None,
+        )
+        or getattr(
+            settings,
+            "python_executable",
+            None,
+        )
+        or sys.executable
+    )
+
+    repo_root = getattr(
+        settings,
+        "repo_root",
+        (
+            Path(__file__)
+            .resolve()
+            .parents[2]
+        ),
+    )
+
+    script = (
+        Path(repo_root)
+        / "ops-pipeline"
+        / "scripts"
+        / "generation_request_effective_lifecycle_v1.py"
+    )
+
+    command = [
+        executable,
+        str(script),
+        "--pipeline-root",
+        str(
+            settings.pipeline_root
+        ),
+        "--business-id",
+        business_id,
+        "--profile",
+        profile,
+    ]
+
+    env = os.environ.copy()
+    env[
+        "PYTHONIOENCODING"
+    ] = "utf-8"
+    env[
+        "PYTHONUTF8"
+    ] = "1"
+
+    try:
+        process = subprocess.run(
+            command,
+            cwd=str(
+                Path(repo_root)
+            ),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60,
+            check=False,
+            env=env,
+        )
+
+    except (
+        OSError,
+        subprocess.TimeoutExpired,
+    ) as exc:
+        raise CanonicalOperationError(
+            "GENERATION_EFFECTIVE_LIFECYCLE_UNAVAILABLE",
+            "暂时无法确认当前创作状态。",
+            (
+                "不要创建新的 Request；"
+                "请先恢复 Effective Lifecycle Resolver。"
+            ),
+        ) from exc
+
+    try:
+        parsed = json.loads(
+            process.stdout
+        )
+    except json.JSONDecodeError as exc:
+        raise CanonicalOperationError(
+            "GENERATION_EFFECTIVE_LIFECYCLE_INVALID_OUTPUT",
+            "当前创作状态解析返回了无效结果。",
+            (
+                "不要创建新的 Request；"
+                "请检查 Effective Lifecycle Resolver。"
+            ),
+        ) from exc
+
+    if (
+        process.returncode != 0
+        or not isinstance(
+            parsed,
+            dict,
+        )
+        or parsed.get(
+            "ok"
+        )
+        is not True
+        or not isinstance(
+            parsed.get(
+                "audit"
+            ),
+            dict,
+        )
+    ):
+        raise CanonicalOperationError(
+            str(
+                parsed.get(
+                    "code"
+                )
+                if isinstance(
+                    parsed,
+                    dict,
+                )
+                else (
+                    "GENERATION_EFFECTIVE_"
+                    "LIFECYCLE_FAILED"
+                )
+            ),
+            "暂时无法确认当前创作状态。",
+            str(
+                parsed.get(
+                    "message"
+                )
+                if isinstance(
+                    parsed,
+                    dict,
+                )
+                else (
+                    "请检查 Effective "
+                    "Lifecycle Resolver。"
+                )
+            ),
+        )
+
+    audit = parsed[
+        "audit"
+    ]
+
+    if (
+        audit.get(
+            "read_only"
+        )
+        is not True
+        or audit.get(
+            "artifact_written"
+        )
+        is not False
+        or audit.get(
+            "remote_model_called"
+        )
+        is not False
+        or audit.get(
+            "profile_filter"
+        )
+        != profile
+    ):
+        raise CanonicalOperationError(
+            "GENERATION_EFFECTIVE_LIFECYCLE_BOUNDARY_INVALID",
+            "当前创作状态 Resolver 越过了只读边界。",
+            "停止继续操作并检查 Effective Lifecycle Authority。",
+        )
+
+    return audit
+
+
 def get_active_generation_request(
     settings: Settings,
     business_id: str,
+    profile: str = "mix",
 ) -> dict[str, Any]:
     """
     Read-only projection of the canonical active
@@ -226,124 +406,48 @@ def get_active_generation_request(
     No SQLite orchestration state.
     """
 
-    root = (
-        settings.pipeline_root
-        / "data"
-        / "generation_requests"
+    profile = str(
+        profile or "mix"
+    ).strip().lower()
+
+    if profile not in {
+        "mix",
+        "news",
+    }:
+        raise CanonicalOperationError(
+            "GENERATION_PROFILE_INVALID",
+            "创作模式无效。",
+            "请选择 Mix 或 News。",
+        )
+
+    audit = (
+        _effective_generation_request_audit(
+            settings,
+            business_id,
+            profile,
+        )
     )
 
-    if not root.exists():
+    active_ids = list(
+        audit.get(
+            "active_request_ids"
+        )
+        or []
+    )
+
+    if not active_ids:
         return {
             "active_request": None
         }
 
-    candidates: list[
-        tuple[
-            Path,
-            dict[str, Any],
-        ]
-    ] = []
-
-    for path in root.glob(
-        "*/generation_request_v1.json"
-    ):
-        try:
-            request = json.loads(
-                path.read_text(
-                    encoding="utf-8"
-                )
-            )
-
-        except (
-            OSError,
-            json.JSONDecodeError,
-        ):
-            continue
-
-        if not isinstance(
-            request,
-            dict,
-        ):
-            continue
-
-        if (
-            request.get(
-                "schema_version"
-            )
-            != GENERATION_REQUEST_SCHEMA
-        ):
-            continue
-
-        if (
-            str(
-                request.get(
-                    "persona_id"
-                )
-                or ""
-            )
-            != business_id
-        ):
-            continue
-
-        request_id = str(
-            request.get(
-                "request_id"
-            )
-            or ""
-        )
-
-        if (
-            not request_id
-            or request_id
-            != path.parent.name
-        ):
-            raise CanonicalOperationError(
-                "GENERATION_REQUEST_LINEAGE_MISMATCH",
-                (
-                    "Generation Request "
-                    "目录与 request_id 不一致。"
-                ),
-                (
-                    "请先修复 Generation Request "
-                    "canonical lineage。"
-                ),
-            )
-
-        lifecycle = (
-            request.get(
-                "lifecycle"
-            )
-            or {}
-        )
-
-        if (
-            str(
-                lifecycle.get(
-                    "status"
-                )
-                or ""
-            )
-            in TERMINAL_REQUEST_STATUSES
-        ):
-            continue
-
-        candidates.append(
-            (
-                path,
-                request,
-            )
-        )
-
-    if not candidates:
-        return {
-            "active_request": None
-        }
-
-    if len(candidates) > 1:
+    if len(
+        active_ids
+    ) > 1:
         raise CanonicalOperationError(
             "CONTENT_GENERATION_ACTIVE_REQUEST_AMBIGUITY",
             (
-                "同一客户存在多个 active "
+                "同一客户在当前创作模式下"
+                "存在多个真正可恢复的 "
                 "Generation Request。"
             ),
             (
@@ -352,10 +456,105 @@ def get_active_generation_request(
             ),
         )
 
-    (
-        request_path,
-        request,
-    ) = candidates[0]
+    request_id = str(
+        active_ids[0]
+    )
+
+    request_path = (
+        settings.pipeline_root
+        / "data"
+        / "generation_requests"
+        / request_id
+        / "generation_request_v1.json"
+    )
+
+    if not request_path.is_file():
+        raise CanonicalOperationError(
+            "GENERATION_REQUEST_NOT_FOUND",
+            "Effective Lifecycle 指向的 Generation Request 不存在。",
+            "停止继续操作并恢复 canonical Request lineage。",
+        )
+
+    try:
+        request = json.loads(
+            request_path.read_text(
+                encoding="utf-8"
+            )
+        )
+
+    except (
+        OSError,
+        json.JSONDecodeError,
+    ) as exc:
+        raise CanonicalOperationError(
+            "GENERATION_REQUEST_INVALID",
+            "Generation Request 无法读取。",
+            "停止继续操作并恢复 canonical Request。",
+        ) from exc
+
+    if (
+        not isinstance(
+            request,
+            dict,
+        )
+        or request.get(
+            "schema_version"
+        )
+        != GENERATION_REQUEST_SCHEMA
+        or request.get(
+            "request_id"
+        )
+        != request_id
+        or str(
+            request.get(
+                "persona_id"
+            )
+            or ""
+        )
+        != business_id
+        or str(
+            request.get(
+                "target_profile"
+            )
+            or request.get(
+                "profile"
+            )
+            or ""
+        ).lower()
+        != profile
+    ):
+        raise CanonicalOperationError(
+            "GENERATION_REQUEST_LINEAGE_MISMATCH",
+            "Effective Lifecycle 与 Generation Request lineage 不一致。",
+            "停止继续操作并恢复正确的 Request Authority。",
+        )
+
+    classifications = [
+        item
+        for item in (
+            audit.get(
+                "requests"
+            )
+            or []
+        )
+        if item.get(
+            "request_id"
+        )
+        == request_id
+    ]
+
+    if len(
+        classifications
+    ) != 1:
+        raise CanonicalOperationError(
+            "GENERATION_EFFECTIVE_LIFECYCLE_AMBIGUITY",
+            "无法唯一恢复当前 Generation Request 的 Effective Lifecycle。",
+            "停止继续操作并检查 Resolver 输出。",
+        )
+
+    effective = (
+        classifications[0]
+    )
 
     handoff_path = (
         request_path.parent
@@ -530,6 +729,16 @@ def get_active_generation_request(
             "lifecycle_status": (
                 lifecycle.get(
                     "status"
+                )
+            ),
+            "effective_status": (
+                effective.get(
+                    "effective_status"
+                )
+            ),
+            "effective_stage": (
+                effective.get(
+                    "effective_stage"
                 )
             ),
             "handoff_ready": (

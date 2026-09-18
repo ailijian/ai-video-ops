@@ -86,6 +86,28 @@ from .content_gateway import (
     resolve_generation_sources,
 )
 
+from .content_delivery_gateway import (
+    export_mix_excel,
+    exported_excel_filename,
+    exported_excel_path,
+    generate_scripts,
+    get_content_delivery_state,
+    resolve_content_plan,
+    submit_generation_review,
+)
+
+from .news_delivery_gateway import (
+    create_news_request,
+    export_news_excel,
+    exported_news_excel_filename,
+    exported_news_excel_path,
+    get_active_news_request,
+    get_news_delivery_state,
+    preview_news_creation,
+    resolve_news_plan,
+    submit_news_review,
+)
+
 
 class SpeakerAnalysisRequest(BaseModel):
     speaker_name: str = Field(
@@ -271,6 +293,83 @@ class ContentGenerationConfirmRequest(BaseModel):
         max_length=128,
         pattern=r"^[A-Za-z0-9_-]+$",
     )
+
+
+class ContentReviewItem(BaseModel):
+    content_id: str = Field(
+        min_length=1,
+        max_length=256,
+    )
+    decision: Literal[
+        "approved",
+        "rejected",
+    ]
+    note: str = Field(
+        default="",
+        max_length=2000,
+    )
+
+
+class ContentReviewRequest(BaseModel):
+    items: list[ContentReviewItem]
+    note: str = Field(
+        default="",
+        max_length=4000,
+    )
+
+
+class NewsPreviewRequest(BaseModel):
+    business_id: str = Field(
+        min_length=2,
+        max_length=128,
+    )
+    speaker_id: str = Field(
+        min_length=2,
+        max_length=128,
+    )
+
+
+class NewsCreateRequest(BaseModel):
+    business_id: str = Field(
+        min_length=2,
+        max_length=128,
+    )
+    speaker_id: str = Field(
+        min_length=2,
+        max_length=128,
+    )
+    source_content_id: str = Field(
+        min_length=1,
+        max_length=256,
+    )
+    idempotency_key: str = Field(
+        min_length=8,
+        max_length=128,
+        pattern=r"^[A-Za-z0-9_-]+$",
+    )
+
+
+class NewsReviewItem(BaseModel):
+    slot_id: str = Field(
+        min_length=1,
+        max_length=64,
+    )
+    decision: Literal[
+        "approved",
+        "rejected",
+    ]
+    approved_text: str | None = Field(
+        default=None,
+        max_length=200,
+    )
+    note: str = Field(
+        default="",
+        max_length=1000,
+    )
+
+
+class NewsReviewRequest(BaseModel):
+    items: list[NewsReviewItem]
 
 
 class LoginThrottle:
@@ -898,6 +997,273 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         return {
             "result": result,
         }
+
+    @app.get("/api/create/{request_id}/delivery")
+    def content_delivery_state(
+        request_id: str,
+        _: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        return {
+            "state": get_content_delivery_state(
+                settings,
+                request_id,
+            )
+        }
+
+    @app.post("/api/create/{request_id}/resolve-content-plan")
+    def resolve_content_plan_route(
+        request_id: str,
+        x_csrf_token: str | None = Header(
+            default=None,
+            alias="X-CSRF-Token",
+        ),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(session, x_csrf_token)
+        return {
+            "result": resolve_content_plan(
+                settings,
+                request_id,
+            )
+        }
+
+    @app.post("/api/create/{request_id}/generate-scripts")
+    def generate_scripts_route(
+        request_id: str,
+        x_csrf_token: str | None = Header(
+            default=None,
+            alias="X-CSRF-Token",
+        ),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(session, x_csrf_token)
+        return {
+            "result": generate_scripts(
+                settings,
+                request_id,
+            )
+        }
+
+    @app.post("/api/create/{request_id}/review")
+    def generation_review_route(
+        request_id: str,
+        payload: ContentReviewRequest,
+        x_csrf_token: str | None = Header(
+            default=None,
+            alias="X-CSRF-Token",
+        ),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(session, x_csrf_token)
+        return {
+            "result": submit_generation_review(
+                settings,
+                request_id,
+                reviewer=str(session.user["phone"]),
+                items=[
+                    item.model_dump()
+                    for item in payload.items
+                ],
+                note=payload.note,
+            )
+        }
+
+    @app.post("/api/create/{request_id}/export-mix")
+    def export_mix_route(
+        request_id: str,
+        x_csrf_token: str | None = Header(
+            default=None,
+            alias="X-CSRF-Token",
+        ),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(session, x_csrf_token)
+        return {
+            "result": export_mix_excel(
+                settings,
+                request_id,
+            )
+        }
+
+    @app.get("/api/create/{request_id}/exported-excel")
+    def download_exported_excel(
+        request_id: str,
+        _: SessionContext = Depends(require_console_access),
+    ) -> FileResponse:
+        path = exported_excel_path(
+            settings,
+            request_id,
+        )
+        return FileResponse(
+            path=path,
+            filename=exported_excel_filename(
+                settings,
+                request_id,
+            ),
+            media_type=(
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
+            ),
+        )
+
+    @app.get("/api/create/news/active")
+    def active_news_request(
+        business_id: str,
+        _: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        return get_active_news_request(
+            settings,
+            business_id,
+        )
+
+    @app.post("/api/create/news/preview")
+    def news_preview_route(
+        payload: NewsPreviewRequest,
+        x_csrf_token: str | None = Header(
+            default=None,
+            alias="X-CSRF-Token",
+        ),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(
+            session,
+            x_csrf_token,
+        )
+
+        return {
+            "preview": preview_news_creation(
+                settings,
+                business_id=payload.business_id,
+                speaker_id=payload.speaker_id,
+            )
+        }
+
+    @app.post("/api/create/news/request")
+    def create_news_request_route(
+        payload: NewsCreateRequest,
+        x_csrf_token: str | None = Header(
+            default=None,
+            alias="X-CSRF-Token",
+        ),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(
+            session,
+            x_csrf_token,
+        )
+
+        return {
+            "result": create_news_request(
+                settings,
+                business_id=payload.business_id,
+                speaker_id=payload.speaker_id,
+                source_content_id=payload.source_content_id,
+                idempotency_key=payload.idempotency_key,
+            )
+        }
+
+    @app.get("/api/create/news/{request_id}/delivery")
+    def news_delivery_state_route(
+        request_id: str,
+        _: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        return {
+            "state": get_news_delivery_state(
+                settings,
+                request_id,
+            )
+        }
+
+    @app.post("/api/create/news/{request_id}/resolve-plan")
+    def resolve_news_plan_route(
+        request_id: str,
+        x_csrf_token: str | None = Header(
+            default=None,
+            alias="X-CSRF-Token",
+        ),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(
+            session,
+            x_csrf_token,
+        )
+
+        return {
+            "result": resolve_news_plan(
+                settings,
+                request_id,
+            )
+        }
+
+    @app.post("/api/create/news/{request_id}/review")
+    def review_news_route(
+        request_id: str,
+        payload: NewsReviewRequest,
+        x_csrf_token: str | None = Header(
+            default=None,
+            alias="X-CSRF-Token",
+        ),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(
+            session,
+            x_csrf_token,
+        )
+
+        return {
+            "result": submit_news_review(
+                settings,
+                request_id,
+                reviewer=str(session.user["phone"]),
+                items=[
+                    item.model_dump()
+                    for item in payload.items
+                ],
+            )
+        }
+
+    @app.post("/api/create/news/{request_id}/export")
+    def export_news_route(
+        request_id: str,
+        x_csrf_token: str | None = Header(
+            default=None,
+            alias="X-CSRF-Token",
+        ),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(
+            session,
+            x_csrf_token,
+        )
+
+        return {
+            "result": export_news_excel(
+                settings,
+                request_id,
+            )
+        }
+
+    @app.get("/api/create/news/{request_id}/excel")
+    def download_news_excel_route(
+        request_id: str,
+        _: SessionContext = Depends(require_console_access),
+    ) -> FileResponse:
+        path = exported_news_excel_path(
+            settings,
+            request_id,
+        )
+
+        return FileResponse(
+            path=path,
+            filename=exported_news_excel_filename(
+                settings,
+                request_id,
+            ),
+            media_type=(
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
+            ),
+        )
 
     @app.get("/api/workbench")
     def workbench(

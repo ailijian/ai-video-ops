@@ -29,6 +29,11 @@ from show_customer_status_v1 import (
     sha256_file,
 )
 
+from generation_request_effective_lifecycle_v1 import (
+    EffectiveLifecycleError,
+    request_is_effectively_in_flight,
+)
+
 REQUEST_SCHEMA_VERSION = "generation-request-v1.0"
 
 HANDOFF_SCHEMA_VERSION = "generation-source-planning-" "handoff-v1.0"
@@ -331,43 +336,91 @@ def evidence_ref(
 
 
 def _request_is_in_flight(
-    request: dict[str, Any],
+    pipeline_root: Path,
+    request_path: Path,
 ) -> bool:
-    lifecycle = request.get("lifecycle") or {}
+    try:
+        return (
+            request_is_effectively_in_flight(
+                pipeline_root=(
+                    pipeline_root
+                ),
+                request_path=(
+                    request_path
+                ),
+            )
+        )
 
-    status = str(lifecycle.get("status") or "")
-
-    return status not in {
-        "completed",
-        "exported",
-        "cancelled",
-        "abandoned",
-    }
+    except EffectiveLifecycleError as exc:
+        raise GenerationRequestError(
+            exc.code,
+            str(exc),
+        ) from exc
 
 
 def _active_in_flight_request_exists(
     pipeline_root: Path,
     business_id: str,
+    profile: str,
     exclude_request_id: str | None = None,
 ) -> bool:
-    root = pipeline_root / "data" / "generation_requests"
+    root = (
+        pipeline_root
+        / "data"
+        / "generation_requests"
+    )
 
     if not root.exists():
         return False
 
-    for path in root.glob("*/generation_request_v1.json"):
+    for path in root.glob(
+        "*/generation_request_v1.json"
+    ):
         try:
-            request = read_json(path)
+            request = read_json(
+                path
+            )
         except GenerationRequestError:
             continue
 
-        if str(request.get("persona_id") or "") != business_id:
+        if (
+            str(
+                request.get(
+                    "persona_id"
+                )
+                or ""
+            )
+            != business_id
+        ):
             continue
 
-        if exclude_request_id and request.get("request_id") == exclude_request_id:
+        if (
+            str(
+                request.get(
+                    "target_profile"
+                )
+                or request.get(
+                    "profile"
+                )
+                or ""
+            ).lower()
+            != profile
+        ):
             continue
 
-        if _request_is_in_flight(request):
+        if (
+            exclude_request_id
+            and request.get(
+                "request_id"
+            )
+            == exclude_request_id
+        ):
+            continue
+
+        if _request_is_in_flight(
+            pipeline_root,
+            path,
+        ):
             return True
 
     return False
@@ -381,55 +434,105 @@ def _find_equivalent_active_request(
     requested_quantity: int,
     confirmed_quantity: int,
 ) -> tuple[Path, dict[str, Any]] | None:
-    """Find an in-flight request with the same canonical identity.
+    # Effective lifecycle, not immutable Request status alone, decides in-flight.
+    # Profile scope is explicit: old News validation Requests cannot block Mix.
 
-    Same business + speaker + profile + operator requested quantity +
-    confirmed quantity is treated as the same operator confirmation. This
-    allows the UI to recover an existing immutable Request even if the local
-    idempotency key was regenerated (e.g. after a page refresh).
-
-    A different operator requested quantity is a DIFFERENT confirmation: it
-    must not be recovered here and must fall through to the active-request
-    blocker instead.
-    """
-    root = pipeline_root / "data" / "generation_requests"
+    root = (
+        pipeline_root
+        / "data"
+        / "generation_requests"
+    )
 
     if not root.exists():
         return None
 
-    for path in root.glob("*/generation_request_v1.json"):
+    for path in root.glob(
+        "*/generation_request_v1.json"
+    ):
         try:
-            request = read_json(path)
+            request = read_json(
+                path
+            )
         except GenerationRequestError:
             continue
 
-        if str(request.get("persona_id") or "") != business_id:
+        if (
+            str(
+                request.get(
+                    "persona_id"
+                )
+                or ""
+            )
+            != business_id
+        ):
             continue
-
-        if not _request_is_in_flight(request):
-            continue
-
-        if str(request.get("speaker_persona") or "") != speaker_id:
-            continue
-
-        if str(request.get("target_profile") or "") != profile:
-            continue
-
-        if int(request.get("quantity") or 0) != confirmed_quantity:
-            continue
-
-        confirmation = request.get("confirmation") or {}
 
         if (
-            int(confirmation.get("operator_requested_quantity") or 0)
+            str(
+                request.get(
+                    "target_profile"
+                )
+                or request.get(
+                    "profile"
+                )
+                or ""
+            ).lower()
+            != profile
+        ):
+            continue
+
+        if not _request_is_in_flight(
+            pipeline_root,
+            path,
+        ):
+            continue
+
+        if (
+            str(
+                request.get(
+                    "speaker_persona"
+                )
+                or ""
+            )
+            != speaker_id
+        ):
+            continue
+
+        if (
+            int(
+                request.get(
+                    "quantity"
+                )
+                or 0
+            )
+            != confirmed_quantity
+        ):
+            continue
+
+        confirmation = (
+            request.get(
+                "confirmation"
+            )
+            or {}
+        )
+
+        if (
+            int(
+                confirmation.get(
+                    "operator_requested_quantity"
+                )
+                or 0
+            )
             != requested_quantity
         ):
             continue
 
-        return path, request
+        return (
+            path,
+            request,
+        )
 
     return None
-
 
 def request_id_for(
     business_id: str,
@@ -791,6 +894,7 @@ def create_generation_request_handoff(
     if _active_in_flight_request_exists(
         pipeline_root,
         business_id,
+        profile,
         exclude_request_id=request_id,
     ):
         raise GenerationRequestError(

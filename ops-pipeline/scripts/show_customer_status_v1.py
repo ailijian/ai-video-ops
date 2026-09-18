@@ -11,6 +11,10 @@ from typing import Any
 
 from operational_controls_v1 import load_controls
 
+from content_quality_v1 import (
+    build_content_plan_v1_1_1,
+)
+
 
 SCHEMA_VERSION = "customer-status-read-model-v1.0"
 ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
@@ -309,12 +313,36 @@ def load_content_ledger(pipeline_root: Path, business_id: str) -> dict[str, Any]
 
 
 def load_export_receipts(pipeline_root: Path) -> list[tuple[Path, dict[str, Any]]]:
+    """Load canonical export receipts across legacy and current delivery surfaces.
+
+    Mix and the legacy News MVP stored receipts under output/*.export_receipt.json.
+    News Delivery V1 stores its immutable receipt with the request lineage under
+    data/news_deliveries/<request_id>/news_dynamic_excel_export_receipt_v1.json.
+
+    Both are read-only Authority sources. Dynamic News receipts are presentation
+    history receipts, not new semantic Content Ledger exposure.
+    """
     receipts: list[tuple[Path, dict[str, Any]]] = []
+
     output_root = pipeline_root / "output"
     for path in output_root.glob("*.export_receipt.json"):
         value = read_json(path)
         if value.get("validation_passed") is True:
             receipts.append((path, value))
+
+    news_root = pipeline_root / "data" / "news_deliveries"
+    if news_root.exists():
+        for path in news_root.glob(
+            "*/news_dynamic_excel_export_receipt_v1.json"
+        ):
+            value = read_json(path)
+            if (
+                value.get("schema_version")
+                == "news-dynamic-excel-export-receipt-v1.0"
+                and value.get("validation_passed") is True
+            ):
+                receipts.append((path, value))
+
     return receipts
 
 
@@ -405,6 +433,36 @@ def validate_approved_batch(
     }
 
 
+
+def iter_approved_generation_batch_paths(
+    pipeline_root: Path,
+) -> list[Path]:
+    # Support both historical revisioned layout and current flat Console layout.
+    batches_root = (
+        pipeline_root
+        / "data"
+        / "generation_batches"
+    )
+
+    if not batches_root.exists():
+        return []
+
+    paths: set[Path] = set()
+
+    for pattern in (
+        "*/revisions/*/approved_generation_batch_v1.json",
+        "*/approved_generation_batch_v1.json",
+    ):
+        for path in batches_root.glob(pattern):
+            if path.is_file():
+                paths.add(path.resolve())
+
+    return sorted(
+        paths,
+        key=lambda item: item.as_posix(),
+    )
+
+
 def resolve_batches(
     pipeline_root: Path,
     business_id: str,
@@ -413,9 +471,14 @@ def resolve_batches(
 ) -> dict[str, Any]:
     exports = load_export_receipts(pipeline_root)
     candidates: list[dict[str, Any]] = []
-    batches_root = pipeline_root / "data" / "generation_batches"
-    for path in batches_root.glob("*/revisions/*/approved_generation_batch_v1.json"):
-        candidate = validate_approved_batch(pipeline_root, path, exports)
+    for path in iter_approved_generation_batch_paths(
+        pipeline_root
+    ):
+        candidate = validate_approved_batch(
+            pipeline_root,
+            path,
+            exports,
+        )
         if candidate["business_id"] == business_id:
             candidates.append(candidate)
     if not candidates:
@@ -511,7 +574,11 @@ def resolve_batches(
         news_receipts = [
             (path, value)
             for path, value in exports
-            if value.get("schema_version") == "news-excel-export-receipt-v1.0"
+            if value.get("schema_version")
+            in {
+                "news-excel-export-receipt-v1.0",
+                "news-dynamic-excel-export-receipt-v1.0",
+            }
             and value.get("request_id") == entry.get("request_id")
             and value.get("output_sha256") == sha256_file(news_output_path)
         ]
@@ -520,7 +587,59 @@ def resolve_batches(
                 "CURRENT_AUTHORITY_AMBIGUITY",
                 "Latest exported News presentation does not resolve to exactly one export receipt.",
             )
-        news_paths = [approval_path, news_output_path, news_receipts[0][0]]
+
+        news_receipt_path, news_receipt = news_receipts[0]
+        news_paths = [approval_path, news_output_path, news_receipt_path]
+
+        if (
+            news_receipt.get("schema_version")
+            == "news-dynamic-excel-export-receipt-v1.0"
+        ):
+            approved_ref = news_receipt.get("approved_news_delivery") or {}
+            if (
+                approved_ref.get("sha256") != sha256_file(approval_path)
+                or news_receipt.get("reuse_intent")
+                != "cross_profile_repurpose"
+                or news_receipt.get("semantic_novelty") is not False
+            ):
+                raise AuthorityResolutionError(
+                    "CURRENT_AUTHORITY_INVALID",
+                    "Latest dynamic News receipt does not validate its Human Approval or repurpose boundary.",
+                )
+
+            closure_path = (
+                news_receipt_path.parent
+                / "news_delivery_export_closure_v1.json"
+            )
+            if not closure_path.is_file():
+                raise AuthorityResolutionError(
+                    "CURRENT_AUTHORITY_INCOMPLETE",
+                    "Latest dynamic News export is missing Presentation History Closure.",
+                )
+
+            closure = read_json(closure_path)
+            closure_validation = closure.get("validation") or {}
+            closure_export = closure.get("excel_export") or {}
+            closure_presentation = closure.get("presentation_history") or {}
+            if (
+                closure.get("schema_version")
+                != "news-delivery-export-closure-v1.0"
+                or closure.get("request_id") != entry.get("request_id")
+                or closure_validation.get("passed") is not True
+                or closure_export.get("sha256")
+                != sha256_file(news_output_path)
+                or closure_presentation.get("presentation_id")
+                != entry.get("presentation_id")
+                or closure_presentation.get("semantic_entry_count_delta") != 0
+                or closure_presentation.get("semantic_entries_changed") is not False
+            ):
+                raise AuthorityResolutionError(
+                    "CURRENT_AUTHORITY_INVALID",
+                    "Latest dynamic News Presentation History Closure is invalid.",
+                )
+
+            news_paths.append(closure_path)
+
         latest_news = {
             "request_id": entry.get("request_id"),
             "status": "EXPORTED",
@@ -533,6 +652,388 @@ def resolve_batches(
         "latest_mix": latest_mix,
         "latest_news": latest_news,
         "news_paths": news_paths,
+    }
+
+
+def _canonical_sha256(value: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(
+            value,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    ).hexdigest()
+
+
+def _latest_ledger_operation_time(ledger: dict[str, Any]) -> str | None:
+    timestamps: list[str] = []
+
+    for entry in ledger.get("entries") or []:
+        if not isinstance(entry, dict):
+            continue
+
+        for key in (
+            "published_at",
+            "exported_at",
+            "approved_at",
+            "created_at",
+        ):
+            value = entry.get(key)
+            if isinstance(value, str) and value:
+                timestamps.append(value)
+
+        for event in entry.get("events") or []:
+            if not isinstance(event, dict):
+                continue
+            value = event.get("at")
+            if isinstance(value, str) and value:
+                timestamps.append(value)
+
+    history = (
+        ((ledger.get("extensions") or {}).get("presentation_history_v1") or {})
+        .get("entries")
+        or []
+    )
+    for entry in history:
+        if not isinstance(entry, dict):
+            continue
+
+        for key in (
+            "exported_at",
+            "approved_at",
+            "created_at",
+        ):
+            value = entry.get(key)
+            if isinstance(value, str) and value:
+                timestamps.append(value)
+
+        for event in entry.get("events") or []:
+            if not isinstance(event, dict):
+                continue
+            value = event.get("at")
+            if isinstance(value, str) and value:
+                timestamps.append(value)
+
+    return max(timestamps) if timestamps else None
+
+
+def _presentation_entry_is_nonsemantic(entry: dict[str, Any]) -> bool:
+    if not isinstance(entry, dict):
+        return False
+
+    return (
+        entry.get("production_profile") == "news"
+        and entry.get("status") == "exported"
+        and entry.get("semantic_novelty") is False
+        and entry.get("communicated_information_units_created") is False
+        and int(entry.get("new_semantic_content_count_delta") or 0) == 0
+        and int(entry.get("new_central_claim_count_delta") or 0) == 0
+        and int(entry.get("new_information_gain_delta") or 0) == 0
+    )
+
+
+def _capacity_ledger_matches_after_presentation_only_append(
+    current_ledger: dict[str, Any],
+    expected_canonical_sha256: str,
+) -> tuple[bool, int]:
+    """Accept only append-only News presentation drift after capacity freeze.
+
+    Post-export capacity is semantic capacity. A later News cross-profile
+    repurpose may append Presentation History and update ledger.updated_at
+    without changing semantic Content Ledger entries.
+
+    We prove that boundary by reconstructing earlier canonical Ledger states:
+    only trailing non-semantic Presentation History entries may be removed,
+    and the reconstructed canonical SHA must exactly equal the SHA frozen by
+    post_export_remaining_capacity_v1.json.
+    """
+
+    if not expected_canonical_sha256:
+        return False, 0
+
+    if _canonical_sha256(current_ledger) == expected_canonical_sha256:
+        return True, 0
+
+    history_container = (
+        (current_ledger.get("extensions") or {}).get("presentation_history_v1")
+        or {}
+    )
+    history = history_container.get("entries") or []
+    if not isinstance(history, list) or not history:
+        return False, 0
+
+    for removed_count in range(1, len(history) + 1):
+        removed = history[-removed_count:]
+
+        if not all(
+            _presentation_entry_is_nonsemantic(entry)
+            for entry in removed
+        ):
+            return False, 0
+
+        keep_count = len(history) - removed_count
+        candidate = json.loads(
+            json.dumps(
+                current_ledger,
+                ensure_ascii=False,
+            )
+        )
+
+        candidate_extensions = candidate.get("extensions") or {}
+        candidate_history = (
+            candidate_extensions.get("presentation_history_v1") or {}
+        )
+        candidate_history["entries"] = history[:keep_count]
+
+        if keep_count == 0:
+            # Try both historical shapes:
+            # an empty existing presentation extension, or no extension yet.
+            candidate_history["entries"] = []
+            candidate_extensions["presentation_history_v1"] = candidate_history
+            candidate["extensions"] = candidate_extensions
+
+        latest_time = _latest_ledger_operation_time(candidate)
+        if latest_time is not None:
+            candidate["updated_at"] = latest_time
+
+        if _canonical_sha256(candidate) == expected_canonical_sha256:
+            return True, removed_count
+
+        if keep_count == 0:
+            no_extension_candidate = json.loads(
+                json.dumps(
+                    candidate,
+                    ensure_ascii=False,
+                )
+            )
+            no_extension_extensions = (
+                no_extension_candidate.get("extensions") or {}
+            )
+            no_extension_extensions.pop(
+                "presentation_history_v1",
+                None,
+            )
+            if no_extension_extensions:
+                no_extension_candidate["extensions"] = (
+                    no_extension_extensions
+                )
+            else:
+                no_extension_candidate.pop(
+                    "extensions",
+                    None,
+                )
+
+            latest_time = _latest_ledger_operation_time(
+                no_extension_candidate
+            )
+            if latest_time is not None:
+                no_extension_candidate["updated_at"] = latest_time
+
+            if (
+                _canonical_sha256(no_extension_candidate)
+                == expected_canonical_sha256
+            ):
+                return True, removed_count
+
+    return False, 0
+
+
+
+def _resolve_current_console_capacity(
+    pipeline_root: Path,
+    business: dict[str, Any],
+    speaker: dict[str, Any],
+    ledger: dict[str, Any],
+    active_batch: dict[str, Any],
+) -> dict[str, Any]:
+    # Current Console V1 stores Approved Batch flat under
+    # data/generation_batches/<request_id>/ and closes export/ledger with
+    # generation_export_closure_v1.json. It does not write the older
+    # post_export_remaining_capacity_v1.json artifact.
+    #
+    # This path is read-only: reuse the preserved V1.1 candidate pool and
+    # re-run only deterministic V1.1.1 gates against Current Ledger.
+
+    request_id = str(
+        active_batch.get("request_id")
+        or ""
+    )
+
+    if not request_id:
+        raise AuthorityResolutionError(
+            "CURRENT_CAPACITY_LINEAGE_INVALID",
+            "Active Approved Batch is missing request_id.",
+        )
+
+    if active_batch.get("export_status") != "EXPORTED":
+        raise AuthorityResolutionError(
+            "CURRENT_CAPACITY_LINEAGE_INVALID",
+            "Current Console capacity fallback requires Approved + Exported Mix Batch.",
+        )
+
+    batch_root = (
+        pipeline_root
+        / "data"
+        / "generation_batches"
+        / request_id
+    )
+
+    closure_path = (
+        batch_root
+        / "generation_export_closure_v1.json"
+    )
+
+    if not closure_path.is_file():
+        raise AuthorityResolutionError(
+            "CURRENT_CAPACITY_NOT_FOUND",
+            (
+                "Neither legacy post-export capacity nor current "
+                f"Generation Export Closure exists for {request_id}."
+            ),
+        )
+
+    closure = read_json(closure_path)
+    approved_ref = closure.get("approved_batch") or {}
+
+    if not (
+        closure.get("schema_version") == "generation-export-closure-v1.0"
+        and closure.get("request_id") == request_id
+        and closure.get("status") == "approved_exported_ledger_closed"
+        and approved_ref.get("sha256") == active_batch.get("file_sha256")
+    ):
+        raise AuthorityResolutionError(
+            "CURRENT_CAPACITY_LINEAGE_MISMATCH",
+            "Generation Export Closure does not validate the Active Approved Batch.",
+        )
+
+    entries = list(ledger.get("entries") or [])
+
+    represented = [
+        entry
+        for entry in entries
+        if (
+            isinstance(entry, dict)
+            and str(entry.get("batch_ref") or "") == request_id
+            and str(entry.get("status") or "") in {"exported", "published"}
+        )
+    ]
+
+    if not represented:
+        raise AuthorityResolutionError(
+            "CURRENT_CAPACITY_LINEAGE_MISMATCH",
+            (
+                "Generation Export Closure exists, but Current Content Ledger "
+                "does not represent the exported Mix Batch."
+            ),
+        )
+
+    request_path = (
+        pipeline_root
+        / "data"
+        / "generation_requests"
+        / request_id
+        / "generation_request_v1.json"
+    )
+
+    v1_1_path = (
+        pipeline_root
+        / "data"
+        / "content_plans"
+        / request_id
+        / "content_plan_v1_1.json"
+    )
+
+    v1_1_1_path = (
+        pipeline_root
+        / "data"
+        / "content_plans"
+        / request_id
+        / "content_plan_v1_1_1.json"
+    )
+
+    for required in (
+        request_path,
+        v1_1_path,
+        v1_1_1_path,
+    ):
+        if not required.is_file():
+            raise AuthorityResolutionError(
+                "CURRENT_CAPACITY_SOURCE_NOT_FOUND",
+                f"Current Console capacity source is missing: {required}",
+            )
+
+    request = read_json(request_path)
+    v1_1 = read_json(v1_1_path)
+    prior_v1_1_1 = read_json(v1_1_1_path)
+
+    if not (
+        request.get("request_id") == request_id
+        and str(request.get("persona_id") or "") == business.get("persona_id")
+        and str(request.get("speaker_persona") or "") == speaker.get("persona_id")
+        and v1_1.get("request_id") == request_id
+        and prior_v1_1_1.get("request_id") == request_id
+    ):
+        raise AuthorityResolutionError(
+            "CURRENT_CAPACITY_LINEAGE_MISMATCH",
+            "Current Console content-plan lineage does not match Current Customer Truth.",
+        )
+
+    prior_lineage = prior_v1_1_1.get("lineage") or {}
+    expected_v1_1_sha = prior_lineage.get("source_v1_1_content_plan_sha256")
+
+    if (
+        expected_v1_1_sha
+        and expected_v1_1_sha != sha256_file(v1_1_path)
+    ):
+        raise AuthorityResolutionError(
+            "CURRENT_CAPACITY_LINEAGE_MISMATCH",
+            "Stored V1.1.1 Content Plan no longer matches its V1.1 source plan.",
+        )
+
+    projected = build_content_plan_v1_1_1(
+        v1_1_plan=v1_1,
+        ledger=ledger["artifact"],
+        request=request,
+        source_artifact_hashes={
+            "content_plan_v1_1": sha256_file(v1_1_path),
+            "content_ledger_v1": ledger["file_sha256"],
+        },
+    )
+
+    authority = projected.get("authority") or {}
+    remote = projected.get("remote_model_call") or {}
+
+    if (
+        authority.get("remote_model_called") is not False
+        or remote.get("performed") is not False
+    ):
+        raise AuthorityResolutionError(
+            "CURRENT_CAPACITY_BOUNDARY_CROSSED",
+            "Current Console capacity reprojection must remain deterministic and zero-model.",
+        )
+
+    capacity = projected.get("capacity") or {}
+    remaining = capacity.get("high_quality_novel_capacity")
+
+    if (
+        not isinstance(remaining, int)
+        or isinstance(remaining, bool)
+        or remaining < 0
+        or capacity.get("padding_generated") is not False
+    ):
+        raise AuthorityResolutionError(
+            "INVALID_CURRENT_CAPACITY",
+            "Current Console capacity reprojection returned invalid capacity.",
+        )
+
+    return {
+        "remaining": remaining,
+        "status": capacity.get("status"),
+        "path": closure_path,
+        "source_path": v1_1_1_path,
+        "calculation_mode": "current_console_v1_1_1_reprojection",
+        "remote_model_calls": 0,
     }
 
 
@@ -551,8 +1052,12 @@ def resolve_capacity(
         / "post_export_remaining_capacity_v1.json"
     )
     if not path.is_file():
-        raise AuthorityResolutionError(
-            "CURRENT_CAPACITY_NOT_FOUND", f"Current capacity artifact not found: {path}"
+        return _resolve_current_console_capacity(
+            pipeline_root,
+            business,
+            speaker,
+            ledger,
+            active_batch,
         )
     value = read_json(path)
     lineage = value.get("lineage") or {}
@@ -567,9 +1072,31 @@ def resolve_capacity(
             "CAPACITY_LINEAGE_MISMATCH", "Capacity does not reference the Active Approved Batch."
         )
     if ledger_after.get("file_sha256") != ledger["file_sha256"]:
-        raise AuthorityResolutionError(
-            "CAPACITY_LINEAGE_MISMATCH", "Capacity does not reference the Current Content Ledger."
+        presentation_only_match, appended_presentations = (
+            _capacity_ledger_matches_after_presentation_only_append(
+                ledger["artifact"],
+                str(
+                    ledger_after.get("canonical_content_sha256")
+                    or ""
+                ),
+            )
         )
+
+        if not presentation_only_match:
+            raise AuthorityResolutionError(
+                "CAPACITY_LINEAGE_MISMATCH",
+                (
+                    "Capacity does not reference the Current Content Ledger, "
+                    "and the drift cannot be proven to be append-only "
+                    "non-semantic News Presentation History."
+                ),
+            )
+
+        if appended_presentations <= 0:
+            raise AuthorityResolutionError(
+                "CAPACITY_LINEAGE_MISMATCH",
+                "Content Ledger file SHA changed without a recoverable Presentation History append.",
+            )
     source_ref = lineage.get("source_capacity_recalculation") or {}
     source_path = validate_file_ref(pipeline_root, source_ref)
     source = read_json(source_path)
