@@ -16,6 +16,10 @@ import {
   createContentViews,
 } from "./content-views.js";
 
+import {
+  createContentOperationsViews,
+} from "./content-operations-views.js";
+
 const app = document.querySelector("#app");
 const toastRegion = document.querySelector("#toast-region");
 
@@ -467,6 +471,17 @@ const contentViews = createContentViews({
   renderLoadError,
 });
 
+const contentOperationsViews =
+  createContentOperationsViews({
+    app,
+    api,
+    shell,
+    bindCommonActions,
+    pageHeading,
+    skeletonPage,
+    renderLoadError,
+  });
+
 async function renderTaskDetail(taskId) {
   skeletonPage("任务进度");
 
@@ -549,6 +564,16 @@ if (path === "/customers/new") return customerViews.renderCustomerNew();
       workflowRoute.value,
     );
   }
+  if (
+    workflowRoute?.name ===
+    "customer-content-operations"
+  ) {
+    return contentOperationsViews
+      .renderContentOperations(
+        workflowRoute.value,
+      );
+  }
+
   if (workflowRoute?.name === "customer-detail") {
     return customerViews.renderCustomerDetail(workflowRoute.value);
   }

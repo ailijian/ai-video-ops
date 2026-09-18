@@ -967,17 +967,29 @@ export function createCustomerViews({
               </p>
             </div>
 
-            <a
-              class="btn btn-primary"
-              href="/create?business_id=${encodeURIComponent(
-                detail.business_id,
-              )}&speaker_id=${encodeURIComponent(
-                defaultSpeaker?.speaker_id || "",
-              )}"
-              data-route
-            >
-              开始创作
-            </a>
+            <div class="content-ops-actions">
+              <a
+                class="btn btn-secondary"
+                href="/customers/${encodeURIComponent(
+                  detail.business_id,
+                )}/content"
+                data-route
+              >
+                内容运营
+              </a>
+
+              <a
+                class="btn btn-primary"
+                href="/create?business_id=${encodeURIComponent(
+                  detail.business_id,
+                )}&speaker_id=${encodeURIComponent(
+                  defaultSpeaker?.speaker_id || "",
+                )}"
+                data-route
+              >
+                开始创作
+              </a>
+            </div>
           </article>
         </section>`
       : "";

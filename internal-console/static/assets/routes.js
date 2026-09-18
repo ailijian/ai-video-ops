@@ -33,6 +33,19 @@ export function matchWorkflowRoute(path) {
     };
   }
 
+  const customerContentOperationsMatch =
+    path.match(
+      /^\/customers\/([a-z0-9][a-z0-9_]{1,127})\/content$/,
+    );
+
+  if (customerContentOperationsMatch) {
+    return {
+      name: "customer-content-operations",
+      value:
+        customerContentOperationsMatch[1],
+    };
+  }
+
   const customerEditMatch = path.match(
     /^\/customers\/([a-z0-9][a-z0-9_]{1,127})\/edit$/,
   );

@@ -78,6 +78,8 @@ from .speaker_task_service import (
     mark_speaker_task_reviewed,
 )
 
+from .content_operations_gateway import get_content_operations_view
+
 from .content_gateway import (
     confirm_content_creation,
     get_active_generation_request,
@@ -1562,6 +1564,20 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 business_id,
             )
         }
+
+    @app.get(
+        "/api/customers/{business_id}/content-operations"
+    )
+    def customer_content_operations(
+        business_id: str,
+        _: SessionContext = Depends(
+            require_console_access
+        ),
+    ) -> dict[str, Any]:
+        return get_content_operations_view(
+            settings,
+            business_id,
+        )
 
     @app.get("/api/customers/{business_id}")
     def customer_detail(
