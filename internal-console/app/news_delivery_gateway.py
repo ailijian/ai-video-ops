@@ -15,6 +15,7 @@ from .config import Settings
 NEWS_REQUEST_SCHEMA = "news-delivery-request-v1.0"
 NEWS_PLAN_SCHEMA = "news-delivery-plan-v1.0"
 NEWS_REVIEW_SCHEMA = "news-delivery-human-review-v1.0"
+NEWS_REVIEW_SCHEMA_V1_1 = "news-delivery-human-review-v1.1"
 NEWS_APPROVED_SCHEMA = "approved-news-delivery-v1.0"
 NEWS_EXPORT_RECEIPT_SCHEMA = "news-dynamic-excel-export-receipt-v1.0"
 NEWS_CLOSURE_SCHEMA = "news-delivery-export-closure-v1.0"
@@ -712,7 +713,10 @@ def _project_review(
     )
     if (
         review.get("schema_version")
-        != NEWS_REVIEW_SCHEMA
+        not in {
+            NEWS_REVIEW_SCHEMA,
+            NEWS_REVIEW_SCHEMA_V1_1,
+        }
     ):
         raise CanonicalOperationError(
             "NEWS_REVIEW_INVALID",
@@ -777,6 +781,15 @@ def _project_review(
                 "reviewer"
             )
         ),
+        "revised_and_approved_count": sum(
+            1
+            for item in (
+                approved.get("approved_slots")
+                or []
+            )
+            if item.get("human_review_decision")
+            == "revised_and_approved"
+        ),
         "approved_slots": [
             {
                 "slot_id": (
@@ -795,6 +808,11 @@ def _project_review(
                 "human_edited": bool(
                     item.get(
                         "human_edited"
+                    )
+                ),
+                "human_review_decision": (
+                    item.get(
+                        "human_review_decision"
                     )
                 ),
             }
@@ -1158,7 +1176,7 @@ def submit_news_review(
 
     review = {
         "schema_version": (
-            NEWS_REVIEW_SCHEMA
+            NEWS_REVIEW_SCHEMA_V1_1
         ),
         "request_id": (
             request_id

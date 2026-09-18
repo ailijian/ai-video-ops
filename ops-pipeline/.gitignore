@@ -219,3 +219,9 @@ __marimo__/
 
 # Project outputs (generated at runtime, typically large and environment-specific)
 data/
+
+# Runtime export artifacts
+output/*.export_receipt.json
+output/*_approved*.xlsx
+output/*_Mix混剪_*.xlsx
+output/*_News新闻体_*.xlsx

@@ -952,3 +952,137 @@ def test_preview_excludes_source_already_exported_as_same_news_pattern(
     assert preview["authority"][
         "same_source_same_pattern_reexport_blocked"
     ] is True
+
+
+def test_legacy_v1_approved_text_edit_projects_as_revised_and_approved(
+    tmp_path: Path,
+):
+    fixture = build_fixture(
+        tmp_path
+    )
+
+    request, _ = (
+        subject.create_news_delivery_request(
+            pipeline_root=fixture[
+                "pipeline"
+            ],
+            business_id=fixture[
+                "business_id"
+            ],
+            speaker_id=fixture[
+                "speaker_id"
+            ],
+            source_content_id=fixture[
+                "source_content_id"
+            ],
+            idempotency_key=(
+                "legacy-v1-edit-key"
+            ),
+        )
+    )
+
+    plan, _ = (
+        subject.resolve_news_delivery_plan(
+            pipeline_root=fixture[
+                "pipeline"
+            ],
+            request_id=request[
+                "request_id"
+            ],
+        )
+    )
+
+    review = {
+        "schema_version": (
+            subject.REVIEW_SCHEMA
+        ),
+        "request_id": (
+            request[
+                "request_id"
+            ]
+        ),
+        "reviewer": "tester",
+        "decision": (
+            "approve_items"
+        ),
+        "items": [],
+    }
+
+    for index, slot in enumerate(
+        plan[
+            "slots"
+        ]
+    ):
+        review[
+            "items"
+        ].append(
+            {
+                "slot_id": (
+                    slot[
+                        "slot_id"
+                    ]
+                ),
+                "decision": (
+                    "approved"
+                ),
+                "approved_text": (
+                    "清蒸大约15元"
+                    if index == 1
+                    else slot[
+                        "proposed_text"
+                    ]
+                ),
+                "note": "",
+            }
+        )
+
+    review_path = (
+        tmp_path
+        / "legacy_v1_edit_review.json"
+    )
+
+    write_json(
+        review_path,
+        review,
+    )
+
+    approved, _ = (
+        subject.approve_news_delivery(
+            pipeline_root=fixture[
+                "pipeline"
+            ],
+            request_id=request[
+                "request_id"
+            ],
+            review_path=(
+                review_path
+            ),
+        )
+    )
+
+    edited = approved[
+        "approved_slots"
+    ][1]
+
+    assert (
+        edited[
+            "approved_text"
+        ]
+        == "清蒸大约15元"
+    )
+
+    assert (
+        edited[
+            "human_review_decision"
+        ]
+        == "revised_and_approved"
+    )
+
+    assert (
+        edited[
+            "human_revision"
+        ][
+            "source_text"
+        ]
+        == "清蒸约15元"
+    )

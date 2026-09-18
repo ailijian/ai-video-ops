@@ -498,3 +498,92 @@ def test_all_profile_audit_can_remain_ambiguous_while_mix_is_unambiguous(
         mix["status"]
         == "single_active_request"
     )
+
+
+def test_all_rejected_human_review_terminalizes_request(
+    tmp_path: Path,
+):
+    pipeline = (
+        tmp_path
+        / "pipeline"
+    )
+
+    request_path = request_fixture(
+        pipeline,
+        request_id=(
+            "gen_all_rejected"
+        ),
+    )
+
+    root = (
+        pipeline
+        / "data"
+        / "generation_batches"
+        / "gen_all_rejected"
+    )
+
+    reviewed_path = (
+        root
+        / "reviewed_generation_batch_v1.json"
+    )
+
+    write_json(
+        reviewed_path,
+        {
+            "schema_version": (
+                "reviewed-generation-batch-v1.0"
+            ),
+            "request_id": (
+                "gen_all_rejected"
+            ),
+            "status": (
+                "rejected"
+            ),
+        },
+    )
+
+    write_json(
+        root
+        / "generation_batch_approval_receipt.json",
+        {
+            "schema_version": (
+                "generation-batch-approval-receipt-v1.0"
+            ),
+            "request_id": (
+                "gen_all_rejected"
+            ),
+            "status": (
+                "rejected"
+            ),
+            "human_gate": True,
+            "reviewed_batch": {
+                "sha256": subject.sha256_file(
+                    reviewed_path
+                ),
+            },
+        },
+    )
+
+    result = subject.classify_request(
+        pipeline_root=pipeline,
+        request_path=request_path,
+    )
+
+    assert (
+        result[
+            "effective_terminal"
+        ]
+        is True
+    )
+    assert (
+        result[
+            "effective_status"
+        ]
+        == "rejected"
+    )
+    assert (
+        result[
+            "terminal_reason"
+        ]
+        == "human_review_all_rejected"
+    )

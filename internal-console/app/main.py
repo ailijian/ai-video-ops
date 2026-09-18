@@ -302,8 +302,17 @@ class ContentReviewItem(BaseModel):
     )
     decision: Literal[
         "approved",
+        "revised",
         "rejected",
     ]
+    revised_title: str | None = Field(
+        default=None,
+        max_length=120,
+    )
+    revised_narration: str | None = Field(
+        default=None,
+        max_length=3000,
+    )
     note: str = Field(
         default="",
         max_length=2000,
@@ -356,8 +365,13 @@ class NewsReviewItem(BaseModel):
     )
     decision: Literal[
         "approved",
+        "revised",
         "rejected",
     ]
+    revised_text: str | None = Field(
+        default=None,
+        max_length=200,
+    )
     approved_text: str | None = Field(
         default=None,
         max_length=200,

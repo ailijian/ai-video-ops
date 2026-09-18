@@ -25,6 +25,7 @@ from news_slot_recommendation_v1 import (
 REQUEST_SCHEMA = "news-delivery-request-v1.0"
 PLAN_SCHEMA = "news-delivery-plan-v1.0"
 REVIEW_SCHEMA = "news-delivery-human-review-v1.0"
+REVIEW_SCHEMA_V1_1 = "news-delivery-human-review-v1.1"
 APPROVED_SCHEMA = "approved-news-delivery-v1.0"
 EXPORT_RECEIPT_SCHEMA = "news-dynamic-excel-export-receipt-v1.0"
 CLOSURE_SCHEMA = "news-delivery-export-closure-v1.0"
@@ -2200,7 +2201,10 @@ def approve_news_delivery(
         incoming.get(
             "schema_version"
         )
-        != REVIEW_SCHEMA
+        not in {
+            REVIEW_SCHEMA,
+            REVIEW_SCHEMA_V1_1,
+        }
         or incoming.get(
             "request_id"
         )
@@ -2275,13 +2279,14 @@ def approve_news_delivery(
         )
         if decision not in {
             "approved",
+            "revised",
             "rejected",
         }:
             raise NewsDeliveryError(
                 "NEWS_DELIVERY_REVIEW_DECISION_INVALID",
                 (
-                    "Each News slot must be "
-                    "approved or rejected."
+                    "Each News slot must be approved, "
+                    "revised, or rejected."
                 ),
             )
         if decision == "rejected":
@@ -2290,15 +2295,74 @@ def approve_news_delivery(
         source = source_by_id[
             slot_id
         ]
-        approved_text = str(
-            item.get(
-                "approved_text"
-            )
-            or source.get(
+
+        source_text = str(
+            source.get(
                 "proposed_text"
             )
             or ""
         ).strip()
+
+        review_schema = str(
+            incoming.get(
+                "schema_version"
+            )
+            or ""
+        )
+
+        effective_decision = decision
+
+        if decision == "approved":
+            legacy_approved_text = str(
+                item.get(
+                    "approved_text"
+                )
+                or ""
+            ).strip()
+
+            if (
+                review_schema
+                == REVIEW_SCHEMA
+                and legacy_approved_text
+                and legacy_approved_text
+                != source_text
+            ):
+                # Backward compatibility:
+                # News Human Review V1.0 represented an editorial revision
+                # as decision=approved + approved_text.
+                # Preserve that historical contract, but project it into
+                # the V1.1 reviewed-revision semantics.
+                approved_text = (
+                    legacy_approved_text
+                )
+                effective_decision = (
+                    "revised"
+                )
+            else:
+                approved_text = source_text
+
+        else:
+            approved_text = str(
+                item.get(
+                    "revised_text"
+                )
+                or item.get(
+                    "approved_text"
+                )
+                or ""
+            ).strip()
+
+            if not approved_text:
+                raise NewsDeliveryError(
+                    "NEWS_DELIVERY_REVISED_TEXT_REQUIRED",
+                    "Revised News title cannot be empty.",
+                )
+
+            if approved_text == source_text:
+                raise NewsDeliveryError(
+                    "NEWS_DELIVERY_EMPTY_REVISION",
+                    "Revised decision requires an actual title change.",
+                )
         _validate_title_against_fact(
             approved_text,
             str(
@@ -2325,6 +2389,37 @@ def approve_news_delivery(
                         )
                         or ""
                     )
+                ),
+                "human_review_decision": (
+                    "revised_and_approved"
+                    if effective_decision
+                    == "revised"
+                    else "approved"
+                ),
+                "human_revision": (
+                    {
+                        "revision_number": 1,
+                        "revision_type": "human_editorial_projection",
+                        "source_text": source_text,
+                        "revised_text": approved_text,
+                        "source_text_sha256": canonical_sha256(
+                            {"text": source_text}
+                        ),
+                        "revised_text_sha256": canonical_sha256(
+                            {"text": approved_text}
+                        ),
+                        "source_known_fact": source.get(
+                            "source_known_fact"
+                        ),
+                        "guard": {
+                            "source_fact_grounding_passed": True,
+                            "new_customer_fact_created": False,
+                            "semantic_novelty_created": False,
+                        },
+                    }
+                    if effective_decision
+                    == "revised"
+                    else None
                 ),
                 "human_note": str(
                     item.get("note")

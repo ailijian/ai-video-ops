@@ -1047,6 +1047,13 @@ export function createContentViews({
           0,
       );
 
+    const historicalCount =
+      Number(
+        capacity
+          .ledger_entry_count ||
+          0,
+      );
+
     const recommended =
       Number(
         recommendation
@@ -1067,8 +1074,21 @@ export function createContentViews({
             高质量新内容容量为 0
           </h2>
 
+          <div class="capacity-metrics">
+            <div>
+              <span>已有历史内容</span>
+              <strong>${historicalCount}</strong>
+            </div>
+
+            <div>
+              <span>剩余高质量新内容</span>
+              <strong>0</strong>
+            </div>
+          </div>
+
           <p>
             系统不会为了凑数量重复已有语义，也不会生成 Padding。
+            已有内容仍然保留在 Content Ledger 中。
           </p>
 
           <div class="capacity-next">
@@ -1110,6 +1130,11 @@ export function createContentViews({
           <div>
             <span>你希望生成</span>
             <strong>${requested}</strong>
+          </div>
+
+          <div>
+            <span>已有历史内容</span>
+            <strong>${historicalCount}</strong>
           </div>
 
           <div>

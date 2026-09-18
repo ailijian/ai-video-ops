@@ -584,6 +584,80 @@ def _validated_exports_for_request(
     return exports
 
 
+
+def _reviewed_rejected_batch(
+    pipeline_root: Path,
+    request_id: str,
+) -> dict[str, Any] | None:
+    root = (
+        pipeline_root
+        / "data"
+        / "generation_batches"
+        / request_id
+    )
+
+    reviewed_path = (
+        root
+        / "reviewed_generation_batch_v1.json"
+    )
+    receipt_path = (
+        root
+        / "generation_batch_approval_receipt.json"
+    )
+
+    if not reviewed_path.is_file():
+        return None
+
+    if not receipt_path.is_file():
+        raise EffectiveLifecycleError(
+            "GENERATION_REVIEW_RECEIPT_REQUIRED",
+            "Reviewed Generation Batch exists without approval receipt.",
+        )
+
+    reviewed = read_json(
+        reviewed_path
+    )
+    receipt = read_json(
+        receipt_path
+    )
+    reviewed_sha = sha256_file(
+        reviewed_path
+    )
+    reviewed_ref = (
+        receipt.get("reviewed_batch")
+        or {}
+    )
+
+    if not (
+        reviewed.get("schema_version")
+        == "reviewed-generation-batch-v1.0"
+        and reviewed.get("request_id")
+        == request_id
+        and reviewed.get("status")
+        == "rejected"
+        and receipt.get("schema_version")
+        == "generation-batch-approval-receipt-v1.0"
+        and receipt.get("request_id")
+        == request_id
+        and receipt.get("status")
+        == "rejected"
+        and receipt.get("human_gate")
+        is True
+        and reviewed_ref.get("sha256")
+        == reviewed_sha
+    ):
+        raise EffectiveLifecycleError(
+            "GENERATION_REVIEWED_BATCH_LINEAGE_INVALID",
+            "Reviewed Generation Batch / receipt lineage is invalid.",
+        )
+
+    return {
+        "reviewed_path": reviewed_path.resolve(),
+        "receipt_path": receipt_path.resolve(),
+        "reviewed_sha256": reviewed_sha,
+    }
+
+
 def classify_request(
     *,
     pipeline_root: Path,
@@ -763,6 +837,43 @@ def classify_request(
             }
         )
 
+        return result
+
+    rejected_review = (
+        _reviewed_rejected_batch(
+            pipeline_root,
+            request_id,
+        )
+    )
+
+    if rejected_review is not None:
+        result[
+            "evidence_refs"
+        ].extend(
+            [
+                evidence_ref(
+                    pipeline_root,
+                    rejected_review[
+                        "reviewed_path"
+                    ],
+                ),
+                evidence_ref(
+                    pipeline_root,
+                    rejected_review[
+                        "receipt_path"
+                    ],
+                ),
+            ]
+        )
+
+        result.update(
+            {
+                "effective_terminal": True,
+                "effective_status": "rejected",
+                "effective_stage": "TERMINAL",
+                "terminal_reason": "human_review_all_rejected",
+            }
+        )
         return result
 
     approved_batches = (

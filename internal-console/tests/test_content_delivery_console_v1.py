@@ -216,8 +216,16 @@ def test_review_route_forwards_authenticated_reviewer(
             json={
                 "note": "人工审核通过",
                 "items": [
-                    {"content_id": "content_001", "decision": "approved"},
-                    {"content_id": "content_002", "decision": "approved"},
+                    {
+                        "content_id": "content_001",
+                        "decision": "approved",
+                    },
+                    {
+                        "content_id": "content_002",
+                        "decision": "revised",
+                        "revised_title": "修改后的标题2",
+                        "revised_narration": "修改后的口播2",
+                    },
                 ],
             },
         )
@@ -225,6 +233,18 @@ def test_review_route_forwards_authenticated_reviewer(
         assert calls["reviewer"] == "13800000000"
         assert calls["request_id"] == "gen_fixture_001"
         assert len(calls["items"]) == 2
+        assert (
+            calls["items"][1][
+                "decision"
+            ]
+            == "revised"
+        )
+        assert (
+            calls["items"][1][
+                "revised_title"
+            ]
+            == "修改后的标题2"
+        )
         assert response.json()["result"]["approved"] is True
 
 

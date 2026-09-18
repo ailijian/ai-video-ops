@@ -1,4 +1,4 @@
-export function createNewsDeliveryViews({
+﻿export function createNewsDeliveryViews({
   api,
   showToast,
   escapeHtml,
@@ -111,9 +111,12 @@ export function createNewsDeliveryViews({
         <h2>逐条审核标题</h2>
 
         <p>
-          可以修改标题，也可以舍弃非首屏项。
-          最终必须保留 4–8 条。
-          数字、限定词和事实主体不能被删掉或增强。
+          每一条都选择：
+          <strong>通过</strong>、
+          <strong>修改后通过</strong>
+          或 <strong>淘汰</strong>。
+          原始推荐标题永久保留，修改只形成 Human Revision。
+          最终仍需保留 4–8 条。
         </p>
 
         <div class="news-slot-review-list">
@@ -152,32 +155,15 @@ export function createNewsDeliveryViews({
                     </span>
                   </div>
 
-                  <div class="field news-title-field">
-                    <label>
-                      最终标题
-                    </label>
-
-                    <input
-                      type="text"
-                      data-news-approved-text
-                      value="${escapeHtml(
+                  <div class="review-row">
+                    <span>系统推荐标题</span>
+                    <p>
+                      ${escapeHtml(
                         String(
-                          slot.proposed_text ||
-                            "",
+                          slot.proposed_text || "",
                         ),
-                      )}"
-                    >
-
-                    ${
-                      slot.soft_length_recommendation
-                        ?.warning
-                        ? `
-                          <span class="field-hint">
-                            当前超过 8 字软建议；
-                            事实完整性优先，不要求强行压缩。
-                          </span>`
-                        : ""
-                    }
+                      )}
+                    </p>
                   </div>
 
                   <details class="full-breakdown">
@@ -191,8 +177,7 @@ export function createNewsDeliveryViews({
                       <p class="narration-text">
                         ${escapeHtml(
                           String(
-                            slot.source_known_fact ||
-                              "",
+                            slot.source_known_fact || "",
                           ),
                         )}
                       </p>
@@ -201,16 +186,15 @@ export function createNewsDeliveryViews({
                       <p class="narration-text">
                         ${escapeHtml(
                           String(
-                            slot.source_field ||
-                              "",
+                            slot.source_field || "",
                           ),
                         )}
                       </p>
                     </div>
                   </details>
 
-                  <div class="news-review-decision">
-                    <label class="news-review-choice">
+                  <div class="unified-review-decisions">
+                    <label class="unified-review-choice">
                       <input
                         type="radio"
                         name="decision-${escapeHtml(
@@ -219,10 +203,28 @@ export function createNewsDeliveryViews({
                         value="approved"
                         data-news-decision
                       >
-                      <span>通过</span>
+                      <span>
+                        <strong>通过</strong>
+                        <small>按系统推荐标题导出</small>
+                      </span>
                     </label>
 
-                    <label class="news-review-choice ${
+                    <label class="unified-review-choice">
+                      <input
+                        type="radio"
+                        name="decision-${escapeHtml(
+                          String(slot.slot_id || ""),
+                        )}"
+                        value="revised"
+                        data-news-decision
+                      >
+                      <span>
+                        <strong>修改后通过</strong>
+                        <small>只改表达，不改变来源事实</small>
+                      </span>
+                    </label>
+
+                    <label class="unified-review-choice ${
                       slot.price_or_offer_anchor
                         ? "disabled"
                         : ""
@@ -241,13 +243,52 @@ export function createNewsDeliveryViews({
                         }
                       >
                       <span>
-                        ${
-                          slot.price_or_offer_anchor
-                            ? "首屏不可舍弃"
-                            : "不使用"
-                        }
+                        <strong>
+                          ${
+                            slot.price_or_offer_anchor
+                              ? "首屏不可淘汰"
+                              : "淘汰"
+                          }
+                        </strong>
+                        <small>
+                          不进入 Excel / Presentation History
+                        </small>
                       </span>
                     </label>
+                  </div>
+
+                  <div
+                    class="unified-revision-editor"
+                    data-news-revision-editor
+                    hidden
+                  >
+                    <div class="field">
+                      <label>修改后的标题</label>
+                      <input
+                        type="text"
+                        data-news-revised-text
+                        value="${escapeHtml(
+                          String(
+                            slot.proposed_text || "",
+                          ),
+                        )}"
+                      >
+                    </div>
+
+                    <p class="field-hint">
+                      不能新增数字事实，不能删除
+                      “通常 / 约 / 左右 / 免费”等限定词，
+                      也不能把标题强化成更绝对的营销承诺。
+                    </p>
+                  </div>
+
+                  <div class="field">
+                    <label>审核备注（可选）</label>
+                    <input
+                      type="text"
+                      data-news-review-note
+                      placeholder="例如：表达更自然；信息重复；本轮淘汰"
+                    >
                   </div>
                 </article>`,
             )
@@ -273,7 +314,6 @@ export function createNewsDeliveryViews({
         </div>
       </section>`;
   }
-
   function renderBody(state) {
     if (
       state.next_action ===
@@ -455,6 +495,33 @@ export function createNewsDeliveryViews({
       );
     }
 
+    host
+      .querySelectorAll(
+        "[data-news-review-item]",
+      )
+      .forEach((card) => {
+        const editor =
+          card.querySelector(
+            "[data-news-revision-editor]",
+          );
+
+        card
+          .querySelectorAll(
+            "[data-news-decision]",
+          )
+          .forEach((input) => {
+            input.addEventListener(
+              "change",
+              () => {
+                if (editor) {
+                  editor.hidden =
+                    input.value !== "revised";
+                }
+              },
+            );
+          });
+      });
+
     const approveAll =
       host.querySelector(
         "[data-news-approve-all]",
@@ -473,8 +540,16 @@ export function createNewsDeliveryViews({
                 card.querySelector(
                   'input[data-news-decision][value="approved"]',
                 );
+              const editor =
+                card.querySelector(
+                  "[data-news-revision-editor]",
+                );
+
               if (approved) {
                 approved.checked = true;
+              }
+              if (editor) {
+                editor.hidden = true;
               }
             });
         },
@@ -507,39 +582,44 @@ export function createNewsDeliveryViews({
 
             if (!decision) {
               showToast(
-                "请逐条选择“通过”或“不使用”。",
+                "请逐条选择“通过 / 修改后通过 / 淘汰”。",
               );
               return;
             }
 
-            const text =
-              card.querySelector(
-                "[data-news-approved-text]",
-              )?.value?.trim() || "";
-
-            if (
-              decision === "approved"
-            ) {
-              approvedCount += 1;
-
-              if (!text) {
-                showToast(
-                  "通过的标题不能为空。",
-                );
-                return;
-              }
-            }
-
-            items.push({
+            const item = {
               slot_id:
                 card.dataset.slotId,
               decision,
-              approved_text:
-                decision === "approved"
-                  ? text
-                  : null,
-              note: "",
-            });
+              note:
+                card.querySelector(
+                  "[data-news-review-note]",
+                )?.value?.trim() || "",
+            };
+
+            if (decision === "approved") {
+              approvedCount += 1;
+            }
+
+            if (decision === "revised") {
+              const revisedText =
+                card.querySelector(
+                  "[data-news-revised-text]",
+                )?.value?.trim() || "";
+
+              if (!revisedText) {
+                showToast(
+                  "修改后通过的标题不能为空。",
+                );
+                return;
+              }
+
+              approvedCount += 1;
+              item.revised_text =
+                revisedText;
+            }
+
+            items.push(item);
           }
 
           if (

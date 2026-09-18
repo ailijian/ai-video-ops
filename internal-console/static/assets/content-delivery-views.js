@@ -62,6 +62,7 @@ export function createContentDeliveryViews({
       GENERATE_SCRIPTS: 1,
       HUMAN_REVIEW: 2,
       EXPORT_EXCEL: 3,
+      REVIEW_COMPLETE_NO_EXPORT: 3,
       EXCEL_EXPORTED: 4,
     };
 
@@ -173,10 +174,13 @@ export function createContentDeliveryViews({
         <h2>审核生成稿</h2>
 
         <p>
-          这里是人工审核环节。
-          每一条都需要人工确认后才能进入正式导出。
-          本轮前端先支持“批准后导出”；
-          如果你认为某条需要修改，先不要提交批准。
+          每一条都需要选择：
+          <strong>通过</strong>、
+          <strong>修改后通过</strong>
+          或 <strong>淘汰</strong>。
+          Generated Candidate 会永久保留；
+          人工修改只形成 Reviewed Revision，
+          不会覆盖模型原稿。
         </p>
 
         <div class="delivery-script-list">
@@ -184,7 +188,7 @@ export function createContentDeliveryViews({
             .map(
               (item, index) => `
                 <article
-                  class="delivery-script-card"
+                  class="delivery-script-card unified-review-card"
                   data-review-item
                   data-content-id="${escapeHtml(
                     String(
@@ -197,8 +201,7 @@ export function createContentDeliveryViews({
                       ${index + 1}.
                       ${escapeHtml(
                         String(
-                          item.concept_ref ||
-                            "",
+                          item.concept_ref || "",
                         ),
                       )}
                     </strong>
@@ -207,12 +210,17 @@ export function createContentDeliveryViews({
                     </span>
                   </div>
 
-                  <h3>${escapeHtml(
-                    String(item.title || ""),
-                  )}</h3>
+                  <div class="review-row">
+                    <span>模型原始标题</span>
+                    <p>${escapeHtml(
+                      String(
+                        item.title || "",
+                      ),
+                    )}</p>
+                  </div>
 
                   <div class="review-row">
-                    <span>口播</span>
+                    <span>模型原始口播</span>
                     <p>${escapeHtml(
                       String(
                         item.narration || "",
@@ -222,19 +230,18 @@ export function createContentDeliveryViews({
 
                   <details class="full-breakdown">
                     <summary>
-                      查看审核依据
+                      查看 Authority 信息
                       <span>
-                        核心表达 / 审核提醒
+                        Central Claim / Review Flags
                       </span>
                     </summary>
 
                     <div class="breakdown-body">
-                      <h3>核心表达</h3>
+                      <h3>Central Claim（Revision 不可修改）</h3>
                       <p class="narration-text">
                         ${escapeHtml(
                           String(
-                            item.central_claim ||
-                              "",
+                            item.central_claim || "",
                           ),
                         )}
                       </p>
@@ -254,9 +261,7 @@ export function createContentDeliveryViews({
                                   (flag) => `
                                     <span class="delivery-flag">
                                       ${escapeHtml(
-                                        flagText(
-                                          flag,
-                                        ),
+                                        flagText(flag),
                                       )}
                                     </span>`,
                                 )
@@ -270,16 +275,105 @@ export function createContentDeliveryViews({
                     </div>
                   </details>
 
-                  <label class="delivery-approval">
+                  <div class="unified-review-decisions">
+                    <label class="unified-review-choice">
+                      <input
+                        type="radio"
+                        name="review-${escapeHtml(
+                          String(
+                            item.content_id || "",
+                          ),
+                        )}"
+                        value="approved"
+                        data-review-decision
+                      >
+                      <span>
+                        <strong>通过</strong>
+                        <small>原稿直接进入 Approved Projection</small>
+                      </span>
+                    </label>
+
+                    <label class="unified-review-choice">
+                      <input
+                        type="radio"
+                        name="review-${escapeHtml(
+                          String(
+                            item.content_id || "",
+                          ),
+                        )}"
+                        value="revised"
+                        data-review-decision
+                      >
+                      <span>
+                        <strong>修改后通过</strong>
+                        <small>只允许编辑标题与口播，不新增事实</small>
+                      </span>
+                    </label>
+
+                    <label class="unified-review-choice">
+                      <input
+                        type="radio"
+                        name="review-${escapeHtml(
+                          String(
+                            item.content_id || "",
+                          ),
+                        )}"
+                        value="rejected"
+                        data-review-decision
+                      >
+                      <span>
+                        <strong>淘汰</strong>
+                        <small>不进入 Excel，也不进入 Historical Exposure</small>
+                      </span>
+                    </label>
+                  </div>
+
+                  <div
+                    class="unified-revision-editor"
+                    data-revision-editor
+                    hidden
+                  >
+                    <div class="field">
+                      <label>修改后的标题</label>
+                      <input
+                        type="text"
+                        data-revised-title
+                        value="${escapeHtml(
+                          String(
+                            item.title || "",
+                          ),
+                        )}"
+                      >
+                    </div>
+
+                    <div class="field">
+                      <label>修改后的口播</label>
+                      <textarea
+                        rows="6"
+                        data-revised-narration
+                      >${escapeHtml(
+                        String(
+                          item.narration || "",
+                        ),
+                      )}</textarea>
+                    </div>
+
+                    <p class="field-hint">
+                      Revision V1 是编辑性改写：
+                      Central Claim 不变、不能新增数字事实、
+                      不能加入“保证 / 一定 / 最低价”等强化承诺。
+                      如果要加入新事实，应回到 Customer Truth。
+                    </p>
+                  </div>
+
+                  <div class="field">
+                    <label>审核备注（可选）</label>
                     <input
-                      type="checkbox"
-                      data-approve-item
+                      type="text"
+                      data-review-note
+                      placeholder="例如：表达更自然；与同批内容重复；暂不值得发布"
                     >
-                    <span>
-                      我已审核这条标题、口播和事实边界，
-                      批准进入正式导出
-                    </span>
-                  </label>
+                  </div>
                 </article>`,
             )
             .join("")}
@@ -291,7 +385,7 @@ export function createContentDeliveryViews({
             class="btn btn-secondary"
             data-approve-all
           >
-            全部勾选批准
+            全部标记通过
           </button>
 
           <button
@@ -299,18 +393,18 @@ export function createContentDeliveryViews({
             class="btn btn-primary"
             data-submit-review
           >
-            提交人工批准
+            提交人工审核
           </button>
         </div>
 
         <p class="field-hint">
-          提交后会生成 immutable Human Review /
-          已批准内容批次。
-          当前页面不会自动批准任何稿件。
+          可以部分批准。
+          例如生成 5 条，最终
+          3 条原稿通过 + 1 条修改后通过 + 1 条淘汰，
+          正式 Excel 只导出 4 条。
         </p>
       </section>`;
   }
-
   function renderBody(state) {
     const next =
       state.next_action ||
@@ -367,29 +461,29 @@ export function createContentDeliveryViews({
     }
 
     if (next === "HUMAN_REVIEW") {
-      if (
-        state.review?.completed &&
-        !state.review?.approved
-      ) {
-        body = `
-          ${conceptCards(state)}
-          <section class="card capacity-result blocked">
-            <span class="capacity-kicker">
-              Human Review 已完成但未全部批准
-            </span>
-            <h2>当前不能导出 Excel</h2>
-            <p>
-              当前 V1 前端还没有开放 Revision。
-              请保留现有审核 artifacts，
-              不要覆盖或重新提交。
-            </p>
-          </section>`;
-      } else {
-        body = `
-          ${conceptCards(state)}
-          ${reviewCards(state)}
-        `;
-      }
+      body = `
+        ${conceptCards(state)}
+        ${reviewCards(state)}
+      `;
+    }
+
+    if (
+      next === "REVIEW_COMPLETE_NO_EXPORT"
+    ) {
+      body = `
+        <section class="card capacity-result ready">
+          <span class="capacity-kicker">
+            Human Review 已完成
+          </span>
+
+          <h2>本批次没有可导出的内容</h2>
+
+          <p>
+            本批次所有 Generated Candidate 均已淘汰。
+            它们不会进入 Excel，也不会写入 Historical Exposure。
+            原始生成稿与审核记录仍会保留。
+          </p>
+        </section>`;
     }
 
     if (next === "EXPORT_EXCEL") {
@@ -669,6 +763,33 @@ export function createContentDeliveryViews({
       );
     }
 
+    host
+      .querySelectorAll(
+        "[data-review-item]",
+      )
+      .forEach((card) => {
+        const editor =
+          card.querySelector(
+            "[data-revision-editor]",
+          );
+
+        card
+          .querySelectorAll(
+            "[data-review-decision]",
+          )
+          .forEach((input) => {
+            input.addEventListener(
+              "change",
+              () => {
+                if (editor) {
+                  editor.hidden =
+                    input.value !== "revised";
+                }
+              },
+            );
+          });
+      });
+
     const approveAll =
       host.querySelector(
         "[data-approve-all]",
@@ -680,10 +801,24 @@ export function createContentDeliveryViews({
         () => {
           host
             .querySelectorAll(
-              "[data-approve-item]",
+              "[data-review-item]",
             )
-            .forEach((input) => {
-              input.checked = true;
+            .forEach((card) => {
+              const approved =
+                card.querySelector(
+                  'input[data-review-decision][value="approved"]',
+                );
+              const editor =
+                card.querySelector(
+                  "[data-revision-editor]",
+                );
+
+              if (approved) {
+                approved.checked = true;
+              }
+              if (editor) {
+                editor.hidden = true;
+              }
             });
         },
       );
@@ -704,30 +839,73 @@ export function createContentDeliveryViews({
             ),
           );
 
-          const approved = cards.filter(
-            (card) =>
-              card.querySelector(
-                "[data-approve-item]",
-              )?.checked,
-          );
-
-          if (
-            !cards.length ||
-            approved.length !==
-              cards.length
-          ) {
+          if (!cards.length) {
             showToast(
-              "请逐条完成审核并勾选批准；需要修改的稿件请先不要提交。",
+              "当前没有可审核内容。",
             );
             return;
           }
 
+          const items = [];
+
+          for (const card of cards) {
+            const decision =
+              card.querySelector(
+                "input[data-review-decision]:checked",
+              )?.value;
+
+            if (!decision) {
+              showToast(
+                "请逐条选择“通过 / 修改后通过 / 淘汰”。",
+              );
+              return;
+            }
+
+            const item = {
+              content_id:
+                card.dataset.contentId,
+              decision,
+              note:
+                card.querySelector(
+                  "[data-review-note]",
+                )?.value?.trim() || "",
+            };
+
+            if (decision === "revised") {
+              const revisedTitle =
+                card.querySelector(
+                  "[data-revised-title]",
+                )?.value?.trim() || "";
+              const revisedNarration =
+                card.querySelector(
+                  "[data-revised-narration]",
+                )?.value?.trim() || "";
+
+              if (
+                !revisedTitle
+                || !revisedNarration
+              ) {
+                showToast(
+                  "修改后通过的标题和口播都不能为空。",
+                );
+                return;
+              }
+
+              item.revised_title =
+                revisedTitle;
+              item.revised_narration =
+                revisedNarration;
+            }
+
+            items.push(item);
+          }
+
           submitReview.disabled = true;
           submitReview.textContent =
-            "正在提交 Human Approval…";
+            "正在提交 Human Review…";
 
           try {
-            await api(
+            const response = await api(
               `/api/create/${encodeURIComponent(
                 state.request_id,
               )}/review`,
@@ -735,24 +913,30 @@ export function createContentDeliveryViews({
                 method: "POST",
                 body: JSON.stringify({
                   note:
-                    "Internal Console Human Review approved all export items.",
-                  items: cards.map(
-                    (card) => ({
-                      content_id:
-                        card.dataset
-                          .contentId,
-                      decision:
-                        "approved",
-                      note: "",
-                    }),
-                  ),
+                    "Internal Console Unified Human Review V1.",
+                  items,
                 }),
               },
             );
 
-            showToast(
-              "Human Approval 已完成。",
-            );
+            const result =
+              response.result?.result;
+
+            if (
+              result?.approved_item_count > 0
+            ) {
+              showToast(
+                `Human Review 已完成：${Number(
+                  result.approved_item_count,
+                )} 条可导出，${Number(
+                  result.rejected_item_count || 0,
+                )} 条淘汰。`,
+              );
+            } else {
+              showToast(
+                "Human Review 已完成：本批次没有可导出内容。",
+              );
+            }
 
             await refresh();
           } catch (error) {
@@ -765,10 +949,9 @@ export function createContentDeliveryViews({
             if (
               submitReview.isConnected
             ) {
-              submitReview.disabled =
-                false;
+              submitReview.disabled = false;
               submitReview.textContent =
-                "提交人工批准";
+                "提交人工审核";
             }
           }
         },

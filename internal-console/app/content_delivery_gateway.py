@@ -5,6 +5,7 @@ import json
 import os
 import re
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -183,6 +184,9 @@ def _request_paths(settings: Settings, request_id: str) -> dict[str, Path]:
         "human_review": (
             batch_root / "generation_human_review_v1.json"
         ),
+        "human_review_v2": (
+            batch_root / "generation_human_review_v2.json"
+        ),
         "approved_batch": (
             batch_root / "approved_generation_batch_v1.json"
         ),
@@ -352,6 +356,8 @@ def _request_date_stamp(
 
 def export_filename_for_request(
     request: dict[str, Any],
+    *,
+    quantity_override: int | None = None,
 ) -> str:
     metadata = _delivery_display_metadata(
         request
@@ -364,7 +370,12 @@ def export_filename_for_request(
         or "batch"
     )
     quantity = int(
-        request.get("quantity") or 0
+        quantity_override
+        if quantity_override is not None
+        else (
+            request.get("quantity")
+            or 0
+        )
     )
 
     parts = [
@@ -396,10 +407,32 @@ def _resolve_export_artifacts(
     request_id: str,
     request: dict[str, Any],
 ) -> dict[str, Any]:
-    desired_name = (
-        export_filename_for_request(
-            request
+    paths = _request_paths(
+        settings,
+        request_id,
+    )
+
+    quantity_override = None
+    approved_path = paths[
+        "approved_batch"
+    ]
+
+    if approved_path.is_file():
+        approved = _read_json(
+            approved_path
         )
+        approved_contents = (
+            approved.get("contents")
+            or []
+        )
+        if approved_contents:
+            quantity_override = len(
+                approved_contents
+            )
+
+    desired_name = export_filename_for_request(
+        request,
+        quantity_override=quantity_override,
     )
     desired_path = (
         settings.pipeline_root
@@ -412,14 +445,10 @@ def _resolve_export_artifacts(
         )
     )
 
-    paths = _request_paths(
-        settings,
-        request_id,
-    )
     legacy_path = paths["legacy_excel"]
-    legacy_receipt = (
-        paths["legacy_excel_receipt"]
-    )
+    legacy_receipt = paths[
+        "legacy_excel_receipt"
+    ]
 
     if desired_path.is_file():
         actual_path = desired_path
@@ -439,11 +468,8 @@ def _resolve_export_artifacts(
         "desired_path": desired_path,
         "actual_path": actual_path,
         "receipt_path": receipt_path,
-        "legacy_recovered": (
-            legacy_recovered
-        ),
+        "legacy_recovered": legacy_recovered,
     }
-
 
 def _load_request(settings: Settings, request_id: str) -> tuple[Path, dict[str, Any]]:
     paths = _request_paths(settings, request_id)
@@ -569,6 +595,17 @@ def _project_review(paths: dict[str, Path]) -> dict[str, Any]:
             "rejected_item_count": (
                 (batch.get("human_review") or {}).get("rejected_item_count")
             ),
+            "revised_and_approved_count": (
+                (batch.get("human_review") or {}).get(
+                    "revised_and_approved_count"
+                )
+                or 0
+            ),
+            "partial_source_batch_approval": bool(
+                (batch.get("human_review") or {}).get(
+                    "partial_source_batch_approval"
+                )
+            ),
             "sha256": _sha256_file(approved_path),
             "receipt_ready": approval_receipt.is_file(),
         }
@@ -591,6 +628,17 @@ def _project_review(paths: dict[str, Path]) -> dict[str, Any]:
             "rejected_item_count": (
                 (batch.get("human_review") or {}).get("rejected_item_count")
             ),
+            "revised_and_approved_count": (
+                (batch.get("human_review") or {}).get(
+                    "revised_and_approved_count"
+                )
+                or 0
+            ),
+            "partial_source_batch_approval": bool(
+                (batch.get("human_review") or {}).get(
+                    "partial_source_batch_approval"
+                )
+            ),
             "sha256": _sha256_file(reviewed_path),
             "receipt_ready": approval_receipt.is_file(),
         }
@@ -601,6 +649,8 @@ def _project_review(paths: dict[str, Path]) -> dict[str, Any]:
         "approved": False,
         "approved_item_count": 0,
         "rejected_item_count": 0,
+        "revised_and_approved_count": 0,
+        "partial_source_batch_approval": False,
         "receipt_ready": False,
     }
 
@@ -833,6 +883,11 @@ def get_content_delivery_state(
         next_action = "EXCEL_EXPORTED"
     elif review["approved"]:
         next_action = "EXPORT_EXCEL"
+    elif (
+        review["completed"]
+        and not review["approved"]
+    ):
+        next_action = "REVIEW_COMPLETE_NO_EXPORT"
     elif generation["ready"]:
         next_action = "HUMAN_REVIEW"
     elif content_plan["ready"]:
@@ -1022,17 +1077,39 @@ def submit_generation_review(
     items: list[dict[str, Any]],
     note: str = "",
 ) -> dict[str, Any]:
-    request_id = _validate_request_id(request_id)
-    _load_request(settings, request_id)
-    paths = _request_paths(settings, request_id)
+    request_id = _validate_request_id(
+        request_id
+    )
+    _load_request(
+        settings,
+        request_id,
+    )
+    paths = _request_paths(
+        settings,
+        request_id,
+    )
 
-    if paths["approved_batch"].is_file() or paths["reviewed_batch"].is_file():
+    if (
+        paths["approved_batch"].is_file()
+        or paths["reviewed_batch"].is_file()
+    ):
+        state = get_content_delivery_state(
+            settings,
+            request_id,
+        )
         return {
             "recovered": True,
-            "state": get_content_delivery_state(settings, request_id),
+            "approved": state[
+                "review"
+            ][
+                "approved"
+            ],
+            "state": state,
         }
 
-    batch_path = paths["generation_batch"]
+    batch_path = paths[
+        "generation_batch"
+    ]
     if not batch_path.is_file():
         raise CanonicalOperationError(
             "GENERATION_BATCH_REQUIRED",
@@ -1040,134 +1117,214 @@ def submit_generation_review(
             "请先完成 Script Generation。",
         )
 
-    batch = _read_json(batch_path)
+    batch = _read_json(
+        batch_path
+    )
     if (
-        batch.get("schema_version") != GENERATION_BATCH_SCHEMA
-        or batch.get("status") != "review_required"
-        or (batch.get("validation") or {}).get("passed") is not True
+        batch.get("schema_version")
+        != GENERATION_BATCH_SCHEMA
+        or batch.get("status")
+        != "review_required"
+        or (
+            batch.get("validation")
+            or {}
+        ).get("passed")
+        is not True
     ):
         raise CanonicalOperationError(
             "GENERATION_BATCH_NOT_REVIEWABLE",
-            "当前 Generation Batch 不可进入人工批准。",
+            "当前 Generation Batch 不可进入人工审核。",
             "请先解决 Batch validation 或 status 问题。",
         )
 
     source_ids = [
-        str(item.get("content_id") or "")
-        for item in batch.get("contents") or []
+        str(
+            item.get("content_id")
+            or ""
+        )
+        for item in (
+            batch.get("contents")
+            or []
+        )
     ]
-    review_by_id: dict[str, dict[str, Any]] = {}
+
+    by_id: dict[str, dict[str, Any]] = {}
+
     for item in items:
-        content_id = str(item.get("content_id") or "").strip()
-        decision = str(item.get("decision") or "").strip()
+        content_id = str(
+            item.get("content_id")
+            or ""
+        ).strip()
+        decision = str(
+            item.get("decision")
+            or ""
+        ).strip()
+
         if (
             not content_id
-            or decision not in {"approved", "rejected"}
-            or content_id in review_by_id
+            or decision
+            not in {
+                "approved",
+                "revised",
+                "rejected",
+            }
+            or content_id in by_id
         ):
             raise CanonicalOperationError(
                 "GENERATION_REVIEW_INVALID",
-                "人工审核决定不合法或存在重复 Content ID。",
-                "请对每条生成内容准确选择批准或拒绝。",
+                (
+                    "每条生成内容必须且只能选择一次："
+                    "通过 / 修改后通过 / 淘汰。"
+                ),
+                "请逐条完成审核后再提交。",
             )
-        review_by_id[content_id] = {
+
+        normalized = {
             "content_id": content_id,
             "decision": decision,
-            "note": str(item.get("note") or "").strip(),
+            "note": str(
+                item.get("note")
+                or ""
+            ).strip(),
         }
 
-    if set(review_by_id) != set(source_ids):
+        if decision == "revised":
+            normalized.update(
+                {
+                    "revised_title": str(
+                        item.get("revised_title")
+                        or ""
+                    ).strip(),
+                    "revised_narration": str(
+                        item.get("revised_narration")
+                        or ""
+                    ).strip(),
+                    "meaning_preserved": True,
+                    "new_facts_added": False,
+                }
+            )
+
+        by_id[content_id] = normalized
+
+    if set(by_id) != set(source_ids):
         raise CanonicalOperationError(
             "GENERATION_REVIEW_INCOMPLETE",
             "人工审核必须覆盖当前 Batch 的每一条内容。",
-            "请逐条完成批准或拒绝后再提交。",
+            "请逐条完成通过 / 修改 / 淘汰后再提交。",
         )
 
-    review = {
-        "schema_version": "generation-batch-review-v1.0",
-        "request_id": request_id,
-        "batch_sha256": _sha256_file(batch_path),
-        "reviewer": str(reviewer or "").strip(),
-        "decision": "approve_items",
-        "note": str(note or "").strip(),
-        "items": [review_by_id[content_id] for content_id in source_ids],
+    review_input = {
+        "schema_version": (
+            "generation-batch-review-input-v2.0"
+        ),
+        "reviewer": str(
+            reviewer or ""
+        ).strip(),
+        "note": str(
+            note or ""
+        ).strip(),
+        "items": [
+            by_id[content_id]
+            for content_id
+            in source_ids
+        ],
     }
-    if not review["reviewer"]:
+
+    if not review_input["reviewer"]:
         raise CanonicalOperationError(
             "GENERATION_REVIEWER_REQUIRED",
             "人工审核人不能为空。",
             "请重新登录后提交审核。",
         )
 
-    review_path = paths["human_review"]
-    review_path.parent.mkdir(parents=True, exist_ok=True)
-    if review_path.exists():
-        existing = _read_json(review_path)
-        if _canonical_sha256(existing) != _canonical_sha256(review):
-            raise CanonicalOperationError(
-                "GENERATION_REVIEW_CONFLICT",
-                "当前 Batch 已存在不同的不可变 Human Review 决定。",
-                "不要覆盖旧 Review；请先检查当前 Review Authority。",
-            )
-    else:
-        payload = json.dumps(review, ensure_ascii=False, indent=2).encode("utf-8")
-        try:
-            with review_path.open("xb") as handle:
-                handle.write(payload)
-        except FileExistsError as exc:
-            existing = _read_json(review_path)
-            if _canonical_sha256(existing) != _canonical_sha256(review):
-                raise CanonicalOperationError(
-                    "GENERATION_REVIEW_CONFLICT",
-                    "Human Review 被并发创建且内容不同。",
-                    "请刷新当前审核状态后继续。",
-                ) from exc
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        suffix=".json",
+        prefix=(
+            f"{request_id}_review_v2_"
+        ),
+        delete=False,
+    ) as handle:
+        json.dump(
+            review_input,
+            handle,
+            ensure_ascii=False,
+            indent=2,
+        )
+        temporary_review = Path(
+            handle.name
+        )
 
-    executable = settings.pipeline_python_executable or settings.python_executable
+    executable = (
+        settings.pipeline_python_executable
+        or settings.python_executable
+    )
+
     try:
-        process = subprocess.run(
+        result = _run_pipeline_command(
+            settings,
             [
                 executable,
                 str(
                     settings.pipeline_root
                     / "scripts"
-                    / "approve_generation_batch_v1.py"
+                    / "review_generation_batch_v2.py"
                 ),
                 "--batch",
                 str(batch_path),
                 "--review-file",
-                str(review_path),
+                str(temporary_review),
             ],
-            cwd=settings.repo_root,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=120,
-            check=False,
-            env=_pipeline_env(),
+            timeout_seconds=120,
         )
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise CanonicalOperationError(
-            "GENERATION_APPROVAL_UNAVAILABLE",
-            "Human Approval operation 暂时无法完成。",
-            "Review 已保留；请稍后从同一 Review 恢复批准。",
-        ) from exc
-
-    if process.returncode != 0:
-        raise CanonicalOperationError(
-            "GENERATION_APPROVAL_FAILED",
-            (process.stderr or process.stdout or "Human Approval 没有完成。").strip(),
-            "不要覆盖 Human Review；请修复 Approval 阶段后重试。",
+    finally:
+        temporary_review.unlink(
+            missing_ok=True
         )
 
-    state = get_content_delivery_state(settings, request_id)
+    if (
+        result.get("ok") is not True
+        or result.get(
+            "generated_candidate_mutated"
+        )
+        is not False
+        or result.get(
+            "content_ledger_written"
+        )
+        is not False
+        or result.get(
+            "excel_exported"
+        )
+        is not False
+        or result.get(
+            "remote_model_called"
+        )
+        is not False
+    ):
+        raise CanonicalOperationError(
+            "GENERATION_REVIEW_V2_RESULT_INVALID",
+            "Unified Human Review 没有保持冻结边界。",
+            "不要导出；请检查 Human Review V2 artifacts。",
+        )
+
+    state = get_content_delivery_state(
+        settings,
+        request_id,
+    )
+
     return {
-        "recovered": False,
-        "approved": state["review"]["approved"],
+        "recovered": bool(
+            result.get("recovered")
+        ),
+        "approved": state[
+            "review"
+        ][
+            "approved"
+        ],
+        "result": result,
         "state": state,
     }
-
 
 def export_mix_excel(
     settings: Settings,
