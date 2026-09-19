@@ -40,10 +40,12 @@ def build_attempt(
     video = source_dir / f"clip_{case_id}.mp4"
     music = source_dir / f"clip_{case_id}_music.mp3"
     cover = source_dir / f"clip_{case_id}_cover.jpg"
+    downloader_data = source_dir / f"clip_{case_id}_data.json"
     metadata = attempt / "source_metadata_v1.json"
     video.write_bytes(b"source-video")
     music.write_bytes(b"source-music")
     cover.write_bytes(b"source-cover")
+    write_json(downloader_data, {"aweme_id": case_id, "retained": True})
     write_json(metadata, {"aweme_id": case_id, "desc": "retained metadata"})
     source_sha = hashlib.sha256(video.read_bytes()).hexdigest()
 
@@ -67,8 +69,35 @@ def build_attempt(
     storyboard = attempt / "evidence" / "storyboard" / "reverse_storyboard_v1.json"
     candidate = attempt / "candidate_cases" / case_id / "case_v1.json"
 
-    write_json(transcript, {"segments": [{"text": "structured"}]})
-    write_json(audio, {"case_id": case_id, "validation": {"passed": True}})
+    write_json(
+        transcript,
+        {
+            "source_file": str(video),
+            "model": "large-v3",
+            "duration": 12.0,
+            "discarded_segments": [],
+            "segments": [
+                {
+                    "start": 0.0,
+                    "end": 1.0,
+                    "text": "structured",
+                    "words": [{"start": 0.0, "end": 1.0, "word": "structured"}],
+                }
+            ],
+        },
+    )
+    write_json(
+        audio,
+        {
+            "case_id": case_id,
+            "duration_seconds": 12.0,
+            "speech_evidence_status": "detected",
+            "transcript_raw": "structured",
+            "segments": [{"segment_id": "A001"}],
+            "words": [{"word_id": "W00001"}],
+            "validation": {"passed": True},
+        },
+    )
     write_json(
         manifest,
         {"case_id": case_id, "frames": [{"filename": original_frame.name}]},
@@ -123,6 +152,7 @@ def build_attempt(
             "case_id": case_id,
             "attempt_id": attempt_id,
             "status": status,
+            "speech_evidence_status": "detected",
             "updated_at": module.iso_utc(updated_at),
             "source": {
                 "canonical_url": f"https://www.douyin.com/video/{case_id}",
@@ -148,12 +178,40 @@ def build_attempt(
         "video": video,
         "music": music,
         "cover": cover,
+        "downloader_data": downloader_data,
         "original_frame": original_frame,
         "proxy_frame": proxy_frame,
         "metadata": metadata,
+        "acquisition": attempt / "source_acquisition_v1.json",
+        "transcript": transcript,
+        "audio": audio,
+        "narration": narration,
         "candidate": candidate,
         "visual": visual,
     }
+
+
+def make_speechless(paths: dict[str, Path]) -> None:
+    transcript = module.read_json(paths["transcript"])
+    transcript["segments"] = []
+    transcript["discarded_segments"] = []
+    write_json(paths["transcript"], transcript)
+    write_json(
+        paths["audio"],
+        {
+            "case_id": "1",
+            "duration_seconds": 12.0,
+            "speech_evidence_status": "not_detected",
+            "transcript_raw": "",
+            "segments": [],
+            "words": [],
+            "validation": {"passed": True},
+        },
+    )
+    state_path = paths["attempt"] / "case_analysis_attempt_v1.json"
+    state = module.read_json(state_path)
+    state["speech_evidence_status"] = "not_detected"
+    write_json(state_path, state)
 
 
 @pytest.mark.parametrize(
@@ -185,6 +243,139 @@ def test_successful_awaiting_review_deletes_transient_media(
     assert paths["metadata"].is_file()
     assert paths["candidate"].is_file()
     assert paths["visual"].is_file()
+
+
+def test_speechless_awaiting_review_cleanup_uses_canonical_speech_evidence(
+    tmp_path: Path,
+):
+    paths = build_attempt(tmp_path)
+    make_speechless(paths)
+
+    receipt = module.cleanup_successful_attempt(
+        paths["attempt"], paths["downloader"]
+    )
+    state = module.read_json(paths["attempt"] / "case_analysis_attempt_v1.json")
+    stored_receipt = module.read_json(
+        paths["attempt"] / "storage_cleanup_receipt_v1.json"
+    )
+
+    for name in ("video", "music", "cover", "original_frame", "proxy_frame"):
+        assert not paths[name].exists()
+    for name in (
+        "downloader_data",
+        "metadata",
+        "acquisition",
+        "transcript",
+        "audio",
+        "narration",
+        "candidate",
+        "visual",
+    ):
+        assert paths[name].is_file()
+    assert state["status"] == "awaiting_review"
+    assert state["artifacts"]["narration_review_v1"] == str(paths["narration"])
+    assert receipt == stored_receipt
+    assert receipt["cleanup_status"] == "completed"
+    assert receipt["structured_evidence_retained"] is True
+    assert set(receipt["deleted_categories"]) == {
+        "original_frames",
+        "qwen_proxy_frames",
+        "source_cover_thumbnail",
+        "source_music",
+        "source_video",
+    }
+
+
+def test_uncertain_empty_transcription_is_not_cleanup_eligible(tmp_path: Path):
+    paths = build_attempt(tmp_path)
+    make_speechless(paths)
+    raw = module.read_json(paths["transcript"])
+    raw["discarded_segments"] = [{"reason": "implausible_speech_rate"}]
+    write_json(paths["transcript"], raw)
+
+    with pytest.raises(module.StorageCleanupError) as error:
+        module.cleanup_successful_attempt(paths["attempt"], paths["downloader"])
+
+    assert error.value.code == "CLEANUP_EVIDENCE_NOT_DURABLE"
+    assert paths["video"].is_file()
+
+
+@pytest.mark.parametrize(
+    "malformation",
+    [
+        "missing-source-file",
+        "missing-model",
+        "missing-duration",
+        "invalid-segments",
+        "invalid-json",
+    ],
+)
+def test_malformed_empty_transcription_is_not_cleanup_eligible(
+    tmp_path: Path,
+    malformation: str,
+):
+    paths = build_attempt(tmp_path)
+    make_speechless(paths)
+    raw = module.read_json(paths["transcript"])
+    if malformation == "missing-source-file":
+        raw.pop("source_file")
+    elif malformation == "missing-model":
+        raw.pop("model")
+    elif malformation == "missing-duration":
+        raw.pop("duration")
+    elif malformation == "invalid-segments":
+        raw["segments"] = {}
+    else:
+        paths["transcript"].write_text("{", encoding="utf-8")
+    if malformation != "invalid-json":
+        write_json(paths["transcript"], raw)
+
+    with pytest.raises(module.StorageCleanupError) as error:
+        module.cleanup_successful_attempt(paths["attempt"], paths["downloader"])
+
+    assert error.value.code == "CLEANUP_EVIDENCE_NOT_DURABLE"
+    assert paths["video"].is_file()
+
+
+def test_raw_and_audio_speech_semantics_mismatch_fails_closed(tmp_path: Path):
+    paths = build_attempt(tmp_path)
+    make_speechless(paths)
+    audio = module.read_json(paths["audio"])
+    audio.update(
+        {
+            "speech_evidence_status": "detected",
+            "transcript_raw": "structured",
+            "segments": [{"segment_id": "A001"}],
+            "words": [{"word_id": "W00001"}],
+        }
+    )
+    write_json(paths["audio"], audio)
+
+    with pytest.raises(module.StorageCleanupError) as error:
+        module.cleanup_successful_attempt(paths["attempt"], paths["downloader"])
+
+    assert error.value.code == "CLEANUP_EVIDENCE_NOT_DURABLE"
+    assert paths["video"].is_file()
+
+
+def test_narration_authority_is_resolved_from_attempt_state_and_retained(
+    tmp_path: Path,
+):
+    paths = build_attempt(tmp_path)
+    authoritative_narration = paths["attempt"] / "durable" / "narration.json"
+    authoritative_narration.parent.mkdir(parents=True)
+    paths["narration"].replace(authoritative_narration)
+    state_path = paths["attempt"] / "case_analysis_attempt_v1.json"
+    state = module.read_json(state_path)
+    state["artifacts"]["narration_review_v1"] = str(authoritative_narration)
+    write_json(state_path, state)
+
+    receipt = module.cleanup_successful_attempt(
+        paths["attempt"], paths["downloader"]
+    )
+
+    assert receipt["cleanup_status"] == "completed"
+    assert authoritative_narration.is_file()
 
 
 def test_failed_attempt_younger_than_24_hours_keeps_transient_media(tmp_path: Path):

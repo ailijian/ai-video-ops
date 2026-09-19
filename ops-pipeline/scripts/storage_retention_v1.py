@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import tempfile
@@ -10,6 +11,10 @@ from pathlib import Path
 from typing import Any, Callable
 
 from operation_lock_v1 import OperationLockTimeout, operation_lock
+from speech_evidence_v1 import (
+    classify_transcription_speech_evidence,
+    require_audio_speech_evidence,
+)
 
 
 SCHEMA_VERSION = "storage-cleanup-receipt-v1.0"
@@ -84,6 +89,53 @@ def _artifact_path(state: dict[str, Any], name: str) -> Path:
     return Path(str(value or "")).expanduser()
 
 
+def _speech_evidence_valid(state: dict[str, Any], case_id: str) -> bool:
+    """Validate durable raw/Audio V1 evidence through the canonical classifier."""
+
+    try:
+        raw = read_json(_artifact_path(state, "transcript_segments"))
+        audio = read_json(_artifact_path(state, "audio_v1"))
+        segments = raw.get("segments")
+        discarded_segments = raw.get("discarded_segments")
+        duration = raw.get("duration")
+        if not isinstance(segments, list) or not isinstance(discarded_segments, list):
+            return False
+        if (
+            not isinstance(raw.get("source_file"), str)
+            or not raw["source_file"].strip()
+        ):
+            return False
+        if not isinstance(raw.get("model"), str) or not raw["model"].strip():
+            return False
+        if (
+            isinstance(duration, bool)
+            or not isinstance(duration, (int, float))
+            or not math.isfinite(float(duration))
+            or float(duration) <= 0
+        ):
+            return False
+        audio_segments = audio.get("segments")
+        audio_words = audio.get("words")
+        audio_validation = audio.get("validation")
+        if (
+            audio.get("case_id") != case_id
+            or not isinstance(audio_segments, list)
+            or not isinstance(audio_words, list)
+            or not isinstance(audio_validation, dict)
+            or audio_validation.get("passed") is not True
+        ):
+            return False
+
+        raw_status = classify_transcription_speech_evidence(raw)
+        audio_status = require_audio_speech_evidence(audio)
+        return (
+            audio.get("speech_evidence_status") == audio_status
+            and raw_status == audio_status
+        )
+    except (RuntimeError, StorageCleanupError, OSError, TypeError, ValueError):
+        return False
+
+
 def validate_success_cleanup_eligibility(attempt_root: Path) -> dict[str, Any]:
     """Fail closed unless every successful-analysis artifact is durable."""
 
@@ -112,15 +164,7 @@ def validate_success_cleanup_eligibility(attempt_root: Path) -> dict[str, Any]:
             is not None
             and Path(str(value.get("metadata") or "")).is_file(),
         ),
-        "transcription_structured": _json_valid(
-            _artifact_path(state, "transcript_segments"),
-            lambda value: bool(value.get("segments")),
-        ),
-        "audio_structured": _json_valid(
-            _artifact_path(state, "audio_v1"),
-            lambda value: value.get("case_id") == case_id
-            and value.get("validation", {}).get("passed") is True,
-        ),
+        "speech_evidence": _speech_evidence_valid(state, case_id),
         "visual_manifest": _json_valid(
             _artifact_path(state, "visual_manifest"),
             lambda value: value.get("case_id") == case_id
