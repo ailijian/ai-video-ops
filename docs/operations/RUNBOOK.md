@@ -19,6 +19,10 @@ Run commands from the repository root. Replace angle-bracket placeholders with e
 - **Backup:** Run `internal-console/scripts/backup_local_node_v1.py` during an idle queue window to an external/NAS path. A running task or active Authority mutation holds the backup barrier and produces `BACKUP_REQUIRES_IDLE_WINDOW`.
 - **Windows Checklist:** AC sleep and hibernate Never; screen may turn off; disable active-adapter power saving; prefer wired networking; prevent automatic update reboot during production hours; maintenance only after the queue is idle.
 - **Deployment Boundary:** Templates in `deploy/local-node` do not authorize installation, FRP setup, firewall changes, public exposure, or changes to Windows policy.
+- **Two-host Responsibility:** Until an explicit Authority cutover, the old Windows host owns development and current Production Authority. The RTX 4090 host is runtime-only staging and must not contain direct business-code edits, commits, or pushes.
+- **Code Promotion:** Every runtime change moves `old host -> reviewed commit -> private-origin push -> new host git pull`. Never repair Production by hand-editing canonical code on the runtime node.
+- **Reproducible Install:** On a clean Python 3.12 host, `deploy/local-node/powershell/bootstrap-runtime.ps1` creates/reuses both venvs from `internal-console/pyproject.toml` and `ops-pipeline/requirements.txt`; `-IncludeTestDependencies` also installs both declared test contracts. Then run `runtime-preflight.ps1` against the protected environment file.
+- **Whisper Runtime:** `AIVO_WHISPER_MODEL` accepts a faster-whisper model name or an existing absolute local model directory. The 4090 node uses `E:\ai-model-cache\faster-whisper-large-v3`; transcription remains CPU/int8 and the bootstrap never downloads or invokes the model.
 
 ## CASE_ANALYSIS
 

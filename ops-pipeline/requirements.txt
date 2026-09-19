@@ -1,0 +1,10 @@
+# Direct runtime dependencies for the canonical ops-pipeline on Python 3.12.
+# CUDA/cuDNN packages and torch are intentionally not part of this CPU Whisper contract.
+ctranslate2==4.8.2
+faster-whisper==1.2.1
+numpy==2.5.3
+ollama==0.6.2
+openai==3.11.0
+opencv-python==5.0.0.93
+openpyxl==3.1.5
+scenedetect==0.7.1

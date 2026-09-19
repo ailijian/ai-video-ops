@@ -16,13 +16,53 @@ the Windows power plan, open a firewall port, or connect to a cloud server.
 The current task runners and startup recovery depend on this single-process
 service architecture. Starting a second Console service is unsupported.
 
+## Runtime-only host contract
+
+The old Windows host remains the development host and current Production
+Authority until an explicit cutover. The RTX 4090 host is runtime-only staging:
+do not edit business code, commit, or push there. Every code change follows
+`old host -> commit -> push -> new host git pull`.
+
+A clean Windows runtime node requires Python 3.12, Git, Node/npm, one running
+Ollama instance, the preloaded `qwen3-vl:4b-instruct` model, and a preloaded
+faster-whisper model directory. Host prerequisites and model downloads remain
+manual; the bootstrap never installs CUDA/cuDNN/Ollama or downloads a model.
+
+After cloning and creating a protected production env file from
+`env.production.example`, run:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\deploy\local-node\powershell\bootstrap-runtime.ps1 `
+  -RepoRoot E:\AI-Video-Ops `
+  -EnvironmentFile E:\AI-Video-Ops-Config\local-node.production.env `
+  -IncludeTestDependencies
+
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\deploy\local-node\powershell\runtime-preflight.ps1 `
+  -RepoRoot E:\AI-Video-Ops `
+  -EnvironmentFile E:\AI-Video-Ops-Config\local-node.production.env
+```
+
+The bootstrap is repeatable. It creates or reuses the two repository venvs,
+installs only repository-declared dependencies, and runs `pip check`. Omit
+`-IncludeTestDependencies` after staging acceptance when only runtime
+dependencies are wanted. It does not migrate Production data or change the
+host configuration.
+
+The ops-pipeline runtime contract is `ops-pipeline/requirements.txt`; its
+separate test contract is `ops-pipeline/requirements-dev.txt`. Internal Console
+continues to use `pip install -e ".[dev]"` from its existing `pyproject.toml`.
+
 ## Template use after Human Review approval
 
 1. Copy `env.production.example` to an out-of-repository path.
 2. Replace paths, add the real DeepSeek key, and restrict NTFS ACLs.
 3. Edit the WinSW XML paths. Keep `--workers 1` and the loopback bind.
 4. Run `powershell/preflight.ps1` without elevation.
-5. Install services only in the separately approved deployment stage.
+5. Run `powershell/runtime-preflight.ps1` before service installation or
+   restart on a rebuilt host.
+6. Install services only in the separately approved deployment stage.
 
 `frpc.xml.example` is a future service wrapper only. It intentionally contains
 no server address or authentication token.

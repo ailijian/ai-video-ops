@@ -17,6 +17,7 @@ from case_duplicate_guard_v1 import find_media_identity_duplicate
 
 OPERATION_VERSION = "case_analysis_v1.py@1.0"
 SCHEMA_VERSION = "case-analysis-attempt-v1.0"
+DEFAULT_WHISPER_MODEL = "large-v3"
 CASE_ID_RE = re.compile(r"(?:/video/|video_id=)(\d{10,24})")
 ATTEMPT_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{7,127}$")
 ALLOWED_HOSTS = {
@@ -39,6 +40,20 @@ class CaseAnalysisError(RuntimeError):
     def __init__(self, code: str, message: str):
         super().__init__(message)
         self.code = code
+
+
+def resolve_whisper_model() -> str:
+    configured = os.environ.get("AIVO_WHISPER_MODEL", "").strip()
+    if not configured:
+        return DEFAULT_WHISPER_MODEL
+
+    candidate = Path(configured).expanduser()
+    if candidate.is_absolute() and not candidate.is_dir():
+        raise CaseAnalysisError(
+            "WHISPER_MODEL_PATH_INVALID",
+            "AIVO_WHISPER_MODEL absolute path must be an existing local directory.",
+        )
+    return configured
 
 
 def now_iso() -> str:
@@ -185,6 +200,7 @@ class Orchestrator:
         self.profile = profile
         self.industry = industry
         self.reanalyze = reanalyze
+        self.whisper_model = resolve_whisper_model()
         self.attempt_root = (
             self.pipeline_root
             / "data"
@@ -476,7 +492,7 @@ class Orchestrator:
                     "--input",
                     str(video),
                     "--model",
-                    "large-v3",
+                    self.whisper_model,
                     "--language",
                     "zh",
                     "--device",

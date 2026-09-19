@@ -38,6 +38,43 @@ def roots(tmp_path: Path) -> tuple[Path, Path, Path]:
     return repo, pipeline, downloader
 
 
+def test_whisper_model_defaults_to_large_v3(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("AIVO_WHISPER_MODEL", raising=False)
+
+    assert module.resolve_whisper_model() == "large-v3"
+
+
+def test_whisper_model_accepts_model_name(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("AIVO_WHISPER_MODEL", "large-v3")
+
+    assert module.resolve_whisper_model() == "large-v3"
+
+
+def test_whisper_model_accepts_exact_absolute_local_directory(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    model_dir = tmp_path / "faster-whisper-large-v3"
+    model_dir.mkdir()
+    configured = str(model_dir)
+    monkeypatch.setenv("AIVO_WHISPER_MODEL", configured)
+
+    assert module.resolve_whisper_model() == configured
+
+
+def test_whisper_model_rejects_missing_absolute_local_directory(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+):
+    missing_model_dir = (tmp_path / "missing-whisper-model").resolve()
+    monkeypatch.setenv("AIVO_WHISPER_MODEL", str(missing_model_dir))
+
+    with pytest.raises(module.CaseAnalysisError) as error:
+        module.resolve_whisper_model()
+
+    assert error.value.code == "WHISPER_MODEL_PATH_INVALID"
+
+
 def test_stable_source_identity_accepts_full_douyin_url_only():
     case_id, canonical = module.stable_source_identity(
         "https://www.douyin.com/video/7682442957798161531?share=1"

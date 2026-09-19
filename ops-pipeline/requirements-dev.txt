@@ -1,0 +1,4 @@
+-r requirements.txt
+
+# Test-only dependency. Runtime code does not import pytest.
+pytest==9.1.1
