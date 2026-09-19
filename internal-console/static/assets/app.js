@@ -15,7 +15,7 @@ import {
 
 import {
   createContentViews,
-} from "./content-views.js";
+} from "./content-views.js?v=branding-layout-2";
 
 import {
   createContentOperationsViews,
@@ -66,7 +66,7 @@ function escapeHtml(value) {
 }
 
 function brandMark() {
-  return `<div class="brand-mark" aria-hidden="true"><span></span><span></span><span></span></div>`;
+  return `<img class="brand-mark" src="/assets/brand/logo.png" alt="">`;
 }
 
 function showToast(message) {
@@ -119,7 +119,7 @@ function shell(title, body) {
   return `
     <div class="app-shell">
       <aside class="sidebar">
-        <div class="sidebar-brand">${brandMark()}<div><strong>AI Video Ops</strong><small>Internal Console</small></div></div>
+        <div class="sidebar-brand">${brandMark()}<div><strong>鲸汤AI视频</strong><small>代运营工作台</small></div></div>
         <nav class="side-nav" aria-label="主导航">${sideLinks}</nav>
         <div class="sidebar-footer">内部生产工作台 · V1</div>
       </aside>
@@ -209,7 +209,7 @@ function renderLogin() {
   app.innerHTML = `
     <main class="auth-page">
       <div class="auth-wrap">
-        <div class="auth-brand">${brandMark()}<div><strong>AI Video Ops</strong><span>内部生产工作台</span></div></div>
+        <div class="auth-brand">${brandMark()}<div><strong>鲸汤AI视频代运营工作台</strong><span>内部运营专用</span></div></div>
         <section class="auth-card">
           <h1>欢迎回来</h1>
           <p>登录后继续处理案例、客户与视频创作任务。</p>
@@ -255,7 +255,7 @@ function renderChangePassword() {
   app.innerHTML = `
     <main class="auth-page">
       <div class="auth-wrap">
-        <div class="auth-brand">${brandMark()}<div><strong>AI Video Ops</strong><span>账号安全</span></div></div>
+        <div class="auth-brand">${brandMark()}<div><strong>鲸汤AI视频代运营工作台</strong><span>账号安全</span></div></div>
         <section class="auth-card">
           <h1>${firstLogin ? "首次登录" : "修改密码"}</h1>
           <p>${firstLogin ? "请先设置一个新密码，再进入工作台。" : "修改后，其他已登录设备会自动退出。"}</p>

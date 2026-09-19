@@ -1382,6 +1382,7 @@ export function createContentViews({
             "先确认客户、出镜人、创作模式和数量。系统会先检查高质量内容容量，不会直接生成。",
           )}
 
+          <div class="create-workflow">
           <section class="card create-entry-card">
             <form
               id="content-entry-form"
@@ -1549,6 +1550,7 @@ export function createContentViews({
             不写入 Content Ledger。
             </p>
           </section>
+          </div>
         </main>`,
     );
 
