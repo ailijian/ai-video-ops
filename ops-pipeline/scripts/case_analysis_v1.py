@@ -195,11 +195,31 @@ class Orchestrator:
         self.state_path = self.attempt_root / "case_analysis_attempt_v1.json"
         self.logs_root = self.attempt_root / "logs"
         self.python = Path(sys.executable).resolve()
-        self.child_env = os.environ.copy()
+        edge_secret_prefixes = (
+            "FRP_",
+            "FRPC_",
+            "FRPS_",
+            "AIVO_FRP_",
+            "AIVO_FRPC_",
+            "AIVO_FRPS_",
+        )
+        self.child_env = {
+            key: value
+            for key, value in os.environ.items()
+            if not key.upper().startswith(edge_secret_prefixes)
+        }
+        self.child_env.pop("DEEPSEEK_API_KEY", None)
         self.child_env["PYTHONIOENCODING"] = "utf-8"
         self.child_env["PYTHONUTF8"] = "1"
+        self.deepseek_env = self.child_env.copy()
         for key, value in load_dotenv(self.pipeline_root / ".env").items():
-            self.child_env.setdefault(key, value)
+            if key.upper().startswith(edge_secret_prefixes):
+                continue
+            if key.startswith("DEEPSEEK_"):
+                self.deepseek_env.setdefault(key, value)
+            else:
+                self.child_env.setdefault(key, value)
+                self.deepseek_env.setdefault(key, value)
         self.state = self._load_or_initialize()
 
     def _load_or_initialize(self) -> dict[str, Any]:
@@ -317,7 +337,15 @@ class Orchestrator:
         self.state["progress"] = int(stage["progress"])
         self.save()
 
-    def run_command(self, label: str, command: list[str], stage_id: str, timeout: int) -> None:
+    def run_command(
+        self,
+        label: str,
+        command: list[str],
+        stage_id: str,
+        timeout: int,
+        *,
+        needs_deepseek: bool = False,
+    ) -> None:
         self.logs_root.mkdir(parents=True, exist_ok=True)
         log_path = self.logs_root / f"{stage_id}-{label}.log"
         result = subprocess.run(
@@ -328,7 +356,7 @@ class Orchestrator:
             text=True,
             encoding="utf-8",
             errors="replace",
-            env=self.child_env,
+            env=self.deepseek_env if needs_deepseek else self.child_env,
             timeout=timeout,
             check=False,
         )
@@ -623,6 +651,7 @@ class Orchestrator:
                     ],
                     "structure",
                     1800,
+                    needs_deepseek=True,
                 )
             shot_valid = validate_json(
                 shots,
@@ -651,6 +680,7 @@ class Orchestrator:
                     ],
                     "structure",
                     1800,
+                    needs_deepseek=True,
                 )
             storyboard_valid = validate_json(
                 storyboard,
@@ -676,6 +706,7 @@ class Orchestrator:
                     ],
                     "structure",
                     2400,
+                    needs_deepseek=True,
                 )
             for boundary in (
                 "privacy_safe_narration_review",

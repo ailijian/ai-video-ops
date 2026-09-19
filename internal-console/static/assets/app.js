@@ -2,6 +2,7 @@ import { createApiClient } from "./api-client.js";
 import { createCaseViews } from "./case-views.js";
 import { createCustomerViews } from "./customer-views.js";
 import { progressPanel } from "./case-components.js";
+import { startTaskPolling } from "./task-progress.js";
 import { customerProgressPanel } from "./customer-components.js";
 import { matchWorkflowRoute } from "./routes.js";
 import {
@@ -506,6 +507,29 @@ async function renderTaskDetail(taskId) {
       return speakerViews.renderSpeakerTaskDetail(
         payload.task,
       );
+    }
+
+    if (["content_generation", "excel_export"].includes(payload.task.task_type)) {
+      const render = (task) => {
+        app.innerHTML = shell(
+          "任务进度",
+          `<main class="page task-detail-page">${pageHeading(
+            "后台任务",
+            humanTaskType(task.task_type),
+            "任务完成只表示执行结束；页面会重新读取 canonical artifact 确认业务状态。",
+          )}<div data-live-progress>${progressPanel(task)}</div><a class="btn btn-secondary btn-wide" href="/tasks" data-route>返回任务记录</a></main>`,
+        );
+        bindCommonActions();
+      };
+      render(payload.task);
+      startTaskPolling({
+        api,
+        taskId,
+        onUpdate: render,
+        onDone: render,
+        onError: () => {},
+      });
+      return;
     }
 
     return caseViews.renderTaskDetail(

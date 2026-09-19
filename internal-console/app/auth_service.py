@@ -119,9 +119,19 @@ def authenticate(database_path: Path, phone: str, password: str) -> dict[str, An
     }
 
 
+def cleanup_expired_sessions(database_path: Path) -> int:
+    with transaction(database_path) as connection:
+        result = connection.execute(
+            "DELETE FROM sessions WHERE expires_at <= ?",
+            (iso_utc(),),
+        )
+        return result.rowcount
+
+
 def create_session(
     database_path: Path, user_id: int, session_hours: int
 ) -> tuple[str, SessionContext]:
+    cleanup_expired_sessions(database_path)
     token = new_session_token()
     token_hash = hash_session_token(token)
     csrf_token = new_csrf_token()
@@ -161,7 +171,12 @@ def create_session(
     )
 
 
-def resolve_session(database_path: Path, token: str | None) -> SessionContext | None:
+def resolve_session(
+    database_path: Path,
+    token: str | None,
+    *,
+    last_seen_interval_seconds: int = 300,
+) -> SessionContext | None:
     if not token:
         return None
     token_hash = hash_session_token(token)
@@ -169,7 +184,7 @@ def resolve_session(database_path: Path, token: str | None) -> SessionContext | 
     with transaction(database_path) as connection:
         row = connection.execute(
             """
-            SELECT s.token_hash, s.csrf_token, s.expires_at,
+            SELECT s.token_hash, s.csrf_token, s.expires_at, s.last_seen_at,
                    u.id, u.phone, u.must_change_password, u.status
             FROM sessions AS s
             JOIN users AS u ON u.id = s.user_id
@@ -183,10 +198,14 @@ def resolve_session(database_path: Path, token: str | None) -> SessionContext | 
         if expires_at <= now_utc() or row["status"] != "active":
             connection.execute("DELETE FROM sessions WHERE token_hash = ?", (token_hash,))
             return None
-        connection.execute(
-            "UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?",
-            (timestamp, token_hash),
+        last_seen_at = datetime.fromisoformat(
+            row["last_seen_at"].replace("Z", "+00:00")
         )
+        if now_utc() - last_seen_at >= timedelta(seconds=last_seen_interval_seconds):
+            connection.execute(
+                "UPDATE sessions SET last_seen_at = ? WHERE token_hash = ?",
+                (timestamp, token_hash),
+            )
     return SessionContext(
         token_hash=row["token_hash"],
         csrf_token=row["csrf_token"],

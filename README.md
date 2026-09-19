@@ -15,6 +15,14 @@ The Phase 1 mobile-first operations surface lives in
 Layer over the canonical operations and stores only internal auth, session, and
 task-projection data.
 
+The Local Production Node runtime is frozen to one Uvicorn process listening
+only on `127.0.0.1:8000`. Its durable SQLite task projection uses two execution
+lanes (`GPU_HEAVY` and `STANDARD_BACKGROUND`), lease-based crash recovery, and
+a cross-process `global_gpu` guard. Do not start multiple Console instances or
+run an unguarded historical GPU script beside the production node. Production
+templates and the backup/run checklist are in
+[`deploy/local-node`](deploy/local-node/README.md).
+
 View the current real-customer status:
 
 ```powershell

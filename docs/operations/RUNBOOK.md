@@ -5,6 +5,21 @@
 
 Run commands from the repository root. Replace angle-bracket placeholders with explicit reviewed paths. Never select an authority by file timestamp or filename sorting.
 
+## LOCAL_PRODUCTION_NODE_RUNTIME
+
+- **Runtime Freeze:** Internal Console listens on `127.0.0.1:8000`, uses exactly one Uvicorn worker, and never enables reload in production.
+- **Production Command:** From `internal-console`, run `& .\.venv\Scripts\python.exe -m uvicorn app.main:app --host 127.0.0.1 --port 8000 --workers 1 --proxy-headers --forwarded-allow-ips "127.0.0.1,::1"` with `AIVO_ENV_FILE` pointing to the protected production env file.
+- **Reason:** Task scheduling and startup recovery use a single-process service architecture. SQLite CAS and cross-process operation locks are defensive guards, not authorization to start multiple Console instances.
+- **Execution Lanes:** `GPU_HEAVY` contains Case Analysis/local model work; `STANDARD_BACKGROUND` contains Customer/Speaker Analysis, Content Plan, Script Generation, Mix/News Plan and Export, and other long non-GPU work.
+- **GPU Guard:** Every canonical Ollama/CUDA entry acquires `global_gpu`; production GPU concurrency is one. Historical `merge_video_evidence.py` and any other unregistered GPU tool are **DO NOT RUN CONCURRENTLY WITH PRODUCTION NODE**.
+- **Long Operations:** Content Plan, Script Generation, Mix Export + Ledger Closure, News Plan and News Export are submitted as durable tasks. `completed` is execution projection only; always re-read the canonical delivery/receipt resolver.
+- **Actor:** Console mutations derive reviewer/actor from the authenticated session. Request bodies do not choose reviewer identity.
+- **Mutation Boundary:** While the Local Production Node is running, formal Authority mutations go through the Console gateways and keyed `operation_lock_v1`. Direct mutation CLIs are offline recovery tools only: stop/idle the Console first and **DO NOT RUN CONCURRENTLY WITH PRODUCTION NODE**.
+- **Recovery:** Startup reconciles only expired leases; a low-frequency in-process maintenance loop revisits non-expired inherited leases after they expire, so a fast reboot cannot strand them permanently in `running`.
+- **Backup:** Run `internal-console/scripts/backup_local_node_v1.py` during an idle queue window to an external/NAS path. A running task or active Authority mutation holds the backup barrier and produces `BACKUP_REQUIRES_IDLE_WINDOW`.
+- **Windows Checklist:** AC sleep and hibernate Never; screen may turn off; disable active-adapter power saving; prefer wired networking; prevent automatic update reboot during production hours; maintenance only after the queue is idle.
+- **Deployment Boundary:** Templates in `deploy/local-node` do not authorize installation, FRP setup, firewall changes, public exposure, or changes to Windows policy.
+
 ## CASE_ANALYSIS
 
 - **Goal:** Turn one full public Douyin video URL into a traceable, review-required Case Candidate by orchestrating the current acquisition, transcription, visual evidence, privacy, shot-boundary, storyboard, and Case-build implementations.
@@ -101,26 +116,26 @@ Run commands from the repository root. Replace angle-bracket placeholders with e
 - **Goal:** Produce a review-required Mix content batch.
 - **Required Inputs:** Explicit approved Business/Speaker Personas, request, approved pattern/cases/fingerprints, profile registry/coverage/compatibility approval, business ledger.
 - **Authority Preconditions:** All revisions and SHA lineage validate; request explicitly names persona revisions.
-- **Canonical Entry Point:** `match_generation_sources_v1.py`, then `generate_mix_scripts_v1.py`.
-- **Execution:** First run `python ops-pipeline/scripts/match_generation_sources_v1.py --persona <path> --speaker-persona <path> --request <path> --pattern <path> --case <path> --fingerprint <path> --profile-registry <path> --creative-coverage-report <path> --profile-compatibility-approval <path> --output-root <directory>`. Then run `python ops-pipeline/scripts/generate_mix_scripts_v1.py --persona <path> --speaker-persona <path> --request <path> --source-plan <path> --pattern <path> --fingerprint <path> --content-ledger <path> --output-root <directory>`.
+- **Canonical Entry Point:** Internal Console generation gateways backed by `generation_request_handoff_v1.py`, `resolve_generation_source_plan_v1.py`, `resolve_generation_content_plan_v1.py`, `resolve_generation_batch_v1.py`, `review_generation_batch_v2.py`, `export_mix_excel_v1.py`, and `close_generation_export_v1.py`.
+- **Execution:** Generation Request → Source Plan → Content Plan → Generation → Human Review V2 → Export → Ledger Closure. Content Plan, Generation and Export are durable `STANDARD_BACKGROUND` tasks; Human Review remains explicit and synchronous because it is deterministic artifact validation/mutation.
 - **Human Gate:** Generated content is not approved; content review follows.
 - **Outputs:** Generation batch and review pack.
 - **Stop Conditions:** `capacity_limited`, unsupported fact, privacy/proof failure, or no approved pattern.
 - **Next Action:** `CONTENT_HUMAN_REVIEW`.
-- **Implementation Status:** `IMPLEMENTED / MULTI_STEP_OPERATION`.
+- **Implementation Status:** `IMPLEMENTED / CONSOLE-ORCHESTRATED / RECOVERABLE`.
 
 ## NEW_NEWS_BATCH
 
-- **Goal:** Validate the currently approved narrow News production paths.
+- **Goal:** Execute the currently validated narrow Price / Offer Cross-profile Repurpose production path.
 - **Required Inputs:** Explicit novel/repurpose requests, registry, active coverage update, approved News patterns, historical approved Mix/export lineage, fingerprints and template.
 - **Authority Preconditions:** News price pattern approved; Scene Contrast requires real Customer Truth opportunity.
-- **Canonical Entry Point:** `generate_mix_scripts_v1.py --news-mvp-validation` and `--news-mvp-final-approval`.
-- **Execution:** `CUSTOMER_SPECIFIC / VALIDATION_ONLY`; supply the corresponding `--novel-request`, `--repurpose-request`, `--production-profile-registry`, `--creative-coverage-update`, repeated `--news-pattern`, `--historical-approved-batch`, `--historical-export-receipt`, `--news-template`, and repeated `--fingerprint` arguments shown by `--help`.
+- **Canonical Entry Point:** Internal Console News Delivery gateway backed by `news_delivery_v1.py`.
+- **Execution:** News Request → deterministic News Plan task → Human Review → News Export task → Presentation History Closure. The validated path repurposes approved historical semantic content and creates no new semantic Ledger entry.
 - **Human Gate:** Track A/Track B Human approval before final export.
 - **Outputs:** Validation artifacts, approved repurpose export, presentation-only ledger history.
-- **Stop Conditions:** No real State A/B truth; zero novel capacity; any attempt to create semantic novelty from repurpose.
-- **Next Action:** Preserve `pending_real_customer_opportunity` or complete the explicit review.
-- **Implementation Status:** `PARTIAL / NARROW / CUSTOMER_SPECIFIC / VALIDATION_ONLY`.
+- **Stop Conditions:** No approved source content; request/receipt mismatch; any attempt to claim new semantic novelty from repurpose.
+- **Next Action:** Complete explicit review/export for Price / Offer repurpose. Scene Contrast remains `pending_real_customer_opportunity` and is not Generic Novel News Production Ready.
+- **Implementation Status:** `IMPLEMENTED / NARROW PRICE-OFFER CROSS-PROFILE REPURPOSE`; Scene Contrast remains pending.
 
 ## CONTENT_HUMAN_REVIEW
 
@@ -153,26 +168,26 @@ Run commands from the repository root. Replace angle-bracket placeholders with e
 - **Goal:** Export an Approved Mix Batch to the frozen workbook contract.
 - **Required Inputs:** Approved batch, template, new output/preview/validation/receipt paths.
 - **Authority Preconditions:** All export items Human Approved; output must not exist.
-- **Canonical Entry Point:** `ops-pipeline/scripts/export_mix_excel_v1.mjs`.
-- **Execution:** `node ops-pipeline/scripts/export_mix_excel_v1.mjs --batch <approved_batch.json> --template <template.xlsx> --output <new.xlsx> --preview <new.png> --validation-output <new_validation.json> --receipt <new_receipt.json>`
+- **Canonical Entry Point:** Internal Console async export task, backed by `ops-pipeline/scripts/export_mix_excel_v1.py` and `close_generation_export_v1.py`.
+- **Execution:** Submit `/api/create/<request_id>/export-mix`, poll the returned task, then re-read canonical delivery state and Export Receipt. CLI recovery uses the same scripts and request lineage.
 - **Human Gate:** Approved Batch required.
 - **Outputs:** XLSX, preview, validation and export receipt.
 - **Stop Conditions:** Template mutation, formula error, overwrite attempt, contract mismatch.
 - **Next Action:** `WRITE_CONTENT_LEDGER`.
-- **Implementation Status:** `IMPLEMENTED`; Python exporter remains preserved compatibility/history.
+- **Implementation Status:** `IMPLEMENTED / ASYNC CONSOLE TASK / LEDGER CLOSURE INCLUDED`.
 
 ## EXPORT_NEWS
 
 - **Goal:** Export an explicitly approved News result.
 - **Required Inputs:** News Human approval, template, new output/preview/validation paths.
 - **Authority Preconditions:** Approval schema and `approved_for_export` status validate.
-- **Canonical Entry Point:** `ops-pipeline/scripts/export_news_excel_v1.mjs` within the customer-specific final closure.
-- **Execution:** `node ops-pipeline/scripts/export_news_excel_v1.mjs --approval <news_approval.json> --template <template.xlsx> --output <new.xlsx> --preview <new.png> --validation-output <new_validation.json>`
+- **Canonical Entry Point:** Internal Console async News Export task backed by `news_delivery_v1.py --action export`.
+- **Execution:** Submit `/api/create/news/<request_id>/export`, poll the task, then re-read News Delivery state, receipt and Presentation History Closure.
 - **Human Gate:** Explicit News content approval.
 - **Outputs:** News XLSX, preview and validation; final closure writes receipt/presentation history.
 - **Stop Conditions:** Approval, workbook or template validation failure.
 - **Next Action:** Customer-specific final closure.
-- **Implementation Status:** `IMPLEMENTED EXPORTER / CUSTOMER_SPECIFIC CLOSURE`.
+- **Implementation Status:** `IMPLEMENTED / NARROW REPURPOSE PATH / ASYNC CONSOLE TASK`.
 
 ## WRITE_CONTENT_LEDGER
 

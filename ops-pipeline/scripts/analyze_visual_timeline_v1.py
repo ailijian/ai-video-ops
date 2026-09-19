@@ -8,6 +8,7 @@ from typing import Any
 
 import cv2
 from ollama import chat
+from operation_lock_v1 import operation_lock
 
 SCRIPT_VERSION = "analyze_visual_timeline_v1.py@1.5"
 
@@ -432,7 +433,7 @@ def ollama_response_metrics(response: Any) -> dict[str, Any]:
     }
 
 
-def main() -> None:
+def _main_with_gpu_lock_held() -> None:
     run_started = time.perf_counter()
     parser = argparse.ArgumentParser(description="Chunked Qwen visual analysis with cache resume, raw recovery, retries, and timing.")
     parser.add_argument("--manifest", required=True)
@@ -836,6 +837,16 @@ Case ID: {case_id}
     )
     print(f"JSON: {output_path}", flush=True)
     print(f"Summary: {summary_path}", flush=True)
+
+
+def main() -> None:
+    pipeline_root = Path(__file__).resolve().parents[1]
+    with operation_lock(
+        pipeline_root,
+        "global_gpu",
+        timeout_seconds=7200.0,
+    ):
+        _main_with_gpu_lock_held()
 
 
 if __name__ == "__main__":

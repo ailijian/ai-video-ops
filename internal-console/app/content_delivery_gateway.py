@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import re
 import subprocess
 import tempfile
@@ -11,6 +10,8 @@ from typing import Any
 
 from .canonical_gateway import CanonicalOperationError
 from .config import Settings
+from .path_safety import resolve_within, validate_identifier
+from .subprocess_env import pipeline_subprocess_env
 
 
 REQUEST_SCHEMA = "generation-request-v1.0"
@@ -19,17 +20,15 @@ GENERATION_BATCH_SCHEMA = "generation-batch-v1.0"
 APPROVED_BATCH_SCHEMA = "approved-generation-batch-v1.0"
 REVIEWED_BATCH_SCHEMA = "reviewed-generation-batch-v1.0"
 
-REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9_-]{4,128}$")
-
-
 def _validate_request_id(request_id: str) -> str:
-    value = str(request_id or "").strip()
-    if not REQUEST_ID_RE.fullmatch(value):
+    try:
+        value = validate_identifier(request_id, field="request_id")
+    except ValueError:
         raise CanonicalOperationError(
             "CONTENT_DELIVERY_REQUEST_ID_INVALID",
             "Generation Request ID 不合法。",
             "请从当前创作流程恢复正确的 Request 后继续。",
-        )
+        ) from None
     return value
 
 
@@ -80,11 +79,8 @@ def _parse_json_output(stdout: str) -> dict[str, Any] | None:
     return None
 
 
-def _pipeline_env() -> dict[str, str]:
-    env = os.environ.copy()
-    env["PYTHONIOENCODING"] = "utf-8"
-    env["PYTHONUTF8"] = "1"
-    return env
+def _pipeline_env(*, needs_deepseek: bool = False) -> dict[str, str]:
+    return pipeline_subprocess_env(needs_deepseek=needs_deepseek)
 
 
 def _run_pipeline_command(
@@ -92,6 +88,7 @@ def _run_pipeline_command(
     command: list[str],
     *,
     timeout_seconds: int = 240,
+    needs_deepseek: bool = False,
 ) -> dict[str, Any]:
     try:
         process = subprocess.run(
@@ -103,7 +100,7 @@ def _run_pipeline_command(
             errors="replace",
             timeout=timeout_seconds,
             check=False,
-            env=_pipeline_env(),
+            env=_pipeline_env(needs_deepseek=needs_deepseek),
         )
     except (OSError, subprocess.TimeoutExpired) as exc:
         raise CanonicalOperationError(
@@ -130,11 +127,8 @@ def _run_pipeline_command(
 
 def _request_paths(settings: Settings, request_id: str) -> dict[str, Path]:
     request_id = _validate_request_id(request_id)
-    batch_root = (
-        settings.pipeline_root
-        / "data"
-        / "generation_batches"
-        / request_id
+    batch_root = resolve_within(
+        settings.pipeline_root / "data" / "generation_batches", request_id
     )
     legacy_output = (
         settings.pipeline_root
@@ -434,11 +428,7 @@ def _resolve_export_artifacts(
         request,
         quantity_override=quantity_override,
     )
-    desired_path = (
-        settings.pipeline_root
-        / "output"
-        / desired_name
-    )
+    desired_path = resolve_within(settings.pipeline_root / "output", desired_name)
     desired_receipt = (
         desired_path.with_suffix(
             ".export_receipt.json"
@@ -982,6 +972,7 @@ def resolve_content_plan(
             str(settings.pipeline_root),
         ],
         timeout_seconds=300,
+        needs_deepseek=True,
     )
 
     if (
@@ -1043,6 +1034,7 @@ def generate_scripts(
             "3",
         ],
         timeout_seconds=300,
+        needs_deepseek=True,
     )
 
     if (
@@ -1427,7 +1419,7 @@ def export_mix_excel(
                 errors="replace",
                 timeout=120,
                 check=False,
-                env=_pipeline_env(),
+                env=_pipeline_env(needs_deepseek=False),
             )
         except (
             OSError,

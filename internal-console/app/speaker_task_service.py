@@ -5,17 +5,22 @@ import os
 import subprocess
 import threading
 import time
-import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
 from .config import Settings
 from .database import connect, transaction
+from .subprocess_env import pipeline_subprocess_env
 from .task_service import (
+    LeaseRecoveryMaintenance,
+    STANDARD_BACKGROUND,
+    claim_task,
     get_task,
     iso_utc,
-    list_tasks,
+    iter_queued_tasks,
+    recover_expired_tasks,
+    submit_task,
     update_task,
 )
 
@@ -64,19 +69,9 @@ def create_speaker_task(
     request_path: str,
     speaker_name: str,
     public_role: str,
+    created_by_user_id: int | None = None,
+    queue_max: int = 20,
 ) -> dict[str, Any]:
-    existing = find_active_speaker_task(
-        database_path,
-        speaker_id,
-    )
-
-    if existing is not None:
-        return existing
-
-    task_id = f"speaker-{speaker_id}-" f"{uuid.uuid4().hex[:12]}"
-
-    timestamp = iso_utc()
-
     # Raw Speaker Materials are canonical files,
     # never duplicated into Console SQLite.
     payload = {
@@ -88,52 +83,20 @@ def create_speaker_task(
         "public_role": public_role,
     }
 
-    with transaction(database_path) as connection:
-        connection.execute(
-            """
-            INSERT INTO tasks(
-                task_id,
-                task_type,
-                subject_ref,
-                status,
-                progress,
-                stage,
-                payload_json,
-                created_at,
-                updated_at
-            )
-            VALUES (
-                ?,
-                'speaker_analysis',
-                ?,
-                'queued',
-                0,
-                '等待开始',
-                ?,
-                ?,
-                ?
-            )
-            """,
-            (
-                task_id,
-                speaker_id,
-                json.dumps(
-                    payload,
-                    ensure_ascii=False,
-                ),
-                timestamp,
-                timestamp,
-            ),
-        )
-
-    task = get_task(
+    return submit_task(
         database_path,
-        task_id,
+        task_id_prefix=f"speaker-{speaker_id}",
+        task_type="speaker_analysis",
+        subject_ref=speaker_id,
+        operation_identity=f"speaker_analysis:{business_id}:{speaker_id}",
+        execution_lane=STANDARD_BACKGROUND,
+        payload=payload,
+        stage="等待开始",
+        created_by_user_id=created_by_user_id,
+        queue_max=queue_max,
+        gpu_pending_per_user_max=1,
+        include_awaiting_review=True,
     )
-
-    assert task is not None
-
-    return task
 
 
 def mark_speaker_task_reviewed(
@@ -157,30 +120,6 @@ def mark_speaker_task_reviewed(
                 speaker_id,
             ),
         )
-
-
-def _claim(
-    database_path: Path,
-    task_id: str,
-) -> bool:
-    with transaction(database_path) as connection:
-        result = connection.execute(
-            """
-            UPDATE tasks
-            SET status = 'running',
-                stage = '读取出镜人资料',
-                updated_at = ?
-            WHERE task_id = ?
-              AND task_type = 'speaker_analysis'
-              AND status = 'queued'
-            """,
-            (
-                iso_utc(),
-                task_id,
-            ),
-        )
-
-        return result.rowcount == 1
 
 
 def _parse_failure(
@@ -225,54 +164,59 @@ class SpeakerTaskRunner:
         self._scheduled: set[str] = set()
 
         self._lock = threading.Lock()
+        self.worker_id = f"speaker-{os.getpid()}-{id(self):x}"
+        self.maintenance = LeaseRecoveryMaintenance(
+            interval_seconds=self.settings.task_heartbeat_seconds,
+            name="speaker-lease-recovery",
+            callback=self._recover_and_schedule,
+        )
+
+    def _reconcile_business_state(self, task_id: str) -> str | None:
+        task = get_task(self.settings.database_path, task_id)
+        if task is None:
+            return None
+        request_path = Path(str((task.get("payload") or {}).get("request_path") or ""))
+        summary = request_path.parent / "speaker_onboarding_analysis_v1.json"
+        return "awaiting_review" if summary.is_file() else None
 
     def start(self) -> None:
         if not (self.settings.speaker_analysis_worker_enabled):
             return
+        self._recover_and_schedule()
+        self.maintenance.start()
 
-        with transaction(self.settings.database_path) as connection:
-            connection.execute(
-                """
-                UPDATE tasks
-                SET status = 'queued',
-                    stage = '恢复任务',
-                    updated_at = ?
-                WHERE task_type = 'speaker_analysis'
-                  AND status = 'running'
-                """,
-                (iso_utc(),),
-            )
-
-        for task in list_tasks(
+    def _recover_and_schedule(self) -> None:
+        recover_expired_tasks(
             self.settings.database_path,
-            limit=100,
-        ):
-            if task["task_type"] == "speaker_analysis" and task["status"] == "queued":
-                self.schedule(task["task_id"])
+            task_types=("speaker_analysis",),
+            reconciler=self._reconcile_business_state,
+        )
+        self.schedule_pending()
 
     def close(self) -> None:
+        self.maintenance.close()
         self.executor.shutdown(
             wait=False,
             cancel_futures=False,
         )
 
-    def schedule(
-        self,
-        task_id: str,
-    ) -> None:
+    def schedule(self, task_id: str | None = None) -> None:
+        self.schedule_pending()
+
+    def schedule_pending(self) -> None:
         if not (self.settings.speaker_analysis_worker_enabled):
             return
 
         with self._lock:
-            if task_id in self._scheduled:
-                return
-
-            self._scheduled.add(task_id)
-
-        self.executor.submit(
-            self._run,
-            task_id,
-        )
+            for task in iter_queued_tasks(
+                self.settings.database_path,
+                task_types=("speaker_analysis",),
+            ):
+                task_id = str(task["task_id"])
+                if task_id in self._scheduled:
+                    continue
+                self._scheduled.add(task_id)
+                self.executor.submit(self._run, task_id)
 
     def _sync_progress(
         self,
@@ -321,6 +265,9 @@ class SpeakerTaskRunner:
             status="running",
             progress=progress,
             stage=stage,
+            worker_id=self.worker_id,
+            lease_seconds=self.settings.task_lease_seconds,
+            heartbeat_interval_seconds=self.settings.task_heartbeat_seconds,
         )
 
     def _run(
@@ -328,9 +275,13 @@ class SpeakerTaskRunner:
         task_id: str,
     ) -> None:
         try:
-            if not _claim(
+            if not claim_task(
                 self.settings.database_path,
                 task_id,
+                worker_id=self.worker_id,
+                lease_seconds=self.settings.task_lease_seconds,
+                stage="读取出镜人资料",
+                task_type="speaker_analysis",
             ):
                 return
 
@@ -374,11 +325,7 @@ class SpeakerTaskRunner:
                 str(self.settings.pipeline_root),
             ]
 
-            env = os.environ.copy()
-
-            env["PYTHONIOENCODING"] = "utf-8"
-
-            env["PYTHONUTF8"] = "1"
+            env = pipeline_subprocess_env(needs_deepseek=True)
 
             process = subprocess.Popen(
                 command,

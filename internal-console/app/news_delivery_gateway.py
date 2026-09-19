@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import subprocess
 import tempfile
 from pathlib import Path
@@ -10,6 +9,8 @@ from typing import Any
 
 from .canonical_gateway import CanonicalOperationError
 from .config import Settings
+from .path_safety import resolve_within, validate_identifier
+from .subprocess_env import pipeline_subprocess_env
 
 
 NEWS_REQUEST_SCHEMA = "news-delivery-request-v1.0"
@@ -19,6 +20,17 @@ NEWS_REVIEW_SCHEMA_V1_1 = "news-delivery-human-review-v1.1"
 NEWS_APPROVED_SCHEMA = "approved-news-delivery-v1.0"
 NEWS_EXPORT_RECEIPT_SCHEMA = "news-dynamic-excel-export-receipt-v1.0"
 NEWS_CLOSURE_SCHEMA = "news-delivery-export-closure-v1.0"
+
+
+def _validate_request_id(request_id: str) -> str:
+    try:
+        return validate_identifier(request_id, field="request_id")
+    except ValueError:
+        raise CanonicalOperationError(
+            "NEWS_REQUEST_ID_INVALID",
+            "News Request ID 不合法。",
+            "请从当前 News Delivery 页面恢复正确的 Request。",
+        ) from None
 
 
 def _sha256_file(path: Path) -> str:
@@ -54,10 +66,7 @@ def _read_json(path: Path) -> dict[str, Any]:
 
 
 def _pipeline_env() -> dict[str, str]:
-    env = os.environ.copy()
-    env["PYTHONIOENCODING"] = "utf-8"
-    env["PYTHONUTF8"] = "1"
-    return env
+    return pipeline_subprocess_env(needs_deepseek=False)
 
 
 def _parse_json_output(stdout: str) -> dict[str, Any] | None:
@@ -163,11 +172,10 @@ def _request_root(
     settings: Settings,
     request_id: str,
 ) -> Path:
-    return (
-        settings.pipeline_root
-        / "data"
-        / "news_deliveries"
-        / request_id
+    request_id = _validate_request_id(request_id)
+    return resolve_within(
+        settings.pipeline_root / "data" / "news_deliveries",
+        request_id,
     )
 
 
@@ -1111,6 +1119,7 @@ def resolve_news_plan(
     settings: Settings,
     request_id: str,
 ) -> dict[str, Any]:
+    request_id = _validate_request_id(request_id)
     parsed = _run_news_command(
         settings,
         [
@@ -1163,6 +1172,7 @@ def submit_news_review(
     reviewer: str,
     items: list[dict[str, Any]],
 ) -> dict[str, Any]:
+    request_id = _validate_request_id(request_id)
     state = get_news_delivery_state(
         settings,
         request_id,
@@ -1262,6 +1272,7 @@ def export_news_excel(
     settings: Settings,
     request_id: str,
 ) -> dict[str, Any]:
+    request_id = _validate_request_id(request_id)
     parsed = _run_news_command(
         settings,
         [
@@ -1348,9 +1359,11 @@ def exported_news_excel_path(
             or ""
         )
     ).expanduser().resolve()
+    output_root = (settings.pipeline_root / "output").resolve()
 
     if (
-        not output.is_file()
+        not output.is_relative_to(output_root)
+        or not output.is_file()
         or receipt.get(
             "output_sha256"
         )

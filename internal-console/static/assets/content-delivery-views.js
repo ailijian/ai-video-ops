@@ -1,8 +1,27 @@
+import { startTaskPolling } from "./task-progress.js";
+
 export function createContentDeliveryViews({
   api,
   showToast,
   escapeHtml,
 }) {
+  function watchTask(task, refresh, completedMessage) {
+    showToast("任务已进入后台队列，可以离开页面后再返回。");
+    startTaskPolling({
+      api,
+      taskId: task.task_id,
+      onUpdate: () => {},
+      onDone: async (current) => {
+        await refresh();
+        showToast(
+          current.status === "completed"
+            ? completedMessage
+            : current.error_message || "后台任务没有完成。",
+        );
+      },
+      onError: () => {},
+    });
+  }
   const actionLabel = {
     CREATE_CONTENT_PLAN: "生成内容规划",
     GENERATE_SCRIPTS: "生成脚本",
@@ -689,14 +708,11 @@ export function createContentDeliveryViews({
               { method: "POST" },
             );
 
-            showToast(
-              response.result
-                ?.remote_model_called
-                ? "Content Plan 已生成并通过 V1.1.1。"
-                : "已恢复现有 Content Plan V1.1.1。",
+            watchTask(
+              response.task,
+              refresh,
+              "Content Plan 任务已结束，已重新读取当前业务状态。",
             );
-
-            await refresh();
           } catch (error) {
             showToast(
               error.detail?.next_action ||
@@ -735,14 +751,11 @@ export function createContentDeliveryViews({
               { method: "POST" },
             );
 
-            showToast(
-              response.result
-                ?.remote_model_called
-                ? "Script Generation 已完成，进入人工审核。"
-                : "已恢复现有 Generation Batch，进入人工审核。",
+            watchTask(
+              response.task,
+              refresh,
+              "Script Generation 任务已结束，已重新读取当前业务状态。",
             );
-
-            await refresh();
           } catch (error) {
             showToast(
               error.detail?.next_action ||
@@ -974,20 +987,17 @@ export function createContentDeliveryViews({
               : "正在导出并验证 Excel…";
 
           try {
-            await api(
+            const response = await api(
               `/api/create/${encodeURIComponent(
                 state.request_id,
               )}/export-mix`,
               { method: "POST" },
             );
-
-            showToast(
-              state.export?.completed
-                ? "内容历史已闭合，本轮交付完成。"
-                : "正式 Excel 已导出，内容历史已闭合。",
+            watchTask(
+              response.task,
+              refresh,
+              "导出任务已结束，已重新读取 Export Receipt 与 Ledger 状态。",
             );
-
-            await refresh();
           } catch (error) {
             showToast(
               error.detail?.next_action ||

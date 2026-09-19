@@ -1,0 +1,20 @@
+<service>
+  <id>ai-video-ops-frpc</id>
+  <name>AI Video Ops FRPC</name>
+  <description>Future encrypted edge tunnel. Do not install before Public Edge approval.</description>
+  <executable>E:\AI-Video-Ops-Network\frpc.exe</executable>
+  <arguments>-c E:\AI-Video-Ops-Config\frpc.toml</arguments>
+  <workingdirectory>E:\AI-Video-Ops-Network</workingdirectory>
+  <startmode>Automatic</startmode>
+  <delayedAutoStart>true</delayedAutoStart>
+  <onfailure action="restart" delay="10 sec" />
+  <onfailure action="restart" delay="30 sec" />
+  <onfailure action="restart" delay="60 sec" />
+  <resetfailure>1 hour</resetfailure>
+  <logpath>E:\AI-Video-Ops-Logs\frpc</logpath>
+  <log mode="roll-by-size-time">
+    <sizeThreshold>10485760</sizeThreshold>
+    <pattern>yyyyMMdd</pattern>
+    <autoRollAtTime>00:00:00</autoRollAtTime>
+  </log>
+</service>

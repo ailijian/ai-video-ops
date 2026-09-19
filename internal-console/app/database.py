@@ -11,14 +11,18 @@ def connect(database_path: Path) -> sqlite3.Connection:
     connection = sqlite3.connect(database_path, timeout=10)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
-    connection.execute("PRAGMA journal_mode = WAL")
+    connection.execute("PRAGMA busy_timeout = 10000")
     return connection
 
 
 @contextmanager
-def transaction(database_path: Path) -> Iterator[sqlite3.Connection]:
+def transaction(
+    database_path: Path, *, immediate: bool = False
+) -> Iterator[sqlite3.Connection]:
     connection = connect(database_path)
     try:
+        if immediate:
+            connection.execute("BEGIN IMMEDIATE")
         yield connection
         connection.commit()
     except Exception:
@@ -29,7 +33,15 @@ def transaction(database_path: Path) -> Iterator[sqlite3.Connection]:
 
 
 def apply_migrations(database_path: Path, migrations_path: Path) -> None:
-    with transaction(database_path) as connection:
+    database_path.parent.mkdir(parents=True, exist_ok=True)
+    initialization = sqlite3.connect(database_path, timeout=10)
+    try:
+        initialization.execute("PRAGMA busy_timeout = 10000")
+        initialization.execute("PRAGMA journal_mode = WAL")
+    finally:
+        initialization.close()
+
+    with transaction(database_path, immediate=True) as connection:
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS schema_migrations (

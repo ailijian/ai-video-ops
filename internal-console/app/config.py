@@ -6,6 +6,27 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+def _load_environment_file() -> None:
+    path_value = os.environ.get("AIVO_ENV_FILE")
+    if not path_value:
+        return
+    path = Path(path_value).expanduser().resolve()
+    if not path.is_file():
+        raise RuntimeError(f"AIVO_ENV_FILE does not exist: {path}")
+    for raw_line in path.read_text(encoding="utf-8-sig").splitlines():
+        line = raw_line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, raw_value = line.split("=", 1)
+        key = key.strip()
+        if not key or not key.replace("_", "a").isalnum():
+            raise RuntimeError(f"Invalid environment key in AIVO_ENV_FILE: {key!r}")
+        value = raw_value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in {'"', "'"}:
+            value = value[1:-1]
+        os.environ.setdefault(key, value)
+
+
 @dataclass(frozen=True)
 class Settings:
     repo_root: Path
@@ -21,10 +42,17 @@ class Settings:
     case_analysis_worker_enabled: bool = True
     customer_analysis_worker_enabled: bool = True
     speaker_analysis_worker_enabled: bool = True
+    background_worker_enabled: bool = False
+    task_queue_max: int = 20
+    gpu_pending_per_user_max: int = 3
+    task_lease_seconds: int = 120
+    task_heartbeat_seconds: int = 10
+    session_last_seen_interval_seconds: int = 300
     default_business_id: str = "shufang_zhiyuan_community_canteen"
 
     @classmethod
     def from_environment(cls) -> "Settings":
+        _load_environment_file()
         console_root = Path(__file__).resolve().parents[1]
         repo_root = console_root.parent
         database_path = Path(
@@ -62,6 +90,24 @@ class Settings:
                     "1",
                 )
                 == "1"
+            ),
+            background_worker_enabled=(
+                os.environ.get("AIVO_BACKGROUND_WORKER", "1") == "1"
+            ),
+            task_queue_max=max(1, int(os.environ.get("AIVO_TASK_QUEUE_MAX", "20"))),
+            gpu_pending_per_user_max=max(
+                1,
+                int(os.environ.get("AIVO_GPU_PENDING_PER_USER_MAX", "3")),
+            ),
+            task_lease_seconds=max(
+                30, int(os.environ.get("AIVO_TASK_LEASE_SECONDS", "120"))
+            ),
+            task_heartbeat_seconds=max(
+                5, int(os.environ.get("AIVO_TASK_HEARTBEAT_SECONDS", "10"))
+            ),
+            session_last_seen_interval_seconds=max(
+                60,
+                int(os.environ.get("AIVO_SESSION_LAST_SEEN_INTERVAL_SECONDS", "300")),
             ),
             default_business_id=os.environ.get(
                 "AIVO_DEFAULT_BUSINESS_ID", "shufang_zhiyuan_community_canteen"

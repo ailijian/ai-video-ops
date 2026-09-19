@@ -433,6 +433,21 @@ def test_news_delivery_state_route(
         )
 
 
+def test_news_plan_route_returns_durable_task(news_settings: Settings):
+    with TestClient(main_module.build_app(news_settings)) as client:
+        provision_user(news_settings.database_path, "13800000000")
+        csrf = login(client)
+        response = client.post(
+            "/api/create/news/news_fixture_001/resolve-plan",
+            headers={"X-CSRF-Token": csrf},
+        )
+        assert response.status_code == 200
+        task = response.json()["task"]
+        assert task["task_type"] == "content_generation"
+        assert task["payload"]["operation"] == "news_plan"
+        assert task["subject_ref"] == "news_fixture_001"
+
+
 def test_news_review_passes_authenticated_reviewer(
     news_settings: Settings,
     monkeypatch,
@@ -530,27 +545,7 @@ def test_news_review_passes_authenticated_reviewer(
         )
 
 
-def test_news_export_route(
-    news_settings: Settings,
-    monkeypatch,
-):
-    monkeypatch.setattr(
-        main_module,
-        "export_news_excel",
-        lambda settings, request_id: {
-            "recovered": False,
-            "state": {
-                **fake_state(
-                    request_id
-                ),
-                "next_action": (
-                    "NEWS_EXCEL_EXPORTED"
-                ),
-                "stop_point_reached": True,
-            },
-        },
-    )
-
+def test_news_export_route_returns_durable_task(news_settings: Settings):
     with TestClient(
         main_module.build_app(
             news_settings
@@ -574,16 +569,10 @@ def test_news_export_route(
             response.status_code
             == 200
         )
-        assert (
-            response.json()[
-                "result"
-            ][
-                "state"
-            ][
-                "stop_point_reached"
-            ]
-            is True
-        )
+        task = response.json()["task"]
+        assert task["task_type"] == "excel_export"
+        assert task["payload"]["operation"] == "news_export"
+        assert task["subject_ref"] == "news_fixture_001"
 
 
 def test_news_download_route(

@@ -6,17 +6,13 @@ import json
 import os
 import re
 import tempfile
-import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
 from typing import Any
 
-if os.name == "nt":
-    import msvcrt
-else:
-    import fcntl
+from operation_lock_v1 import OperationLockTimeout, operation_lock, scoped_lock_key
 
 from content_creation_entry_v1 import (
     ContentCreationEntryError,
@@ -61,7 +57,7 @@ def now_iso() -> str:
 def _business_generation_lock(
     pipeline_root: Path,
     business_id: str,
-    timeout_seconds: float = 15.0,
+    timeout_seconds: float = 1.0,
 ):
     """
     Cross-process, business-scoped lock for Generation Request creation.
@@ -73,106 +69,18 @@ def _business_generation_lock(
     Different businesses => independent locks.
     """
 
-    lock_root = (
-        pipeline_root
-        / "data"
-        / ".locks"
-    )
-
-    lock_root.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    digest = hashlib.sha256(
-        business_id.encode("utf-8")
-    ).hexdigest()[:24]
-
-    lock_path = (
-        lock_root
-        / f"generation_request_{digest}.lock"
-    )
-
-    handle = lock_path.open("a+b")
-
-    acquired = False
-
     try:
-        handle.seek(
-            0,
-            os.SEEK_END,
-        )
-
-        if handle.tell() == 0:
-            handle.write(b"\0")
-            handle.flush()
-
-        deadline = (
-            time.monotonic()
-            + timeout_seconds
-        )
-
-        while True:
-            try:
-                handle.seek(0)
-
-                if os.name == "nt":
-                    msvcrt.locking(
-                        handle.fileno(),
-                        msvcrt.LK_NBLCK,
-                        1,
-                    )
-                else:
-                    fcntl.flock(
-                        handle.fileno(),
-                        (
-                            fcntl.LOCK_EX
-                            | fcntl.LOCK_NB
-                        ),
-                    )
-
-                acquired = True
-                break
-
-            except OSError:
-                if (
-                    time.monotonic()
-                    >= deadline
-                ):
-                    raise GenerationRequestError(
-                        "GENERATION_REQUEST_LOCK_TIMEOUT",
-                        (
-                            "Timed out waiting for "
-                            "the business-scoped "
-                            "Generation Request lock."
-                        ),
-                    )
-
-                time.sleep(0.05)
-
-        yield
-
-    finally:
-        if acquired:
-            try:
-                handle.seek(0)
-
-                if os.name == "nt":
-                    msvcrt.locking(
-                        handle.fileno(),
-                        msvcrt.LK_UNLCK,
-                        1,
-                    )
-                else:
-                    fcntl.flock(
-                        handle.fileno(),
-                        fcntl.LOCK_UN,
-                    )
-
-            except OSError:
-                pass
-
-        handle.close()
+        with operation_lock(
+            pipeline_root,
+            scoped_lock_key("business", business_id),
+            timeout_seconds=timeout_seconds,
+        ):
+            yield
+    except OperationLockTimeout as exc:
+        raise GenerationRequestError(
+            "GENERATION_REQUEST_LOCK_TIMEOUT",
+            "Timed out waiting for the business-scoped Generation Request lock.",
+        ) from exc
 
 
 def _business_locked(

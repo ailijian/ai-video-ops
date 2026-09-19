@@ -476,6 +476,10 @@ def source_case_id(url: str) -> str:
 def _find_case_path(
     settings: Settings, case_id: str
 ) -> tuple[Path, dict[str, Any] | None]:
+    if not re.fullmatch(r"\d{10,24}", str(case_id or "")):
+        raise CanonicalOperationError(
+            "CASE_NOT_FOUND", "没有找到这个案例。", "请返回案例库后重新选择。"
+        )
     canonical = settings.pipeline_root / "data" / "cases" / case_id / "case_v1.json"
     if canonical.is_file():
         return canonical, None

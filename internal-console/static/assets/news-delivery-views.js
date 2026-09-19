@@ -3,6 +3,29 @@
   showToast,
   escapeHtml,
 }) {
+  function watchTask(task, refresh, completedMessage) {
+    showToast("任务已进入后台队列，可以离开页面后再返回。");
+    async function poll() {
+      try {
+        const response = await api(
+          `/api/tasks/${encodeURIComponent(task.task_id)}`,
+        );
+        if (["completed", "failed"].includes(response.task.status)) {
+          await refresh();
+          showToast(
+            response.task.status === "completed"
+              ? completedMessage
+              : response.task.error_message || "后台任务没有完成。",
+          );
+          return;
+        }
+      } catch {
+        // A later poll or the shared task list can recover the durable task.
+      }
+      window.setTimeout(poll, 1200);
+    }
+    poll();
+  }
   function newKey() {
     if (globalThis.crypto?.randomUUID) {
       return globalThis.crypto.randomUUID();
@@ -464,7 +487,7 @@
             "正在生成标题方案…";
 
           try {
-            await api(
+            const response = await api(
               `/api/create/news/${encodeURIComponent(
                 state.request_id,
               )}/resolve-plan`,
@@ -473,11 +496,11 @@
               },
             );
 
-            showToast(
-              "News 标题方案已生成。",
+            watchTask(
+              response.task,
+              refresh,
+              "News Plan 任务已结束，已重新读取当前业务状态。",
             );
-
-            await refresh();
           } catch (error) {
             showToast(
               error.detail?.next_action ||
@@ -685,7 +708,7 @@
             "正在导出并闭合历史…";
 
           try {
-            await api(
+            const response = await api(
               `/api/create/news/${encodeURIComponent(
                 state.request_id,
               )}/export`,
@@ -694,11 +717,11 @@
               },
             );
 
-            showToast(
-              "News Excel 已导出，Presentation History 已闭合。",
+            watchTask(
+              response.task,
+              refresh,
+              "News Export 任务已结束，已重新读取 Receipt 与历史闭合状态。",
             );
-
-            await refresh();
           } catch (error) {
             showToast(
               error.detail?.next_action ||

@@ -132,19 +132,7 @@ def test_resolve_content_plan_requires_csrf(
         assert response.json()["detail"]["code"] == "CSRF_CHECK_FAILED"
 
 
-def test_resolve_content_plan_route(delivery_settings: Settings, monkeypatch):
-    calls = {}
-
-    def fake(settings, request_id):
-        calls["request_id"] = request_id
-        return {
-            "recovered": False,
-            "remote_model_called": True,
-            "state": fake_state(request_id),
-        }
-
-    monkeypatch.setattr(main_module, "resolve_content_plan", fake)
-
+def test_resolve_content_plan_route_returns_durable_task(delivery_settings: Settings):
     with TestClient(main_module.build_app(delivery_settings)) as client:
         provision_user(delivery_settings.database_path, "13800000000")
         csrf = login(client)
@@ -153,23 +141,15 @@ def test_resolve_content_plan_route(delivery_settings: Settings, monkeypatch):
             headers={"X-CSRF-Token": csrf},
         )
         assert response.status_code == 200
-        assert calls["request_id"] == "gen_fixture_001"
-        assert response.json()["result"]["remote_model_called"] is True
+        task = response.json()["task"]
+        assert response.json()["accepted"] is True
+        assert task["status"] == "queued"
+        assert task["subject_ref"] == "gen_fixture_001"
+        assert task["payload"]["operation"] == "content_plan"
+        assert task["created_by"]["phone"] == "13800000000"
 
 
-def test_generate_scripts_route(delivery_settings: Settings, monkeypatch):
-    calls = {}
-
-    def fake(settings, request_id):
-        calls["request_id"] = request_id
-        return {
-            "recovered": True,
-            "remote_model_called": False,
-            "state": fake_state(request_id),
-        }
-
-    monkeypatch.setattr(main_module, "generate_scripts", fake)
-
+def test_generate_scripts_route_returns_durable_task(delivery_settings: Settings):
     with TestClient(main_module.build_app(delivery_settings)) as client:
         provision_user(delivery_settings.database_path, "13800000000")
         csrf = login(client)
@@ -178,8 +158,9 @@ def test_generate_scripts_route(delivery_settings: Settings, monkeypatch):
             headers={"X-CSRF-Token": csrf},
         )
         assert response.status_code == 200
-        assert calls["request_id"] == "gen_fixture_001"
-        assert response.json()["result"]["remote_model_called"] is False
+        task = response.json()["task"]
+        assert task["status"] == "queued"
+        assert task["payload"]["operation"] == "script_generation"
 
 
 def test_review_route_forwards_authenticated_reviewer(
@@ -248,23 +229,7 @@ def test_review_route_forwards_authenticated_reviewer(
         assert response.json()["result"]["approved"] is True
 
 
-def test_export_route(delivery_settings: Settings, monkeypatch):
-    calls = {}
-
-    def fake(settings, request_id):
-        calls["request_id"] = request_id
-        state = fake_state(request_id)
-        state["export"] = {
-            "completed": True,
-            "output_name": "gen_fixture_001_approved_mix_scripts.xlsx",
-            "exported_row_count": 2,
-        }
-        state["next_action"] = "EXCEL_EXPORTED"
-        state["stop_point_reached"] = True
-        return {"recovered": False, "state": state}
-
-    monkeypatch.setattr(main_module, "export_mix_excel", fake)
-
+def test_export_route_returns_durable_task(delivery_settings: Settings):
     with TestClient(main_module.build_app(delivery_settings)) as client:
         provision_user(delivery_settings.database_path, "13800000000")
         csrf = login(client)
@@ -273,8 +238,9 @@ def test_export_route(delivery_settings: Settings, monkeypatch):
             headers={"X-CSRF-Token": csrf},
         )
         assert response.status_code == 200
-        assert calls["request_id"] == "gen_fixture_001"
-        assert response.json()["result"]["state"]["stop_point_reached"] is True
+        task = response.json()["task"]
+        assert task["task_type"] == "excel_export"
+        assert task["payload"]["operation"] == "mix_export"
 
 
 def test_download_route_returns_existing_file(

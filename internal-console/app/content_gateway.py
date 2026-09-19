@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -18,6 +17,8 @@ from .customer_gateway import (
 from .speaker_gateway import (
     list_speakers,
 )
+from .path_safety import validate_identifier
+from .subprocess_env import pipeline_subprocess_env
 
 GENERATION_REQUEST_SCHEMA = "generation-request-v1.0"
 
@@ -265,13 +266,7 @@ def _effective_generation_request_audit(
         profile,
     ]
 
-    env = os.environ.copy()
-    env[
-        "PYTHONIOENCODING"
-    ] = "utf-8"
-    env[
-        "PYTHONUTF8"
-    ] = "1"
+    env = pipeline_subprocess_env(needs_deepseek=False)
 
     try:
         process = subprocess.run(
@@ -898,11 +893,7 @@ def preview_content_creation(
         str(settings.pipeline_root),
     ]
 
-    env = os.environ.copy()
-
-    env["PYTHONIOENCODING"] = "utf-8"
-
-    env["PYTHONUTF8"] = "1"
+    env = pipeline_subprocess_env(needs_deepseek=False)
 
     try:
         result = subprocess.run(
@@ -1004,11 +995,7 @@ def confirm_content_creation(
         str(settings.pipeline_root),
     ]
 
-    env = os.environ.copy()
-
-    env["PYTHONIOENCODING"] = "utf-8"
-
-    env["PYTHONUTF8"] = "1"
+    env = pipeline_subprocess_env(needs_deepseek=False)
 
     try:
         process = subprocess.run(
@@ -1081,6 +1068,14 @@ def resolve_generation_sources(
     settings: Settings,
     request_id: str,
 ) -> dict[str, Any]:
+    try:
+        request_id = validate_identifier(request_id, field="request_id")
+    except ValueError:
+        raise CanonicalOperationError(
+            "GENERATION_REQUEST_ID_INVALID",
+            "Generation Request ID 不合法。",
+            "请从当前创作流程恢复正确的 Request。",
+        ) from None
     executable = settings.pipeline_python_executable or settings.python_executable
 
     command = [
@@ -1096,11 +1091,7 @@ def resolve_generation_sources(
         str(settings.pipeline_root),
     ]
 
-    env = os.environ.copy()
-
-    env["PYTHONIOENCODING"] = "utf-8"
-
-    env["PYTHONUTF8"] = "1"
+    env = pipeline_subprocess_env(needs_deepseek=False)
 
     try:
         process = subprocess.run(

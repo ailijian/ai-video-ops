@@ -12,6 +12,7 @@ from typing import Any
 
 from .canonical_gateway import CanonicalOperationError
 from .config import Settings
+from .subprocess_env import pipeline_subprocess_env
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,127}$")
 
@@ -836,11 +837,7 @@ def _run_json_command(
     *,
     timeout: int = 180,
 ) -> dict[str, Any]:
-    env = os.environ.copy()
-
-    env["PYTHONIOENCODING"] = "utf-8"
-
-    env["PYTHONUTF8"] = "1"
+    env = pipeline_subprocess_env(needs_deepseek=False)
 
     try:
         result = subprocess.run(

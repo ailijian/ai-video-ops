@@ -19,9 +19,11 @@ from .auth_service import (
     authenticate,
     change_password,
     create_session,
+    cleanup_expired_sessions,
     delete_session,
     resolve_session,
 )
+from .background_task_service import BackgroundTaskRunner, create_background_task
 from .canonical_gateway import (
     CanonicalOperationError,
     case_analysis_capability,
@@ -54,6 +56,7 @@ from .customer_task_service import (
 )
 from .config import Settings
 from .database import apply_migrations
+from .operation_lock import authority_mutation_barrier, authority_operation_lock
 from .task_service import (
     CaseTaskRunner,
     create_case_task,
@@ -61,6 +64,7 @@ from .task_service import (
     get_task,
     list_tasks,
     mark_task_reviewed,
+    TaskSubmissionError,
 )
 from .speaker_gateway import (
     approve_speaker_persona,
@@ -433,18 +437,22 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     task_runner = CaseTaskRunner(settings)
     customer_task_runner = CustomerTaskRunner(settings)
     speaker_task_runner = SpeakerTaskRunner(settings)
+    background_task_runner = BackgroundTaskRunner(settings)
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
         apply_migrations(settings.database_path, migrations_path)
+        cleanup_expired_sessions(settings.database_path)
         task_runner.start()
         customer_task_runner.start()
         speaker_task_runner.start()
+        background_task_runner.start()
 
         try:
             yield
 
         finally:
+            background_task_runner.close()
             speaker_task_runner.close()
             customer_task_runner.close()
             task_runner.close()
@@ -480,14 +488,38 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     async def canonical_error_handler(
         _: Request, exc: CanonicalOperationError
     ) -> JSONResponse:
+        status_code = 409 if exc.code in {
+            "OPERATION_IN_PROGRESS",
+            "AUTHORITY_CHANGED_REFRESH_REQUIRED",
+        } else 503
         return JSONResponse(
-            status_code=503,
+            status_code=status_code,
             content={"detail": error_detail(exc.code, exc.message, exc.next_action)},
+        )
+
+    @app.exception_handler(TaskSubmissionError)
+    async def task_submission_error_handler(
+        _: Request, exc: TaskSubmissionError
+    ) -> JSONResponse:
+        status_code = 409 if exc.code == "OPERATION_ALREADY_ACTIVE" else 429
+        return JSONResponse(
+            status_code=status_code,
+            content={
+                "detail": error_detail(
+                    exc.code,
+                    str(exc),
+                    "请查看现有任务，或等待队列释放后重试。",
+                )
+            },
         )
 
     def require_session(request: Request) -> SessionContext:
         token = request.cookies.get(settings.session_cookie_name)
-        session = resolve_session(settings.database_path, token)
+        session = resolve_session(
+            settings.database_path,
+            token,
+            last_seen_interval_seconds=settings.session_last_seen_interval_seconds,
+        )
         if session is None:
             raise HTTPException(
                 status_code=401,
@@ -523,6 +555,16 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                     "请刷新页面后重试。",
                 ),
             )
+
+    def locked_authority_call(
+        scope: str,
+        identity: str,
+        operation: Callable[..., Any],
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        with authority_operation_lock(settings, scope, identity, timeout_seconds=0.0):
+            return operation(*args, **kwargs)
 
     def set_session_cookie(response: Response, token: str) -> None:
         response.set_cookie(
@@ -717,7 +759,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             x_csrf_token,
         )
 
-        prepared = prepare_speaker_onboarding_request(
+        prepared = locked_authority_call(
+            "business",
+            business_id,
+            prepare_speaker_onboarding_request,
             settings,
             business_id=business_id,
             speaker_name=(payload.speaker_name),
@@ -773,6 +818,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                     request_path=(prepared["request_path"]),
                     speaker_name=(existing["display_name"]),
                     public_role=(existing["public_role"]),
+                    created_by_user_id=int(session.user["id"]),
+                    queue_max=settings.task_queue_max,
                 )
 
                 speaker_task_runner.schedule(task["task_id"])
@@ -801,6 +848,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             request_path=(prepared["request_path"]),
             speaker_name=(prepared["speaker_name"]),
             public_role=(prepared["public_role"]),
+            created_by_user_id=int(session.user["id"]),
+            queue_max=settings.task_queue_max,
         )
 
         speaker_task_runner.schedule(task["task_id"])
@@ -873,7 +922,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             x_csrf_token,
         )
 
-        result = review_speaker_facts(
+        result = locked_authority_call(
+            "persona",
+            f"{business_id}:{speaker_id}",
+            review_speaker_facts,
             settings,
             business_id=(business_id),
             speaker_id=(speaker_id),
@@ -909,7 +961,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             x_csrf_token,
         )
 
-        detail = approve_speaker_persona(
+        detail = locked_authority_call(
+            "persona",
+            f"{business_id}:{speaker_id}",
+            approve_speaker_persona,
             settings,
             business_id=(business_id),
             speaker_id=(speaker_id),
@@ -977,15 +1032,18 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             x_csrf_token,
         )
 
-        result = confirm_content_creation(
-            settings,
-            business_id=(payload.business_id),
-            speaker_id=(payload.speaker_id),
-            profile=(payload.profile),
-            requested_quantity=(payload.requested_quantity),
-            confirmed_quantity=(payload.confirmed_quantity),
-            idempotency_key=(payload.idempotency_key),
-        )
+        # The child operation already owns the business-scoped lock. The shared
+        # barrier still prevents an offline backup from racing this mutation.
+        with authority_mutation_barrier(settings, timeout_seconds=0.0):
+            result = confirm_content_creation(
+                settings,
+                business_id=(payload.business_id),
+                speaker_id=(payload.speaker_id),
+                profile=(payload.profile),
+                requested_quantity=(payload.requested_quantity),
+                confirmed_quantity=(payload.confirmed_quantity),
+                idempotency_key=(payload.idempotency_key),
+            )
 
         return {
             "result": result,
@@ -1005,7 +1063,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             x_csrf_token,
         )
 
-        result = resolve_generation_sources(
+        result = locked_authority_call(
+            "request",
+            request_id,
+            resolve_generation_sources,
             settings,
             request_id,
         )
@@ -1036,12 +1097,14 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
         require_csrf(session, x_csrf_token)
-        return {
-            "result": resolve_content_plan(
-                settings,
-                request_id,
-            )
-        }
+        task = create_background_task(
+            settings,
+            operation="content_plan",
+            request_id=request_id,
+            created_by_user_id=int(session.user["id"]),
+        )
+        background_task_runner.schedule(task["task_id"])
+        return {"accepted": True, "task": task}
 
     @app.post("/api/create/{request_id}/generate-scripts")
     def generate_scripts_route(
@@ -1053,12 +1116,14 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
         require_csrf(session, x_csrf_token)
-        return {
-            "result": generate_scripts(
-                settings,
-                request_id,
-            )
-        }
+        task = create_background_task(
+            settings,
+            operation="script_generation",
+            request_id=request_id,
+            created_by_user_id=int(session.user["id"]),
+        )
+        background_task_runner.schedule(task["task_id"])
+        return {"accepted": True, "task": task}
 
     @app.post("/api/create/{request_id}/review")
     def generation_review_route(
@@ -1072,7 +1137,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     ) -> dict[str, Any]:
         require_csrf(session, x_csrf_token)
         return {
-            "result": submit_generation_review(
+            "result": locked_authority_call(
+                "request",
+                request_id,
+                submit_generation_review,
                 settings,
                 request_id,
                 reviewer=str(session.user["phone"]),
@@ -1094,12 +1162,14 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
         require_csrf(session, x_csrf_token)
-        return {
-            "result": export_mix_excel(
-                settings,
-                request_id,
-            )
-        }
+        task = create_background_task(
+            settings,
+            operation="mix_export",
+            request_id=request_id,
+            created_by_user_id=int(session.user["id"]),
+        )
+        background_task_runner.schedule(task["task_id"])
+        return {"accepted": True, "task": task}
 
     @app.get("/api/create/{request_id}/exported-excel")
     def download_exported_excel(
@@ -1169,7 +1239,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         )
 
         return {
-            "result": create_news_request(
+            "result": locked_authority_call(
+                "business",
+                payload.business_id,
+                create_news_request,
                 settings,
                 business_id=payload.business_id,
                 speaker_id=payload.speaker_id,
@@ -1204,12 +1277,14 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             x_csrf_token,
         )
 
-        return {
-            "result": resolve_news_plan(
-                settings,
-                request_id,
-            )
-        }
+        task = create_background_task(
+            settings,
+            operation="news_plan",
+            request_id=request_id,
+            created_by_user_id=int(session.user["id"]),
+        )
+        background_task_runner.schedule(task["task_id"])
+        return {"accepted": True, "task": task}
 
     @app.post("/api/create/news/{request_id}/review")
     def review_news_route(
@@ -1227,7 +1302,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         )
 
         return {
-            "result": submit_news_review(
+            "result": locked_authority_call(
+                "request",
+                request_id,
+                submit_news_review,
                 settings,
                 request_id,
                 reviewer=str(session.user["phone"]),
@@ -1252,12 +1330,14 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             x_csrf_token,
         )
 
-        return {
-            "result": export_news_excel(
-                settings,
-                request_id,
-            )
-        }
+        task = create_background_task(
+            settings,
+            operation="news_export",
+            request_id=request_id,
+            created_by_user_id=int(session.user["id"]),
+        )
+        background_task_runner.schedule(task["task_id"])
+        return {"accepted": True, "task": task}
 
     @app.get("/api/create/news/{request_id}/excel")
     def download_news_excel_route(
@@ -1363,7 +1443,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             x_csrf_token,
         )
 
-        prepared = prepare_customer_onboarding_request(
+        prepared = locked_authority_call(
+            "business",
+            payload.customer_name.strip().casefold(),
+            prepare_customer_onboarding_request,
             settings,
             customer_name=(payload.customer_name),
             industry=payload.industry,
@@ -1414,6 +1497,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                     request_path=prepared["request_path"],
                     customer_name=(existing["display_name"]),
                     industry=(existing["industry"]),
+                    created_by_user_id=int(session.user["id"]),
+                    queue_max=settings.task_queue_max,
                 )
 
                 customer_task_runner.schedule(task["task_id"])
@@ -1439,6 +1524,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             request_path=prepared["request_path"],
             customer_name=prepared["customer_name"],
             industry=prepared["industry"],
+            created_by_user_id=int(session.user["id"]),
+            queue_max=settings.task_queue_max,
         )
 
         customer_task_runner.schedule(task["task_id"])
@@ -1476,7 +1563,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 "existing_task": active,
             }
 
-        prepared = prepare_customer_reanalysis_request(
+        prepared = locked_authority_call(
+            "business",
+            business_id,
+            prepare_customer_reanalysis_request,
             settings,
             business_id=business_id,
             customer_name=(payload.customer_name),
@@ -1491,6 +1581,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             request_path=prepared["request_path"],
             customer_name=(prepared["customer_name"]),
             industry=prepared["industry"],
+            created_by_user_id=int(session.user["id"]),
+            queue_max=settings.task_queue_max,
         )
 
         customer_task_runner.schedule(task["task_id"])
@@ -1544,6 +1636,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             request_path=source["request_path"],
             customer_name=source["customer_name"],
             industry=source["industry"],
+            created_by_user_id=int(session.user["id"]),
+            queue_max=settings.task_queue_max,
         )
 
         customer_task_runner.schedule(task["task_id"])
@@ -1664,7 +1758,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             x_csrf_token,
         )
 
-        result = review_customer_facts(
+        result = locked_authority_call(
+            "business",
+            business_id,
+            review_customer_facts,
             settings,
             business_id=business_id,
             decisions=[
@@ -1698,7 +1795,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             x_csrf_token,
         )
 
-        detail = approve_business_persona(
+        detail = locked_authority_call(
+            "persona",
+            business_id,
+            approve_business_persona,
             settings,
             business_id=business_id,
             reviewer=str(session.user["phone"]),
@@ -1804,6 +1904,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 case_id=case_id,
                 reanalyze=True,
                 reason=reason,
+                created_by_user_id=int(session.user["id"]),
+                queue_max=settings.task_queue_max,
+                gpu_pending_per_user_max=settings.gpu_pending_per_user_max,
             )
             task_runner.schedule(task["task_id"])
 
@@ -1843,6 +1946,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             settings.database_path,
             source_url=normalized_url,
             case_id=case_id,
+            created_by_user_id=int(session.user["id"]),
+            queue_max=settings.task_queue_max,
+            gpu_pending_per_user_max=settings.gpu_pending_per_user_max,
         )
         task_runner.schedule(task["task_id"])
 
@@ -1891,7 +1997,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             )
         reviewer = str(session.user["phone"])
         if payload.decision == "approve":
-            detail = approve_case_candidate(
+            detail = locked_authority_call(
+                "case",
+                case_id,
+                approve_case_candidate,
                 settings,
                 case_id,
                 reviewer=reviewer,
@@ -1899,7 +2008,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             )
             mark_task_reviewed(settings.database_path, case_id, "已批准入库")
             return {"decision": "approved", "case": detail}
-        decision = record_case_review_decision(
+        decision = locked_authority_call(
+            "case",
+            case_id,
+            record_case_review_decision,
             settings,
             case_id,
             reviewer=reviewer,
@@ -1927,6 +2039,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             case_id=case_id,
             reanalyze=True,
             reason=reason,
+            created_by_user_id=int(session.user["id"]),
+            queue_max=settings.task_queue_max,
+            gpu_pending_per_user_max=settings.gpu_pending_per_user_max,
         )
         task_runner.schedule(task["task_id"])
         return {"decision": "reanalyze", "task": task}

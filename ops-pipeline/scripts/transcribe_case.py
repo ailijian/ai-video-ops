@@ -2,7 +2,8 @@ import argparse
 import json
 from pathlib import Path
 import os
-from pathlib import Path
+import sys
+from contextlib import nullcontext
 
 
 # Keep DLL directory handles alive for the lifetime
@@ -43,6 +44,7 @@ def configure_windows_cuda_dlls():
 
 
 from faster_whisper import WhisperModel
+from operation_lock_v1 import operation_lock
 
 configure_windows_cuda_dlls()
 
@@ -316,4 +318,23 @@ def main():
 
 
 if __name__ == "__main__":
-    main()
+    uses_cuda = any(
+        argument == "--device=cuda"
+        or (
+            argument == "--device"
+            and index + 1 < len(sys.argv)
+            and sys.argv[index + 1] == "cuda"
+        )
+        for index, argument in enumerate(sys.argv)
+    )
+    guard = (
+        operation_lock(
+            Path(__file__).resolve().parents[1],
+            "global_gpu",
+            timeout_seconds=7200.0,
+        )
+        if uses_cuda
+        else nullcontext()
+    )
+    with guard:
+        main()
