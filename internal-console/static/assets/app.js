@@ -19,7 +19,7 @@ import {
 
 import {
   createContentOperationsViews,
-} from "./content-operations-views.js";
+} from "./content-operations-views.js?v=authority-resolver-1";
 
 const app = document.querySelector("#app");
 const toastRegion = document.querySelector("#toast-region");

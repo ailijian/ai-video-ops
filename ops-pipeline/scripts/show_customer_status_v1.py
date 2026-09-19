@@ -152,6 +152,10 @@ def validate_approved_persona(
         and receipt.get("persona_sha256_after_approval") == sha256_file(persona_path)
         and receipt.get("content_sha256")
         == (persona.get("provenance") or {}).get("content_sha256")
+        and receipt.get("previous_approved_revision")
+        == (persona.get("revision_lineage") or {}).get(
+            "previous_approved_revision"
+        )
     )
     if not valid_receipt:
         raise AuthorityResolutionError(
@@ -210,32 +214,44 @@ def resolve_current_persona(
             f"Multiple Approved Persona artifacts claim revision(s): {duplicates}",
             [evidence_ref(pipeline_root, item["path"]) for item in approved],
         )
-    selected = by_revision[max(by_revision)]
-    current = selected[0]
-    if current["revision"] > 1:
-        previous_ref = (current["artifact"].get("revision_lineage") or {}).get(
+    ordered_revisions = sorted(by_revision)
+    for index, revision in enumerate(ordered_revisions):
+        item = by_revision[revision][0]
+        previous_ref = (item["artifact"].get("revision_lineage") or {}).get(
             "previous_approved_revision"
         )
+        if index == 0:
+            if revision != 1 or previous_ref is not None:
+                raise AuthorityResolutionError(
+                    "CURRENT_AUTHORITY_AMBIGUITY",
+                    "Approved Persona lineage must begin at revision 1 without a previous-approved reference.",
+                    [evidence_ref(pipeline_root, item["path"])],
+                )
+            continue
         if not isinstance(previous_ref, dict):
             raise AuthorityResolutionError(
                 "CURRENT_AUTHORITY_AMBIGUITY",
-                "Highest Approved Persona revision lacks explicit previous-approved lineage.",
-                [evidence_ref(pipeline_root, current["path"])],
+                "Approved Persona revision lacks explicit previous-approved lineage.",
+                [evidence_ref(pipeline_root, item["path"])],
             )
-        lower_revisions = [revision for revision in by_revision if revision < current["revision"]]
+        previous = by_revision[ordered_revisions[index - 1]][0]
         previous_revision = previous_ref.get("revision")
-        if not lower_revisions or previous_revision != max(lower_revisions):
+        if previous_revision != previous["revision"]:
             raise AuthorityResolutionError(
                 "CURRENT_AUTHORITY_AMBIGUITY",
                 "Persona previous-approved lineage does not resolve to the immediately prior Approved revision.",
             )
-        previous = by_revision[previous_revision][0]
         if previous_ref.get("sha256") != previous["file_sha256"]:
             raise AuthorityResolutionError(
                 "LINEAGE_HASH_MISMATCH",
                 "Persona previous-approved lineage SHA-256 does not match.",
             )
-    return current
+        if previous_ref.get("content_sha256") != previous["content_sha256"]:
+            raise AuthorityResolutionError(
+                "LINEAGE_HASH_MISMATCH",
+                "Persona previous-approved lineage content SHA-256 does not match.",
+            )
+    return by_revision[ordered_revisions[-1]][0]
 
 
 def resolve_speaker_persona(

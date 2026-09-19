@@ -53,3 +53,4 @@ def test_content_operations_frontend_contract():
     assert "当前工作" in operations
     assert "最近交付" in operations
     assert "这是运营投影，不是新的业务真源" in operations
+    assert "多个已批准出镜人 · 可用性需要显式选择" in operations

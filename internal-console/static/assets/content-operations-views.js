@@ -298,7 +298,9 @@ export function createContentOperationsViews({
                   "",
                 defaultSpeaker
                   ? `${defaultSpeaker.display_name || ""} · ${defaultSpeaker.public_role || ""}`
-                  : "暂无已批准出镜人",
+                  : customer.speaker_selection_required
+                    ? "多个已批准出镜人 · 可用性需要显式选择"
+                    : "暂无已批准出镜人",
               ]
                 .filter(Boolean)
                 .join(" · "),

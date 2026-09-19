@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -35,32 +36,54 @@ def speaker_settings(
         exist_ok=True,
     )
 
+    persona = {
+        "schema_version": ("persona-v1.0"),
+        "persona_id": ("fixture_pet_store"),
+        "revision": 1,
+        "persona_scope": ("business"),
+        "lifecycle": {
+            "status": ("approved"),
+            "approved": True,
+            "retired": False,
+            "human_review_required": (True),
+        },
+        "facts": {
+            "public_display_name": {
+                "state": ("known"),
+                "value": ("小爪宠物店"),
+            },
+            "industry": {
+                "state": ("known"),
+                "value": ("宠物服务"),
+            },
+        },
+        "provenance": {
+            "content_sha256": ("fixture"),
+        },
+        "approval": {
+            "human_gate": True,
+        },
+    }
     persona_path.write_text(
         json.dumps(
+            persona,
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    persona_sha256 = hashlib.sha256(persona_path.read_bytes()).hexdigest()
+    (persona_path.parent / "approval_receipt.json").write_text(
+        json.dumps(
             {
-                "schema_version": ("persona-v1.0"),
-                "persona_id": ("fixture_pet_store"),
+                "schema_version": "persona-approval-receipt-v1.0",
+                "persona_id": "fixture_pet_store",
                 "revision": 1,
-                "persona_scope": ("business"),
-                "lifecycle": {
-                    "status": ("approved"),
-                    "approved": True,
-                    "retired": False,
-                    "human_review_required": (True),
-                },
-                "facts": {
-                    "public_display_name": {
-                        "state": ("known"),
-                        "value": ("小爪宠物店"),
-                    },
-                    "industry": {
-                        "state": ("known"),
-                        "value": ("宠物服务"),
-                    },
-                },
-                "provenance": {
-                    "content_sha256": ("fixture"),
-                },
+                "decision": "approved",
+                "human_gate": True,
+                "persona_sha256_after_approval": persona_sha256,
+                "content_sha256": "fixture",
+                "previous_approved_revision": None,
             },
             ensure_ascii=False,
             indent=2,

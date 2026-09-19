@@ -74,13 +74,10 @@ def _approved_speakers(
     settings: Settings,
     business_id: str,
 ) -> list[dict[str, Any]]:
-    try:
-        speakers = list_speakers(
-            settings,
-            business_id,
-        )
-    except CanonicalOperationError:
-        return []
+    speakers = list_speakers(
+        settings,
+        business_id,
+    )
 
     return [
         speaker
@@ -287,13 +284,23 @@ def _mix_capacity(
     settings: Settings,
     business_id: str,
     speaker_id: str | None,
+    *,
+    speaker_selection_required: bool = False,
 ) -> dict[str, Any]:
     if not speaker_id:
         return {
             "available": False,
             "remaining": None,
-            "status": "speaker_required",
-            "message": "还没有 Approved Speaker Persona。",
+            "status": (
+                "speaker_selection_required"
+                if speaker_selection_required
+                else "speaker_required"
+            ),
+            "message": (
+                "多个已批准出镜人需要显式选择，才能计算 Speaker-specific Mix 可用性。"
+                if speaker_selection_required
+                else "还没有 Approved Speaker Persona。"
+            ),
         }
 
     try:
@@ -544,12 +551,22 @@ def _news_availability(
     settings: Settings,
     business_id: str,
     speaker_id: str | None,
+    *,
+    speaker_selection_required: bool = False,
 ) -> dict[str, Any]:
     if not speaker_id:
         return {
             "available": False,
-            "status": "speaker_required",
-            "message": "还没有 Approved Speaker Persona。",
+            "status": (
+                "speaker_selection_required"
+                if speaker_selection_required
+                else "speaker_required"
+            ),
+            "message": (
+                "多个已批准出镜人需要显式选择，才能计算 Speaker-specific News 可用性。"
+                if speaker_selection_required
+                else "还没有 Approved Speaker Persona。"
+            ),
         }
 
     try:
@@ -617,6 +634,7 @@ def _news_availability(
 def get_content_operations_view(
     settings: Settings,
     business_id: str,
+    speaker_id: str | None = None,
 ) -> dict[str, Any]:
     """
     Customer-centric, read-only operations projection.
@@ -635,18 +653,36 @@ def get_content_operations_view(
         business_id,
     )
 
-    default_speaker = (
-        approved_speakers[0]
-        if approved_speakers
-        else None
+    selected_speaker = None
+    if speaker_id:
+        selected_speaker = next(
+            (
+                speaker
+                for speaker in approved_speakers
+                if str(speaker.get("speaker_id") or "") == speaker_id
+            ),
+            None,
+        )
+        if selected_speaker is None:
+            raise CanonicalOperationError(
+                "APPROVED_SPEAKER_REQUIRED",
+                "指定的出镜人不是当前已批准 Speaker Persona。",
+                "请刷新客户页面并重新选择出镜人。",
+            )
+    elif len(approved_speakers) == 1:
+        selected_speaker = next(iter(approved_speakers))
+
+    speaker_selection_required = (
+        selected_speaker is None
+        and len(approved_speakers) > 1
     )
 
-    default_speaker_id = (
+    selected_speaker_id = (
         str(
-            default_speaker.get("speaker_id")
+            selected_speaker.get("speaker_id")
             or ""
         )
-        if default_speaker
+        if selected_speaker
         else None
     )
 
@@ -671,13 +707,19 @@ def get_content_operations_view(
     mix_capacity = _mix_capacity(
         settings,
         business_id,
-        default_speaker_id,
+        selected_speaker_id,
+        speaker_selection_required=(
+            speaker_selection_required
+        ),
     )
 
     news_availability = _news_availability(
         settings,
         business_id,
-        default_speaker_id,
+        selected_speaker_id,
+        speaker_selection_required=(
+            speaker_selection_required
+        ),
     )
 
     recent_deliveries = (
@@ -722,21 +764,32 @@ def get_content_operations_view(
             "approved_speaker_count": len(
                 approved_speakers
             ),
+            "speaker_selection_required": (
+                speaker_selection_required
+            ),
+            "approved_speakers": [
+                {
+                    "speaker_id": speaker.get("speaker_id"),
+                    "display_name": speaker.get("display_name"),
+                    "public_role": speaker.get("public_role"),
+                }
+                for speaker in approved_speakers
+            ],
             "default_speaker": (
                 {
-                    "speaker_id": default_speaker_id,
+                    "speaker_id": selected_speaker_id,
                     "display_name": (
-                        default_speaker.get(
+                        selected_speaker.get(
                             "display_name"
                         )
                     ),
                     "public_role": (
-                        default_speaker.get(
+                        selected_speaker.get(
                             "public_role"
                         )
                     ),
                 }
-                if default_speaker
+                if selected_speaker
                 else None
             ),
         },
@@ -767,10 +820,14 @@ def get_content_operations_view(
                 (
                     "/create?"
                     f"business_id={business_id}"
-                    f"&speaker_id={default_speaker_id}"
+                    f"&speaker_id={selected_speaker_id}"
                 )
-                if default_speaker_id
-                else None
+                if selected_speaker_id
+                else (
+                    f"/create?business_id={business_id}"
+                    if approved_speakers
+                    else None
+                )
             ),
             "customer_url": (
                 f"/customers/{business_id}"
@@ -792,6 +849,12 @@ def get_content_operations_view(
             ),
             "capacity_source": (
                 "existing_creation_previews"
+            ),
+            "business_wide_novelty_source": (
+                "content_ledger_strong_exposure"
+            ),
+            "speaker_specific_availability_requires_explicit_selection": (
+                len(approved_speakers) > 1
             ),
         },
     }

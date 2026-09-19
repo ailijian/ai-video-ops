@@ -1665,6 +1665,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     )
     def customer_content_operations(
         business_id: str,
+        speaker_id: str | None = None,
         _: SessionContext = Depends(
             require_console_access
         ),
@@ -1672,6 +1673,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         return get_content_operations_view(
             settings,
             business_id,
+            speaker_id=speaker_id,
         )
 
     @app.get("/api/customers/{business_id}")

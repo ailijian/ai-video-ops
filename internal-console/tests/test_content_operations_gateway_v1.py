@@ -210,3 +210,64 @@ def test_content_operations_projects_existing_authorities_only(
         len(result["recent_deliveries"])
         == 2
     )
+    assert result["customer"]["default_speaker"]["speaker_id"] == "speaker_001"
+    assert result["customer"]["speaker_selection_required"] is False
+
+    mix_speakers = []
+    news_speakers = []
+    monkeypatch.setattr(
+        subject,
+        "list_speakers",
+        lambda settings, business_id: [
+            {
+                "speaker_id": "speaker_001",
+                "display_name": "王琳",
+                "public_role": "店主",
+                "status": "approved",
+            },
+            {
+                "speaker_id": "speaker_002",
+                "display_name": "陈明",
+                "public_role": "主理人",
+                "status": "approved",
+            },
+        ],
+    )
+
+    def mix_preview(settings, **kwargs):
+        mix_speakers.append(kwargs["speaker_id"])
+        return {
+            "capacity": {"high_quality_novel_capacity": 2},
+            "recommendation": {"can_continue": True, "status": "supported"},
+        }
+
+    def news_preview(settings, business_id, speaker_id):
+        news_speakers.append(speaker_id)
+        return {"available": True, "status": "available"}
+
+    monkeypatch.setattr(subject, "preview_content_creation", mix_preview)
+    monkeypatch.setattr(subject, "preview_news_creation", news_preview)
+
+    multiple = subject.get_content_operations_view(settings, business_id)
+
+    assert multiple["customer"]["default_speaker"] is None
+    assert multiple["customer"]["speaker_selection_required"] is True
+    assert multiple["capacity"]["mix"]["status"] == "speaker_selection_required"
+    assert multiple["capacity"]["news"]["status"] == "speaker_selection_required"
+    assert multiple["delivery_summary"]["mix"]["completed_item_count"] == 2
+    assert multiple["authority"]["mix_history_source"] == (
+        "content_ledger_strong_exposure"
+    )
+    assert mix_speakers == []
+    assert news_speakers == []
+
+    selected = subject.get_content_operations_view(
+        settings,
+        business_id,
+        speaker_id="speaker_002",
+    )
+
+    assert selected["customer"]["default_speaker"]["speaker_id"] == "speaker_002"
+    assert selected["customer"]["speaker_selection_required"] is False
+    assert mix_speakers == ["speaker_002"]
+    assert news_speakers == ["speaker_002"]

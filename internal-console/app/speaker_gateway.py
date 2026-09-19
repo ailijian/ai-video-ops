@@ -12,6 +12,10 @@ from typing import Any
 
 from .canonical_gateway import CanonicalOperationError
 from .config import Settings
+from .persona_authority import (
+    resolve_persona_authority,
+    validate_speaker_business_binding,
+)
 from .subprocess_env import pipeline_subprocess_env
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,127}$")
@@ -154,25 +158,15 @@ def _latest_persona(
     ]
     | None
 ):
-    root = settings.pipeline_root / "data" / "personas" / persona_id
-
-    if not root.exists():
-        return None
-
-    paths = sorted(
-        root.glob("revision_*/persona_v1.json"),
-        reverse=True,
+    resolved = resolve_persona_authority(
+        settings,
+        persona_id,
+        "speaker",
     )
-
-    if not paths:
+    projected = resolved.projected
+    if projected is None:
         return None
-
-    path = paths[0]
-
-    return (
-        path,
-        _read_json(path),
-    )
+    return projected["path"], projected["artifact"]
 
 
 def _approved_business_persona(
@@ -182,30 +176,13 @@ def _approved_business_persona(
     Path,
     dict[str, Any],
 ]:
-    root = settings.pipeline_root / "data" / "personas" / business_id
-
-    if root.exists():
-        for path in sorted(
-            root.glob("revision_*/persona_v1.json"),
-            reverse=True,
-        ):
-            persona = _read_json(path)
-
-            lifecycle = persona.get("lifecycle") or {}
-
-            if (
-                persona.get(
-                    "persona_scope",
-                    "business",
-                )
-                == "business"
-                and lifecycle.get("status") == "approved"
-                and lifecycle.get("approved") is True
-            ):
-                return (
-                    path,
-                    persona,
-                )
+    current = resolve_persona_authority(
+        settings,
+        business_id,
+        "business",
+    ).current
+    if current is not None:
+        return current["path"], current["artifact"]
 
     raise CanonicalOperationError(
         "APPROVED_BUSINESS_PERSONA_REQUIRED",
@@ -316,19 +293,24 @@ def _speaker_projection(
 
     request = _speaker_request(intake_dir)
 
-    persona_entry = _latest_persona(
+    business_authority = resolve_persona_authority(
+        settings,
+        business_id,
+        "business",
+    ).current
+    persona_authority = resolve_persona_authority(
         settings,
         speaker_id,
+        "speaker",
     )
+    persona_entry = persona_authority.projected
 
     persona_path = None
     persona = None
 
     if persona_entry:
-        (
-            persona_path,
-            persona,
-        ) = persona_entry
+        persona_path = persona_entry["path"]
+        persona = persona_entry["artifact"]
 
         reference = persona.get("business_persona_ref") or {}
 
@@ -336,8 +318,22 @@ def _speaker_projection(
             persona.get("persona_scope") != "speaker"
             or reference.get("persona_id") != business_id
         ):
-            persona_path = None
-            persona = None
+            raise CanonicalOperationError(
+                "SPEAKER_BUSINESS_LINEAGE_MISMATCH",
+                "出镜人 Persona 与当前客户不匹配。",
+                "请返回客户详情重新选择，或修复 Persona lineage。",
+            )
+        elif business_authority is None:
+            raise CanonicalOperationError(
+                "APPROVED_BUSINESS_PERSONA_REQUIRED",
+                "必须先批准客户档案，才能读取出镜人 Authority。",
+                "请先完成 Business Persona 审核。",
+            )
+        else:
+            validate_speaker_business_binding(
+                persona_entry,
+                business_authority,
+            )
 
     speaker_name = (
         _known_fact(
@@ -440,21 +436,15 @@ def list_speakers(
 
     if persona_root.exists():
         for directory in (path for path in (persona_root.iterdir()) if path.is_dir()):
-            entry = _latest_persona(
-                settings,
-                directory.name,
-            )
-
-            if not entry:
+            paths = list(directory.glob("revision_*/persona_v1.json"))
+            if not paths:
                 continue
-
-            _, persona = entry
-
-            reference = persona.get("business_persona_ref") or {}
-
-            if (
+            personas = [_read_json(path) for path in paths]
+            if any(
                 persona.get("persona_scope") == "speaker"
-                and reference.get("persona_id") == business_id
+                and (persona.get("business_persona_ref") or {}).get("persona_id")
+                == business_id
+                for persona in personas
             ):
                 speaker_ids.add(directory.name)
 
@@ -972,19 +962,25 @@ def approve_speaker_persona(
     reviewer: str,
     note: str,
 ) -> dict[str, Any]:
-    entry = _latest_persona(
+    authority = resolve_persona_authority(
         settings,
         speaker_id,
+        "speaker",
     )
-
-    if entry is None:
+    if authority.review_candidate is None:
+        if authority.current is not None:
+            return get_speaker_detail(
+                settings,
+                business_id,
+                speaker_id,
+            )
         raise CanonicalOperationError(
             "SPEAKER_PERSONA_NOT_FOUND",
             "还没有可审核的出镜人档案。",
             "请先完成出镜人事实审核。",
         )
-
-    path, persona = entry
+    path = authority.review_candidate["path"]
+    persona = authority.review_candidate["artifact"]
 
     reference = persona.get("business_persona_ref") or {}
 
@@ -998,14 +994,23 @@ def approve_speaker_persona(
             "请返回客户详情重新选择。",
         )
 
-    lifecycle = persona.get("lifecycle") or {}
-
-    if lifecycle.get("status") == "approved" and lifecycle.get("approved") is True:
-        return get_speaker_detail(
-            settings,
-            business_id,
-            speaker_id,
+    business_authority = resolve_persona_authority(
+        settings,
+        business_id,
+        "business",
+    ).current
+    if business_authority is None:
+        raise CanonicalOperationError(
+            "APPROVED_BUSINESS_PERSONA_REQUIRED",
+            "必须先批准客户档案，才能批准出镜人档案。",
+            "请先完成 Business Persona 审核。",
         )
+    validate_speaker_business_binding(
+        authority.review_candidate,
+        business_authority,
+    )
+
+    lifecycle = persona.get("lifecycle") or {}
 
     if (
         lifecycle.get("status") != "review_required"

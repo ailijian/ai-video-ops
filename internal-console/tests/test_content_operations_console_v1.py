@@ -67,10 +67,13 @@ def test_content_operations_api_is_authenticated_read_only_projection(
         },
     }
 
+    selected_speakers = []
     monkeypatch.setattr(
         main_module,
         "get_content_operations_view",
-        lambda settings, business_id: projected,
+        lambda settings, business_id, speaker_id=None: (
+            selected_speakers.append(speaker_id) or projected
+        ),
     )
 
     with TestClient(
@@ -91,3 +94,10 @@ def test_content_operations_api_is_authenticated_read_only_projection(
 
         assert response.status_code == 200
         assert response.json() == projected
+
+        selected = client.get(
+            "/api/customers/fixture/content-operations?speaker_id=speaker_002"
+        )
+
+        assert selected.status_code == 200
+        assert selected_speakers == [None, "speaker_002"]

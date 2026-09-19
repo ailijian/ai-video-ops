@@ -12,6 +12,10 @@ from typing import Any
 
 from .canonical_gateway import CanonicalOperationError
 from .config import Settings
+from .persona_authority import (
+    resolve_persona_authority,
+    validate_speaker_business_binding,
+)
 from .subprocess_env import pipeline_subprocess_env
 
 BUSINESS_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_]{1,127}$")
@@ -111,50 +115,6 @@ def _known_fact_value(
     return fact.get("value")
 
 
-def _persona_revisions(
-    settings: Settings,
-    business_id: str,
-) -> list[tuple[Path, dict[str, Any]]]:
-    root = settings.pipeline_root / "data" / "personas" / business_id
-
-    if not root.exists():
-        return []
-
-    values: list[
-        tuple[
-            Path,
-            dict[str, Any],
-        ]
-    ] = []
-
-    for path in sorted(
-        root.glob("revision_*/persona_v1.json"),
-        reverse=True,
-    ):
-        try:
-            persona = _read_json(path)
-        except CanonicalOperationError:
-            continue
-
-        if (
-            persona.get(
-                "persona_scope",
-                "business",
-            )
-            != "business"
-        ):
-            continue
-
-        values.append(
-            (
-                path,
-                persona,
-            )
-        )
-
-    return values
-
-
 def _latest_business_persona(
     settings: Settings,
     business_id: str,
@@ -165,12 +125,15 @@ def _latest_business_persona(
     ]
     | None
 ):
-    revisions = _persona_revisions(
+    resolved = resolve_persona_authority(
         settings,
         business_id,
+        "business",
     )
-
-    return revisions[0] if revisions else None
+    projected = resolved.projected
+    if projected is None:
+        return None
+    return projected["path"], projected["artifact"]
 
 
 def _latest_intake_dir(
@@ -254,35 +217,41 @@ def _approved_speaker_count(
     if not root.exists():
         return 0
 
+    business = resolve_persona_authority(
+        settings,
+        business_id,
+        "business",
+    ).current
+    if business is None:
+        return 0
+
     count = 0
 
     for persona_root in (path for path in root.iterdir() if path.is_dir()):
-        revisions = sorted(
-            persona_root.glob("revision_*/persona_v1.json"),
-            reverse=True,
-        )
-
-        if not revisions:
+        paths = list(persona_root.glob("revision_*/persona_v1.json"))
+        if not paths:
             continue
-
-        try:
-            persona = _read_json(revisions[0])
-        except CanonicalOperationError:
-            continue
-
-        if persona.get("persona_scope") != "speaker":
-            continue
-
-        reference = persona.get("business_persona_ref") or {}
-
-        lifecycle = persona.get("lifecycle") or {}
-
-        if (
-            reference.get("persona_id") == business_id
-            and lifecycle.get("status") == "approved"
-            and lifecycle.get("approved") is True
+        personas = [_read_json(path) for path in paths]
+        if not any(
+            persona.get("persona_scope", "business") == "speaker"
+            and (persona.get("business_persona_ref") or {}).get("persona_id")
+            == business_id
+            for persona in personas
         ):
-            count += 1
+            continue
+        resolved = resolve_persona_authority(
+            settings,
+            persona_root.name,
+            "speaker",
+        )
+        speaker = resolved.current
+        if speaker is None:
+            continue
+        reference = speaker["artifact"].get("business_persona_ref") or {}
+        if reference.get("persona_id") != business_id:
+            continue
+        validate_speaker_business_binding(speaker, business)
+        count += 1
 
     return count
 
@@ -447,12 +416,12 @@ def list_customers(
 
     if persona_root.exists():
         for directory in (path for path in (persona_root.iterdir()) if path.is_dir()):
-            if (
-                _latest_business_persona(
-                    settings,
-                    directory.name,
-                )
-                is not None
+            paths = list(directory.glob("revision_*/persona_v1.json"))
+            if not paths:
+                continue
+            if any(
+                _read_json(path).get("persona_scope", "business") == "business"
+                for path in paths
             ):
                 business_ids.add(directory.name)
 
@@ -1131,27 +1100,25 @@ def approve_business_persona(
     reviewer: str,
     note: str,
 ) -> dict[str, Any]:
-    latest = _latest_business_persona(
+    authority = resolve_persona_authority(
         settings,
         business_id,
+        "business",
     )
-
-    if latest is None:
+    if authority.review_candidate is None:
+        if authority.current is not None:
+            return get_customer_detail(
+                settings,
+                business_id,
+            )
         raise CanonicalOperationError(
             "BUSINESS_PERSONA_NOT_FOUND",
             "还没有可审核的客户档案。",
             "请先完成客户事实审核。",
         )
-
-    persona_path, persona = latest
-
+    persona_path = authority.review_candidate["path"]
+    persona = authority.review_candidate["artifact"]
     lifecycle = persona.get("lifecycle") or {}
-
-    if lifecycle.get("status") == "approved" and lifecycle.get("approved") is True:
-        return get_customer_detail(
-            settings,
-            business_id,
-        )
 
     if (
         lifecycle.get("status") != "review_required"
