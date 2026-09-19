@@ -347,12 +347,19 @@ def test_case_submit_state_projection_runs_in_node():
     assert result.returncode == 0, result.stderr or result.stdout
 
 
-def test_review_player_css_preserves_portrait_layout():
+def test_review_player_uses_compact_orientation_layout_without_source_ratio_geometry():
     static = Path(__file__).resolve().parents[1] / "static" / "assets"
     css = (static / "styles.css").read_text(encoding="utf-8")
     component = (static / "case-components.js").read_text(encoding="utf-8")
-    assert "aspect-ratio: var(--source-aspect-ratio, 9 / 16)" in css
-    assert ".douyin-review-player-frame.portrait { max-width: 420px; }" in css
-    assert "width: 100%; max-width: 100%" in css
+    assert "aspect-ratio: var(--source-aspect-ratio" not in css
+    assert "--source-aspect-ratio" not in component
+    assert ".review-media-player.portrait { width: min(100%, 360px); aspect-ratio: 9 / 16; }" in css
+    assert ".review-media-shell.portrait { grid-template-columns: minmax(0, 360px) minmax(0, 1fr); }" in css
+    assert ".review-media-player.landscape { width: min(100%, 640px); max-height: 52dvh; aspect-ratio: 16 / 9; }" in css
+    assert "review-media-shell ${orientation}" in component
+    assert "review-media-player ${orientation}" in component
+    assert "${cleanupNotice}" in component
     assert "reviewMedia.remote_embed_url" in component
+    assert 'scrolling="no"' in component
+    assert "allowfullscreen" in component
     assert "在抖音打开原视频" in component

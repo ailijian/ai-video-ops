@@ -1,7 +1,7 @@
 import { createApiClient } from "./api-client.js";
-import { createCaseViews } from "./case-views.js?v=production-acceptance-1";
+import { createCaseViews } from "./case-views.js?v=compact-review-1";
 import { createCustomerViews } from "./customer-views.js";
-import { progressPanel } from "./case-components.js?v=production-acceptance-1";
+import { progressPanel } from "./case-components.js?v=compact-review-1";
 import { startTaskPolling } from "./task-progress.js";
 import { customerProgressPanel } from "./customer-components.js";
 import { matchWorkflowRoute } from "./routes.js";

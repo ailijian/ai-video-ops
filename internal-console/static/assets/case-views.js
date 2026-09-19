@@ -1,5 +1,5 @@
-import { caseCard, caseReviewContent, escapeHtml, progressPanel } from "./case-components.js?v=production-acceptance-1";
-import { projectCaseSubmitState, resetCaseSubmitState } from "./case-submit-state.mjs?v=production-acceptance-1";
+import { caseCard, caseReviewContent, escapeHtml, progressPanel } from "./case-components.js?v=compact-review-1";
+import { projectCaseSubmitState, resetCaseSubmitState } from "./case-submit-state.mjs?v=compact-review-1";
 import { startTaskPolling } from "./task-progress.js";
 
 function duplicateResultHtml(result) {

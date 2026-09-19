@@ -93,9 +93,7 @@ export function caseReviewContent(detail, statusPill) {
   const orientation = sourceWidth > sourceHeight ? "landscape" : "portrait";
   const mediaSurface = reviewMedia.local_available
     ? `<video controls playsinline preload="metadata" src="${escapeHtml(reviewMedia.local_url)}"></video>`
-    : `<div class="douyin-review-player-frame ${orientation}" style="--source-aspect-ratio:${sourceWidth} / ${sourceHeight}">
-        <iframe class="douyin-review-player" src="${escapeHtml(reviewMedia.remote_embed_url)}" title="抖音原视频审核预览" loading="lazy" allowfullscreen></iframe>
-      </div>`;
+    : `<iframe class="douyin-review-player" src="${escapeHtml(reviewMedia.remote_embed_url)}" title="抖音原视频审核预览" loading="lazy" scrolling="no" allowfullscreen></iframe>`;
   const sourceLink = sourceUrl
     ? `<a class="source-video-link" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">在抖音打开原视频</a>`
     : "";
@@ -114,14 +112,16 @@ export function caseReviewContent(detail, statusPill) {
     <section class="review-layout">
       <div class="review-primary">
         <section class="card video-card">
-          ${mediaSurface}
-          <div class="video-meta"><h1>${escapeHtml(detail.title)}</h1>
-            <p>${detail.platform === "douyin" ? "抖音" : "视频来源"} · ${detail.duration_seconds == null ? "时长未知" : `${Math.round(detail.duration_seconds)} 秒`}</p>
-            ${detail.description ? `<p>${escapeHtml(detail.description)}</p>` : ""}
-            ${sourceLink}
+          <div class="review-media-shell ${orientation}">
+            <div class="review-media-player ${orientation}">${mediaSurface}</div>
+            <div class="review-media-meta"><h1>${escapeHtml(detail.title)}</h1>
+              <p>${detail.platform === "douyin" ? "抖音" : "视频来源"} · ${detail.duration_seconds == null ? "时长未知" : `${Math.round(detail.duration_seconds)} 秒`}</p>
+              ${detail.description ? `<p>${escapeHtml(detail.description)}</p>` : ""}
+              ${sourceLink}
+              ${cleanupNotice}
+            </div>
           </div>
         </section>
-        ${cleanupNotice}
         <div class="rights-banner"><strong>案例仅用于内部结构研究。</strong><span>批准入库不代表原视频素材可以用于客户生产。</span></div>
         <section class="card review-section"><h2>这个视频在讲什么</h2>
           ${detail.what_it_says?.topic ? `<div class="review-row"><span>内容主题</span><p>${escapeHtml(detail.what_it_says.topic)}</p></div>` : ""}
