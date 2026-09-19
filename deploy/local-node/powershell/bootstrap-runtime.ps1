@@ -4,11 +4,19 @@ param(
     [string]$RepoRoot,
     [Parameter(Mandatory = $true)]
     [string]$EnvironmentFile,
-    [switch]$IncludeTestDependencies
+    [switch]$IncludeTestDependencies,
+    [switch]$PathCompatibilitySmoke
 )
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot "path-compat.ps1")
+
+if ($PathCompatibilitySmoke) {
+    Assert-WindowsPathCompatibility
+    Write-Output "PASS: bootstrap-runtime Windows PowerShell 5.1 path compatibility."
+    return
+}
 
 function Invoke-CheckedNative {
     param(
@@ -109,10 +117,12 @@ if (($ollamaModels -join "`n") -notmatch '(?m)^qwen3-vl:4b-instruct\s') {
 }
 
 $whisperModel = Get-EnvFileSetting $resolvedEnv "AIVO_WHISPER_MODEL"
+$consoleDb = Get-EnvFileSetting $resolvedEnv "AIVO_CONSOLE_DB"
+$configuredPipelinePython = Get-EnvFileSetting $resolvedEnv "AIVO_PIPELINE_PYTHON"
 if ([string]::IsNullOrWhiteSpace($whisperModel)) {
     throw "Production environment must set AIVO_WHISPER_MODEL."
 }
-if ([System.IO.Path]::IsPathFullyQualified($whisperModel)) {
+if (Test-AbsoluteWindowsPath $whisperModel) {
     if (-not (Test-Path -LiteralPath $whisperModel -PathType Container)) {
         throw "AIVO_WHISPER_MODEL absolute directory does not exist: $whisperModel"
     }
@@ -129,8 +139,16 @@ if ([System.IO.Path]::IsPathFullyQualified($whisperModel)) {
         }
     }
     Write-Output "PASS: local Whisper directory exists: $whisperModel"
+} elseif (Test-WindowsPathLike $whisperModel) {
+    throw "AIVO_WHISPER_MODEL path-like values must use an absolute Windows path."
 } else {
     Write-Output "PASS: Whisper model name is configured: $whisperModel"
+}
+if (-not (Test-AbsoluteWindowsPath $consoleDb)) {
+    throw "AIVO_CONSOLE_DB must be an absolute Windows path."
+}
+if (-not (Test-AbsoluteWindowsPath $configuredPipelinePython)) {
+    throw "AIVO_PIPELINE_PYTHON must be an absolute Windows path."
 }
 
 $consoleVenv = Join-Path $consoleRoot ".venv"
@@ -147,6 +165,10 @@ if (-not (Test-Path -LiteralPath $pipelinePython -PathType Leaf)) {
 
 $consoleVenvVersion = Assert-Python312 $consolePython
 $pipelineVenvVersion = Assert-Python312 $pipelinePython
+if (-not (Test-Path -LiteralPath $configuredPipelinePython -PathType Leaf)) {
+    throw "AIVO_PIPELINE_PYTHON must point to an existing runtime Python."
+}
+$configuredPipelineVersion = Assert-Python312 $configuredPipelinePython
 
 $consoleInstall = $consoleRoot
 $pipelineInstall = $pipelineRequirements
@@ -161,5 +183,5 @@ Invoke-CheckedNative $consolePython @("-m", "pip", "check") "Internal Console pi
 Invoke-CheckedNative $pipelinePython @("-m", "pip", "check") "ops-pipeline pip check failed"
 
 Write-Output "PASS: reproducible runtime dependencies are installed."
-Write-Output "INFO: base Python=$baseVersion; Console Python=$consoleVenvVersion; Pipeline Python=$pipelineVenvVersion"
+Write-Output "INFO: base Python=$baseVersion; Console Python=$consoleVenvVersion; Pipeline Python=$pipelineVenvVersion; Configured Pipeline Python=$configuredPipelineVersion"
 Write-Output "INFO: no model was run or downloaded, no production data was migrated, and no system setting was changed."

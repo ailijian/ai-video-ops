@@ -3,11 +3,19 @@ param(
     [Parameter(Mandatory = $true)]
     [string]$RepoRoot,
     [Parameter(Mandatory = $true)]
-    [string]$EnvironmentFile
+    [string]$EnvironmentFile,
+    [switch]$PathCompatibilitySmoke
 )
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
+. (Join-Path $PSScriptRoot "path-compat.ps1")
+
+if ($PathCompatibilitySmoke) {
+    Assert-WindowsPathCompatibility
+    Write-Output "PASS: runtime-preflight Windows PowerShell 5.1 path compatibility."
+    return
+}
 
 function Invoke-CapturedNative {
     param(
@@ -112,7 +120,7 @@ $secureCookies = Get-EnvFileSetting $resolvedEnv "AIVO_SECURE_COOKIES"
 if ([string]::IsNullOrWhiteSpace($whisperModel)) {
     throw "Missing production setting: AIVO_WHISPER_MODEL"
 }
-if ([System.IO.Path]::IsPathFullyQualified($whisperModel)) {
+if (Test-AbsoluteWindowsPath $whisperModel) {
     if (-not (Test-Path -LiteralPath $whisperModel -PathType Container)) {
         throw "AIVO_WHISPER_MODEL absolute directory does not exist: $whisperModel"
     }
@@ -129,15 +137,27 @@ if ([System.IO.Path]::IsPathFullyQualified($whisperModel)) {
         }
     }
     Write-Output "PASS: AIVO_WHISPER_MODEL=$whisperModel (required local files present)"
+} elseif (Test-WindowsPathLike $whisperModel) {
+    throw "AIVO_WHISPER_MODEL path-like values must use an absolute Windows path."
 } else {
     Write-Output "INFO: AIVO_WHISPER_MODEL=$whisperModel (model name; local files not applicable)"
 }
 
-if ([string]::IsNullOrWhiteSpace($consoleDb) -or -not [System.IO.Path]::IsPathFullyQualified($consoleDb)) {
-    throw "AIVO_CONSOLE_DB must be an absolute path."
+if (-not (Test-AbsoluteWindowsPath $consoleDb)) {
+    throw "AIVO_CONSOLE_DB must be an absolute Windows path."
 }
-if ([string]::IsNullOrWhiteSpace($configuredPipelinePython) -or -not (Test-Path -LiteralPath $configuredPipelinePython -PathType Leaf)) {
+if (
+    (-not (Test-AbsoluteWindowsPath $configuredPipelinePython)) -or
+    (-not (Test-Path -LiteralPath $configuredPipelinePython -PathType Leaf))
+) {
     throw "AIVO_PIPELINE_PYTHON must point to the ops-pipeline runtime Python."
+}
+$configuredPipelineVersion = Invoke-CapturedNative $configuredPipelinePython @(
+    "-c",
+    "import platform; print(platform.python_version())"
+) "Configured ops-pipeline Python check failed"
+if ($configuredPipelineVersion -notmatch '^3\.12\.') {
+    throw "AIVO_PIPELINE_PYTHON must use Python 3.12."
 }
 if ($secureCookies -ne "1") {
     throw "AIVO_SECURE_COOKIES must be 1 for production."

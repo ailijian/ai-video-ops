@@ -27,6 +27,8 @@ A clean Windows runtime node requires Python 3.12, Git, Node/npm, one running
 Ollama instance, the preloaded `qwen3-vl:4b-instruct` model, and a preloaded
 faster-whisper model directory. Host prerequisites and model downloads remain
 manual; the bootstrap never installs CUDA/cuDNN/Ollama or downloads a model.
+All deployment PowerShell entry points support the built-in Windows PowerShell
+5.1 runtime; PowerShell 7 is not required.
 
 After cloning and creating a protected production env file from
 `env.production.example`, run:
