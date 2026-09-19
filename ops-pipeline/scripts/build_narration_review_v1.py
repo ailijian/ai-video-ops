@@ -20,6 +20,10 @@ from privacy_projection_v1 import (
     project_value,
     require_privacy_projection_for_egress,
 )
+from speech_evidence_v1 import (
+    SPEECH_NOT_DETECTED,
+    require_audio_speech_evidence,
+)
 
 
 SCRIPT_VERSION = "build_narration_review_v1.py@1.1"
@@ -686,6 +690,105 @@ def main() -> None:
     segments = list(audio.get("segments") or [])
     words = list(audio.get("words") or [])
     frames = list(visual.get("frames") or [])
+    speech_evidence_status = require_audio_speech_evidence(audio)
+
+    if not frames:
+        raise RuntimeError(
+            "visual_v1 contains no frames."
+        )
+
+    if speech_evidence_status == SPEECH_NOT_DETECTED:
+        if args.review_file:
+            raise RuntimeError(
+                "A narration review file is not applicable when speech was not detected."
+            )
+        project_root = Path(__file__).resolve().parents[1]
+        output_dir = (
+            Path(args.output_root).expanduser().resolve()
+            if args.output_root
+            else project_root / "data" / "narration" / args.case_id / "v1"
+        )
+        output_dir.mkdir(parents=True, exist_ok=True)
+        total_elapsed = time.perf_counter() - started_total
+        result = {
+            "schema_version": SCHEMA_VERSION,
+            "tool_version": SCRIPT_VERSION,
+            "prompt_version": None,
+            "case_id": args.case_id,
+            "source_audio_artifact": str(audio_path),
+            "source_visual_artifact": str(visual_path),
+            "model": None,
+            "review_mode": "no_detected_speech",
+            "speech_evidence_status": SPEECH_NOT_DETECTED,
+            "review_policy": {
+                "purpose": "record the absence of detected usable speech evidence",
+                "raw_word_timeline_immutable": True,
+                "no_narration_inferred_from_ocr_or_visual_evidence": True,
+            },
+            "source_transcript_raw": "",
+            "reviewed_transcript_raw": "",
+            "segments": [],
+            "chunks": [],
+            "explicit_review": {
+                "applied": False,
+                "source_file": None,
+                "reviewer": None,
+                "decision_source": None,
+                "decision_count": 0,
+            },
+            "summary": {
+                "segment_count": 0,
+                "raw_word_count": 0,
+                "remote_model_calls": 0,
+                "corrected_segment_count": 0,
+                "uncertain_segment_count": 0,
+                "manual_review_item_count": 0,
+            },
+            "manual_review": {
+                "required": False,
+                "item_count": 0,
+                "items": [],
+            },
+            "authority": {
+                "raw_audio_words_and_timestamps": "faster-whisper audio_v1",
+                "reviewed_narration_text": "not_applicable_no_detected_speech",
+                "ocr_or_visual_as_narration": "prohibited",
+            },
+            "timing": {
+                "artifact_model_compute_seconds": 0.0,
+                "current_run_model_compute_seconds": 0.0,
+                "reused_chunk_count": 0,
+                "fresh_chunk_count": 0,
+                "total_elapsed_seconds": round(total_elapsed, 6),
+            },
+            "validation": {
+                "passed": True,
+                "segment_count_preserved": True,
+                "segment_order_preserved": True,
+                "segment_timestamps_preserved": True,
+                "word_refs_preserved": True,
+                "raw_word_count_preserved": True,
+                "raw_words_modified": False,
+                "no_narration_inferred_from_visual_evidence": True,
+            },
+        }
+        output_json = output_dir / "narration_review_v1.json"
+        write_json(output_json, result)
+        (output_dir / "narration_review_v1_summary.md").write_text(
+            "# Narration Review V1\n\n"
+            f"- Case ID: `{args.case_id}`\n"
+            "- Review mode: `no_detected_speech`\n"
+            "- Segments: `0`\n"
+            "- Raw words (immutable): `0`\n"
+            "- Manual review required: `False`\n"
+            "- DeepSeek time: `0.00s`\n",
+            encoding="utf-8",
+        )
+        print("NARRATION REVIEW V1 PASS", flush=True)
+        print("Review mode: no_detected_speech", flush=True)
+        print("Remote model calls: 0", flush=True)
+        print(f"JSON: {output_json}", flush=True)
+        return
 
     if not segments:
         raise RuntimeError(
@@ -694,10 +797,6 @@ def main() -> None:
     if not words:
         raise RuntimeError(
             "audio_v1 contains no words."
-        )
-    if not frames:
-        raise RuntimeError(
-            "visual_v1 contains no frames."
         )
 
     word_by_id = {

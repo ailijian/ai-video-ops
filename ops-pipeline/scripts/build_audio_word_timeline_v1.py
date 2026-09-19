@@ -7,6 +7,13 @@ import time
 from pathlib import Path
 from typing import Any
 
+from speech_evidence_v1 import (
+    SPEECH_DETECTED,
+    SPEECH_NOT_DETECTED,
+    SPEECH_UNCERTAIN,
+    classify_transcription_speech_evidence,
+)
+
 SCHEMA_VERSION = "audio-word-timeline-v1.0-draft"
 
 
@@ -36,8 +43,12 @@ def main() -> None:
 
     raw = read_json(audio_path)
     source_segments = list(raw.get("segments") or [])
-    if not source_segments:
-        raise RuntimeError("No audio segments found.")
+    speech_evidence_status = classify_transcription_speech_evidence(raw)
+    if speech_evidence_status == SPEECH_UNCERTAIN:
+        raise RuntimeError(
+            "No usable speech segments remain, but discarded ASR segments exist; "
+            "speech evidence is uncertain."
+        )
 
     words = []
     segment_views = []
@@ -141,15 +152,24 @@ def main() -> None:
             )
 
     transcript_raw_path = audio_path.parent / "transcript_raw.txt"
-    transcript_raw = (
-        transcript_raw_path.read_text(encoding="utf-8")
-        if transcript_raw_path.exists()
-        else "\n".join(x["source_text"] for x in segment_views)
-    )
+    transcript_raw = ""
+    if speech_evidence_status == SPEECH_DETECTED:
+        transcript_raw = (
+            transcript_raw_path.read_text(encoding="utf-8")
+            if transcript_raw_path.exists()
+            else "\n".join(x["source_text"] for x in segment_views)
+        )
 
     source_duration = raw.get("duration")
     if source_duration is None:
-        source_duration = max(float(words[-1]["end"]), float(source_segments[-1].get("end", 0)))
+        if speech_evidence_status == SPEECH_NOT_DETECTED:
+            raise RuntimeError(
+                "No-detected-speech evidence requires Whisper source duration."
+            )
+        source_duration = max(
+            float(words[-1]["end"]),
+            float(source_segments[-1].get("end", 0)),
+        )
     source_duration = float(source_duration)
 
     project_root = Path(__file__).resolve().parents[1]
@@ -171,6 +191,7 @@ def main() -> None:
         "language": raw.get("language"),
         "language_probability": raw.get("language_probability"),
         "duration_seconds": source_duration,
+        "speech_evidence_status": speech_evidence_status,
         "transcript_raw": transcript_raw,
         "segments": segment_views,
         "words": words,
@@ -187,8 +208,12 @@ def main() -> None:
             "source_segment_count": len(source_segments),
             "segment_count": len(segment_views),
             "word_count": len(words),
-            "speech_start": min(float(x["start"]) for x in words),
-            "speech_end": max(float(x["end"]) for x in words),
+            "speech_start": (
+                min(float(x["start"]) for x in words) if words else None
+            ),
+            "speech_end": (
+                max(float(x["end"]) for x in words) if words else None
+            ),
             "silence_gap_count": len(silence_gaps),
             "silence_gap_threshold": args.gap_threshold,
         },
@@ -197,6 +222,10 @@ def main() -> None:
             "midpoint": "deterministic_python",
             "silence_gaps": "deterministic_python",
             "no_semantic_rewrite_performed": True,
+            "speech_status_semantics": (
+                "ASR evidence status only; not_detected does not assert that "
+                "speech objectively was absent from the source."
+            ),
         },
         "validation": {
             "passed": True,
@@ -217,6 +246,7 @@ def main() -> None:
         f"Case ID: {args.case_id}",
         f"Segments: {len(segment_views)}",
         f"Words: {len(words)}",
+        f"Speech evidence status: {speech_evidence_status}",
         f"Silence gaps >= {args.gap_threshold:.2f}s: {len(silence_gaps)}",
         f"Source duration: {source_duration:.3f}s",
         f"Build elapsed: {elapsed:.3f}s",

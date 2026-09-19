@@ -16,6 +16,7 @@ from privacy_projection_v1 import (
     project_value,
     require_privacy_projection_for_egress,
 )
+from speech_evidence_v1 import require_audio_speech_evidence
 
 
 SCRIPT_VERSION = "build_shot_boundaries_v1.py@1.6"
@@ -87,6 +88,7 @@ def prepare_boundary_egress(
     context_frame: dict[str, Any] | None,
     primary_frames: list[dict[str, Any]],
     privacy_context: dict[str, Any] | None,
+    speech_evidence_status: str = "detected",
 ) -> tuple[dict[str, Any], str, dict[str, Any]]:
     require_privacy_projection_for_egress(privacy_context)
     safe_primary = project_value(primary_frames, "safe_verbatim")
@@ -99,10 +101,13 @@ def prepare_boundary_egress(
         "context_frame": safe_context,
         "primary_frames": safe_primary,
     }
+    if speech_evidence_status != "detected":
+        safe_input["speech_evidence_status"] = speech_evidence_status
     prompt = build_prompt(
         case_id=case_id,
         context_frame=safe_context,
         primary_frames=safe_primary,
+        speech_evidence_status=speech_evidence_status,
     )
     pre_call_audit = build_egress_audit(
         safe_input=safe_input,
@@ -237,6 +242,7 @@ def build_prompt(
     case_id: str,
     context_frame: dict[str, Any] | None,
     primary_frames: list[dict[str, Any]],
+    speech_evidence_status: str = "detected",
 ) -> str:
     expected_ids = [x["frame_id"] for x in primary_frames]
 
@@ -246,10 +252,18 @@ def build_prompt(
         else "NONE (this is the beginning of the video)"
     )
 
+    case_context = f"Case ID: {case_id}"
+    if speech_evidence_status != "detected":
+        case_context += (
+            f"\nSpeech evidence status: {speech_evidence_status}\n\n"
+            "`not_detected` 只表示 ASR 未检测到可用语音证据；"
+            "不得从 OCR 或画面补造旁白。"
+        )
+
     return f"""
 你正在做短视频“真实视觉 Shot Boundary 选择”。
 
-Case ID: {case_id}
+{case_context}
 
 你看到的是已经按真实时间排序的视觉 Observation。
 你不看原视频像素，只基于这些机器 Observation 判断：
@@ -403,6 +417,7 @@ def main() -> None:
 
     frames = list(visual.get("frames") or [])
     words = list(audio.get("words") or [])
+    speech_evidence_status = require_audio_speech_evidence(audio)
 
     review_data: dict[str, Any] | None = None
     review_path: Path | None = None
@@ -458,8 +473,6 @@ def main() -> None:
 
     if not frames:
         raise RuntimeError("visual_v1 contains no frames.")
-    if not words:
-        raise RuntimeError("audio_v1 contains no words.")
 
     manifest_by_id = {
         str(x["filename"]): x
@@ -513,6 +526,7 @@ def main() -> None:
             context_frame=context,
             primary_frames=primary,
             privacy_context=privacy_context,
+            speech_evidence_status=speech_evidence_status,
         )
 
         cache_path = chunks_dir / f"boundary_chunk_{chunk_no:03d}.json"
@@ -914,6 +928,7 @@ def main() -> None:
                 },
                 "audio_projection": {
                     "policy": "word_midpoint_exactly_once",
+                    "speech_evidence_status": speech_evidence_status,
                     "word_refs": [x["word_id"] for x in shot_words],
                     "segment_refs": uniq(
                         [
@@ -995,6 +1010,7 @@ def main() -> None:
         "tool_version": SCRIPT_VERSION,
         "case_id": args.case_id,
         "duration_seconds": video_duration,
+        "speech_evidence_status": speech_evidence_status,
         "design_decision": {
             "shot_boundary_definition": (
                 "Shot = continuous visual camera segment. "
@@ -1064,6 +1080,7 @@ def main() -> None:
             "passed": True,
             "visual_frame_count": len(frames),
             "audio_word_count": len(words),
+            "speech_evidence_status": speech_evidence_status,
             "boundary_decision_count": len(all_decisions),
             "shot_count": len(shots),
             "review_decisions_applied": len(applied_review_decisions),

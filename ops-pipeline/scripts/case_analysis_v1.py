@@ -17,6 +17,12 @@ from storage_retention_v1 import (
     cleanup_successful_attempt,
     mark_cleanup_retry_required,
 )
+from speech_evidence_v1 import (
+    SPEECH_NOT_DETECTED,
+    SPEECH_UNCERTAIN,
+    classify_transcription_speech_evidence,
+    require_audio_speech_evidence,
+)
 
 
 OPERATION_VERSION = "case_analysis_v1.py@1.0"
@@ -495,7 +501,11 @@ class Orchestrator:
             self.start_stage("transcribe")
             transcribe_valid = validate_json(
                 transcript_segments,
-                lambda value: bool(value.get("segments")) and value.get("source_file") == str(video),
+                lambda value: (
+                    value.get("source_file") == str(video)
+                    and classify_transcription_speech_evidence(value)
+                    != SPEECH_UNCERTAIN
+                ),
             )
             source_caption = str(source.get("source_description") or "").strip()
             if not transcribe_valid:
@@ -543,14 +553,22 @@ class Orchestrator:
                     "transcribe",
                     300,
                 )
+            audio_data = read_json(audio_v1)
+            speech_evidence_status = require_audio_speech_evidence(audio_data)
+            self.state["speech_evidence_status"] = speech_evidence_status
+            if speech_evidence_status == SPEECH_NOT_DETECTED:
+                self.state.setdefault("model_call_accounting", {})[
+                    "narration_remote_calls"
+                ] = 0
             self.state["model_calls"].append(
                 {
                     "stage": "transcribe",
-                    "model": "faster-whisper/large-v3",
+                    "model": f"faster-whisper/{self.whisper_model}",
                     "boundary": "local_transcription",
                     "source_caption_hint": bool(source_caption),
                     "deterministic_timing_guard": True,
                     "cache_reused": transcribe_valid,
+                    "speech_evidence_status": speech_evidence_status,
                 }
             )
             self.state["artifacts"]["transcript_segments"] = str(
@@ -683,7 +701,9 @@ class Orchestrator:
                     ],
                     "structure",
                     1800,
-                    needs_deepseek=True,
+                    needs_deepseek=(
+                        speech_evidence_status != SPEECH_NOT_DETECTED
+                    ),
                 )
             shot_valid = validate_json(
                 shots,
@@ -740,19 +760,22 @@ class Orchestrator:
                     2400,
                     needs_deepseek=True,
                 )
-            for boundary in (
-                "privacy_safe_narration_review",
-                "privacy_safe_shot_boundary_selection",
-                "privacy_safe_reverse_storyboard",
-            ):
+            model_boundaries = [
+                ("privacy_safe_shot_boundary_selection", shot_valid),
+                ("privacy_safe_reverse_storyboard", storyboard_valid),
+            ]
+            if speech_evidence_status != SPEECH_NOT_DETECTED:
+                model_boundaries.insert(
+                    0,
+                    ("privacy_safe_narration_review", narration_valid),
+                )
+            for boundary, cache_reused in model_boundaries:
                 self.state["model_calls"].append(
                     {
                         "stage": "structure",
                         "model": "deepseek-v4-flash",
                         "boundary": boundary,
-                        "cache_reused": (
-                            narration_valid and shot_valid and storyboard_valid
-                        ),
+                        "cache_reused": cache_reused,
                     }
                 )
             self.state["artifacts"].update(

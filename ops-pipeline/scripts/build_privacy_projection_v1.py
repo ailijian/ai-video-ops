@@ -12,6 +12,7 @@ from privacy_projection_v1 import (
     build_privacy_annotation,
     sha256_file,
 )
+from speech_evidence_v1 import require_audio_speech_evidence
 
 
 VISUAL_TEXT_FIELDS = (
@@ -119,6 +120,7 @@ def main() -> None:
         raise RuntimeError("Visual V1 case_id mismatch.")
     if str(audio.get("case_id")) != args.case_id:
         raise RuntimeError("Audio V1 case_id mismatch.")
+    speech_evidence_status = require_audio_speech_evidence(audio)
 
     annotations, inspected = collect_annotations(visual, audio)
     high_redactions = sum(
@@ -156,6 +158,7 @@ def main() -> None:
         "policy_version": PRIVACY_POLICY_VERSION,
         "privacy_policy_version": PRIVACY_POLICY_VERSION,
         "case_id": args.case_id,
+        "speech_evidence_status": speech_evidence_status,
         "created_at": now_iso(),
         "source_artifacts": {
             "visual_v1": {

@@ -26,6 +26,10 @@ from privacy_projection_v1 import (
     project_value,
     require_privacy_projection_for_egress,
 )
+from speech_evidence_v1 import (
+    SPEECH_NOT_DETECTED,
+    require_audio_speech_evidence,
+)
 
 
 SCHEMA_VERSION = "reverse-storyboard-v1.1-draft"
@@ -328,9 +332,41 @@ def validate_and_prepare_narration_track(
     Returns: (narration_track, narration_review_source, narration_review_closed)
     """
 
+    if shot_boundaries.get("validation", {}).get("passed") is not True:
+        raise RuntimeError("Shot boundaries validation is not passed.")
+
+    if str(shot_boundaries.get("case_id")) != str(audio_data.get("case_id")):
+        raise RuntimeError("Shot boundaries case_id does not match audio_v1.")
+
+    speech_evidence_status = require_audio_speech_evidence(audio_data)
     segments = list(audio_data.get("segments") or [])
-    if not segments:
-        raise RuntimeError("No audio segments found in audio_v1.")
+
+    if speech_evidence_status == SPEECH_NOT_DETECTED:
+        if narration_review_path is None:
+            return [], "no_detected_speech", True
+        review_path = Path(narration_review_path).expanduser().resolve()
+        if not review_path.exists():
+            raise FileNotFoundError(review_path)
+        review_data = read_json(review_path)
+        if str(review_data.get("case_id")) != str(audio_data.get("case_id")):
+            raise RuntimeError("Narration Review case_id does not match audio_v1.")
+        if review_data.get("review_mode") != "no_detected_speech":
+            raise RuntimeError(
+                "Narration Review must use no_detected_speech mode."
+            )
+        if review_data.get("speech_evidence_status") != SPEECH_NOT_DETECTED:
+            raise RuntimeError(
+                "Narration Review speech evidence status mismatch."
+            )
+        if review_data.get("validation", {}).get("passed") is not True:
+            raise RuntimeError("Narration Review validation is not passed.")
+        if review_data.get("manual_review", {}).get("required") is not False:
+            raise RuntimeError("Narration Review requires manual action.")
+        if list(review_data.get("segments") or []):
+            raise RuntimeError(
+                "No-detected-speech Narration Review must contain no segments."
+            )
+        return [], "no_detected_speech", True
 
     if narration_review_path is None:
         return build_narration_track(audio_data), None, True
@@ -354,12 +390,6 @@ def validate_and_prepare_narration_track(
     reviewed_segments = list(review_data.get("segments") or [])
     if len(reviewed_segments) != len(segments):
         raise RuntimeError("Narration Review segment_count mismatch vs audio_v1.")
-
-    if shot_boundaries.get("validation", {}).get("passed") is not True:
-        raise RuntimeError("Shot boundaries validation is not passed.")
-
-    if str(shot_boundaries.get("case_id")) != str(audio_data.get("case_id")):
-        raise RuntimeError("Shot boundaries case_id does not match audio_v1.")
 
     reviewed_by_id = {
         str(item["segment_id"]): item for item in reviewed_segments
@@ -1261,6 +1291,12 @@ def load_or_generate_interpretation(
             chunk_shots,
             prior_context,
         )
+        if cache_narration_mode == "no_detected_speech":
+            chunk_prompt = (
+                "Speech evidence status: not_detected. This means ASR found no "
+                "usable speech evidence. Do not infer narration from OCR, captions, "
+                "or visual content.\n\n" + chunk_prompt
+            )
         egress_audit = build_egress_audit(
             safe_input=chunk_input,
             rendered_prompt=chunk_prompt,
@@ -1393,6 +1429,12 @@ def load_or_generate_interpretation(
         global_transcript_preview,
         compact_shots,
     )
+    if cache_narration_mode == "no_detected_speech":
+        global_prompt = (
+            "Speech evidence status: not_detected. This means ASR found no "
+            "usable speech evidence. Do not infer narration from OCR, captions, "
+            "or visual content.\n\n" + global_prompt
+        )
     global_egress_audit = build_egress_audit(
         safe_input=global_input,
         rendered_prompt=global_prompt,
@@ -1571,6 +1613,7 @@ def main() -> None:
     audio_validation = audio_data.get("validation", {})
     if audio_validation.get("passed") is not True:
         raise RuntimeError("Audio V1 validation is not passed.")
+    speech_evidence_status = require_audio_speech_evidence(audio_data)
 
     case_id = str(shot_data["case_id"])
     if str(audio_data.get("case_id")) != case_id:
@@ -1803,6 +1846,7 @@ def main() -> None:
             ),
         },
         "storyboard_type": "reverse",
+        "speech_evidence_status": speech_evidence_status,
         "narration_track": safe_narration_track,
         "shots": final_shots,
         "video_understanding_raw": raw_video_understanding,
@@ -1813,7 +1857,11 @@ def main() -> None:
             "candidate_unverified_unless_supported_by_verified_proofs"
         ),
         "authority": {
-            "narration_text": narration_review_source or "faster-whisper",
+            "narration_text": (
+                "not_applicable_no_detected_speech"
+                if speech_evidence_status == SPEECH_NOT_DETECTED
+                else narration_review_source or "faster-whisper"
+            ),
             "narration_timing": "audio_word_timeline_v1 / faster-whisper",
             "audio_overlap_exact": "audio_word_timeline_v1",
             "visual_evidence": "qwen3-vl_visual_v1",
@@ -1840,6 +1888,7 @@ def main() -> None:
             "passed": True,
             "shot_count": len(final_shots),
             "narration_segment_count": len(narration_track),
+            "speech_evidence_status": speech_evidence_status,
             "all_input_shots_preserved_exactly_once": True,
             "all_narration_segments_linked_to_at_least_one_shot": True,
             "time_generated_by_model": False,

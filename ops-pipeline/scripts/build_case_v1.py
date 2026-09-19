@@ -12,6 +12,11 @@ from privacy_projection_v1 import (
     load_privacy_projection,
     project_safe_semantic,
 )
+from speech_evidence_v1 import (
+    SPEECH_DETECTED,
+    SPEECH_NOT_DETECTED,
+    require_audio_speech_evidence,
+)
 
 
 SCHEMA_VERSION = "case-v1.1-draft"
@@ -248,8 +253,11 @@ def main() -> None:
     word_ids = [str(x["word_id"]) for x in words]
     if not audio.get("validation", {}).get("passed"):
         errors.append("audio_v1 validation is not passed.")
-    if not words:
-        errors.append("audio_v1 contains no word-level evidence.")
+    try:
+        speech_evidence_status = require_audio_speech_evidence(audio)
+    except RuntimeError as exc:
+        errors.append(str(exc))
+        speech_evidence_status = None
 
     audio_segments = list(audio.get("segments") or [])
     narration_segments = list(narration.get("segments") or [])
@@ -276,6 +284,15 @@ def main() -> None:
         errors.append(
             "Narration segment count differs from the Audio V1 segment count."
         )
+    if speech_evidence_status == SPEECH_NOT_DETECTED:
+        if narration.get("review_mode") != "no_detected_speech":
+            errors.append(
+                "narration_review_v1 is not in no_detected_speech mode."
+            )
+        if narration.get("speech_evidence_status") != SPEECH_NOT_DETECTED:
+            errors.append(
+                "narration_review_v1 speech evidence status does not match audio_v1."
+            )
 
     narration_word_refs: list[str] = []
     for index, (source, reviewed) in enumerate(
@@ -334,6 +351,11 @@ def main() -> None:
         errors.append("shot_boundaries did not preserve all visual frames exactly once.")
     if not shot_validation.get("all_audio_words_assigned_exactly_once"):
         errors.append("shot_boundaries did not preserve all audio words exactly once.")
+    if (
+        speech_evidence_status == SPEECH_NOT_DETECTED
+        and shot_data.get("speech_evidence_status") != SPEECH_NOT_DETECTED
+    ):
+        errors.append("shot_boundaries speech evidence status does not match audio_v1.")
     boundary_review_is_closed = manual_review_closed(
         shot_data.get("manual_review")
     )
@@ -376,6 +398,11 @@ def main() -> None:
         errors.append("storyboard_v1 does not confirm closed Narration review.")
     if board_validation.get("pattern_not_generated") is not True:
         errors.append("storyboard_v1 did not preserve Pattern as not_performed.")
+    if (
+        speech_evidence_status == SPEECH_NOT_DETECTED
+        and storyboard.get("speech_evidence_status") != SPEECH_NOT_DETECTED
+    ):
+        errors.append("storyboard_v1 speech evidence status does not match audio_v1.")
 
     board_shots = list(storyboard.get("shots") or [])
     det_ids = [str(x["shot_id"]) for x in deterministic_shots]
@@ -542,6 +569,7 @@ def main() -> None:
             "authority": "source",
         },
         "audio_evidence": {
+            "speech_evidence_status": speech_evidence_status,
             "transcript_safe_semantic": safe_audio_transcript,
             "transcript_source_ref": {
                 "path": str(audio_path),
@@ -549,13 +577,15 @@ def main() -> None:
             },
             "segment_count": len(audio.get("segments") or []),
             "word_count": len(words),
-            "has_speech": bool(str(audio.get("transcript_raw", "")).strip()),
+            "has_speech": speech_evidence_status == SPEECH_DETECTED,
+            "has_speech_evidence": speech_evidence_status == SPEECH_DETECTED,
             "artifact": artifact(audio_path),
             "engine": audio.get("engine"),
             "model": audio.get("model"),
             "authority": "faster-whisper + deterministic word timeline",
         },
         "narration_evidence": {
+            "speech_evidence_status": speech_evidence_status,
             "segment_count": len(narration_segments),
             "changed_segment_count": sum(
                 1 for segment in narration_segments if segment.get("changed") is True
@@ -651,6 +681,8 @@ def main() -> None:
             "passed": True,
             "case_id_consistent": True,
             "audio_words_preserved_exactly_once": True,
+            "speech_evidence_status_valid": True,
+            "no_synthetic_speech_evidence": True,
             "visual_frames_preserved_exactly_once": True,
             "storyboard_shot_ids_match": True,
             "storyboard_times_match_shot_truth": True,

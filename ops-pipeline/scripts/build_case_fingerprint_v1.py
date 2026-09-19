@@ -179,11 +179,15 @@ def main() -> None:
 
     narration_track = list(storyboard.get("narration_track") or [])
     shots = list(storyboard.get("shots") or [])
+    speech_evidence_status = case.get("audio_evidence", {}).get(
+        "speech_evidence_status"
+    )
 
-    if not narration_track:
+    if not narration_track and speech_evidence_status != "not_detected":
         raise RuntimeError(
             "Storyboard has no narration_track. "
-            "Pattern Mining requires Reverse Storyboard V1.1 or later."
+            "Only an explicit not_detected speech evidence status permits "
+            "an empty narration track."
         )
 
     if not shots:
@@ -352,6 +356,7 @@ def main() -> None:
             "has_explicit_cta": bool(cta_shots),
         },
         "narration_features": {
+            "speech_evidence_status": speech_evidence_status,
             "segment_count": len(narration_track),
             "total_speech_seconds": round(
                 narration_total_seconds, 6
