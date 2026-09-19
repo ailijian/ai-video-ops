@@ -2488,7 +2488,20 @@ def validate_case_source_governance_companion_v1(
 ) -> None:
     if companion.get("schema_version") != CASE_SOURCE_GOVERNANCE_COMPANION_SCHEMA_VERSION:
         raise ValueError("Case Source Governance Companion schema is invalid.")
-    if companion.get("governance_policy_version") != "V1.0":
+    legacy_observation = companion.get("legacy_source_rights_field_observation") or {}
+    policy_ref = companion.get("governance_policy_ref") or {}
+    policy_not_applicable = policy_ref.get("applicable") is False
+    if policy_not_applicable:
+        if (
+            legacy_observation.get("present") is not False
+            or companion.get("governance_policy_version") is not None
+            or policy_ref.get("path") is not None
+            or policy_ref.get("sha256") is not None
+        ):
+            raise ValueError(
+                "Current-schema Case cannot waive an applicable legacy Governance policy."
+            )
+    elif companion.get("governance_policy_version") != "V1.0":
         raise ValueError("Case Source Governance Companion policy version is invalid.")
     if companion.get("canonical_case_status") != "approved":
         raise ValueError("Case Source Governance Companion requires an Approved Case.")

@@ -1,4 +1,5 @@
-import { caseCard, caseReviewContent, escapeHtml, progressPanel } from "./case-components.js?v=storage-retention-1";
+import { caseCard, caseReviewContent, escapeHtml, progressPanel } from "./case-components.js?v=production-acceptance-1";
+import { projectCaseSubmitState, resetCaseSubmitState } from "./case-submit-state.mjs?v=production-acceptance-1";
 import { startTaskPolling } from "./task-progress.js";
 
 function duplicateResultHtml(result) {
@@ -8,11 +9,6 @@ function duplicateResultHtml(result) {
     return `<div class="result-banner">
       <h3>这个视频已经在案例库里</h3>
       <p>${escapeHtml(result.existing_case.title || "")}</p>
-      <a class="btn btn-secondary"
-         href="/cases/${encodeURIComponent(result.case_id)}"
-         data-route>
-        查看已有案例
-      </a>
     </div>`;
   }
 
@@ -20,11 +16,6 @@ function duplicateResultHtml(result) {
     return `<div class="result-banner">
       <h3>这个视频已经分析完成</h3>
       <p>现在正在等待人工审核，无需重复分析。</p>
-      <a class="btn btn-secondary"
-         href="/cases/${encodeURIComponent(result.case_id)}"
-         data-route>
-        去审核
-      </a>
     </div>`;
   }
 
@@ -32,24 +23,13 @@ function duplicateResultHtml(result) {
     return `<div class="result-banner">
       <h3>这个视频正在分析</h3>
       <p>无需重复提交，可以继续查看当前任务。</p>
-      <a class="btn btn-secondary"
-         href="/tasks/${encodeURIComponent(result.existing_task.task_id)}"
-         data-route>
-        查看任务进度
-      </a>
     </div>`;
   }
 
   if (state === "rejected") {
     return `<div class="result-banner">
       <h3>这个案例之前没有收录</h3>
-      <p>如果你现在认为值得重新评估，可以显式重新分析。</p>
-      <button class="btn btn-secondary"
-              type="button"
-              data-explicit-reanalysis
-              data-reanalysis-state="rejected">
-        重新分析
-      </button>
+      <p>${escapeHtml(result.rejection_reason || "如果你现在认为值得重新评估，可以显式重新分析。")}</p>
     </div>`;
   }
 
@@ -57,12 +37,6 @@ function duplicateResultHtml(result) {
     return `<div class="result-banner">
       <h3>这个视频之前分析失败</h3>
       <p>可以重新建立一个分析任务；旧记录不会被覆盖。</p>
-      <button class="btn btn-secondary"
-              type="button"
-              data-explicit-reanalysis
-              data-reanalysis-state="failed">
-        重新分析
-      </button>
     </div>`;
   }
 
@@ -100,19 +74,20 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
     } catch (error) { renderLoadError("案例库暂时无法读取", error); }
   }
 
-  function bindTaskProgress(task) {
+  function bindTaskProgress(task, onLifecycleChange = () => {}) {
     const host = document.querySelector("[data-live-progress]");
     if (!host) return;
     host.innerHTML = progressPanel(task);
+    onLifecycleChange(task.status, task);
     stopPolling = startTaskPolling({
       api,
       taskId: task.task_id,
-      onUpdate: (next) => { if (document.querySelector("[data-live-progress]")) host.innerHTML = progressPanel(next); },
+      onUpdate: (next) => {
+        if (document.querySelector("[data-live-progress]")) host.innerHTML = progressPanel(next);
+        onLifecycleChange(next.status, next);
+      },
       onDone: (next) => {
-        if (next.status === "awaiting_review") {
-          host.insertAdjacentHTML("beforeend", `<a class="btn btn-primary btn-wide progress-review-link" href="/cases/${encodeURIComponent(next.subject_ref)}" data-route>去审核案例</a>`);
-          bindCommonActions();
-        }
+        onLifecycleChange(next.status, next);
       },
     });
   }
@@ -125,104 +100,125 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
           <div class="input-combo"><input id="case-url" type="url" inputmode="url" autocomplete="off" placeholder="https://www.douyin.com/video/..." required><button class="paste-button" type="button" data-paste>粘贴</button></div>
           <div id="source-detection" class="source-detection muted">输入链接后自动识别来源</div></div>
           <div id="case-form-error" class="form-error" role="alert"></div><div id="case-result"></div>
-          <div class="sticky-action"><button class="btn btn-primary btn-wide" type="submit">开始分析</button></div></form></section>
+          <div class="sticky-action case-submit-actions" data-case-submit-actions></div></form></section>
         <aside class="card notice-card"><h2>案例使用边界</h2><p>案例只用于内部结构研究。分析完成后仍需人工审核；批准入库也不会赋予原视频素材生产使用权。</p></aside></div></main>`;
     app.innerHTML = shell("添加案例", body);
     bindCommonActions();
     const input = document.querySelector("#case-url");
     const detection = document.querySelector("#source-detection");
+    const form = document.querySelector("#case-url-form");
+    const pasteButton = document.querySelector("[data-paste]");
+    const resultBox = document.querySelector("#case-result");
+    const actionsHost = document.querySelector("[data-case-submit-actions]");
+    let activeState = "idle";
+    let activeCaseId = null;
+    let reanalysisState = null;
+
+    const actionMarkup = (projection) => {
+      const actions = [];
+      if (projection.submitVisible) {
+        actions.push(`<button class="btn btn-primary btn-wide" type="submit" ${projection.submitDisabled ? "disabled" : ""}>${projection.submitLabel}</button>`);
+      }
+      if (projection.primaryAction?.kind === "review") {
+        actions.push(`<a class="btn btn-primary btn-wide" href="/cases/${encodeURIComponent(activeCaseId || "")}" data-route>去审核案例</a>`);
+      } else if (projection.primaryAction?.kind === "existing") {
+        actions.push(`<a class="btn btn-primary btn-wide" href="/cases/${encodeURIComponent(activeCaseId || "")}" data-route>查看已有案例</a>`);
+      } else if (projection.primaryAction?.kind === "reanalyze") {
+        actions.push(`<button class="btn btn-primary btn-wide" type="button" data-explicit-reanalysis>重新分析</button>`);
+      }
+      if (projection.showNewCaseReset) {
+        actions.push(`<button class="btn btn-quiet btn-wide" type="button" data-new-case-reset>添加另一个案例</button>`);
+      }
+      return actions.join("");
+    };
+
+    const setSubmitState = (status, { caseId = activeCaseId, reanalysis = reanalysisState } = {}) => {
+      activeState = status;
+      activeCaseId = caseId;
+      reanalysisState = reanalysis;
+      const projection = projectCaseSubmitState(status);
+      input.disabled = projection.inputDisabled;
+      pasteButton.disabled = projection.pasteDisabled;
+      actionsHost.innerHTML = actionMarkup(projection);
+      bindCommonActions();
+    };
+
+    const resetForAnotherCase = () => {
+      stopTaskPolling();
+      activeCaseId = null;
+      reanalysisState = null;
+      input.value = "";
+      resultBox.innerHTML = "";
+      document.querySelector("#case-form-error").classList.remove("visible");
+      const projection = resetCaseSubmitState();
+      setSubmitState(projection.status);
+      updateDetection();
+      input.focus();
+    };
     const updateDetection = () => {
       const value = input.value.trim();
       detection.textContent = !value ? "输入链接后自动识别来源" : /douyin\.com/i.test(value) ? "已识别：抖音视频" : "当前未识别到支持的视频来源";
       detection.className = value && /douyin\.com/i.test(value) ? "source-detection" : "source-detection muted";
     };
     input.addEventListener("input", updateDetection);
-    document.querySelector("[data-paste]").addEventListener("click", async () => {
+    pasteButton.addEventListener("click", async () => {
       if (!navigator.clipboard?.readText) return showToast("当前浏览器不支持读取剪贴板，请长按输入框粘贴。");
       try { input.value = await navigator.clipboard.readText(); updateDetection(); input.focus(); }
       catch { showToast("无法读取剪贴板，请手动粘贴链接。"); }
     });
-    document.querySelector("#case-url-form").addEventListener("submit", async (event) => {
+    actionsHost.addEventListener("click", async (event) => {
+      const resetButton = event.target.closest("[data-new-case-reset]");
+      if (resetButton) return resetForAnotherCase();
+      const reanalyzeButton = event.target.closest("[data-explicit-reanalysis]");
+      if (!reanalyzeButton || !projectCaseSubmitState(activeState).allowReanalysis) return;
+
+      let reason = "分析失败后由运营人员显式重新分析。";
+      if (reanalysisState === "rejected") {
+        reason = window.prompt("请填写为什么需要重新分析这个案例", "")?.trim() || "";
+        if (!reason) return;
+      }
+      setSubmitState("submitting");
+      try {
+        const restarted = await api("/api/cases/analyze", {
+          method: "POST",
+          body: JSON.stringify({ url: input.value, reanalyze: true, reason }),
+        });
+        resultBox.innerHTML = `<div data-live-progress></div>`;
+        bindTaskProgress(restarted.task, (status, task) => setSubmitState(status, {
+          caseId: task.subject_ref || activeCaseId,
+          reanalysis: status,
+        }));
+      } catch (error) {
+        showToast(error.detail?.next_action || error.message);
+        setSubmitState(reanalysisState || "failed");
+      }
+    });
+
+    form.addEventListener("submit", async (event) => {
       event.preventDefault();
-      const button = event.currentTarget.querySelector("button[type=submit]");
       const errorBox = document.querySelector("#case-form-error");
-      const resultBox = document.querySelector("#case-result");
-      errorBox.classList.remove("visible"); resultBox.innerHTML = ""; button.disabled = true; button.textContent = "正在提交…";
+      if (activeState !== "idle") return;
+      errorBox.classList.remove("visible"); resultBox.innerHTML = "";
+      setSubmitState("submitting");
       try {
         const result = await api("/api/cases/analyze", { method: "POST", body: JSON.stringify({ url: input.value }) });
-                if (result.duplicate) {
+        if (result.duplicate) {
           resultBox.innerHTML = duplicateResultHtml(result);
-          bindCommonActions();
-
-          const reanalyzeButton = resultBox.querySelector(
-            "[data-explicit-reanalysis]"
-          );
-
-          if (reanalyzeButton) {
-            reanalyzeButton.addEventListener(
-              "click",
-              async () => {
-                const state =
-                  reanalyzeButton.dataset.reanalysisState;
-
-                let reason = "";
-
-                if (state === "rejected") {
-                  reason =
-                    window.prompt(
-                      "请填写为什么需要重新分析这个案例",
-                      ""
-                    )?.trim() || "";
-
-                  if (!reason) return;
-                } else {
-                  reason =
-                    "分析失败后由运营人员显式重新分析。";
-                }
-
-                reanalyzeButton.disabled = true;
-                reanalyzeButton.textContent =
-                  "正在重新提交…";
-
-                try {
-                  const restarted = await api(
-                    "/api/cases/analyze",
-                    {
-                      method: "POST",
-                      body: JSON.stringify({
-                        url: input.value,
-                        reanalyze: true,
-                        reason,
-                      }),
-                    }
-                  );
-
-                  resultBox.innerHTML =
-                    `<div data-live-progress></div>`;
-
-                  bindTaskProgress(restarted.task);
-                } catch (error) {
-                  showToast(
-                    error.detail?.next_action ||
-                    error.message
-                  );
-                  reanalyzeButton.disabled = false;
-                  reanalyzeButton.textContent =
-                    "重新分析";
-                }
-              }
-            );
-          }
+          setSubmitState(result.state, { caseId: result.case_id, reanalysis: result.state });
         } else {
-          resultBox.innerHTML =
-            `<div data-live-progress></div>`;
-          bindTaskProgress(result.task);
+          resultBox.innerHTML = `<div data-live-progress></div>`;
+          bindTaskProgress(result.task, (status, task) => setSubmitState(status, {
+            caseId: task.subject_ref || result.case_id,
+            reanalysis: status,
+          }));
         }
       } catch (error) {
         const next = error.detail?.next_action ? `<div class="next-action"><strong>下一步</strong><span>${escapeHtml(error.detail.next_action)}</span></div>` : "";
         resultBox.innerHTML = `<div class="result-banner error"><h3>${escapeHtml(error.message)}</h3>${next}</div>`;
-      } finally { button.disabled = false; button.textContent = "开始分析"; }
+        setSubmitState("idle");
+      }
     });
+    setSubmitState("idle");
   }
 
   async function renderCaseDetail(caseId) {
@@ -235,7 +231,11 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
         const action = button.dataset.reviewAction;
         let reason = "";
         if (action === "approve") {
-          if (!window.confirm("确认已经对照原视频完成审核，并批准这个案例进入内部案例库？\n\n这不会赋予原视频素材客户生产使用权。")) return;
+          const recovery = button.textContent.includes("恢复");
+          const prompt = recovery
+            ? "确认恢复同一 Attempt 尚未完成的审批发布？\n\n系统不会执行第二次人工审批，也不会改变原视频素材使用权。"
+            : "确认已经对照原视频完成审核，并批准这个案例进入内部案例库？\n\n这不会赋予原视频素材客户生产使用权。";
+          if (!window.confirm(prompt)) return;
         } else {
           reason = window.prompt(action === "reanalyze" ? "请填写需要重新分析的原因" : "请填写不收录的原因", "")?.trim() || "";
           if (!reason) return;

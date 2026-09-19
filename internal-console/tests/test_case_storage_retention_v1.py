@@ -100,6 +100,9 @@ def test_case_review_uses_douyin_embed_after_local_media_cleanup(tmp_path: Path)
         f"https://www.douyin.com/video/{case_id}"
     )
     assert detail["review_media"]["remote_player_is_authority"] is False
+    assert detail["review_media"]["source_width"] is None
+    assert detail["review_media"]["source_height"] is None
+    assert detail["review_media"]["aspect_ratio"] == 9 / 16
 
 
 def test_case_review_uses_local_video_when_transient_media_is_available(tmp_path: Path):

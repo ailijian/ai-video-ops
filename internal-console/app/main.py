@@ -493,6 +493,12 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             "AUTHORITY_CHANGED_REFRESH_REQUIRED",
             "CONFIGURED_CUSTOMER_NOT_FOUND",
             "CURRENT_CUSTOMER_REQUIRED",
+            "CASE_ALREADY_APPROVED",
+            "APPROVED_CASE_IMMUTABLE",
+            "CASE_REVIEW_NOT_READY",
+            "CASE_APPROVAL_BLOCKED",
+            "CASE_SOURCE_GOVERNANCE_BLOCKED",
+            "CASE_APPROVAL_RECOVERY_REQUIRED",
         } else 503
         return JSONResponse(
             status_code=status_code,

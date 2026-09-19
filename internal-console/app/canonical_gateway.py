@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import hashlib
+import copy
+import logging
 import os
 import re
 import shutil
@@ -16,6 +18,8 @@ from urllib.parse import urlsplit, urlunsplit
 
 from .config import Settings
 from .subprocess_env import pipeline_subprocess_env
+
+logger = logging.getLogger(__name__)
 
 BUSINESS_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_]{1,127}$")
 DOUYIN_VIDEO_ID_RE = re.compile(r"(?:/video/|video_id=)(\d{10,24})")
@@ -167,6 +171,17 @@ def _case_metadata(case: dict[str, Any]) -> dict[str, Any]:
         return _read_json(metadata_path)
     except CanonicalOperationError:
         return {}
+
+
+def _source_dimensions(metadata: dict[str, Any]) -> tuple[int | None, int | None]:
+    video = metadata.get("video") if isinstance(metadata.get("video"), dict) else {}
+    width = video.get("width")
+    height = video.get("height")
+    if not isinstance(width, (int, float)) or not isinstance(height, (int, float)):
+        return None, None
+    if width <= 0 or height <= 0 or width > 16384 or height > 16384:
+        return None, None
+    return int(width), int(height)
 
 
 def _project_case(case_path: Path, *, attempt_id: str | None = None) -> CaseProjection:
@@ -410,8 +425,17 @@ def resolve_case_source_duplicate(
             # _project_case reads the Candidate's own lifecycle, which remains
             # review_required even after a Human rejects the attempt.
             # The attempt lifecycle is authoritative for the analysis state.
-            if status == "rejected":
-                existing_case["status"] = "rejected"
+        if status == "rejected" and existing_case is not None:
+            existing_case["status"] = "rejected"
+
+        rejection_reason = None
+        if status == "rejected":
+            decision_path = Path(str(state.get("human_review_decision") or ""))
+            if decision_path.is_file():
+                try:
+                    rejection_reason = str(_read_json(decision_path).get("reason") or "")
+                except CanonicalOperationError:
+                    rejection_reason = None
 
         if status in {"queued", "running"}:
             message = "这个视频正在分析。"
@@ -444,6 +468,7 @@ def resolve_case_source_duplicate(
             "can_reanalyze": can_reanalyze,
             "message": message,
             "next_action": next_action,
+            "rejection_reason": rejection_reason,
         }
 
     return None
@@ -504,6 +529,43 @@ def _case_title(case: dict[str, Any], case_path: Path) -> str:
     return cleaned or f"抖音案例 {case_id[-6:]}"
 
 
+def _partial_approval_state(
+    settings: Settings, case_id: str, case: dict[str, Any]
+) -> dict[str, Any] | None:
+    lifecycle = case.get("lifecycle") or {}
+    if lifecycle.get("status") != "approved" or lifecycle.get("approved") is not True:
+        return None
+    attempt_id = str((case.get("analysis_lineage") or {}).get("attempt_id") or "")
+    if not attempt_id:
+        return None
+    for _, state in _analysis_states(settings, case_id):
+        if str(state.get("attempt_id") or "") != attempt_id:
+            continue
+        if state.get("status") not in {"awaiting_review", "approved"}:
+            return None
+        companion_path = _approval_companion_path(settings, case_id)
+        if state.get("status") == "awaiting_review" or not companion_path.is_file():
+            return state
+        try:
+            _validate_governance_companion(
+                _read_json(companion_path),
+                case_path=settings.pipeline_root
+                / "data"
+                / "cases"
+                / case_id
+                / "case_v1.json",
+                receipt_path=settings.pipeline_root
+                / "data"
+                / "cases"
+                / case_id
+                / "approval_receipt.json",
+            )
+        except CanonicalOperationError:
+            return state
+        return None
+    return None
+
+
 def get_case_detail(settings: Settings, case_id: str) -> dict[str, Any]:
     if not re.fullmatch(r"\d{10,24}", case_id):
         raise CanonicalOperationError(
@@ -511,12 +573,16 @@ def get_case_detail(settings: Settings, case_id: str) -> dict[str, Any]:
         )
     case_path, attempt = _find_case_path(settings, case_id)
     case = _read_json(case_path)
+    recovery_state = _partial_approval_state(settings, case_id, case)
     projection = _project_case(
         case_path,
         attempt_id=str(attempt.get("attempt_id")) if attempt else None,
     ).to_dict()
     understanding = (case.get("storyboard") or {}).get("video_understanding") or {}
     metadata = _case_metadata(case)
+    source_width, source_height = _source_dimensions(metadata)
+    if recovery_state is not None:
+        projection["status"] = "awaiting_review"
     sequence = [
         _safe_chinese_text(item.get("description"), max_length=260)
         for item in (understanding.get("structure_sequence") or [])
@@ -600,10 +666,17 @@ def get_case_detail(settings: Settings, case_id: str) -> dict[str, Any]:
             "shots": shots,
         },
         "review": {
-            "can_review": lifecycle.get("status") == "review_required",
+            "can_review": lifecycle.get("status") == "review_required"
+            or recovery_state is not None,
             "approved": lifecycle.get("status") == "approved"
-            and lifecycle.get("approved") is True,
-            "attempt_id": str(attempt.get("attempt_id")) if attempt else None,
+            and lifecycle.get("approved") is True
+            and recovery_state is None,
+            "approval_recovery_required": recovery_state is not None,
+            "attempt_id": (
+                str(recovery_state.get("attempt_id"))
+                if recovery_state is not None
+                else str(attempt.get("attempt_id")) if attempt else None
+            ),
         },
         "review_media": {
             "local_available": local_media_available,
@@ -615,6 +688,13 @@ def get_case_detail(settings: Settings, case_id: str) -> dict[str, Any]:
             ),
             "source_url": review_source_url,
             "remote_player_is_authority": False,
+            "source_width": source_width,
+            "source_height": source_height,
+            "aspect_ratio": (
+                source_width / source_height
+                if source_width is not None and source_height is not None
+                else 9 / 16
+            ),
         },
         "media_rights": {
             "production_authorized": False,
@@ -662,15 +742,46 @@ def _write_atomic(path: Path, value: dict[str, Any]) -> None:
     os.replace(temporary, path)
 
 
-def _governance_companion(settings: Settings, case_path: Path) -> dict[str, Any]:
-    case = _read_json(case_path)
-    receipt = case_path.parent / "approval_receipt.json"
-    policy = (
+def _governance_policy_path(settings: Settings) -> Path:
+    return (
         settings.pipeline_root
         / "data"
         / "case_governance"
         / "case_source_governance_policy_v1.json"
     )
+
+
+def _governance_companion(
+    settings: Settings,
+    case_path: Path,
+    *,
+    canonical_case_path: Path | None = None,
+) -> dict[str, Any]:
+    case = _read_json(case_path)
+    receipt = case_path.parent / "approval_receipt.json"
+    published_case_path = canonical_case_path or case_path
+    published_receipt_path = published_case_path.parent / "approval_receipt.json"
+    legacy_gate = case.get("source_rights_gate")
+    policy = _governance_policy_path(settings)
+    if legacy_gate is not None and not policy.is_file():
+        raise CanonicalOperationError(
+            "CASE_SOURCE_GOVERNANCE_BLOCKED",
+            "历史案例缺少已冻结的来源治理策略，不能完成入库。",
+            "请恢复与该历史案例匹配的 Approved/Frozen Governance Policy 后重试。",
+        )
+    if legacy_gate is not None:
+        policy_value = _read_json(policy)
+        if (
+            policy_value.get("schema_version")
+            != "case-source-governance-policy-v1.0"
+            or policy_value.get("status") != "approved_frozen"
+            or policy_value.get("version") != "V1.0"
+        ):
+            raise CanonicalOperationError(
+                "CASE_SOURCE_GOVERNANCE_BLOCKED",
+                "历史案例的来源治理策略无效，不能完成入库。",
+                "请恢复有效的 Approved/Frozen Governance Policy V1.0 后重试。",
+            )
     source_path = Path(
         str(
             (((case.get("source_evidence") or {}).get("video") or {}).get("path")) or ""
@@ -700,19 +811,19 @@ def _governance_companion(settings: Settings, case_path: Path) -> dict[str, Any]
     )
     return {
         "schema_version": "case-source-governance-companion-v1.0",
-        "builder_version": "internal-console-case-approval-gateway@1.0",
+        "builder_version": "internal-console-case-approval-gateway@1.1",
         "companion_id": f"case_source_governance_companion_v1::{case['case_id']}",
         "case_id": case["case_id"],
         "canonical_case_status": "approved",
         "case_ref": {
             "artifact_type": "approved_case",
-            "path": str(case_path),
+            "path": str(published_case_path),
             "sha256": _sha256(case_path),
             "source_artifact_modified": False,
         },
         "case_approval_receipt_ref": {
             "artifact_type": "case_approval_receipt",
-            "path": str(receipt),
+            "path": str(published_receipt_path),
             "sha256": _sha256(receipt),
             "source_artifact_modified": False,
         },
@@ -754,20 +865,329 @@ def _governance_companion(settings: Settings, case_path: Path) -> dict[str, Any]
         "production_footage_pool_eligible": False,
         "privacy_basis": "embedded_privacy_gate_library_safe",
         "legacy_source_rights_field_observation": {
-            "present": False,
-            "status": None,
+            "present": legacy_gate is not None,
+            "status": (
+                str((legacy_gate or {}).get("status") or "") or None
+                if isinstance(legacy_gate, dict)
+                else None
+            ),
             "used_as_current_governance_authority": False,
         },
-        "governance_policy_version": "V1.0",
-        "governance_policy_ref": {
-            "artifact_type": "case_source_governance_policy_v1",
-            "path": str(policy),
-            "sha256": _sha256(policy),
-            "source_artifact_modified": False,
-        },
+        "governance_policy_version": "V1.0" if legacy_gate is not None else None,
+        "governance_policy_ref": (
+            {
+                "applicable": True,
+                "artifact_type": "case_source_governance_policy_v1",
+                "path": str(policy),
+                "sha256": _sha256(policy),
+                "source_artifact_modified": False,
+            }
+            if legacy_gate is not None
+            else {
+                "applicable": False,
+                "artifact_type": "case_source_governance_policy_v1",
+                "path": None,
+                "sha256": None,
+                "source_artifact_modified": False,
+            }
+        ),
         "case_approval_changed_media_reuse_rights": False,
         "created_at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def _approval_companion_path(settings: Settings, case_id: str) -> Path:
+    return (
+        settings.pipeline_root
+        / "data"
+        / "case_governance"
+        / "cases"
+        / case_id
+        / "case_source_governance_companion_v1.json"
+    )
+
+
+def _approval_candidate(
+    settings: Settings, case_id: str
+) -> tuple[Path, dict[str, Any]] | None:
+    for _, state in _analysis_states(settings, case_id):
+        candidate = Path(
+            str((state.get("artifacts") or {}).get("case_candidate_v1") or "")
+        )
+        if state.get("status") in {"awaiting_review", "approved"} and candidate.is_file():
+            return candidate, state
+    return None
+
+
+def _approval_block(message: str, next_action: str) -> CanonicalOperationError:
+    return CanonicalOperationError("CASE_APPROVAL_BLOCKED", message, next_action)
+
+
+def _validate_approved_case_artifacts(
+    case_path: Path,
+    *,
+    expected_case_id: str,
+    expected_attempt_id: str,
+    expected_reviewer: str | None = None,
+    recovery: bool = False,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    code = "CASE_APPROVAL_RECOVERY_REQUIRED" if recovery else "CASE_APPROVAL_BLOCKED"
+
+    def invalid(message: str) -> None:
+        raise CanonicalOperationError(
+            code,
+            message,
+            "请核对当前 Attempt lineage 与必需审批 artifact 后重试；不要手工修改 Authority 文件。",
+        )
+
+    case = _read_json(case_path)
+    receipt_path = case_path.parent / "approval_receipt.json"
+    if not receipt_path.is_file():
+        invalid("案例审批回执缺失，审批未完成。")
+    receipt = _read_json(receipt_path)
+    lifecycle = case.get("lifecycle") or {}
+    approval = case.get("approval") or {}
+    lineage = case.get("analysis_lineage") or {}
+    if str(case.get("case_id") or "") != expected_case_id:
+        invalid("审批后的 Case identity 与请求不一致。")
+    if str(lineage.get("attempt_id") or "") != expected_attempt_id:
+        invalid("已批准 Case 来自不同的分析 Attempt，不能自动补齐。")
+    if lifecycle.get("status") != "approved" or lifecycle.get("approved") is not True:
+        invalid("审批脚本没有形成完整的 approved lifecycle。")
+    if (
+        receipt.get("case_id") != expected_case_id
+        or receipt.get("decision") != "approved"
+        or receipt.get("human_gate") is not True
+    ):
+        invalid("案例审批回执与 Human Gate 不一致。")
+    reviewer = str(approval.get("reviewer") or "")
+    if not reviewer or reviewer != str(receipt.get("reviewer") or ""):
+        invalid("案例与审批回执的 Human reviewer 不一致。")
+    if expected_reviewer is not None and reviewer != expected_reviewer:
+        invalid("审批结果未保留当前登录审核人。")
+    if str(receipt.get("case_sha256_after_approval") or "").lower() != _sha256(
+        case_path
+    ):
+        invalid("案例审批回执的 SHA-256 与 approved Case 不一致。")
+    traceability = approval.get("source_traceability") or {}
+    recorded_sha = str(traceability.get("recorded_source_sha256") or "").lower()
+    if not (
+        traceability.get("traceable") is True
+        and traceability.get("acquisition_lineage_valid") is True
+        and traceability.get("source_metadata_valid") is True
+        and str(traceability.get("stable_video_id") or "") == expected_case_id
+        and str(traceability.get("source_url") or "")
+        and re.fullmatch(r"[0-9a-f]{64}", recorded_sha)
+    ):
+        invalid("案例来源 URL、稳定编号、媒体 SHA 或 acquisition lineage 无效。")
+    privacy = case.get("privacy_gate") or {}
+    if not (
+        privacy.get("library_safe") is True
+        and privacy.get("unresolved_sensitive_items") == 0
+        and privacy.get("derived_artifact_scan_passed") is True
+    ):
+        invalid("案例隐私投影尚未满足入库条件。")
+    if approval.get("media_reuse_authorized") is True:
+        invalid("案例审批不得授予原媒体复用权。")
+    if receipt.get("case_approval_grants_media_reuse") is True:
+        invalid("案例审批回执不得授予原媒体复用权。")
+    return case, receipt
+
+
+def _validate_governance_companion(
+    companion: dict[str, Any],
+    *,
+    case_path: Path,
+    receipt_path: Path,
+) -> None:
+    expected_case_id = str(_read_json(case_path).get("case_id") or "")
+    if not (
+        companion.get("canonical_case_status") == "approved"
+        and companion.get("case_id") == expected_case_id
+        and (companion.get("source_provenance") or {}).get("traceable") is True
+        and companion.get("media_reuse_rights") == "not_established"
+        and companion.get("production_footage_pool_eligible") is False
+        and (companion.get("case_ref") or {}).get("sha256") == _sha256(case_path)
+        and (companion.get("case_approval_receipt_ref") or {}).get("sha256")
+        == _sha256(receipt_path)
+    ):
+        raise CanonicalOperationError(
+            "CASE_SOURCE_GOVERNANCE_BLOCKED",
+            "案例来源治理 companion 校验失败。",
+            "请核对来源 lineage 与审批回执后重试；不要手工补写 companion。",
+        )
+
+
+def _remove_staged_path(path: Path) -> None:
+    if path.is_dir():
+        shutil.rmtree(path)
+    elif path.exists():
+        path.unlink()
+
+
+def _publish_approval_transaction(
+    *,
+    staged_case_dir: Path,
+    canonical_dir: Path,
+    staged_companion_path: Path,
+    companion_path: Path,
+    staged_state_path: Path,
+    state_path: Path,
+) -> None:
+    transaction_id = uuid.uuid4().hex
+    canonical_backup = canonical_dir.parent / f".{canonical_dir.name}.{transaction_id}.rollback"
+    companion_backup = companion_path.parent / f".{companion_path.name}.{transaction_id}.rollback"
+    canonical_was_present = canonical_dir.exists()
+    companion_was_present = companion_path.exists()
+    canonical_published = False
+    companion_published = False
+    try:
+        canonical_dir.parent.mkdir(parents=True, exist_ok=True)
+        companion_path.parent.mkdir(parents=True, exist_ok=True)
+        if canonical_was_present:
+            os.replace(canonical_dir, canonical_backup)
+        if companion_was_present:
+            os.replace(companion_path, companion_backup)
+        os.replace(staged_companion_path, companion_path)
+        companion_published = True
+        os.replace(staged_case_dir, canonical_dir)
+        canonical_published = True
+        os.replace(staged_state_path, state_path)
+    except OSError as exc:
+        if canonical_published:
+            _remove_staged_path(canonical_dir)
+        if canonical_was_present and canonical_backup.exists():
+            os.replace(canonical_backup, canonical_dir)
+        if companion_published:
+            _remove_staged_path(companion_path)
+        if companion_was_present and companion_backup.exists():
+            os.replace(companion_backup, companion_path)
+        raise _approval_block(
+            "案例审批 artifact 发布失败，原 Authority 已保持不变。",
+            "请检查本机文件系统后重试审批。",
+        ) from exc
+    else:
+        _remove_staged_path(canonical_backup)
+        _remove_staged_path(companion_backup)
+
+
+def _run_case_fingerprint(settings: Settings, case_path: Path) -> str:
+    try:
+        result = subprocess.run(
+            [
+                settings.pipeline_python_executable or settings.python_executable,
+                str(settings.pipeline_root / "scripts" / "build_case_fingerprint_v1.py"),
+                "--case",
+                str(case_path),
+            ],
+            cwd=settings.repo_root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return "retry_required"
+    return "completed" if result.returncode == 0 else "retry_required"
+
+
+def _update_fingerprint_status(state_path: Path, status: str) -> None:
+    try:
+        state = _read_json(state_path)
+        state["fingerprint_status"] = status
+        state["updated_at"] = datetime.now(timezone.utc).isoformat()
+        _write_atomic(state_path, state)
+    except (CanonicalOperationError, OSError):
+        logger.exception("Unable to persist optional Case fingerprint status")
+
+
+def _reconcile_partial_case_approval(
+    settings: Settings,
+    case_id: str,
+    candidate_path: Path,
+    state: dict[str, Any],
+    *,
+    requested_by: str,
+) -> dict[str, Any]:
+    canonical_path = settings.pipeline_root / "data" / "cases" / case_id / "case_v1.json"
+    state_path = candidate_path.parents[2] / "case_analysis_attempt_v1.json"
+    attempt_id = str(state.get("attempt_id") or "")
+    _, receipt = _validate_approved_case_artifacts(
+        canonical_path,
+        expected_case_id=case_id,
+        expected_attempt_id=attempt_id,
+        recovery=True,
+    )
+    companion_path = _approval_companion_path(settings, case_id)
+    companion_exists = companion_path.is_file()
+    if companion_exists:
+        _validate_governance_companion(
+            _read_json(companion_path),
+            case_path=canonical_path,
+            receipt_path=canonical_path.parent / "approval_receipt.json",
+        )
+    if state.get("status") == "approved" and companion_exists:
+        raise CanonicalOperationError(
+            "CASE_ALREADY_APPROVED",
+            "这个案例已经完整入库。",
+            "请返回案例库查看，不要重复审批。",
+        )
+
+    now = datetime.now(timezone.utc).isoformat()
+    next_state = copy.deepcopy(state)
+    next_state.update(
+        {
+            "status": "approved",
+            "approved_case_path": str(canonical_path),
+            "governance_companion_path": str(companion_path),
+            "fingerprint_status": str(state.get("fingerprint_status") or "pending"),
+            "updated_at": now,
+            "approval_reconciliation": {
+                "kind": "system_partial_approval_reconciliation",
+                "reconciled_at": now,
+                "requested_by": requested_by,
+                "original_reviewer": receipt.get("reviewer"),
+                "attempt_id": attempt_id,
+                "canonical_case_sha256": _sha256(canonical_path),
+                "approval_receipt_sha256": _sha256(
+                    canonical_path.parent / "approval_receipt.json"
+                ),
+                "second_human_approval_performed": False,
+            },
+        }
+    )
+    staged_state = state_path.parent / ".approval-state.stage"
+    staged_companion = companion_path.parent / ".approval-companion.stage"
+    _write_atomic(staged_state, next_state)
+    try:
+        if not companion_exists:
+            companion = _governance_companion(settings, canonical_path)
+            _validate_governance_companion(
+                companion,
+                case_path=canonical_path,
+                receipt_path=canonical_path.parent / "approval_receipt.json",
+            )
+            _write_atomic(staged_companion, companion)
+            companion_path.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(staged_companion, companion_path)
+        try:
+            os.replace(staged_state, state_path)
+        except OSError as exc:
+            if not companion_exists:
+                _remove_staged_path(companion_path)
+            raise CanonicalOperationError(
+                "CASE_APPROVAL_RECOVERY_REQUIRED",
+                "审批恢复状态写入失败，approved Case 未被修改。",
+                "请检查文件系统后重试同一案例审批。",
+            ) from exc
+    finally:
+        _remove_staged_path(staged_state)
+        _remove_staged_path(staged_companion)
+    fingerprint_status = _run_case_fingerprint(settings, canonical_path)
+    _update_fingerprint_status(state_path, fingerprint_status)
+    return get_case_detail(settings, case_id)
 
 
 def approve_case_candidate(
@@ -777,12 +1197,13 @@ def approve_case_candidate(
     reviewer: str,
     note: str,
 ) -> dict[str, Any]:
-    candidate = _latest_candidate(settings, case_id)
+    candidate = _approval_candidate(settings, case_id)
+    canonical_dir = settings.pipeline_root / "data" / "cases" / case_id
+    canonical_path = canonical_dir / "case_v1.json"
     if candidate is None:
-        canonical = settings.pipeline_root / "data" / "cases" / case_id / "case_v1.json"
         if (
-            canonical.is_file()
-            and (_read_json(canonical).get("lifecycle") or {}).get("status")
+            canonical_path.is_file()
+            and (_read_json(canonical_path).get("lifecycle") or {}).get("status")
             == "approved"
         ):
             raise CanonicalOperationError(
@@ -794,89 +1215,129 @@ def approve_case_candidate(
             "请等待分析完成后重试。",
         )
     candidate_path, state = candidate
-    canonical_dir = settings.pipeline_root / "data" / "cases" / case_id
-    canonical_path = canonical_dir / "case_v1.json"
+    attempt_id = str(state.get("attempt_id") or "")
     if canonical_path.is_file():
         current = _read_json(canonical_path)
         if (current.get("lifecycle") or {}).get("status") == "approved":
-            raise CanonicalOperationError(
-                "APPROVED_CASE_IMMUTABLE",
-                "已入库案例不能被重新分析结果覆盖。",
-                "保留当前已入库版本；如需版本升级，请建立单独的 Case revision contract。",
+            return _reconcile_partial_case_approval(
+                settings,
+                case_id,
+                candidate_path,
+                state,
+                requested_by=reviewer,
             )
         backup = candidate_path.parents[2] / "superseded_canonical"
         if not backup.exists():
             shutil.copytree(canonical_dir, backup)
-        shutil.rmtree(canonical_dir)
-    temporary_dir = canonical_dir.parent / f".{case_id}.{uuid.uuid4().hex}.tmp"
+    if state.get("status") != "awaiting_review":
+        raise CanonicalOperationError(
+            "CASE_APPROVAL_RECOVERY_REQUIRED",
+            "Attempt 状态与 canonical approval 状态不一致。",
+            "请核对当前 Attempt 后重试；不要创建第二次人工审批。",
+        )
+    transaction_id = uuid.uuid4().hex[:8]
+    temporary_dir = canonical_dir.parent / f".{case_id}.{transaction_id}.stage"
+    canonical_dir.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(candidate_path.parent, temporary_dir)
-    os.replace(temporary_dir, canonical_dir)
+    staged_case_path = temporary_dir / "case_v1.json"
+    candidate_value = _read_json(candidate_path)
+    policy = _governance_policy_path(settings)
+    legacy_policy_required = candidate_value.get("source_rights_gate") is not None
+    if legacy_policy_required and not policy.is_file():
+        _remove_staged_path(temporary_dir)
+        raise CanonicalOperationError(
+            "CASE_SOURCE_GOVERNANCE_BLOCKED",
+            "历史案例缺少已冻结的来源治理策略，不能完成入库。",
+            "请恢复与该历史案例匹配的 Approved/Frozen Governance Policy 后重试。",
+        )
     command = [
         settings.pipeline_python_executable or settings.python_executable,
         str(settings.pipeline_root / "scripts" / "approve_case_v1.py"),
         "--case",
-        str(canonical_path),
+        str(staged_case_path),
         "--reviewer",
         reviewer,
         "--note",
         note,
     ]
-    result = subprocess.run(
-        command,
-        cwd=settings.repo_root,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=120,
-        check=False,
-    )
+    if legacy_policy_required:
+        command.extend(["--governance-policy", str(policy)])
+    try:
+        result = subprocess.run(
+            command,
+            cwd=settings.repo_root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        _remove_staged_path(temporary_dir)
+        raise _approval_block(
+            "案例审批校验暂时无法完成。",
+            "请检查本机 Pipeline runtime 后重试。",
+        ) from exc
     if result.returncode != 0:
-        raise CanonicalOperationError(
-            "CASE_APPROVAL_BLOCKED",
+        logger.warning("Case approval blocked for %s: %s", case_id, result.stderr or result.stdout)
+        _remove_staged_path(temporary_dir)
+        raise _approval_block(
             "案例未通过入库校验。",
             "请根据分析与来源边界修正后重新审核。",
         )
-    companion = _governance_companion(settings, canonical_path)
-    if companion["source_provenance"]["traceable"] is not True:
-        raise CanonicalOperationError(
-            "CASE_SOURCE_GOVERNANCE_BLOCKED",
-            "案例来源无法追溯，不能完成入库。",
-            "请恢复来源链接、稳定视频编号、已记录媒体 SHA 与采集 lineage 后重试。",
-        )
-    companion_path = (
-        settings.pipeline_root
-        / "data"
-        / "case_governance"
-        / "cases"
-        / case_id
-        / "case_source_governance_companion_v1.json"
-    )
-    _write_atomic(companion_path, companion)
-    fingerprint_result = subprocess.run(
-        [
-            settings.pipeline_python_executable or settings.python_executable,
-            str(settings.pipeline_root / "scripts" / "build_case_fingerprint_v1.py"),
-            "--case",
-            str(canonical_path),
-        ],
-        cwd=settings.repo_root,
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        timeout=120,
-        check=False,
-    )
-    state["status"] = "approved"
-    state["approved_case_path"] = str(canonical_path)
-    state["governance_companion_path"] = str(companion_path)
-    state["fingerprint_status"] = (
-        "completed" if fingerprint_result.returncode == 0 else "retry_required"
-    )
-    state["updated_at"] = datetime.now(timezone.utc).isoformat()
+
+    companion_path = _approval_companion_path(settings, case_id)
+    staged_companion_path = companion_path.parent / ".approval-companion.stage"
     state_path = candidate_path.parents[2] / "case_analysis_attempt_v1.json"
-    _write_atomic(state_path, state)
+    staged_state_path = state_path.parent / ".approval-state.stage"
+    try:
+        staged_receipt_path = staged_case_path.parent / "approval_receipt.json"
+        staged_receipt = _read_json(staged_receipt_path)
+        staged_receipt["case_path"] = str(canonical_path)
+        _write_atomic(staged_receipt_path, staged_receipt)
+        _validate_approved_case_artifacts(
+            staged_case_path,
+            expected_case_id=case_id,
+            expected_attempt_id=attempt_id,
+            expected_reviewer=reviewer,
+        )
+        companion = _governance_companion(
+            settings,
+            staged_case_path,
+            canonical_case_path=canonical_path,
+        )
+        _validate_governance_companion(
+            companion,
+            case_path=staged_case_path,
+            receipt_path=staged_receipt_path,
+        )
+        _write_atomic(staged_companion_path, companion)
+        next_state = copy.deepcopy(state)
+        next_state.update(
+            {
+                "status": "approved",
+                "approved_case_path": str(canonical_path),
+                "governance_companion_path": str(companion_path),
+                "fingerprint_status": "pending",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        )
+        _write_atomic(staged_state_path, next_state)
+        _publish_approval_transaction(
+            staged_case_dir=temporary_dir,
+            canonical_dir=canonical_dir,
+            staged_companion_path=staged_companion_path,
+            companion_path=companion_path,
+            staged_state_path=staged_state_path,
+            state_path=state_path,
+        )
+    finally:
+        _remove_staged_path(temporary_dir)
+        _remove_staged_path(staged_companion_path)
+        _remove_staged_path(staged_state_path)
+    fingerprint_status = _run_case_fingerprint(settings, canonical_path)
+    _update_fingerprint_status(state_path, fingerprint_status)
     return get_case_detail(settings, case_id)
 
 

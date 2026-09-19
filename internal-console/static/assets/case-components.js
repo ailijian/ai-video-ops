@@ -88,9 +88,14 @@ export function caseReviewContent(detail, statusPill) {
   const development = paragraphList(detail.how_it_tells?.development);
   const reviewMedia = detail.review_media || {};
   const sourceUrl = reviewMedia.source_url || "";
+  const sourceWidth = Number(reviewMedia.source_width) || 9;
+  const sourceHeight = Number(reviewMedia.source_height) || 16;
+  const orientation = sourceWidth > sourceHeight ? "landscape" : "portrait";
   const mediaSurface = reviewMedia.local_available
     ? `<video controls playsinline preload="metadata" src="${escapeHtml(reviewMedia.local_url)}"></video>`
-    : `<iframe class="douyin-review-player" src="${escapeHtml(reviewMedia.remote_embed_url)}" title="抖音原视频审核预览" loading="lazy" allowfullscreen></iframe>`;
+    : `<div class="douyin-review-player-frame ${orientation}" style="--source-aspect-ratio:${sourceWidth} / ${sourceHeight}">
+        <iframe class="douyin-review-player" src="${escapeHtml(reviewMedia.remote_embed_url)}" title="抖音原视频审核预览" loading="lazy" allowfullscreen></iframe>
+      </div>`;
   const sourceLink = sourceUrl
     ? `<a class="source-video-link" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">在抖音打开原视频</a>`
     : "";
@@ -134,7 +139,8 @@ export function caseReviewContent(detail, statusPill) {
         </details>
       </div>
       <aside class="review-aside"><section class="card review-decision"><h2>人工审核</h2>
-        ${detail.review?.approved ? `<div class="approved-message"><strong>已进入案例库</strong><p>结构研究已批准；原视频素材使用权没有改变。</p></div>` : `<p>请对照原视频确认内容理解、叙事顺序与画面拆解是否可靠。</p>
+        ${detail.review?.approved ? `<div class="approved-message"><strong>已进入案例库</strong><p>结构研究已批准；原视频素材使用权没有改变。</p></div>` : detail.review?.approval_recovery_required ? `<p>系统检测到同一 Attempt 的审批 artifact 尚未全部发布。恢复只补齐 companion 与状态，不会执行第二次人工审批。</p>
+          <button class="btn btn-primary btn-wide" type="button" data-review-action="approve">完成审批恢复</button>` : `<p>请对照原视频确认内容理解、叙事顺序与画面拆解是否可靠。</p>
           <button class="btn btn-primary btn-wide" type="button" data-review-action="approve">批准入库</button>
           <button class="btn btn-secondary btn-wide" type="button" data-review-action="reanalyze">退回重新分析</button>
           <button class="btn btn-quiet btn-wide danger-text" type="button" data-review-action="reject">不收录</button>`}
