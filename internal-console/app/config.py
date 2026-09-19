@@ -49,7 +49,7 @@ class Settings:
     task_heartbeat_seconds: int = 10
     storage_maintenance_interval_seconds: int = 3600
     session_last_seen_interval_seconds: int = 300
-    default_business_id: str = "shufang_zhiyuan_community_canteen"
+    default_business_id: str | None = None
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -119,7 +119,7 @@ class Settings:
                 60,
                 int(os.environ.get("AIVO_SESSION_LAST_SEEN_INTERVAL_SECONDS", "300")),
             ),
-            default_business_id=os.environ.get(
-                "AIVO_DEFAULT_BUSINESS_ID", "shufang_zhiyuan_community_canteen"
+            default_business_id=(
+                os.environ.get("AIVO_DEFAULT_BUSINESS_ID", "").strip() or None
             ),
         )

@@ -52,10 +52,6 @@ const navItems = [
   { path: "/tasks", label: "任务记录", mobileLabel: "任务", icon: "tasks" },
 ];
 
-const businessLabels = {
-  shufang_zhiyuan_community_canteen: "书房市集志泉社区食堂",
-};
-
 function escapeHtml(value) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")
@@ -304,12 +300,9 @@ async function renderWorkbench() {
   skeletonPage("工作台");
   try {
     const data = await api("/api/workbench");
-    const status = data.status;
-    const businessId = status.business.business_id;
-    const name = businessLabels[businessId] || businessId;
-    const hold = status.operational_hold;
-    const content = status.content;
-    const truth = status.customer_truth;
+    const status = data.status || null;
+    const hasCustomers = data.has_customers === true;
+    const customers = data.customers || [];
     const attentionTotal = data.attention.case_reviews + data.attention.persona_reviews + data.attention.content_reviews;
     const attentionCards = [
       [data.attention.case_reviews, "案例等待审核", "/cases", "查看案例"],
@@ -319,28 +312,31 @@ async function renderWorkbench() {
     ].map(([number, label, path, action]) => `
       <article class="card attention-card"><div><div class="number">${number}</div><div class="label">${label}</div></div>
         <a class="inline-link" href="${path}" data-route><span>${action}</span>${icons.arrow}</a></article>`).join("");
-    const body = `
-      <main class="page">
-        ${pageHeading("今日", "今天需要做什么", attentionTotal ? `有 ${attentionTotal} 件事等待处理。` : "当前没有待审核事项，先查看运营状态。")}
-        <div class="dashboard-grid">
-          <section class="card hold-card">
-            <div class="status-kicker"><span class="status-dot"></span>${hold.active ? "已暂停" : "可以继续"}</div>
-            <h2>${hold.active ? "客户联系已暂停" : "客户运营可以继续"}</h2>
-            <p>${hold.active ? "你暂时决定不联系客户补拍素材。解除暂停前，这批补拍任务不会继续发送。" : "请按当前下一步继续处理。"}</p>
-            <div class="hold-next">当前下一步<strong>${escapeHtml(displayNextAction(status.primary_next_action))}</strong></div>
-          </section>
-          <section class="attention-grid" aria-label="待处理事项">${attentionCards}</section>
-        </div>
+    const contentCreation = data.capabilities?.content_creation || {};
+    const creationCard = contentCreation.available
+      ? `<a class="card quick-card" href="/create" data-route><span class="quick-icon">${icons.create}</span><div><strong>开始视频创作</strong><span>选择客户与出镜人</span></div></a>`
+      : `<article class="card quick-card quick-card-disabled" aria-disabled="true"><span class="quick-icon">${icons.create}</span><div><strong>开始视频创作</strong><span>需要已批准的客户与出镜人</span></div></article>`;
+    let operationalCard;
+    let customerSection;
+    let headingDescription;
 
-        <section class="section">
-          <div class="section-head"><div><h2>快捷开始</h2><p>从常用生产入口继续</p></div></div>
-          <div class="quick-grid">
-            <a class="card quick-card" href="/cases/new" data-route><span class="quick-icon">${icons.link}</span><div><strong>添加案例</strong><span>粘贴真实视频链接</span></div></a>
-            <a class="card quick-card" href="/customers/new" data-route><span class="quick-icon">${icons.customers}</span><div><strong>新建客户</strong><span>整理已有客户资料</span></div></a>
-            <a class="card quick-card" href="/create" data-route><span class="quick-icon">${icons.create}</span><div><strong>开始视频创作</strong><span>选择客户与出镜人</span></div></a>
-          </div>
-        </section>
-
+    if (status) {
+      const businessId = status.business.business_id;
+      const selectedCustomer = customers.find(
+        (customer) => customer.business_id === businessId,
+      );
+      const name = selectedCustomer?.display_name || businessId;
+      const hold = status.operational_hold;
+      const content = status.content;
+      const truth = status.customer_truth;
+      operationalCard = `
+        <section class="card hold-card">
+          <div class="status-kicker"><span class="status-dot"></span>${hold.active ? "已暂停" : "可以继续"}</div>
+          <h2>${hold.active ? "客户联系已暂停" : "客户运营可以继续"}</h2>
+          <p>${hold.active ? "你暂时决定不联系客户补拍素材。解除暂停前，这批补拍任务不会继续发送。" : "请按当前下一步继续处理。"}</p>
+          <div class="hold-next">当前下一步<strong>${escapeHtml(displayNextAction(status.primary_next_action))}</strong></div>
+        </section>`;
+      customerSection = `
         <section class="section">
           <div class="section-head"><div><h2>当前客户</h2><p>查看当前可继续处理的工作</p></div></div>
           <article class="card customer-snapshot">
@@ -352,7 +348,48 @@ async function renderWorkbench() {
               <div class="metric"><span>最近批次</span><strong>已有完成记录</strong></div>
             </div>
           </article>
+        </section>`;
+      headingDescription = attentionTotal ? `有 ${attentionTotal} 件事等待处理。` : "当前没有待审核事项，先查看运营状态。";
+    } else if (!hasCustomers) {
+      operationalCard = `
+        <section class="card empty-state workbench-empty-state">
+          <div class="empty-icon">${icons.customers}</div>
+          <h2>还没有客户</h2>
+          <p>从添加案例或建立第一个客户开始。</p>
+        </section>`;
+      customerSection = "";
+      headingDescription = "还没有客户，从添加案例或建立第一个客户开始。";
+    } else {
+      const selectionError = data.customer_selection?.error;
+      operationalCard = `
+        <section class="card empty-state workbench-empty-state">
+          <div class="empty-icon">${icons.customers}</div>
+          <h2>尚未选择当前客户</h2>
+          <p>${escapeHtml(selectionError?.message || `已有 ${customers.length} 个客户，请从客户列表选择。`)}</p>
+          <a class="btn btn-secondary" href="/customers" data-route>查看客户</a>
+        </section>`;
+      customerSection = "";
+      headingDescription = attentionTotal ? `有 ${attentionTotal} 件事等待处理。` : "请选择客户后查看对应运营状态。";
+    }
+
+    const body = `
+      <main class="page">
+        ${pageHeading("今日", "今天需要做什么", headingDescription)}
+        <div class="dashboard-grid">
+          ${operationalCard}
+          <section class="attention-grid" aria-label="待处理事项">${attentionCards}</section>
+        </div>
+
+        <section class="section">
+          <div class="section-head"><div><h2>快捷开始</h2><p>从常用生产入口继续</p></div></div>
+          <div class="quick-grid">
+            <a class="card quick-card" href="/cases/new" data-route><span class="quick-icon">${icons.link}</span><div><strong>添加案例</strong><span>粘贴真实视频链接</span></div></a>
+            <a class="card quick-card" href="/customers/new" data-route><span class="quick-icon">${icons.customers}</span><div><strong>新建客户</strong><span>整理已有客户资料</span></div></a>
+            ${creationCard}
+          </div>
         </section>
+
+        ${customerSection}
       </main>`;
     app.innerHTML = shell("工作台", body);
     bindCommonActions();

@@ -52,6 +52,11 @@ installs only repository-declared dependencies, and runs `pip check`. Omit
 dependencies are wanted. It does not migrate Production data or change the
 host configuration.
 
+A fresh Production node does not require legacy Customer, Persona, Case, or
+Ledger data. Leave `AIVO_DEFAULT_BUSINESS_ID` unset at genesis. If configured
+later, it is only a Workbench convenience selection and must name an existing
+customer; it does not create or change business Authority.
+
 The ops-pipeline runtime contract is `ops-pipeline/requirements.txt`; its
 separate test contract is `ops-pipeline/requirements-dev.txt`. Internal Console
 continues to use `pip install -e ".[dev]"` from its existing `pyproject.toml`.

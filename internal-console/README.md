@@ -53,6 +53,12 @@ Do not add `--reload` or start a second instance.
   `AIVO_GPU_PENDING_PER_USER_MAX` (default 3) as operational safety limits.
 - Keep one Ollama instance and set its production process environment to
   `OLLAMA_NUM_PARALLEL=1` and `OLLAMA_MAX_LOADED_MODELS=1`.
+- Leave `AIVO_DEFAULT_BUSINESS_ID` unset on a fresh Production node. It is an
+  optional Workbench convenience selection only; it never defines Customer,
+  Persona, or Ledger Authority. With no customers, Workbench returns a normal
+  empty state. With one customer it can resolve that unique customer; with
+  multiple customers it requires an explicit selection and never picks the
+  first filesystem/list entry.
 
 ## Task execution model
 
@@ -95,7 +101,8 @@ Implemented in the foundation slice:
 
 - internal login, forced first-password change, logout, HttpOnly session;
 - responsive mobile/desktop shell;
-- real workbench projection from `show_customer_status_v1.py`;
+- fresh-safe Workbench projection: empty data is valid, while a selected
+  customer's status still comes from `show_customer_status_v1.py`;
 - real Case Library projection from canonical Case artifacts and receipts;
 - Add Case URL validation and canonical duplicate detection;
 - persistent task schema and task list projection;

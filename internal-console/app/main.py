@@ -40,7 +40,6 @@ from .canonical_gateway import (
 )
 from .customer_gateway import (
     approve_business_persona,
-    customer_attention_count,
     get_customer_detail,
     get_customer_input,
     list_customers,
@@ -492,6 +491,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         status_code = 409 if exc.code in {
             "OPERATION_IN_PROGRESS",
             "AUTHORITY_CHANGED_REFRESH_REQUIRED",
+            "CONFIGURED_CUSTOMER_NOT_FOUND",
+            "CURRENT_CUSTOMER_REQUIRED",
         } else 503
         return JSONResponse(
             status_code=status_code,
@@ -680,9 +681,32 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         business_id: str | None = None,
         _: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
-        return get_customer_status(
-            settings, business_id or settings.default_business_id
+        using_configured_default = not (
+            business_id and business_id.strip()
         )
+        selected_business_id = (
+            business_id.strip()
+            if business_id and business_id.strip()
+            else settings.default_business_id
+        )
+        if not selected_business_id:
+            raise CanonicalOperationError(
+                "CURRENT_CUSTOMER_REQUIRED",
+                "当前请求没有指定客户。",
+                "请显式提供 business_id，或从客户列表选择客户。",
+            )
+        if using_configured_default:
+            customer_ids = {
+                str(customer.get("business_id") or "")
+                for customer in list_customers(settings)
+            }
+            if selected_business_id not in customer_ids:
+                raise CanonicalOperationError(
+                    "CONFIGURED_CUSTOMER_NOT_FOUND",
+                    "配置的默认客户不存在。",
+                    "请移除或修正 AIVO_DEFAULT_BUSINESS_ID。",
+                )
+        return get_customer_status(settings, selected_business_id)
 
     @app.get("/api/customers/{business_id}/speakers")
     def customer_speakers(
@@ -1366,17 +1390,90 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     def workbench(
         _: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
-        status = get_customer_status(settings, settings.default_business_id)
+        customers = list_customers(settings)
+        configured_business_id = settings.default_business_id
+        selected_business_id: str | None = None
+        selection_source = "none"
+        selection_error: dict[str, str] | None = None
+
+        if configured_business_id:
+            configured_customer = next(
+                (
+                    customer
+                    for customer in customers
+                    if customer.get("business_id") == configured_business_id
+                ),
+                None,
+            )
+            if configured_customer is not None:
+                selected_business_id = configured_business_id
+                selection_source = "configured_default"
+            else:
+                selection_error = error_detail(
+                    "CONFIGURED_CUSTOMER_NOT_FOUND",
+                    "配置的默认客户不存在，工作台未选择任何客户。",
+                    "请移除或修正 AIVO_DEFAULT_BUSINESS_ID。",
+                )
+        elif len(customers) == 1:
+            only_customer = next(iter(customers))
+            selected_business_id = str(only_customer["business_id"])
+            selection_source = "only_customer"
+        elif len(customers) > 1:
+            selection_error = error_detail(
+                "CURRENT_CUSTOMER_REQUIRED",
+                "存在多个客户，工作台不会静默选择其中一个。",
+                "请从客户列表显式选择客户。",
+            )
+
+        status = None
+        if selected_business_id:
+            try:
+                status = get_customer_status(settings, selected_business_id)
+            except CanonicalOperationError as exc:
+                selection_error = error_detail(
+                    exc.code,
+                    exc.message,
+                    exc.next_action,
+                )
+
         cases = list_cases(settings)
         tasks = list_tasks(settings.database_path, limit=10)
+        try:
+            creation_options = list_creation_options(settings)
+            ready_customer_count = int(
+                creation_options.get("ready_customer_count") or 0
+            )
+            creation_blocker = None
+        except CanonicalOperationError as exc:
+            ready_customer_count = 0
+            creation_blocker = error_detail(
+                exc.code,
+                exc.message,
+                exc.next_action,
+            )
         return {
+            "has_customers": bool(customers),
             "status": status,
+            "customers": customers,
+            "customer_selection": {
+                "configured_business_id": configured_business_id,
+                "selected_business_id": selected_business_id,
+                "source": selection_source,
+                "error": selection_error,
+            },
             "attention": {
                 "case_reviews": sum(
                     case["status"] == "awaiting_review" for case in cases
                 ),
                 "persona_reviews": (
-                    customer_attention_count(settings)
+                    sum(
+                        customer.get("status")
+                        in {
+                            "fact_review_required",
+                            "persona_review_required",
+                        }
+                        for customer in customers
+                    )
                     + speaker_attention_count(settings)
                 ),
                 "content_reviews": sum(
@@ -1389,7 +1486,23 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 ),
             },
             "recent_tasks": tasks[:5],
-            "capabilities": {"case_analysis": case_analysis_capability()},
+            "capabilities": {
+                "case_analysis": case_analysis_capability(),
+                "add_case": {
+                    "available": True,
+                    "path": "/cases/new",
+                },
+                "new_customer": {
+                    "available": True,
+                    "path": "/customers/new",
+                },
+                "content_creation": {
+                    "available": ready_customer_count > 0,
+                    "path": "/create" if ready_customer_count > 0 else None,
+                    "ready_customer_count": ready_customer_count,
+                    "blocker": creation_blocker,
+                },
+            },
         }
 
     @app.get("/api/customers")
