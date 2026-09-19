@@ -94,3 +94,8 @@ creates checksums, performs a temporary restore smoke, and applies configurable
 7-daily/4-weekly retention. It fails with
 `BACKUP_REQUIRES_IDLE_WINDOW` while any task or formal Console Authority
 mutation is running.
+
+Case source video/music/cover, extracted original frames, and Qwen proxy
+frames are transient computation assets and are excluded from Authority
+backup. Source acquisition/metadata lineage, recorded source SHA-256,
+structured evidence, and cleanup receipts remain in backup scope.

@@ -13,6 +13,10 @@ from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlsplit
 from case_duplicate_guard_v1 import find_media_identity_duplicate
+from storage_retention_v1 import (
+    cleanup_successful_attempt,
+    mark_cleanup_retry_required,
+)
 
 
 OPERATION_VERSION = "case_analysis_v1.py@1.0"
@@ -425,9 +429,18 @@ class Orchestrator:
                 "The downloader completed without a uniquely traceable source video.",
             )
         video = Path(source["video"])
+        source_metadata = Path(str(source["metadata"]))
+        metadata_snapshot = self.attempt_root / "source_metadata_v1.json"
+        write_atomic_json(metadata_snapshot, read_json(source_metadata))
+        source = {
+            **source,
+            "metadata": str(metadata_snapshot),
+            "downloader_metadata": str(source_metadata),
+        }
         acquisition = {
             "schema_version": "case-source-acquisition-v1.0",
             "case_id": self.case_id,
+            "stable_video_id": self.case_id,
             "source_url": self.source_url,
             "platform": "douyin",
             "mode": acquisition_mode,
@@ -539,6 +552,9 @@ class Orchestrator:
                     "deterministic_timing_guard": True,
                     "cache_reused": transcribe_valid,
                 }
+            )
+            self.state["artifacts"]["transcript_segments"] = str(
+                transcript_segments
             )
             self.state["artifacts"]["audio_v1"] = str(audio_v1)
             self.complete_stage("transcribe", recovered=transcribe_valid and audio_valid)
@@ -800,20 +816,49 @@ class Orchestrator:
                     if source.get(key):
                         command.extend([option, str(source[key])])
                 self.run_command("build-case", command, "review", 600)
-                case = read_json(candidate)
-                case["analysis_lineage"] = {
-                    "operation": "case_analysis_v1",
-                    "attempt_id": self.attempt_id,
-                    "attempt_artifact": str(self.state_path),
-                    "previous_attempt_id": self.state["lineage"].get("previous_attempt_id"),
-                    "reanalysis": self.reanalyze,
-                }
-                case["source_governance"] = {
-                    "research_use_requires_explicit_human_approval": True,
-                    "media_reuse_rights": "not_established",
-                    "production_footage_pool_eligible": False,
-                }
-                write_atomic_json(candidate, case)
+            case = read_json(candidate)
+            case["analysis_lineage"] = {
+                "operation": "case_analysis_v1",
+                "attempt_id": self.attempt_id,
+                "attempt_artifact": str(self.state_path),
+                "previous_attempt_id": self.state["lineage"].get("previous_attempt_id"),
+                "reanalysis": self.reanalyze,
+            }
+            case["source_governance"] = {
+                "research_use_requires_explicit_human_approval": True,
+                "media_reuse_rights": "not_established",
+                "production_footage_pool_eligible": False,
+            }
+            case.setdefault("source_evidence", {}).setdefault("video", {})[
+                "sha256"
+            ] = str(source["source_video_sha256"])
+            case["source_evidence"]["video"]["retention"] = (
+                "transient_until_analysis_awaiting_review"
+            )
+            case["source_provenance"] = {
+                "platform": "douyin",
+                "canonical_source_url": self.source_url,
+                "stable_video_id": self.case_id,
+                "recorded_source_media_sha256": str(
+                    source["source_video_sha256"]
+                ),
+                "source_acquisition_ref": {
+                    "path": str(acquisition_path),
+                    "sha256": sha256_file(acquisition_path),
+                },
+                "source_metadata_ref": {
+                    "path": str(source["metadata"]),
+                    "sha256": sha256_file(Path(str(source["metadata"]))),
+                },
+                "semantics": "identity_and_acquisition_lineage_not_media_reuse_permission",
+            }
+            case.setdefault("source_artifacts", {})[
+                "source_acquisition_v1"
+            ] = str(acquisition_path)
+            case["source_artifacts"]["source_metadata_v1"] = str(
+                source["metadata"]
+            )
+            write_atomic_json(candidate, case)
             self.state["artifacts"]["case_candidate_v1"] = str(candidate)
             self.state["status"] = "awaiting_review"
             self.state["current_stage"] = "awaiting_review"
@@ -822,6 +867,22 @@ class Orchestrator:
             self.state["current_stage"] = "awaiting_review"
             self.state["progress"] = 100
             self.save()
+            try:
+                cleanup_successful_attempt(
+                    self.attempt_root,
+                    self.downloader_root,
+                    trigger="analysis_awaiting_review",
+                )
+            except Exception as cleanup_error:
+                try:
+                    mark_cleanup_retry_required(
+                        self.attempt_root,
+                        trigger="analysis_awaiting_review",
+                        error=str(cleanup_error),
+                    )
+                except Exception:
+                    pass
+            self.state = read_json(self.state_path)
             return self.state
         except Exception as exc:
             self.state["status"] = "failed"

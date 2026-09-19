@@ -32,6 +32,31 @@ class BackupError(RuntimeError):
         self.code = code
 
 
+def _filesystem_path(path: Path) -> str:
+    """Return a Windows extended path without changing manifest identities."""
+
+    value = str(Path(path).resolve())
+    if os.name != "nt" or value.startswith("\\\\?\\"):
+        return value
+    if value.startswith("\\\\"):
+        return "\\\\?\\UNC\\" + value[2:]
+    return "\\\\?\\" + value
+
+
+def _normal_path(path: str | Path) -> Path:
+    value = str(path)
+    if value.startswith("\\\\?\\UNC\\"):
+        value = "\\\\" + value[8:]
+    elif value.startswith("\\\\?\\"):
+        value = value[4:]
+    return Path(value)
+
+
+def _remove_tree(path: Path) -> None:
+    if os.path.exists(_filesystem_path(path)):
+        shutil.rmtree(_filesystem_path(path))
+
+
 def exclusive_backup_guard(function):
     @wraps(function)
     def guarded(*args, **kwargs):
@@ -54,7 +79,7 @@ def exclusive_backup_guard(function):
 
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
-    with path.open("rb") as handle:
+    with open(_filesystem_path(path), "rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
@@ -91,8 +116,15 @@ def online_sqlite_backup(source: Path, destination: Path) -> None:
 
 def _excluded(path: Path) -> bool:
     lowered = {part.lower() for part in path.parts}
+    case_attempt_transient = "case_analysis_attempts" in lowered and (
+        "frames" in lowered
+        or "proxies" in lowered
+        or path.suffix.lower()
+        in {".mp4", ".mov", ".mkv", ".webm", ".jpg", ".jpeg", ".png", ".webp"}
+    )
     return bool(
-        lowered.intersection(
+        case_attempt_transient
+        or lowered.intersection(
             {".locks", ".venv", "__pycache__", ".pytest_cache", "cache", "tmp", "temp"}
         )
         or path.suffix.lower() in {".lock", ".tmp", ".pyc"}
@@ -102,31 +134,47 @@ def _excluded(path: Path) -> bool:
 def _copy_tree(source: Path, destination: Path) -> None:
     if not source.is_dir():
         return
-    for path in source.rglob("*"):
-        relative = path.relative_to(source)
-        if _excluded(relative):
-            continue
-        target = destination / relative
-        if path.is_dir():
-            target.mkdir(parents=True, exist_ok=True)
-        elif path.is_file():
-            target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(path, target)
+    source = source.resolve()
+    for directory, directory_names, filenames in os.walk(_filesystem_path(source)):
+        normal_directory = _normal_path(directory)
+        relative_directory = normal_directory.relative_to(source)
+        directory_names[:] = [
+            name
+            for name in directory_names
+            if not _excluded(relative_directory / name)
+        ]
+        target_directory = destination / relative_directory
+        os.makedirs(_filesystem_path(target_directory), exist_ok=True)
+        for filename in filenames:
+            relative = relative_directory / filename
+            if _excluded(relative):
+                continue
+            source_file = normal_directory / filename
+            target_file = destination / relative
+            os.makedirs(_filesystem_path(target_file.parent), exist_ok=True)
+            shutil.copy2(
+                _filesystem_path(source_file),
+                _filesystem_path(target_file),
+            )
 
 
 def _manifest_files(root: Path) -> list[dict[str, Any]]:
     values: list[dict[str, Any]] = []
-    for path in sorted(item for item in root.rglob("*") if item.is_file()):
-        if path.name == "manifest.json":
-            continue
-        values.append(
-            {
-                "path": path.relative_to(root).as_posix(),
-                "size": path.stat().st_size,
-                "sha256": sha256_file(path),
-            }
-        )
-    return values
+    root = root.resolve()
+    for directory, _, filenames in os.walk(_filesystem_path(root)):
+        normal_directory = _normal_path(directory)
+        for filename in filenames:
+            path = normal_directory / filename
+            if path.name == "manifest.json":
+                continue
+            values.append(
+                {
+                    "path": path.relative_to(root).as_posix(),
+                    "size": os.path.getsize(_filesystem_path(path)),
+                    "sha256": sha256_file(path),
+                }
+            )
+    return sorted(values, key=lambda item: str(item["path"]))
 
 
 def validate_backup(backup_root: Path) -> dict[str, Any]:
@@ -145,7 +193,10 @@ def validate_backup(backup_root: Path) -> dict[str, Any]:
             candidate.relative_to(backup_root)
         except ValueError as exc:
             raise BackupError("BACKUP_MANIFEST_INVALID", "Manifest path escapes backup root.") from exc
-        if not candidate.is_file() or sha256_file(candidate) != item.get("sha256"):
+        if (
+            not os.path.isfile(_filesystem_path(candidate))
+            or sha256_file(candidate) != item.get("sha256")
+        ):
             raise BackupError("BACKUP_CHECKSUM_MISMATCH", relative)
 
     sqlite_path = backup_root / "internal-console" / "console.sqlite3"
@@ -208,7 +259,7 @@ def apply_retention(destination: Path, *, daily: int, weekly: int) -> list[Path]
                     "BACKUP_RETENTION_PATH_INVALID",
                     "Retention target escaped the backup destination.",
                 )
-            shutil.rmtree(path)
+            _remove_tree(path)
             removed.append(path)
     return removed
 
@@ -267,9 +318,12 @@ def create_backup(
             json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8"
         )
         validate_backup(temporary_root)
-        os.replace(temporary_root, final_root)
+        os.replace(_filesystem_path(temporary_root), _filesystem_path(final_root))
     except Exception:
-        shutil.rmtree(temporary_root, ignore_errors=True)
+        try:
+            _remove_tree(temporary_root)
+        except OSError:
+            pass
         raise
     apply_retention(
         destination,

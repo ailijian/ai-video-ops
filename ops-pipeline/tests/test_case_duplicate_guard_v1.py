@@ -44,7 +44,9 @@ def test_approved_case_media_identity_is_hard_duplicate(
             "case_id": "1111111111111111111",
             "canonical_case_status": "approved",
             "source_provenance": {
-                "local_source_sha256": "abc123",
+                "local_source_exists": False,
+                "local_source_sha256": None,
+                "recorded_source_sha256": "abc123",
             },
         },
     )
@@ -60,6 +62,39 @@ def test_approved_case_media_identity_is_hard_duplicate(
     assert result["kind"] == "media_identity"
     assert result["existing_case_id"] == "1111111111111111111"
     assert result["existing_status"] == "approved"
+    assert result["matched_sha256"] == "abc123"
+
+
+def test_approved_case_duplicate_guard_accepts_historical_local_sha_field(
+    tmp_path: Path,
+):
+    pipeline = tmp_path / "ops-pipeline"
+    companion = (
+        pipeline
+        / "data"
+        / "case_governance"
+        / "cases"
+        / "1111111111111111111"
+        / "case_source_governance_companion_v1.json"
+    )
+    write_json(
+        companion,
+        {
+            "case_id": "1111111111111111111",
+            "canonical_case_status": "approved",
+            "source_provenance": {"local_source_sha256": "legacy123"},
+        },
+    )
+
+    result = module.find_media_identity_duplicate(
+        pipeline,
+        current_case_id="2222222222222222222",
+        current_attempt_id="attempt-current",
+        media_sha256="legacy123",
+    )
+
+    assert result is not None
+    assert result["existing_case_id"] == "1111111111111111111"
 
 
 def test_same_case_lineage_is_not_media_duplicate(

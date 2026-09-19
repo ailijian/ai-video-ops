@@ -480,7 +480,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         )
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; img-src 'self' data:; style-src 'self'; "
-            "script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'self'"
+            "script-src 'self'; connect-src 'self'; "
+            "frame-src https://open.douyin.com; frame-ancestors 'none'; base-uri 'self'"
         )
         return response
 

@@ -1,4 +1,4 @@
-import { caseCard, caseReviewContent, escapeHtml, progressPanel } from "./case-components.js";
+import { caseCard, caseReviewContent, escapeHtml, progressPanel } from "./case-components.js?v=storage-retention-1";
 import { startTaskPolling } from "./task-progress.js";
 
 function duplicateResultHtml(result) {

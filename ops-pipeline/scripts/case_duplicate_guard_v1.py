@@ -77,7 +77,9 @@ def find_media_identity_duplicate(
             )
 
             recorded_sha = str(
-                source.get("local_source_sha256") or ""
+                source.get("recorded_source_sha256")
+                or source.get("local_source_sha256")
+                or ""
             ).lower()
 
             if (

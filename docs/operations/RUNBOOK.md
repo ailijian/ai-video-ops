@@ -32,6 +32,8 @@ Run commands from the repository root. Replace angle-bracket placeholders with e
 - **Canonical Entry Point:** `ops-pipeline/scripts/case_analysis_v1.py`.
 - **Execution:** `ops-pipeline/.venv/Scripts/python.exe ops-pipeline/scripts/case_analysis_v1.py --source-url <full_douyin_video_url> --attempt-id <immutable_attempt_id> [--profile mix|news] [--industry <label>] [--reanalyze]`
 - **Recovery:** Re-run the exact command with the same attempt ID. Completed artifact checkpoints are validated and reused; progress remains in `data/case_analysis_attempts/<case_id>/<attempt_id>/case_analysis_attempt_v1.json`.
+- **Storage Retention:** Only after all structured evidence and the Case Candidate validate and the Attempt is durably `awaiting_review`, `storage_retention_v1.py` immediately removes source video/music/cover plus original and Qwen proxy frames. It retains source URL, stable video ID, acquisition/metadata lineage, recorded media SHA-256, structured evidence, logs and `storage_cleanup_receipt_v1.json`. Cleanup failure records `retry_required` and never changes successful Case Analysis into a business failure.
+- **Failed Attempts:** Queued/running Attempts are never cleaned. Failed/interrupted Attempts retain transient media for 24 hours; the hourly Console storage-maintenance pass then cleans terminal failures. Human Reject cleans immediately. Reanalysis reacquires from the retained canonical source URL when local media is absent.
 - **Human Gate:** Required. Successful analysis stops at `awaiting_review`; this operation never calls `approve_case_v1.py`.
 - **Outputs:** Immutable attempt lineage, source-acquisition receipt, existing canonical evidence artifact types, and one review-required `case_v1.json` under the attempt directory.
 - **Stop Conditions:** Duplicate Case/attempt, ambiguous source identity, privacy failure, unresolved narration/boundary sub-review, invalid lineage, or any canonical stage failure.
@@ -41,12 +43,12 @@ Run commands from the repository root. Replace angle-bracket placeholders with e
 ## APPROVE_CASE
 
 - **Goal:** Explicitly admit one reviewed Case Candidate to the canonical Case Library without changing source-media rights.
-- **Required Inputs:** Review-required Case Candidate, Human reviewer, decision note, traceable source URL and local source evidence.
+- **Required Inputs:** Review-required Case Candidate, Human reviewer, decision note, canonical source URL, stable platform video ID, recorded source-media SHA-256, retained source metadata and valid acquisition lineage. A local source-video file is optional.
 - **Authority Preconditions:** Case validation and privacy gate pass; canonical Approved Case cannot be overwritten; Case Source Governance companion keeps `media_reuse_rights=not_established` and `production_footage_pool_eligible=false`.
 - **Canonical Entry Point:** `ops-pipeline/scripts/approve_case_v1.py`, invoked through the Internal Console's fixed Case approval gateway; deterministic fingerprint follows approval.
 - **Human Gate:** Required and explicit. Analysis completion is never approval.
 - **Outputs:** Approved `data/cases/<case_id>/case_v1.json`, approval receipt, Case Source Governance companion, and deterministic Case fingerprint.
-- **Stop Conditions:** Existing Approved Case, source-governance ambiguity, invalid privacy/proof/lineage checks, or failed canonical approval.
+- **Stop Conditions:** Existing Approved Case, source-governance ambiguity, missing URL/stable ID/recorded SHA/acquisition lineage, invalid privacy/proof checks, or failed canonical approval. Missing local source media alone is not a blocker.
 - **Next Action:** Approved Case Library.
 - **Implementation Status:** `IMPLEMENTED / EXPLICIT HUMAN OPERATION`.
 

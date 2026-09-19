@@ -67,12 +67,12 @@ def test_console_branding_and_favicon_contract():
 
     assert "<title>鲸汤AI视频代运营工作台</title>" in index
     assert 'name="description" content="鲸汤AI视频代运营工作台' in index
-    assert 'href="/assets/brand/favicon.ico"' in index
-    assert 'href="/assets/brand/favicon-32x32.png"' in index
-    assert 'href="/assets/brand/favicon-16x16.png"' in index
-    assert 'href="/assets/brand/apple-touch-icon.png"' in index
-    assert "branding-layout-2" in index
-    assert 'src="/assets/brand/logo.png"' in app
+    assert 'href="/assets/brand/favicon.ico?v=transparent-1"' in index
+    assert 'href="/assets/brand/favicon-32x32.png?v=transparent-1"' in index
+    assert 'href="/assets/brand/favicon-16x16.png?v=transparent-1"' in index
+    assert 'href="/assets/brand/apple-touch-icon.png?v=transparent-1"' in index
+    assert "storage-retention-1" in index
+    assert 'src="/assets/brand/logo.png?v=transparent-1"' in app
     assert "鲸汤AI视频代运营工作台" in app
     assert "视频创作" in app
 

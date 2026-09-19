@@ -3,11 +3,15 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from privacy_projection_v1 import validate_case_privacy_gate
+
+
+DOUYIN_VIDEO_ID_RE = re.compile(r"(?:/video/|video_id=)(\d{10,24})")
 
 
 def now_iso() -> str:
@@ -44,6 +48,129 @@ def write_atomic_json(path: Path, data: dict[str, Any]) -> str:
     return sha256_bytes(payload)
 
 
+def validate_source_provenance(
+    case: dict[str, Any],
+) -> tuple[dict[str, Any], list[str]]:
+    errors: list[str] = []
+    case_id = str(case.get("case_id") or "")
+    identity = case.get("identity") or {}
+    source_url = str(identity.get("source_url") or "").strip()
+    platform = str(identity.get("platform") or "").strip().lower()
+    provenance = case.get("source_provenance") or {}
+    source_artifacts = case.get("source_artifacts") or {}
+    source_evidence = case.get("source_evidence") or {}
+    video = source_evidence.get("video") or {}
+    video_path = Path(str(video.get("path") or "")).expanduser()
+    local_exists = video_path.is_file()
+
+    match = DOUYIN_VIDEO_ID_RE.search(source_url)
+    source_video_id = match.group(1) if match else ""
+    stable_video_id = str(
+        provenance.get("stable_video_id") or source_video_id or case_id
+    )
+    if platform != "douyin" or not source_url:
+        errors.append("Source platform or canonical source URL is missing.")
+    if not case_id or stable_video_id != case_id or source_video_id != case_id:
+        errors.append("Stable source video identity does not match Case identity.")
+
+    acquisition_ref = provenance.get("source_acquisition_ref") or {}
+    acquisition_path = Path(
+        str(
+            acquisition_ref.get("path")
+            or source_artifacts.get("source_acquisition_v1")
+            or ""
+        )
+    ).expanduser()
+    acquisition: dict[str, Any] = {}
+    acquisition_valid = False
+    if acquisition_path.is_file():
+        try:
+            acquisition = read_json(acquisition_path)
+        except (OSError, json.JSONDecodeError):
+            errors.append("Source acquisition lineage is unreadable.")
+        else:
+            recorded_ref_sha = str(acquisition_ref.get("sha256") or "").lower()
+            acquisition_sha = sha256_file(acquisition_path)
+            if recorded_ref_sha and recorded_ref_sha != acquisition_sha:
+                errors.append("Source acquisition lineage SHA-256 changed.")
+            acquisition_valid = (
+                str(acquisition.get("case_id") or "") == case_id
+                and str(
+                    acquisition.get("stable_video_id")
+                    or acquisition.get("case_id")
+                    or ""
+                )
+                == case_id
+                and str(acquisition.get("source_url") or "") == source_url
+                and str(acquisition.get("platform") or "").lower() == "douyin"
+            )
+            if not acquisition_valid:
+                errors.append("Source acquisition lineage does not match the Case.")
+
+    recorded_sha = str(
+        provenance.get("recorded_source_media_sha256")
+        or video.get("sha256")
+        or acquisition.get("source_video_sha256")
+        or ""
+    ).strip().lower()
+
+    if not acquisition_path.is_file():
+        errors.append("Source acquisition lineage is missing.")
+
+    if not re.fullmatch(r"[0-9a-f]{64}", recorded_sha):
+        errors.append("Recorded source media SHA-256 is missing or invalid.")
+    if (
+        acquisition
+        and str(acquisition.get("source_video_sha256") or "").lower()
+        != recorded_sha
+    ):
+        errors.append("Recorded source media SHA-256 does not match acquisition lineage.")
+    if local_exists and sha256_file(video_path) != recorded_sha:
+        errors.append("Available local source bytes do not match recorded SHA-256.")
+
+    metadata_ref = provenance.get("source_metadata_ref") or {}
+    metadata_path = Path(
+        str(
+            metadata_ref.get("path")
+            or source_artifacts.get("source_metadata_v1")
+            or (source_evidence.get("metadata") or {}).get("path")
+            or acquisition.get("metadata")
+            or ""
+        )
+    ).expanduser()
+    metadata_valid = metadata_path.is_file()
+    if not metadata_valid:
+        errors.append("Retained source metadata is missing.")
+    elif metadata_ref.get("sha256") and sha256_file(metadata_path) != str(
+        metadata_ref["sha256"]
+    ).lower():
+        errors.append("Retained source metadata SHA-256 changed.")
+
+    normalized = {
+        "status": "traceable" if not errors else "invalid",
+        "traceable": not errors,
+        "platform": platform,
+        "source_url": source_url,
+        "source_url_present": bool(source_url),
+        "stable_video_id": stable_video_id,
+        "stable_identity_present": bool(stable_video_id),
+        "recorded_source_sha256": recorded_sha or None,
+        "source_acquisition_path": str(acquisition_path),
+        "acquisition_lineage_valid": acquisition_valid,
+        "source_metadata_path": str(metadata_path),
+        "source_metadata_valid": metadata_valid,
+        "local_source_path": str(video_path),
+        "local_source_exists": local_exists,
+        "local_source_sha256": sha256_file(video_path) if local_exists else None,
+        "recorded_sha_matches": (
+            sha256_file(video_path) == recorded_sha if local_exists and recorded_sha else None
+        ),
+        "compatibility_mode": None,
+        "semantics": "identity_and_acquisition_lineage_not_reuse_permission",
+    }
+    return normalized, errors
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
@@ -63,7 +190,10 @@ def main() -> None:
     )
     parser.add_argument(
         "--note",
-        default="Human review passed against the source video and Reverse Storyboard V1.1.",
+        default=(
+            "Human review passed against retained source provenance, the Douyin "
+            "original source, and Reverse Storyboard V1.1."
+        ),
     )
     parser.add_argument(
         "--governance-policy",
@@ -94,6 +224,8 @@ def main() -> None:
     privacy_gate = case.get("privacy_gate", {})
     source_artifacts = case.get("source_artifacts", {})
     governance_context: dict[str, Any] | None = None
+    source_provenance, source_provenance_errors = validate_source_provenance(case)
+    errors.extend(source_provenance_errors)
 
     if lifecycle.get("status") != "review_required":
         errors.append(
@@ -162,7 +294,6 @@ def main() -> None:
 
     frozen_paths: dict[str, Path] = {}
     artifact_keys = {
-        "source_video": "video",
         "reverse_storyboard_v1": "storyboard_v1",
         "privacy_projection_v1": "privacy_projection_v1",
     }
@@ -217,15 +348,6 @@ def main() -> None:
                     or decision.get("human_structural_profile_decision") != "pass"
                 ):
                     errors.append("Governance policy decision is not eligible for Case approval.")
-                source_video = (case.get("source_evidence") or {}).get("video") or {}
-                source_path = Path(str(source_video.get("path") or "")).expanduser().resolve()
-                source_url = str((case.get("identity") or {}).get("source_url") or "")
-                case_id = str(case.get("case_id") or "")
-                recorded_source_sha = str(source_video.get("sha256") or "").lower()
-                if not case_id or not source_url or not source_path.is_file():
-                    errors.append("Governance source provenance is incomplete.")
-                elif not recorded_source_sha or sha256_file(source_path) != recorded_source_sha:
-                    errors.append("Governance local source SHA-256 is missing or changed.")
                 governance_context = {
                     "policy_path": str(policy_path),
                     "policy_sha256": sha256_file(policy_path),
@@ -289,7 +411,8 @@ def main() -> None:
         "approved_at": approved_at,
         "note": args.note,
         "review_basis": [
-            "source_video",
+            "source_provenance",
+            "douyin_original_source",
             "reverse_storyboard_v1_1",
             "audio_evidence",
             "visual_evidence",
@@ -297,6 +420,7 @@ def main() -> None:
             "proof_boundary",
         ],
         "human_gate": True,
+        "source_traceability": source_provenance,
     }
     if governance_context is not None:
         case["approval"]["source_governance"] = governance_context
@@ -332,6 +456,7 @@ def main() -> None:
             }
             for name, path in frozen_paths.items()
         },
+        "source_provenance": source_provenance,
     }
     if governance_context is not None:
         receipt["source_governance"] = governance_context

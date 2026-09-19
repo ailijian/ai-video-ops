@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -186,3 +187,40 @@ def test_backup_destination_inside_repo_is_rejected(backup_sources):
             repo_root=repo,
         )
     assert exc.value.code == "BACKUP_DESTINATION_INVALID"
+
+
+def test_backup_supports_windows_paths_longer_than_max_path(backup_sources):
+    repo, pipeline, database, destination = backup_sources
+    long_relative = Path("case_analysis_attempts")
+    for index in range(5):
+        long_relative /= f"segment_{index}_" + ("x" * 48)
+    source = pipeline / "data" / long_relative / "checkpoint.json"
+    os.makedirs(backup_module._filesystem_path(source.parent), exist_ok=True)
+    with open(backup_module._filesystem_path(source), "w", encoding="utf-8") as handle:
+        handle.write('{"status":"checkpoint"}')
+    assert len(str(destination / "placeholder" / long_relative)) > 260
+
+    first_backup = backup_module.create_backup(
+        destination=destination,
+        database_path=database,
+        pipeline_root=pipeline,
+        repo_root=repo,
+        retention_daily=1,
+        retention_weekly=0,
+        now=datetime(2026, 9, 19, 1, 0, tzinfo=timezone.utc),
+    )
+    backup_root = backup_module.create_backup(
+        destination=destination,
+        database_path=database,
+        pipeline_root=pipeline,
+        repo_root=repo,
+        retention_daily=1,
+        retention_weekly=0,
+        now=datetime(2026, 9, 19, 1, 1, tzinfo=timezone.utc),
+    )
+    assert not os.path.exists(backup_module._filesystem_path(first_backup))
+    result = backup_module.validate_backup(backup_root)
+    assert result["ok"] is True
+    manifest = json.loads((backup_root / "manifest.json").read_text(encoding="utf-8"))
+    expected = (Path("ops-pipeline") / "data" / long_relative / "checkpoint.json").as_posix()
+    assert expected in {item["path"] for item in manifest["files"]}

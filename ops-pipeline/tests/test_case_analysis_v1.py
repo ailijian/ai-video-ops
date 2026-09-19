@@ -24,6 +24,14 @@ assert SPEC and SPEC.loader
 module = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(module)
 
+APPROVE_SPEC = importlib.util.spec_from_file_location(
+    "approve_case_v1",
+    SCRIPTS_DIR / "approve_case_v1.py",
+)
+assert APPROVE_SPEC and APPROVE_SPEC.loader
+approve_module = importlib.util.module_from_spec(APPROVE_SPEC)
+APPROVE_SPEC.loader.exec_module(approve_module)
+
 
 def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
@@ -184,6 +192,50 @@ def test_source_acquisition_preserves_privacy_and_media_rights_boundary(tmp_path
     assert source["source_video_sha256"] == sha256(Path(source["video"]))
 
 
+def test_reanalysis_after_cleanup_reacquires_source(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    repo, pipeline, downloader = roots(tmp_path)
+    case_id = "7682442957798161531"
+    source_dir = downloader / "Downloaded" / "author" / case_id
+    source_dir.mkdir(parents=True)
+    metadata = source_dir / f"clip_{case_id}_data.json"
+    metadata.write_text(
+        json.dumps({"aweme_id": case_id, "desc": "retained metadata"}),
+        encoding="utf-8",
+    )
+    video = source_dir / f"clip_{case_id}.mp4"
+    downloader_python = downloader / ".venv" / "Scripts" / "python.exe"
+    downloader_python.parent.mkdir(parents=True)
+    downloader_python.write_bytes(b"test-runtime-placeholder")
+
+    operation = module.Orchestrator(
+        pipeline_root=pipeline,
+        repo_root=repo,
+        downloader_root=downloader,
+        source_url=f"https://www.douyin.com/video/{case_id}",
+        attempt_id="attempt_reanalysis_after_cleanup",
+        profile="mix",
+        industry="待分类",
+        reanalyze=True,
+    )
+    download_calls: list[str] = []
+
+    def fake_download(*args, **kwargs):
+        download_calls.append("download")
+        video.write_bytes(b"reacquired-source")
+
+    monkeypatch.setattr(operation, "run_command", fake_download)
+
+    source = operation.acquire()
+
+    assert download_calls == ["download"]
+    assert source["mode"] == "downloaded_from_canonical_source_url"
+    assert Path(source["video"]).is_file()
+    assert Path(source["metadata"]).is_relative_to(operation.attempt_root)
+
+
 def test_human_approval_is_explicit_and_does_not_grant_media_rights(tmp_path: Path):
     pipeline = Path(__file__).resolve().parents[1]
     source_case = pipeline / "data" / "cases" / "7683027343636542565" / "case_v1.json"
@@ -201,6 +253,54 @@ def test_human_approval_is_explicit_and_does_not_grant_media_rights(tmp_path: Pa
     case["quality"]["human_review_completed"] = False
     case["validation"]["human_approval_completed"] = False
     case["validation"]["auto_approved"] = False
+    case_id = str(case["case_id"])
+    source_url = f"https://www.douyin.com/video/{case_id}"
+    recorded_sha = hashlib.sha256(b"source-media-was-cleaned").hexdigest()
+    missing_video = tmp_path / "already-cleaned-source.mp4"
+    metadata = tmp_path / "source_metadata_v1.json"
+    metadata.write_text(
+        json.dumps({"aweme_id": case_id, "desc": "retained metadata"}),
+        encoding="utf-8",
+    )
+    acquisition = tmp_path / "source_acquisition_v1.json"
+    acquisition.write_text(
+        json.dumps(
+            {
+                "case_id": case_id,
+                "stable_video_id": case_id,
+                "source_url": source_url,
+                "platform": "douyin",
+                "video": str(missing_video),
+                "metadata": str(metadata),
+                "source_video_sha256": recorded_sha,
+            }
+        ),
+        encoding="utf-8",
+    )
+    case["identity"]["platform"] = "douyin"
+    case["identity"]["source_url"] = source_url
+    case["source_evidence"]["video"] = {
+        "path": str(missing_video),
+        "sha256": recorded_sha,
+    }
+    case["source_evidence"]["metadata"] = {"path": str(metadata)}
+    case["source_provenance"] = {
+        "platform": "douyin",
+        "canonical_source_url": source_url,
+        "stable_video_id": case_id,
+        "recorded_source_media_sha256": recorded_sha,
+        "source_acquisition_ref": {
+            "path": str(acquisition),
+            "sha256": sha256(acquisition),
+        },
+        "source_metadata_ref": {
+            "path": str(metadata),
+            "sha256": sha256(metadata),
+        },
+    }
+    case["source_artifacts"]["video"] = str(missing_video)
+    case["source_artifacts"]["source_acquisition_v1"] = str(acquisition)
+    case["source_artifacts"]["source_metadata_v1"] = str(metadata)
     candidate = tmp_path / "case_v1.json"
     candidate.write_text(
         json.dumps(case, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -233,5 +333,52 @@ def test_human_approval_is_explicit_and_does_not_grant_media_rights(tmp_path: Pa
     )
     assert approved["lifecycle"]["approved"] is True
     assert approved["validation"]["auto_approved"] is False
+    assert approved["approval"]["source_traceability"]["local_source_exists"] is False
+    assert approved["approval"]["source_traceability"]["traceable"] is True
+    assert (
+        approved["approval"]["source_traceability"]["recorded_source_sha256"]
+        == recorded_sha
+    )
     assert receipt["human_gate"] is True
     assert receipt.get("case_approval_grants_media_reuse") is not True
+
+
+def test_approval_does_not_substitute_local_media_for_acquisition_lineage(
+    tmp_path: Path,
+):
+    case_id = "7682442957798161531"
+    source_video = tmp_path / "still-local.mp4"
+    source_video.write_bytes(b"local-media-is-not-lineage")
+    recorded_sha = sha256(source_video)
+    metadata = tmp_path / "source_metadata_v1.json"
+    metadata.write_text(
+        json.dumps({"aweme_id": case_id}),
+        encoding="utf-8",
+    )
+
+    provenance, errors = approve_module.validate_source_provenance(
+        {
+            "case_id": case_id,
+            "identity": {
+                "platform": "douyin",
+                "source_url": f"https://www.douyin.com/video/{case_id}",
+            },
+            "source_evidence": {
+                "video": {"path": str(source_video), "sha256": recorded_sha},
+                "metadata": {"path": str(metadata)},
+            },
+            "source_provenance": {
+                "stable_video_id": case_id,
+                "recorded_source_media_sha256": recorded_sha,
+                "source_metadata_ref": {
+                    "path": str(metadata),
+                    "sha256": sha256(metadata),
+                },
+            },
+        }
+    )
+
+    assert provenance["local_source_exists"] is True
+    assert provenance["acquisition_lineage_valid"] is False
+    assert provenance["traceable"] is False
+    assert "Source acquisition lineage is missing." in errors

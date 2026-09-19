@@ -47,6 +47,7 @@ class Settings:
     gpu_pending_per_user_max: int = 3
     task_lease_seconds: int = 120
     task_heartbeat_seconds: int = 10
+    storage_maintenance_interval_seconds: int = 3600
     session_last_seen_interval_seconds: int = 300
     default_business_id: str = "shufang_zhiyuan_community_canteen"
 
@@ -104,6 +105,15 @@ class Settings:
             ),
             task_heartbeat_seconds=max(
                 5, int(os.environ.get("AIVO_TASK_HEARTBEAT_SECONDS", "10"))
+            ),
+            storage_maintenance_interval_seconds=max(
+                60,
+                int(
+                    os.environ.get(
+                        "AIVO_STORAGE_MAINTENANCE_INTERVAL_SECONDS",
+                        "3600",
+                    )
+                ),
             ),
             session_last_seen_interval_seconds=max(
                 60,

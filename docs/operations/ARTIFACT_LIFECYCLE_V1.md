@@ -22,7 +22,8 @@ These classifications describe the role of an artifact. They are not a new workf
 - Approved Persona revisions and their receipts must be preserved.
 - Old approved batches, rejected remote attempts, local revalidation attempts, and review packs must be preserved.
 - V1/V1.1/V1.1.1 gate diagnostics must be preserved and must not override the effective content-gate resolver.
-- Case evidence, frames, shots, fingerprints, source-governance companions, and approval history must be preserved.
+- Case structured evidence, shots, fingerprints, source-governance companions, source-acquisition lineage, recorded source-media SHA-256, and approval history must be preserved.
+- Raw Case source media, source music/cover, extracted original frames, and Qwen proxy frames are transient computation assets. After a valid Case Candidate is durably `awaiting_review`, they are immediately cleaned and are not Case Authority.
 - Pattern candidates and rejected hypotheses must be preserved as research history; only approved patterns are Production Authority.
 - Approval and validation receipts must be preserved even though they do not create business truth.
 - Fixture data must remain isolated from real production consumers.
@@ -38,9 +39,9 @@ These classifications describe the role of an artifact. They are not a new workf
 | `data/patterns/approved` | `CURRENT_AUTHORITY`; approval receipts are `VALIDATION_RECEIPT` |
 | `data/patterns/candidates` | `HISTORICAL_IMMUTABLE` or research candidate, never Production Authority |
 | `data/cases`, `data/case_governance`, `data/analysis`, `data/visual`, `data/shots` | Approved structural authority plus preserved research evidence; never Production Asset by location alone |
-| `data/case_analysis_attempts/<case_id>/<attempt_id>` | `HISTORICAL_IMMUTABLE` analysis evidence and progress; a review-required candidate is never Approved Case Authority |
+| `data/case_analysis_attempts/<case_id>/<attempt_id>` | Structured evidence and lineage are `HISTORICAL_IMMUTABLE`; raw/proxy pixels are transient and removed at `awaiting_review`; a review-required candidate is never Approved Case Authority |
 | `data/production_footage/<request_id>` | Rights/inventory authorities plus active derived plan, mission, pack, match, and coverage artifacts |
 | `data/operations/<business_id>` | Operator Action Control only; not customer status or business truth |
 | `tests/fixtures` and fixture-labelled runtime trees | `FIXTURE_TEST` |
 
-Deletion requires a separate reviewed cleanup wave. Wave 0 deletes or migrates nothing.
+Authority artifacts require a separate reviewed cleanup wave. The approved Storage Retention V1 lifecycle independently removes only declared transient Case media and records `storage_cleanup_receipt_v1.json`.

@@ -613,6 +613,7 @@ class CaseTaskRunner:
         self._scheduled: set[str] = set()
         self._lock = threading.Lock()
         self.worker_id = f"case-{os.getpid()}-{uuid.uuid4().hex[:8]}"
+        self._last_storage_maintenance = 0.0
         self.maintenance = LeaseRecoveryMaintenance(
             interval_seconds=self.settings.task_heartbeat_seconds,
             name="case-lease-recovery",
@@ -658,7 +659,46 @@ class CaseTaskRunner:
             task_types=("case_analysis",),
             reconciler=self._reconcile_business_state,
         )
+        self._run_storage_maintenance_if_due()
         self.schedule_pending()
+
+    def _run_storage_maintenance_if_due(self) -> None:
+        current = time.monotonic()
+        if (
+            self._last_storage_maintenance
+            and current - self._last_storage_maintenance
+            < self.settings.storage_maintenance_interval_seconds
+        ):
+            return
+        self._last_storage_maintenance = current
+        try:
+            subprocess.run(
+                [
+                    self.settings.pipeline_python_executable
+                    or self.settings.python_executable,
+                    str(
+                        self.settings.pipeline_root
+                        / "scripts"
+                        / "storage_retention_v1.py"
+                    ),
+                    "--pipeline-root",
+                    str(self.settings.pipeline_root),
+                    "--downloader-root",
+                    str(self.settings.repo_root / "douyin-downloader"),
+                    "--maintenance",
+                ],
+                cwd=self.settings.repo_root,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                env=pipeline_subprocess_env(needs_deepseek=False),
+                timeout=300,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired):
+            # Storage cleanup is an operational lifecycle. The next hourly
+            # pass retries without changing task or business authority state.
+            return
 
     def close(self) -> None:
         self.maintenance.close()

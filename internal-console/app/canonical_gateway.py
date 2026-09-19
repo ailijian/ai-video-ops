@@ -15,6 +15,7 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from .config import Settings
+from .subprocess_env import pipeline_subprocess_env
 
 BUSINESS_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_]{1,127}$")
 DOUYIN_VIDEO_ID_RE = re.compile(r"(?:/video/|video_id=)(\d{10,24})")
@@ -554,6 +555,15 @@ def get_case_detail(settings: Settings, case_id: str) -> dict[str, Any]:
             }
         )
     lifecycle = case.get("lifecycle") or {}
+    try:
+        review_source_url = normalize_source_url(str(projection.get("source_url") or ""))
+    except ValueError:
+        review_source_url = None
+    try:
+        case_media_path(settings, case_id)
+        local_media_available = True
+    except CanonicalOperationError:
+        local_media_available = False
     return {
         **projection,
         "title": _case_title(case, case_path),
@@ -594,6 +604,17 @@ def get_case_detail(settings: Settings, case_id: str) -> dict[str, Any]:
             "approved": lifecycle.get("status") == "approved"
             and lifecycle.get("approved") is True,
             "attempt_id": str(attempt.get("attempt_id")) if attempt else None,
+        },
+        "review_media": {
+            "local_available": local_media_available,
+            "local_url": (
+                f"/api/cases/{case_id}/media" if local_media_available else None
+            ),
+            "remote_embed_url": (
+                f"https://open.douyin.com/player/video?vid={case_id}"
+            ),
+            "source_url": review_source_url,
+            "remote_player_is_authority": False,
         },
         "media_rights": {
             "production_authorized": False,
@@ -656,6 +677,27 @@ def _governance_companion(settings: Settings, case_path: Path) -> dict[str, Any]
         )
     )
     source_url = str((case.get("identity") or {}).get("source_url") or "")
+    approved_traceability = (
+        (case.get("approval") or {}).get("source_traceability") or {}
+    )
+    recorded_source_sha256 = str(
+        approved_traceability.get("recorded_source_sha256")
+        or ((case.get("source_provenance") or {}).get("recorded_source_media_sha256"))
+        or (((case.get("source_evidence") or {}).get("video") or {}).get("sha256"))
+        or ""
+    ).lower()
+    stable_video_id = str(
+        approved_traceability.get("stable_video_id") or case.get("case_id") or ""
+    )
+    acquisition_lineage_valid = (
+        approved_traceability.get("acquisition_lineage_valid") is True
+    )
+    traceable = bool(
+        source_url
+        and stable_video_id
+        and recorded_source_sha256
+        and acquisition_lineage_valid
+    )
     return {
         "schema_version": "case-source-governance-companion-v1.0",
         "builder_version": "internal-console-case-approval-gateway@1.0",
@@ -675,18 +717,35 @@ def _governance_companion(settings: Settings, case_path: Path) -> dict[str, Any]
             "source_artifact_modified": False,
         },
         "source_provenance": {
-            "status": "traceable",
-            "traceable": bool(source_url and source_path.is_file()),
+            "status": "traceable" if traceable else "invalid",
+            "traceable": traceable,
             "platform": "douyin",
             "source_url": source_url,
             "source_url_present": bool(source_url),
+            "stable_video_id": stable_video_id,
+            "stable_identity_present": bool(stable_video_id),
             "local_source_path": str(source_path),
             "local_source_exists": source_path.is_file(),
             "local_source_sha256": (
                 _sha256(source_path) if source_path.is_file() else None
             ),
-            "recorded_source_sha256": None,
-            "recorded_sha_matches": None,
+            "recorded_source_sha256": recorded_source_sha256,
+            "recorded_sha_matches": (
+                _sha256(source_path) == recorded_source_sha256
+                if source_path.is_file() and recorded_source_sha256
+                else None
+            ),
+            "source_acquisition_path": approved_traceability.get(
+                "source_acquisition_path"
+            ),
+            "acquisition_lineage_valid": acquisition_lineage_valid,
+            "source_metadata_path": approved_traceability.get(
+                "source_metadata_path"
+            ),
+            "source_metadata_valid": approved_traceability.get(
+                "source_metadata_valid"
+            )
+            is True,
             "semantics": "identity_and_evidence_lineage_not_reuse_permission",
         },
         "research_ingestion_eligibility": "eligible_for_internal_research",
@@ -783,7 +842,7 @@ def approve_case_candidate(
         raise CanonicalOperationError(
             "CASE_SOURCE_GOVERNANCE_BLOCKED",
             "案例来源无法追溯，不能完成入库。",
-            "请恢复来源文件与视频链接后重试。",
+            "请恢复来源链接、稳定视频编号、已记录媒体 SHA 与采集 lineage 后重试。",
         )
     companion_path = (
         settings.pipeline_root
@@ -856,5 +915,47 @@ def record_case_review_decision(
         state["status"] = "rejected"
         state["current_stage"] = "不收录"
     state["updated_at"] = datetime.now(timezone.utc).isoformat()
-    _write_atomic(candidate_path.parents[2] / "case_analysis_attempt_v1.json", state)
+    attempt_root = candidate_path.parents[2]
+    state_path = attempt_root / "case_analysis_attempt_v1.json"
+    _write_atomic(state_path, state)
+    if decision == "reject":
+        command = [
+            settings.pipeline_python_executable or settings.python_executable,
+            str(settings.pipeline_root / "scripts" / "storage_retention_v1.py"),
+            "--pipeline-root",
+            str(settings.pipeline_root),
+            "--downloader-root",
+            str(settings.repo_root / "douyin-downloader"),
+            "--attempt-root",
+            str(attempt_root),
+            "--trigger",
+            "human_reject",
+        ]
+        try:
+            result = subprocess.run(
+                command,
+                cwd=settings.repo_root,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                env=pipeline_subprocess_env(needs_deepseek=False),
+                timeout=60,
+                check=False,
+            )
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            result = None
+            cleanup_error = str(exc)
+        else:
+            cleanup_error = (result.stderr or result.stdout).strip()
+        if result is None or result.returncode != 0:
+            latest = _read_json(state_path)
+            latest["cleanup_status"] = "retry_required"
+            latest["storage_cleanup"] = {
+                "status": "retry_required",
+                "trigger": "human_reject",
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+                "error": cleanup_error or "Storage cleanup command failed.",
+            }
+            _write_atomic(state_path, latest)
     return receipt

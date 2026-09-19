@@ -1,7 +1,7 @@
 import { createApiClient } from "./api-client.js";
-import { createCaseViews } from "./case-views.js";
+import { createCaseViews } from "./case-views.js?v=storage-retention-1";
 import { createCustomerViews } from "./customer-views.js";
-import { progressPanel } from "./case-components.js";
+import { progressPanel } from "./case-components.js?v=storage-retention-1";
 import { startTaskPolling } from "./task-progress.js";
 import { customerProgressPanel } from "./customer-components.js";
 import { matchWorkflowRoute } from "./routes.js";
@@ -66,7 +66,7 @@ function escapeHtml(value) {
 }
 
 function brandMark() {
-  return `<img class="brand-mark" src="/assets/brand/logo.png" alt="">`;
+  return `<img class="brand-mark" src="/assets/brand/logo.png?v=transparent-1" alt="">`;
 }
 
 function showToast(message) {
