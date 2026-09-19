@@ -175,14 +175,14 @@ export function createContentViews({
 
     if (title) {
       title.textContent = news
-        ? "News V1 只开放已验证的 Price / Offer 路径"
-        : "先检查容量，再显式建立 Generation Request";
+        ? "News 当前仅支持已验证的价格与优惠场景"
+        : "先检查容量，再确认创建任务";
     }
 
     if (body) {
       body.textContent = news
-        ? "系统会先查找该客户已经导出的 Strong Historical Content，再推荐 4–8 个 News 信息标题。当前不把 Profile 切换当作新语义内容。"
-        : "“检查内容容量”保持完全只读。只有在容量结果出来后再次点击确认，才会建立 immutable Generation Request 和 Source Planning Handoff。";
+        ? "系统会先从该客户已有的已发布内容中整理 4–8 个新闻体标题。切换创作模式不会重置已有内容记录。"
+        : "检查内容容量只用于评估。容量结果出来后，需要再次确认才会创建本次任务并准备内容来源。";
     }
   }
 
@@ -1484,7 +1484,7 @@ export function createContentViews({
 
                     <strong>News</strong>
                     <span>
-                      新闻体内容；最终可用性以 Authority 检查为准
+                      新闻体内容；提交前会检查当前是否可用
                     </span>
                   </label>
                 </div>
@@ -1535,19 +1535,17 @@ export function createContentViews({
 
           <section class="card notice-card create-authority-card">
             <h2 id="create-authority-title">
-              先检查容量，再显式建立 Generation Request
+              先检查容量，再确认创建任务
             </h2>
 
             <p id="create-authority-body">
-              “检查内容容量”保持完全只读。
-              只有在容量结果出来后再次点击确认，
-              才会建立 immutable Generation Request 和 Source Planning Handoff。
+              检查内容容量只用于评估。
+              容量结果出来后，需要再次确认
+              才会创建本次任务并准备内容来源。
             </p>
 
             <p>
-            这一阶段仍不调用远程模型、
-            不生成脚本、不创建 Generation Batch、
-            不写入 Content Ledger。
+            这一步不会立即生成脚本或成品内容。
             </p>
           </section>
           </div>

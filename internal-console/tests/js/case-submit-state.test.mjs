@@ -14,7 +14,7 @@ for (const state of ["queued", "running"]) {
   const projection = projectCaseSubmitState(state);
   assert.equal(projection.submitVisible, false);
   assert.equal(projection.inputDisabled, true);
-  assert.equal(projection.primaryAction, null);
+  assert.deepEqual(projection.primaryAction, { kind: "progress", label: "查看当前进度" });
 }
 
 const awaiting = projectCaseSubmitState("awaiting_review");

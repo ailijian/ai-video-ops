@@ -1,7 +1,7 @@
 import { createApiClient } from "./api-client.js";
-import { createCaseViews } from "./case-views.js?v=compact-review-1";
+import { createCaseViews } from "./case-views.js?v=productized-stage1-5";
 import { createCustomerViews } from "./customer-views.js";
-import { progressPanel } from "./case-components.js?v=compact-review-1";
+import { progressPanel } from "./case-components.js?v=productized-stage1-5";
 import { startTaskPolling } from "./task-progress.js";
 import { customerProgressPanel } from "./customer-components.js";
 import { matchWorkflowRoute } from "./routes.js";
@@ -15,7 +15,7 @@ import {
 
 import {
   createContentViews,
-} from "./content-views.js?v=branding-layout-2";
+} from "./content-views.js?v=productized-stage1-5";
 
 import {
   createContentOperationsViews,
@@ -46,10 +46,10 @@ const icons = {
 
 const navItems = [
   { path: "/workbench", label: "工作台", icon: "home" },
-  { path: "/cases", label: "案例库", mobileLabel: "案例", icon: "cases" },
-  { path: "/create", label: "视频创作", mobileLabel: "创作", icon: "create", primary: true },
-  { path: "/customers", label: "客户与人设", mobileLabel: "客户", icon: "customers" },
-  { path: "/tasks", label: "任务记录", mobileLabel: "任务", icon: "tasks" },
+  { path: "/cases", label: "案例", icon: "cases" },
+  { path: "/customers", label: "客户", icon: "customers" },
+  { path: "/create", label: "创作", icon: "create" },
+  { path: "/tasks", label: "任务", icon: "tasks" },
 ];
 
 function escapeHtml(value) {
@@ -101,23 +101,19 @@ function routeIsActive(path, target) {
 function shell(title, body) {
   const path = location.pathname;
   const sideLinks = navItems.map((item) => `
-    <a class="nav-link ${item.primary ? "create-link" : ""} ${routeIsActive(path, item.path) ? "active" : ""}"
+    <a class="nav-link ${routeIsActive(path, item.path) ? "active" : ""}"
       href="${item.path}" data-route>
       ${icons[item.icon]}<span>${item.label}</span>
     </a>`).join("");
-  const bottomLinks = navItems.map((item) => item.primary ? `
-    <a class="bottom-link create-bottom ${routeIsActive(path, item.path) ? "active" : ""}" href="${item.path}" data-route>
-      <span class="create-orb">${icons.create}</span><span>${item.mobileLabel}</span>
-    </a>` : `
+  const bottomLinks = navItems.map((item) => `
     <a class="bottom-link ${routeIsActive(path, item.path) ? "active" : ""}" href="${item.path}" data-route>
-      ${icons[item.icon]}<span>${item.mobileLabel || item.label}</span>
+      ${icons[item.icon]}<span>${item.label}</span>
     </a>`).join("");
   return `
     <div class="app-shell">
       <aside class="sidebar">
         <div class="sidebar-brand">${brandMark()}<div><strong>鲸汤AI视频</strong><small>代运营工作台</small></div></div>
         <nav class="side-nav" aria-label="主导航">${sideLinks}</nav>
-        <div class="sidebar-footer">内部生产工作台 · V1</div>
       </aside>
       <div class="main-column">
         <header class="topbar">
@@ -151,12 +147,84 @@ function bindCommonActions() {
 }
 
 function pageHeading(eyebrow, title, description, action = "") {
-  return `<div class="page-heading"><p class="eyebrow">${escapeHtml(eyebrow)}</p><h1>${escapeHtml(title)}</h1><p>${escapeHtml(description)}</p>${action}</div>`;
+  return `<div class="page-heading"><div class="page-heading-copy">${eyebrow ? `<p class="eyebrow">${escapeHtml(eyebrow)}</p>` : ""}<h1>${escapeHtml(title)}</h1>${description ? `<p>${escapeHtml(description)}</p>` : ""}</div>${action}</div>`;
 }
 
 function skeletonPage(title) {
-  app.innerHTML = shell(title, `<main class="page"><div class="skeleton skeleton-card"></div><div class="section skeleton skeleton-card"></div></main>`);
+  app.innerHTML = shell(title, `<main class="page"><section class="state-panel state-loading" aria-label="正在加载"><span class="loading-indicator" aria-hidden="true"></span><h1>正在加载</h1><p>请稍候，内容马上就好。</p></section></main>`);
   bindCommonActions();
+}
+
+function openModal({
+  title,
+  description,
+  confirmLabel,
+  cancelLabel = "取消",
+  danger = false,
+  reasonLabel = "原因",
+  reasonPlaceholder = "请填写原因",
+  reasonRequired = false,
+} = {}) {
+  return new Promise((resolve) => {
+    const previousFocus = document.activeElement;
+    const backdrop = document.createElement("div");
+    backdrop.className = "modal-backdrop";
+    backdrop.innerHTML = `<section class="modal" role="dialog" aria-modal="true" aria-labelledby="dialog-title" aria-describedby="dialog-description">
+      <div class="modal-header"><h2 id="dialog-title">${escapeHtml(title)}</h2><button class="icon-button modal-close" type="button" data-modal-cancel aria-label="关闭">×</button></div>
+      <p id="dialog-description">${escapeHtml(description)}</p>
+      ${reasonRequired ? `<div class="field modal-reason"><label for="modal-reason">${escapeHtml(reasonLabel)}</label><textarea id="modal-reason" placeholder="${escapeHtml(reasonPlaceholder)}" required></textarea><span class="form-error" data-modal-error role="alert">请填写原因后继续。</span></div>` : ""}
+      <div class="modal-actions"><button class="btn btn-secondary" type="button" data-modal-cancel>${escapeHtml(cancelLabel)}</button><button class="btn ${danger ? "btn-danger" : "btn-primary"}" type="button" data-modal-confirm>${escapeHtml(confirmLabel)}</button></div>
+    </section>`;
+    document.body.append(backdrop);
+    document.body.classList.add("modal-open");
+    const modal = backdrop.querySelector(".modal");
+    const confirmButton = backdrop.querySelector("[data-modal-confirm]");
+    const reasonInput = backdrop.querySelector("#modal-reason");
+    let settled = false;
+
+    const close = (result) => {
+      if (settled) return;
+      settled = true;
+      document.removeEventListener("keydown", onKeydown);
+      backdrop.remove();
+      document.body.classList.remove("modal-open");
+      previousFocus?.focus?.();
+      resolve(result);
+    };
+    const cancel = () => close({ confirmed: false, reason: "" });
+    const confirm = () => {
+      const reason = reasonInput?.value.trim() || "";
+      if (reasonRequired && !reason) {
+        backdrop.querySelector("[data-modal-error]").classList.add("visible");
+        reasonInput.focus();
+        return;
+      }
+      close({ confirmed: true, reason });
+    };
+    const onKeydown = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        cancel();
+        return;
+      }
+      if (event.key !== "Tab") return;
+      const focusable = [...modal.querySelectorAll('button:not([disabled]), textarea:not([disabled])')];
+      const first = focusable[0];
+      const last = focusable.at(-1);
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    backdrop.querySelectorAll("[data-modal-cancel]").forEach((button) => button.addEventListener("click", cancel));
+    confirmButton.addEventListener("click", confirm);
+    backdrop.addEventListener("click", (event) => { if (event.target === backdrop) cancel(); });
+    document.addEventListener("keydown", onKeydown);
+    (reasonInput || confirmButton).focus();
+  });
 }
 
 function statusPill(status) {
@@ -168,6 +236,7 @@ function statusPill(status) {
     running: ["进行中", "pill-review"],
     completed: ["已完成", "pill-approved"],
     failed: ["失败", "pill-failed"],
+    rejected: ["未收录", "pill-archived"],
     archived: ["已归档", "pill-archived"],
   };
   const [label, className] = labels[status] || [status, "pill-archived"];
@@ -302,94 +371,41 @@ async function renderWorkbench() {
     const data = await api("/api/workbench");
     const status = data.status || null;
     const hasCustomers = data.has_customers === true;
-    const customers = data.customers || [];
-    const attentionTotal = data.attention.case_reviews + data.attention.persona_reviews + data.attention.content_reviews;
-    const attentionCards = [
-      [data.attention.case_reviews, "案例等待审核", "/cases", "查看案例"],
-      [data.attention.persona_reviews, "客户信息等待审核", "/customers", "查看客户"],
-      [data.attention.content_reviews, "内容批次等待审核", "/tasks", "查看任务"],
-      [data.attention.running_tasks, "任务正在执行", "/tasks", "查看进度"],
-    ].map(([number, label, path, action]) => `
-      <article class="card attention-card"><div><div class="number">${number}</div><div class="label">${label}</div></div>
-        <a class="inline-link" href="${path}" data-route><span>${action}</span>${icons.arrow}</a></article>`).join("");
+    const attentionItems = [
+      [data.attention.case_reviews, "个案例待审核", "/cases", "去审核"],
+      [data.attention.persona_reviews, "个客户信息待确认", "/customers", "去确认"],
+      [data.attention.content_reviews, "个内容批次待审核", "/tasks", "去审核"],
+      [data.attention.running_tasks, "个任务正在运行", "/tasks", "查看"],
+    ].filter(([number]) => number > 0);
+    const attentionTotal = attentionItems.reduce((total, [number]) => total + number, 0);
+    const attentionList = attentionItems.length
+      ? attentionItems.map(([number, label, path, action]) => `<a class="action-row" href="${path}" data-route><span><strong>${number}</strong> ${label}</span><span class="action-row-link">${action}${icons.arrow}</span></a>`).join("")
+      : `<div class="attention-empty"><span class="status-dot status-success"></span><span>当前没有需要处理的事项。</span></div>`;
     const contentCreation = data.capabilities?.content_creation || {};
     const creationCard = contentCreation.available
-      ? `<a class="card quick-card" href="/create" data-route><span class="quick-icon">${icons.create}</span><div><strong>开始视频创作</strong><span>选择客户与出镜人</span></div></a>`
-      : `<article class="card quick-card quick-card-disabled" aria-disabled="true"><span class="quick-icon">${icons.create}</span><div><strong>开始视频创作</strong><span>需要已批准的客户与出镜人</span></div></article>`;
-    let operationalCard;
-    let customerSection;
-    let headingDescription;
-
-    if (status) {
-      const businessId = status.business.business_id;
-      const selectedCustomer = customers.find(
-        (customer) => customer.business_id === businessId,
-      );
-      const name = selectedCustomer?.display_name || businessId;
-      const hold = status.operational_hold;
-      const content = status.content;
-      const truth = status.customer_truth;
-      operationalCard = `
-        <section class="card hold-card">
-          <div class="status-kicker"><span class="status-dot"></span>${hold.active ? "已暂停" : "可以继续"}</div>
-          <h2>${hold.active ? "客户联系已暂停" : "客户运营可以继续"}</h2>
-          <p>${hold.active ? "你暂时决定不联系客户补拍素材。解除暂停前，这批补拍任务不会继续发送。" : "请按当前下一步继续处理。"}</p>
-          <div class="hold-next">当前下一步<strong>${escapeHtml(displayNextAction(status.primary_next_action))}</strong></div>
-        </section>`;
-      customerSection = `
-        <section class="section">
-          <div class="section-head"><div><h2>当前客户</h2><p>查看当前可继续处理的工作</p></div></div>
-          <article class="card customer-snapshot">
-            <div class="snapshot-top"><div><h3>${escapeHtml(name)}</h3></div><span class="pill pill-approved">当前可用</span></div>
-            <div class="snapshot-grid">
-              <div class="metric"><span>客户档案</span><strong>${escapeHtml(humanApprovalStatus(truth.business_persona.status))}</strong></div>
-              <div class="metric"><span>出镜人设</span><strong>${escapeHtml(humanApprovalStatus(truth.speaker_persona.status))}</strong></div>
-              <div class="metric"><span>剩余内容空间</span><strong>${escapeHtml(content.remaining_high_quality_novel_capacity)} 条</strong></div>
-              <div class="metric"><span>最近批次</span><strong>已有完成记录</strong></div>
-            </div>
-          </article>
-        </section>`;
-      headingDescription = attentionTotal ? `有 ${attentionTotal} 件事等待处理。` : "当前没有待审核事项，先查看运营状态。";
-    } else if (!hasCustomers) {
-      operationalCard = `
-        <section class="card empty-state workbench-empty-state">
-          <div class="empty-icon">${icons.customers}</div>
-          <h2>还没有客户</h2>
-          <p>从添加案例或建立第一个客户开始。</p>
-        </section>`;
-      customerSection = "";
-      headingDescription = "还没有客户，从添加案例或建立第一个客户开始。";
-    } else {
-      const selectionError = data.customer_selection?.error;
-      operationalCard = `
-        <section class="card empty-state workbench-empty-state">
-          <div class="empty-icon">${icons.customers}</div>
-          <h2>尚未选择当前客户</h2>
-          <p>${escapeHtml(selectionError?.message || `已有 ${customers.length} 个客户，请从客户列表选择。`)}</p>
-          <a class="btn btn-secondary" href="/customers" data-route>查看客户</a>
-        </section>`;
-      customerSection = "";
-      headingDescription = attentionTotal ? `有 ${attentionTotal} 件事等待处理。` : "请选择客户后查看对应运营状态。";
-    }
+      ? `<a class="quick-action" href="/create" data-route><span class="quick-icon">${icons.create}</span><span><strong>开始创作</strong><small>选择客户与出镜人</small></span>${icons.arrow}</a>`
+      : `<div class="quick-action quick-action-disabled" aria-disabled="true"><span class="quick-icon">${icons.create}</span><span><strong>开始创作</strong><small>需要已确认的客户与出镜人</small></span></div>`;
+    const hold = status?.operational_hold;
+    const holdNotice = hasCustomers && hold?.active ? `<div class="notice notice-warning"><span class="notice-icon">!</span><div><strong>客户联系已暂停</strong><p>解除暂停前，相关补拍工作不会继续。下一步：${escapeHtml(displayNextAction(status.primary_next_action))}</p></div></div>` : "";
+    const emptyCustomerNote = !hasCustomers ? `<div class="notice notice-info"><span class="notice-icon">i</span><div><strong>还没有客户</strong><p>从添加案例或建立第一个客户开始。</p></div></div>` : "";
+    const headingDescription = attentionTotal ? `今天有 ${attentionTotal} 件事需要处理。` : "当前没有需要处理的事项。";
 
     const body = `
-      <main class="page">
-        ${pageHeading("今日", "今天需要做什么", headingDescription)}
-        <div class="dashboard-grid">
-          ${operationalCard}
-          <section class="attention-grid" aria-label="待处理事项">${attentionCards}</section>
-        </div>
-
-        <section class="section">
-          <div class="section-head"><div><h2>快捷开始</h2><p>从常用生产入口继续</p></div></div>
-          <div class="quick-grid">
-            <a class="card quick-card" href="/cases/new" data-route><span class="quick-icon">${icons.link}</span><div><strong>添加案例</strong><span>粘贴真实视频链接</span></div></a>
-            <a class="card quick-card" href="/customers/new" data-route><span class="quick-icon">${icons.customers}</span><div><strong>新建客户</strong><span>整理已有客户资料</span></div></a>
+      <main class="page page-standard workbench-page">
+        ${pageHeading("", "工作台", headingDescription)}
+        ${holdNotice}${emptyCustomerNote}
+        <section class="workbench-section">
+          <div class="section-head"><h2>需要你处理</h2></div>
+          <div class="action-list" aria-label="待处理事项">${attentionList}</div>
+        </section>
+        <section class="workbench-section">
+          <div class="section-head"><h2>快捷开始</h2></div>
+          <div class="quick-actions">
+            <a class="quick-action" href="/cases/new" data-route><span class="quick-icon">${icons.link}</span><span><strong>添加案例</strong><small>粘贴抖音视频链接</small></span>${icons.arrow}</a>
+            <a class="quick-action" href="/customers/new" data-route><span class="quick-icon">${icons.customers}</span><span><strong>新建客户</strong><small>整理客户资料</small></span>${icons.arrow}</a>
             ${creationCard}
           </div>
         </section>
-
-        ${customerSection}
       </main>`;
     app.innerHTML = shell("工作台", body);
     bindCommonActions();
@@ -448,7 +464,7 @@ function renderPlaceholder(type) {
 
 function renderLoadError(title, error) {
   const nextAction = error.detail?.next_action || "请稍后刷新页面重试。";
-  const body = `<main class="page">${pageHeading("Error", title, error.message)}<section class="card notice-card"><h2>下一步</h2><p>${escapeHtml(nextAction)}</p><button class="btn btn-secondary" type="button" data-retry>重新尝试</button></section></main>`;
+  const body = `<main class="page page-form"><section class="state-panel state-error"><span class="state-icon" aria-hidden="true">!</span><h1>暂时无法完成操作</h1><p>${escapeHtml(nextAction)}</p><button class="btn btn-primary" type="button" data-retry>重新尝试</button></section></main>`;
   app.innerHTML = shell(title, body);
   bindCommonActions();
   document.querySelector("[data-retry]").addEventListener("click", renderRoute);
@@ -471,6 +487,7 @@ const caseViews = createCaseViews({
   skeletonPage,
   statusPill,
   showToast,
+  openModal,
   renderLoadError,
 });
 
@@ -553,7 +570,7 @@ async function renderTaskDetail(taskId) {
           `<main class="page task-detail-page">${pageHeading(
             "后台任务",
             humanTaskType(task.task_type),
-            "任务完成只表示执行结束；页面会重新读取 canonical artifact 确认业务状态。",
+            "任务完成后，页面会重新读取业务结果确认最终状态。",
           )}<div data-live-progress>${progressPanel(task)}</div><a class="btn btn-secondary btn-wide" href="/tasks" data-route>返回任务记录</a></main>`,
         );
         bindCommonActions();

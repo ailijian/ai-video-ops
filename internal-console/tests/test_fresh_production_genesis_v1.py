@@ -305,11 +305,12 @@ def test_workbench_frontend_has_formal_empty_state_and_guarded_creation(
         empty_settings.console_root / "static" / "assets" / "app.js"
     ).read_text(encoding="utf-8")
 
-    assert "今天需要做什么" in app_source
+    assert '"工作台"' in app_source
+    assert "当前没有需要处理的事项。" in app_source
     assert "还没有客户" in app_source
     assert "从添加案例或建立第一个客户开始。" in app_source
     assert "添加案例" in app_source
     assert "新建客户" in app_source
-    assert "quick-card-disabled" in app_source
-    assert "需要已批准的客户与出镜人" in app_source
+    assert "quick-action-disabled" in app_source
+    assert "需要已确认的客户与出镜人" in app_source
     assert "书房市集志泉社区食堂" not in app_source

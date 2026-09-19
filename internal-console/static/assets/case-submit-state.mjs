@@ -24,7 +24,9 @@ export function projectCaseSubmitState(status = "idle") {
     showNewCaseReset: submitted,
   };
 
-  if (normalized === "awaiting_review") {
+  if (["queued", "running"].includes(normalized)) {
+    projection.primaryAction = { kind: "progress", label: "查看当前进度" };
+  } else if (normalized === "awaiting_review") {
     projection.primaryAction = { kind: "review", label: "去审核案例" };
   } else if (normalized === "approved") {
     projection.primaryAction = { kind: "existing", label: "查看已有案例" };

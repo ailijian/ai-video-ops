@@ -35,15 +35,17 @@ def test_content_creation_visual_polish_v1():
     assert 'id="check-content-capacity"' in views
     assert 'class="card notice-card create-authority-card"' in views
 
-    # UX copy preserves the frozen "capacity first, generation later" rule.
+    # UX copy preserves the frozen "capacity first, generation later" rule
+    # without exposing internal architecture vocabulary on the default surface.
     assert (
         "系统会先检查高质量内容容量，不会直接生成。"
         in views
     )
     assert (
-        "先检查容量，再显式建立 Generation Request"
+        "先检查容量，再确认创建任务"
         in views
     )
+    assert "检查内容容量只用于评估" in views
 
     # Visual contract: page width, card, profile selector and authority note
     # all have dedicated styling hooks rather than relying on generic cards.
@@ -71,7 +73,7 @@ def test_console_branding_and_favicon_contract():
     assert 'href="/assets/brand/favicon-32x32.png?v=transparent-1"' in index
     assert 'href="/assets/brand/favicon-16x16.png?v=transparent-1"' in index
     assert 'href="/assets/brand/apple-touch-icon.png?v=transparent-1"' in index
-    assert "compact-review-1" in index
+    assert "productized-stage1-5" in index
     assert 'src="/assets/brand/logo.png?v=transparent-1"' in app
     assert "鲸汤AI视频代运营工作台" in app
     assert "视频创作" in app

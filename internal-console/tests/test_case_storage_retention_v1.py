@@ -230,7 +230,7 @@ def test_authority_backup_excludes_case_transient_pixels_and_media():
     )
 
 
-def test_case_review_frontend_exposes_remote_source_warning():
+def test_case_review_frontend_exposes_remote_source_review_surface():
     static_root = Path(__file__).resolve().parents[1] / "static"
     component = (static_root / "assets" / "case-components.js").read_text(
         encoding="utf-8"
@@ -238,8 +238,8 @@ def test_case_review_frontend_exposes_remote_source_warning():
     assert "https://open.douyin.com/player/video?vid=" not in component
     assert "reviewMedia.remote_embed_url" in component
     assert "在抖音打开原视频" in component
-    assert "原始媒体已在分析完成后自动清理。" in component
-    assert "如原视频已无法访问，请勿批准该案例。" in component
+    assert "当前通过抖音原视频进行审核。" in component
+    assert "批准不会改变原视频素材使用权。" in component
 
 
 def test_case_runner_invokes_storage_maintenance_at_hourly_cadence(

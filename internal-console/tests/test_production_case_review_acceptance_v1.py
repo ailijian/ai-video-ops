@@ -353,12 +353,13 @@ def test_review_player_uses_compact_orientation_layout_without_source_ratio_geom
     component = (static / "case-components.js").read_text(encoding="utf-8")
     assert "aspect-ratio: var(--source-aspect-ratio" not in css
     assert "--source-aspect-ratio" not in component
-    assert ".review-media-player.portrait { width: min(100%, 360px); aspect-ratio: 9 / 16; }" in css
-    assert ".review-media-shell.portrait { grid-template-columns: minmax(0, 360px) minmax(0, 1fr); }" in css
+    assert ".review-media-player.portrait { width: min(100%, 300px, calc(60dvh * .5625)); aspect-ratio: 9 / 16; }" in css
+    assert ".review-media-shell.portrait { grid-template-columns: minmax(0, 300px) minmax(0, 1fr); }" in css
     assert ".review-media-player.landscape { width: min(100%, 640px); max-height: 52dvh; aspect-ratio: 16 / 9; }" in css
     assert "review-media-shell ${orientation}" in component
     assert "review-media-player ${orientation}" in component
-    assert "${cleanupNotice}" in component
+    assert "${reviewSurfaceNote}" in component
+    assert "当前通过抖音原视频进行审核。" in component
     assert "reviewMedia.remote_embed_url" in component
     assert 'scrolling="no"' in component
     assert "allowfullscreen" in component

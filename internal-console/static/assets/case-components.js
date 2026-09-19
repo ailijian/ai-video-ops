@@ -22,7 +22,7 @@ function currentStageIndex(task) {
   return CASE_PROGRESS_STAGES.findIndex(([, , threshold]) => task.progress < threshold);
 }
 
-export function progressPanel(task, { compact = false } = {}) {
+export function progressPanel(task, { compact = false, embedded = false } = {}) {
   const activeIndex = currentStageIndex(task);
   const terminal = ["awaiting_review", "completed"].includes(task.status);
   const failed = task.status === "failed";
@@ -59,7 +59,7 @@ export function progressPanel(task, { compact = false } = {}) {
       : `<p class="progress-note">
           你可以离开这个页面，任务进度会保留在“任务记录”中。
         </p>`;
-  return `<section class="card task-progress ${compact ? "compact" : ""}" data-task-progress>
+  return `<section class="${embedded ? "" : "card "}task-progress ${compact ? "compact" : ""} ${embedded ? "embedded" : ""}" data-task-progress>
     <div class="task-progress-head"><div><h2>${failed ? "案例分析未完成" : terminal ? "分析完成，等待审核" : "案例分析中"}</h2>
       <p>${escapeHtml(failed ? task.error_message || "请稍后重试。" : task.stage || "等待开始")}</p></div>
       <strong>${Number(task.progress || 0)}%</strong></div>
@@ -72,12 +72,11 @@ export function progressPanel(task, { compact = false } = {}) {
 export function caseCard(caseItem, statusPill) {
   const duration = caseItem.duration_seconds == null ? "时长未知" : `${Math.round(caseItem.duration_seconds)} 秒`;
   const source = caseItem.platform === "douyin" ? "抖音" : "视频来源";
-  return `<article class="card case-card" data-case-status="${escapeHtml(caseItem.status)}">
-    <div class="case-card-top"><h3>${escapeHtml(caseItem.title)}</h3>${statusPill(caseItem.status)}</div>
-    <div class="case-meta"><span>${source} · ${escapeHtml(duration)}</span><span>${escapeHtml(caseItem.profile)}</span><span>${escapeHtml(caseItem.industry)}</span></div>
-    ${caseItem.summary ? `<p class="case-summary">${escapeHtml(caseItem.summary)}</p>` : ""}
-    <a class="inline-link" href="/cases/${encodeURIComponent(caseItem.case_id)}" data-route><span>查看案例</span><span aria-hidden="true">›</span></a>
-  </article>`;
+  const optionalMeta = caseItem.industry ? `<span>${escapeHtml(caseItem.industry)}</span>` : "";
+  return `<a class="case-row" href="/cases/${encodeURIComponent(caseItem.case_id)}" data-route data-case-status="${escapeHtml(caseItem.status)}">
+    <span class="case-row-main"><strong>${escapeHtml(caseItem.title)}</strong><span class="case-meta"><span>${source} · ${escapeHtml(duration)}</span>${optionalMeta}</span></span>
+    <span class="case-row-end">${statusPill(caseItem.status)}<span class="case-chevron" aria-hidden="true">›</span></span>
+  </a>`;
 }
 
 function paragraphList(values) {
@@ -87,19 +86,22 @@ function paragraphList(values) {
 export function caseReviewContent(detail, statusPill) {
   const development = paragraphList(detail.how_it_tells?.development);
   const reviewMedia = detail.review_media || {};
-  const sourceUrl = reviewMedia.source_url || "";
+  const sourceUrl = reviewMedia.source_url || detail.source_url || "";
+  const remoteEmbedUrl = reviewMedia.remote_embed_url || "";
   const sourceWidth = Number(reviewMedia.source_width) || 9;
   const sourceHeight = Number(reviewMedia.source_height) || 16;
   const orientation = sourceWidth > sourceHeight ? "landscape" : "portrait";
   const mediaSurface = reviewMedia.local_available
     ? `<video controls playsinline preload="metadata" src="${escapeHtml(reviewMedia.local_url)}"></video>`
-    : `<iframe class="douyin-review-player" src="${escapeHtml(reviewMedia.remote_embed_url)}" title="抖音原视频审核预览" loading="lazy" scrolling="no" allowfullscreen></iframe>`;
+    : remoteEmbedUrl
+      ? `<iframe class="douyin-review-player" src="${escapeHtml(remoteEmbedUrl)}" title="抖音原视频审核预览" loading="lazy" scrolling="no" allowfullscreen></iframe>`
+      : `<div class="review-media-unavailable"><strong>预览暂时不可用</strong><span>请在抖音打开原视频完成审核。</span></div>`;
   const sourceLink = sourceUrl
     ? `<a class="source-video-link" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">在抖音打开原视频</a>`
     : "";
-  const cleanupNotice = reviewMedia.local_available
+  const reviewSurfaceNote = reviewMedia.local_available
     ? ""
-    : `<div class="transient-media-notice"><strong>原始媒体已在分析完成后自动清理。</strong><span>请根据抖音原始来源确认分析结果；如原视频已无法访问，请勿批准该案例。</span></div>`;
+    : `<p class="review-source-note">当前通过抖音原视频进行审核。</p>`;
   const shots = (detail.full_breakdown?.shots || []).map((shot) => `<article class="breakdown-shot">
     <div class="shot-time">画面 ${shot.number} · ${Number(shot.start || 0).toFixed(1)}–${Number(shot.end || 0).toFixed(1)} 秒</div>
     ${shot.narration ? `<p><strong>口播</strong>${escapeHtml(shot.narration)}</p>` : ""}
@@ -107,43 +109,49 @@ export function caseReviewContent(detail, statusPill) {
     ${shot.onscreen_text ? `<p><strong>画面文字</strong>${escapeHtml(shot.onscreen_text)}</p>` : ""}
     ${shot.function ? `<p><strong>作用</strong>${escapeHtml(shot.function)}</p>` : ""}
   </article>`).join("");
-  return `<main class="page case-review-page">
-    <div class="case-review-heading"><a class="back-link" href="/cases" data-route>← 返回案例库</a><div>${statusPill(detail.status)}</div></div>
+  const reviewDecision = detail.review?.approved
+    ? `<div class="approved-message"><strong>已进入案例库</strong><p>这个案例已经完成审核。</p></div>`
+    : detail.review?.approval_recovery_required
+      ? `<p>上次批准尚未完整保存。继续后只会完成原有批准，不会重复审核。</p><button class="btn btn-primary btn-wide" type="button" data-review-action="approve">完成批准</button>`
+      : `<p>请对照原视频检查内容理解、叙事顺序与画面拆解。</p>
+        <button class="btn btn-primary btn-wide" type="button" data-review-action="approve">批准入库</button>
+        <button class="btn btn-secondary btn-wide" type="button" data-review-action="reanalyze">重新分析</button>
+        <button class="btn btn-ghost btn-wide danger-text" type="button" data-review-action="reject">不收录</button>`;
+  return `<main class="page page-review case-review-page">
+    <div class="case-review-heading"><a class="back-link" href="/cases" data-route>← 案例</a><div>${statusPill(detail.status)}</div></div>
     <section class="review-layout">
       <div class="review-primary">
-        <section class="card video-card">
+        <section class="panel media-summary">
           <div class="review-media-shell ${orientation}">
             <div class="review-media-player ${orientation}">${mediaSurface}</div>
             <div class="review-media-meta"><h1>${escapeHtml(detail.title)}</h1>
-              <p>${detail.platform === "douyin" ? "抖音" : "视频来源"} · ${detail.duration_seconds == null ? "时长未知" : `${Math.round(detail.duration_seconds)} 秒`}</p>
-              ${detail.description ? `<p>${escapeHtml(detail.description)}</p>` : ""}
+              <p class="media-meta-line">${detail.platform === "douyin" ? "抖音" : "视频来源"} · ${detail.duration_seconds == null ? "时长未知" : `${Math.round(detail.duration_seconds)} 秒`}</p>
+              ${detail.description ? `<p class="media-description">${escapeHtml(detail.description)}</p>` : ""}
               ${sourceLink}
-              ${cleanupNotice}
+              ${reviewSurfaceNote}
             </div>
           </div>
         </section>
-        <div class="rights-banner"><strong>案例仅用于内部结构研究。</strong><span>批准入库不代表原视频素材可以用于客户生产。</span></div>
-        <section class="card review-section"><h2>这个视频在讲什么</h2>
+        <section class="case-analysis"><h2>分析结果</h2>
+        <div class="review-section"><h3>讲了什么</h3>
           ${detail.what_it_says?.topic ? `<div class="review-row"><span>内容主题</span><p>${escapeHtml(detail.what_it_says.topic)}</p></div>` : ""}
           ${detail.what_it_says?.core_expression ? `<div class="review-row"><span>核心表达</span><p>${escapeHtml(detail.what_it_says.core_expression)}</p></div>` : ""}
-        </section>
-        <section class="card review-section"><h2>它是怎么讲的</h2>
+        </div>
+        <div class="review-section"><h3>怎么讲</h3>
           ${detail.how_it_tells?.opening ? `<div class="review-row"><span>开头</span><p>${escapeHtml(detail.how_it_tells.opening)}</p></div>` : ""}
           ${development ? `<div class="review-row"><span>中段</span><div>${development}</div></div>` : ""}
           ${detail.how_it_tells?.ending ? `<div class="review-row"><span>结尾</span><p>${escapeHtml(detail.how_it_tells.ending)}</p></div>` : ""}
+        </div>
+        <div class="review-section"><h3>值得参考</h3>${paragraphList(detail.reusable_observations)}</div>
         </section>
-        <section class="card review-section"><h2>值得学习的结构</h2>${paragraphList(detail.reusable_observations)}</section>
-        <details class="card full-breakdown"><summary>查看完整拆解 <span>口播与画面逐段对照</span></summary>
+        <details class="full-breakdown"><summary>完整拆解 <span>口播与画面逐段对照</span></summary>
           <div class="breakdown-body">${detail.full_breakdown?.narration ? `<section><h3>完整口播</h3><p class="narration-text">${escapeHtml(detail.full_breakdown.narration)}</p></section>` : ""}
           <section><h3>画面拆解</h3><div class="breakdown-list">${shots}</div></section></div>
         </details>
       </div>
-      <aside class="review-aside"><section class="card review-decision"><h2>人工审核</h2>
-        ${detail.review?.approved ? `<div class="approved-message"><strong>已进入案例库</strong><p>结构研究已批准；原视频素材使用权没有改变。</p></div>` : detail.review?.approval_recovery_required ? `<p>系统检测到同一 Attempt 的审批 artifact 尚未全部发布。恢复只补齐 companion 与状态，不会执行第二次人工审批。</p>
-          <button class="btn btn-primary btn-wide" type="button" data-review-action="approve">完成审批恢复</button>` : `<p>请对照原视频确认内容理解、叙事顺序与画面拆解是否可靠。</p>
-          <button class="btn btn-primary btn-wide" type="button" data-review-action="approve">批准入库</button>
-          <button class="btn btn-secondary btn-wide" type="button" data-review-action="reanalyze">退回重新分析</button>
-          <button class="btn btn-quiet btn-wide danger-text" type="button" data-review-action="reject">不收录</button>`}
+      <aside class="review-aside"><section class="panel review-decision"><h2>人工审核</h2>
+        ${reviewDecision}
+        <p class="review-rights-note">批准不会改变原视频素材使用权。</p>
       </section></aside>
     </section>
   </main>`;
