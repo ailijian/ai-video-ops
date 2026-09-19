@@ -1,0 +1,10 @@
+{
+  "content_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+  "decision": "approved",
+  "human_gate": true,
+  "persona_id": "fixture_business_001",
+  "persona_sha256_after_approval": "28b606b36318effdadc1a615db63443b344a73f2b7babf0224aa03583ecdcb57",
+  "reviewed_at": "2026-01-01T00:00:00+00:00",
+  "revision": 1,
+  "schema_version": "persona-approval-receipt-v1.0"
+}

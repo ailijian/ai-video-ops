@@ -9,9 +9,14 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
+from authority_test_support import live_authority_root
+
+pytestmark = pytest.mark.live_authority
+REPO_ROOT = Path(__file__).resolve().parents[1]
+ROOT = live_authority_root()
+SCRIPTS = REPO_ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from generate_mix_scripts_v1 import (  # noqa: E402

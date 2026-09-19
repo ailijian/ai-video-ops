@@ -1,0 +1,8 @@
+{
+  "decision": "approved",
+  "human_gate": true,
+  "request_id": "fixture_news_request_001",
+  "reuse_intent": "cross_profile_repurpose",
+  "schema_version": "news-delivery-human-approval-v1.0",
+  "semantic_novelty": false
+}

@@ -1,0 +1,10 @@
+{
+  "request_id": "fixture_mix_request_001",
+  "summary": {
+    "blocked": 0,
+    "capture_required": 1,
+    "content_count": 1,
+    "covered": 0,
+    "partially_covered": 0
+  }
+}

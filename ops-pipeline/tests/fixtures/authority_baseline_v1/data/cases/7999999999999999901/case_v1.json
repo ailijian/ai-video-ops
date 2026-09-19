@@ -1,0 +1,63 @@
+{
+  "authority": {
+    "facts_transferred": false,
+    "media_rights_established": false
+  },
+  "case_id": "7999999999999999901",
+  "identity": {
+    "analysis_profile": "mix",
+    "duration_seconds": 24.0,
+    "industry": "restaurant",
+    "platform": "douyin",
+    "source_url": "https://www.douyin.com/video/7999999999999999901",
+    "stable_video_id": "7999999999999999901"
+  },
+  "lifecycle": {
+    "approved": true,
+    "approved_at": "2026-01-01T00:00:00+00:00",
+    "human_gate": true,
+    "status": "approved"
+  },
+  "schema_version": "case-v1.0",
+  "source_evidence": {
+    "video": {
+      "local_source_exists": false,
+      "path": "data/transient/source_media/7999999999999999901.mp4",
+      "sha256": "3333333333333333333333333333333333333333333333333333333333333333"
+    }
+  },
+  "storyboard": {
+    "shots": [
+      {
+        "end": 8,
+        "evidence": {
+          "audio_overlap_safe_verbatim": "先看清服务内容再做决定",
+          "observable_scene_safe_verbatim": [
+            "讲述者展示服务台面"
+          ],
+          "onscreen_text_safe_verbatim": [
+            "价格以现场公示为准"
+          ]
+        },
+        "interpretation": {
+          "narrative_function": "建立问题与范围"
+        },
+        "start": 0
+      }
+    ],
+    "video_understanding": {
+      "content_goal_candidate": "用清晰步骤解释服务价值并保留人工判断",
+      "structure_sequence": [
+        {
+          "description": "先提出顾客关心的问题"
+        },
+        {
+          "description": "再展示可核验的服务步骤"
+        },
+        {
+          "description": "最后邀请顾客自行判断"
+        }
+      ]
+    }
+  }
+}

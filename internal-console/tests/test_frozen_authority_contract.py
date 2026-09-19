@@ -100,9 +100,9 @@ def test_09_export_retry_cannot_regenerate(client: TestClient, settings: Setting
         settings.pipeline_root
         / "data"
         / "generation_batches"
-        / "real_shufang_mix_003"
+        / "fixture_mix_request_001"
         / "revisions"
-        / "revision_0004"
+        / "revision_0001"
         / "approved_generation_batch_v1.json"
     )
     before = file_sha(batch)
@@ -115,7 +115,7 @@ def test_10_operational_hold_remains_active(client: TestClient, settings: Settin
         settings.pipeline_root
         / "data"
         / "operations"
-        / "shufang_zhiyuan_community_canteen"
+        / "fixture_business_001"
         / "operational_controls_v1.json"
     )
     before = file_sha(control)

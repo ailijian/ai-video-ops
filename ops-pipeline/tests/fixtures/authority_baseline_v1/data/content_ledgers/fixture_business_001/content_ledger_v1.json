@@ -1,0 +1,46 @@
+{
+  "business_id": "fixture_business_001",
+  "entries": [
+    {
+      "batch_ref": "fixture_mix_request_001",
+      "content_id": "fixture_mix_content_001",
+      "exported_at": "2026-01-01T00:00:00+00:00",
+      "semantic_novelty": true,
+      "status": "exported"
+    }
+  ],
+  "extensions": {
+    "presentation_history_v1": {
+      "entries": [
+        {
+          "approval_ref": {
+            "path": "data/news_deliveries/fixture_news_request_001/news_delivery_human_approval_v1.json",
+            "sha256": "48f3689c332d783ccfc943b8ab7e24e4fc5b52700026a9cc365c229c36ac94b4"
+          },
+          "business_id": "fixture_business_001",
+          "communicated_information_units_created": false,
+          "export_ref": {
+            "path": "data/news_deliveries/fixture_news_request_001/approved_news_export.txt",
+            "sha256": "be8ddbfaef614d07d211f808b4d8704d2b3993e5168fa9541c9ac6461ca2b5e8"
+          },
+          "exported_at": "2026-01-01T00:00:00+00:00",
+          "new_central_claim_count_delta": 0,
+          "new_information_gain_delta": 0,
+          "new_semantic_content_count_delta": 0,
+          "presentation_id": "fixture_news_presentation_001",
+          "production_profile": "news",
+          "request_id": "fixture_news_request_001",
+          "reuse_intent": "cross_profile_repurpose",
+          "semantic_novelty": false,
+          "status": "exported"
+        }
+      ]
+    }
+  },
+  "schema_version": "content-ledger-v1.0",
+  "updated_at": "2026-01-01T00:00:00+00:00",
+  "validation": {
+    "append_only": true,
+    "entry_count": 1
+  }
+}

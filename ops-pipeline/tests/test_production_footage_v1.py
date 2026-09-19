@@ -7,9 +7,14 @@ import unittest
 from copy import deepcopy
 from pathlib import Path
 
+import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
+from authority_test_support import live_authority_root
+
+pytestmark = pytest.mark.live_authority
+REPO_ROOT = Path(__file__).resolve().parents[1]
+ROOT = live_authority_root()
+SCRIPTS = REPO_ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from production_footage_v1 import (  # noqa: E402

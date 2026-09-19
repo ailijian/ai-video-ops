@@ -1,0 +1,9 @@
+{
+  "candidate_sha256": "d47f84be2650b282f49797c4bc347d84f8062da2d048dddba06fdf3f3b1fba33",
+  "decision": "approved",
+  "human_gate": true,
+  "pattern_id": "fixture_pattern_001",
+  "pattern_sha256": "2a309b30273031790e349ddbf85e9dbfbaa9e6d9ca179585e6aef32a865d9046",
+  "reviewed_at": "2026-01-01T00:00:00+00:00",
+  "schema_version": "pattern-approval-receipt-v1.0"
+}

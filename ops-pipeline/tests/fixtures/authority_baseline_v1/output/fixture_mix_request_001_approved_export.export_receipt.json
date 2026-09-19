@@ -1,0 +1,8 @@
+{
+  "batch_sha256": "8be6a72664fe9f1eddac6724310e1589594e4e92b72f20b54d4b49dd5f39e470",
+  "output_path": "output/fixture_mix_request_001_approved_export.txt",
+  "output_sha256": "031186dfb13e444eddda6e0c61051145f09380b8c3022eaab742cbeaf27c0932",
+  "request_id": "fixture_mix_request_001",
+  "schema_version": "excel-export-receipt-v1.0",
+  "validation_passed": true
+}

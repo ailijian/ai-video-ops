@@ -7,8 +7,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pytest
 
-SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
+from authority_test_support import live_authority_root
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS = REPO_ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from compare_approved_cases_v1 import (  # noqa: E402
@@ -20,7 +24,7 @@ from compare_approved_cases_v1 import (  # noqa: E402
 )
 
 
-ROOT = SCRIPTS.parent
+ROOT = live_authority_root()
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -175,6 +179,7 @@ class CrossCaseComparisonTests(unittest.TestCase):
             )
 
 
+@pytest.mark.live_authority
 class GeneralizedNewsCrossCaseComparisonTests(unittest.TestCase):
     PRICE_BUNDLE = (
         ROOT

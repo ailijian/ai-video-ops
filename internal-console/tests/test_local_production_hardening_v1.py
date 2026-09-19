@@ -680,7 +680,7 @@ def test_three_fake_users_can_submit_and_read_shared_tasks_without_db_lock(
             response = local.post(
                 "/api/cases/analyze",
                 headers={"X-CSRF-Token": login.json()["csrf_token"]},
-                json={"url": f"https://www.douyin.com/video/79999999999999999{index:02d}"},
+                json={"url": f"https://www.douyin.com/video/78899999999999999{index:02d}"},
             )
             local.close()
             return response.status_code

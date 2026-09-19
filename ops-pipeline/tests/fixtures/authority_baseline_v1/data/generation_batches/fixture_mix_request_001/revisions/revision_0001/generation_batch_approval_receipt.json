@@ -1,0 +1,11 @@
+{
+  "approved_batch": {
+    "path": "data/generation_batches/fixture_mix_request_001/revisions/revision_0001/approved_generation_batch_v1.json",
+    "sha256": "8be6a72664fe9f1eddac6724310e1589594e4e92b72f20b54d4b49dd5f39e470"
+  },
+  "human_gate": true,
+  "request_id": "fixture_mix_request_001",
+  "reviewed_at": "2026-01-01T00:00:00+00:00",
+  "schema_version": "generation-batch-approval-receipt-v1.0",
+  "status": "approved"
+}

@@ -1,0 +1,25 @@
+{
+  "batch_revision": 1,
+  "human_gate": true,
+  "items": [
+    {
+      "case_media_used": false,
+      "central_claim": "介绍透明报价的服务边界",
+      "content_id": "fixture_mix_content_001"
+    }
+  ],
+  "lineage": {
+    "generation_request": {
+      "path": "data/generation_requests/fixture_mix_request_001/generation_request_v1.json",
+      "sha256": "3aef0c822c1e0eda7c94ec66b2c68294b2eabaaa80a18fa3dbd9963f9229a5b6"
+    },
+    "pattern": {
+      "path": "data/patterns/approved/fixture_pattern_001/pattern_v1.json",
+      "sha256": "2a309b30273031790e349ddbf85e9dbfbaa9e6d9ca179585e6aef32a865d9046"
+    }
+  },
+  "profile": "mix",
+  "request_id": "fixture_mix_request_001",
+  "schema_version": "approved-generation-batch-v1.0",
+  "status": "approved"
+}

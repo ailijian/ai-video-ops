@@ -1,0 +1,15 @@
+{
+  "excel_export": {
+    "sha256": "be8ddbfaef614d07d211f808b4d8704d2b3993e5168fa9541c9ac6461ca2b5e8"
+  },
+  "presentation_history": {
+    "presentation_id": "fixture_news_presentation_001",
+    "semantic_entries_changed": false,
+    "semantic_entry_count_delta": 0
+  },
+  "request_id": "fixture_news_request_001",
+  "schema_version": "news-delivery-export-closure-v1.0",
+  "validation": {
+    "passed": true
+  }
+}

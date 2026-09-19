@@ -1,0 +1,13 @@
+{
+  "case_refs": [
+    {
+      "path": "data/cases/7999999999999999901/case_v1.json",
+      "sha256": "dcb48ffedd00e959a36f7332a0a7a16047801b0d693695385d05b1fc7205d9dc"
+    }
+  ],
+  "comparison_id": "fixture_comparison_001",
+  "facts_transferred": false,
+  "proof_authority": "structural_hypothesis_only",
+  "schema_version": "cross-case-comparison-v1.0",
+  "status": "human_reviewed"
+}

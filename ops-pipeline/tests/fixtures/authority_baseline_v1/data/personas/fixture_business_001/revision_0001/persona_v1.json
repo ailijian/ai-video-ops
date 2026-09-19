@@ -1,0 +1,34 @@
+{
+  "approval": {
+    "human_gate": true,
+    "reviewer": "fixture_reviewer"
+  },
+  "facts": {
+    "business_name": {
+      "fact_id": "fixture_business_fact_001",
+      "state": "known",
+      "value": "合成测试商户"
+    },
+    "industry": {
+      "fact_id": "fixture_business_fact_002",
+      "state": "known",
+      "value": "餐饮服务"
+    }
+  },
+  "identity": {
+    "display_name": "合成测试商户",
+    "industry": "restaurant"
+  },
+  "lifecycle": {
+    "approved": true,
+    "status": "approved"
+  },
+  "persona_id": "fixture_business_001",
+  "persona_scope": "business",
+  "provenance": {
+    "content_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "synthetic": true
+  },
+  "revision": 1,
+  "schema_version": "persona-v1.0"
+}

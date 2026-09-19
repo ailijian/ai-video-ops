@@ -238,7 +238,16 @@ def test_reanalysis_after_cleanup_reacquires_source(
 
 def test_human_approval_is_explicit_and_does_not_grant_media_rights(tmp_path: Path):
     pipeline = Path(__file__).resolve().parents[1]
-    source_case = pipeline / "data" / "cases" / "7683027343636542565" / "case_v1.json"
+    source_case = (
+        pipeline
+        / "tests"
+        / "fixtures"
+        / "authority_baseline_v1"
+        / "data"
+        / "cases"
+        / "7999999999999999901"
+        / "case_v1.json"
+    )
     case = json.loads(source_case.read_text(encoding="utf-8"))
     case["lifecycle"].update(
         {
@@ -249,10 +258,24 @@ def test_human_approval_is_explicit_and_does_not_grant_media_rights(tmp_path: Pa
         }
     )
     case.pop("approval", None)
-    case["quality"]["human_review_required"] = True
+    case.setdefault("quality", {})["human_review_required"] = True
     case["quality"]["human_review_completed"] = False
-    case["validation"]["human_approval_completed"] = False
+    case.setdefault("validation", {})["human_approval_completed"] = False
     case["validation"]["auto_approved"] = False
+    case["validation"]["passed"] = True
+    case["visual_evidence"] = {"coverage_label": "candidate_complete"}
+    case["privacy_gate"] = {
+        "library_safe": True,
+        "unresolved_sensitive_items": 0,
+        "derived_artifact_scan_passed": True,
+        "policy_version": "privacy-policy-v1.0",
+    }
+    case["storyboard"]["video_understanding"]["verified_proofs"] = []
+    case["storyboard"]["claims_semantics"] = (
+        "candidate_unverified_unless_supported_by_verified_proofs"
+    )
+    case["quality"]["verified_proof_count"] = 0
+    case["pattern_state"] = {"pattern_mining_performed": False}
     case_id = str(case["case_id"])
     source_url = f"https://www.douyin.com/video/{case_id}"
     recorded_sha = hashlib.sha256(b"source-media-was-cleaned").hexdigest()
@@ -262,6 +285,22 @@ def test_human_approval_is_explicit_and_does_not_grant_media_rights(tmp_path: Pa
         json.dumps({"aweme_id": case_id, "desc": "retained metadata"}),
         encoding="utf-8",
     )
+    storyboard_artifact = tmp_path / "reverse_storyboard_v1.json"
+    storyboard_artifact.write_text(
+        json.dumps({"case_id": case_id, "synthetic": True}), encoding="utf-8"
+    )
+    privacy_artifact = tmp_path / "privacy_projection_v1.json"
+    privacy_artifact.write_text(
+        json.dumps(
+            {
+                "case_id": case_id,
+                "library_safe": True,
+                "privacy_policy_version": "privacy-policy-v1.0",
+            }
+        ),
+        encoding="utf-8",
+    )
+    case["privacy_gate"]["source_projection_sha256"] = sha256(privacy_artifact)
     acquisition = tmp_path / "source_acquisition_v1.json"
     acquisition.write_text(
         json.dumps(
@@ -298,9 +337,11 @@ def test_human_approval_is_explicit_and_does_not_grant_media_rights(tmp_path: Pa
             "sha256": sha256(metadata),
         },
     }
-    case["source_artifacts"]["video"] = str(missing_video)
+    case.setdefault("source_artifacts", {})["video"] = str(missing_video)
     case["source_artifacts"]["source_acquisition_v1"] = str(acquisition)
     case["source_artifacts"]["source_metadata_v1"] = str(metadata)
+    case["source_artifacts"]["storyboard_v1"] = str(storyboard_artifact)
+    case["source_artifacts"]["privacy_projection_v1"] = str(privacy_artifact)
     candidate = tmp_path / "case_v1.json"
     candidate.write_text(
         json.dumps(case, ensure_ascii=False, indent=2), encoding="utf-8"

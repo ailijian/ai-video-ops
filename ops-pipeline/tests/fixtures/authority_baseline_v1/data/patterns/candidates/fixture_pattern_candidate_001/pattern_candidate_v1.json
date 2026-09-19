@@ -1,0 +1,16 @@
+{
+  "authority": {
+    "facts_transferred": false,
+    "pattern_approved": false
+  },
+  "effectiveness": {
+    "performance_data_used": false,
+    "status": "unvalidated"
+  },
+  "pattern_id": "fixture_pattern_001",
+  "schema_version": "pattern-candidate-v1.0",
+  "status": "review_required",
+  "supported_case_ids": [
+    "7999999999999999901"
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "acquisition_lineage_valid": true,
+  "case_id": "7999999999999999901",
+  "local_source_exists": false,
+  "media_reuse_rights": "not_established",
+  "production_footage_pool_eligible": false,
+  "recorded_source_media_sha256": "3333333333333333333333333333333333333333333333333333333333333333",
+  "schema_version": "case-source-governance-companion-v1.0",
+  "source_url": "https://www.douyin.com/video/7999999999999999901",
+  "stable_video_id": "7999999999999999901"
+}

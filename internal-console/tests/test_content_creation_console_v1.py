@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -16,28 +17,11 @@ from app.config import Settings
 
 @pytest.fixture()
 def content_settings(
-    tmp_path: Path,
+    settings: Settings,
 ) -> Settings:
-    console_root = Path(__file__).resolve().parents[1]
-
-    repo_root = console_root.parent
-
-    return Settings(
-        repo_root=repo_root,
-        console_root=console_root,
-        pipeline_root=(repo_root / "ops-pipeline"),
-        database_path=(tmp_path / "console.sqlite3"),
-        python_executable=str(console_root / ".venv" / "Scripts" / "python.exe"),
-        pipeline_python_executable=str(
-            repo_root / "ops-pipeline" / ".venv" / "Scripts" / "python.exe"
-        ),
+    return replace(
+        settings,
         session_cookie_name=("aivo_content_test"),
-        session_hours=1,
-        secure_cookies=False,
-        status_timeout_seconds=30,
-        case_analysis_worker_enabled=False,
-        customer_analysis_worker_enabled=False,
-        speaker_analysis_worker_enabled=False,
         default_business_id="unused",
     )
 

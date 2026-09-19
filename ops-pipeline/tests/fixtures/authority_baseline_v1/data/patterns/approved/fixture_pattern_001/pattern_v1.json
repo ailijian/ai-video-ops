@@ -1,0 +1,39 @@
+{
+  "approval": {
+    "human_gate": true,
+    "reviewer": "fixture_reviewer"
+  },
+  "compatible_profiles": [
+    "mix"
+  ],
+  "creative_invariants": [
+    "问题先行",
+    "证据可核验",
+    "结论保留边界"
+  ],
+  "effectiveness": {
+    "performance_data_used": false,
+    "status": "unvalidated"
+  },
+  "lineage": {
+    "candidate": {
+      "path": "data/patterns/candidates/fixture_pattern_candidate_001/pattern_candidate_v1.json",
+      "sha256": "d47f84be2650b282f49797c4bc347d84f8062da2d048dddba06fdf3f3b1fba33"
+    },
+    "case_refs": [
+      {
+        "path": "data/cases/7999999999999999901/case_v1.json",
+        "sha256": "dcb48ffedd00e959a36f7332a0a7a16047801b0d693695385d05b1fc7205d9dc"
+      }
+    ]
+  },
+  "pattern_id": "fixture_pattern_001",
+  "schema_version": "pattern-v1.0",
+  "scope": {
+    "industry": "restaurant",
+    "supported_case_ids": [
+      "7999999999999999901"
+    ]
+  },
+  "status": "approved"
+}

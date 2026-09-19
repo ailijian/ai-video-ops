@@ -1,0 +1,158 @@
+{
+  "contains_production_truth": false,
+  "files": [
+    {
+      "path": "data/case_governance/cases/7999999999999999901/case_source_governance_companion_v1.json",
+      "sha256": "6499b5ba541ddc25f3c79116effe81d2455b7783505de16b5131e2320b1634cc"
+    },
+    {
+      "path": "data/cases/7999999999999999901/approval_receipt.json",
+      "sha256": "77131b6d7cbca71b99d317295c5db79d1148b663ee4090428ce547ab4a54a80a"
+    },
+    {
+      "path": "data/cases/7999999999999999901/case_v1.json",
+      "sha256": "dcb48ffedd00e959a36f7332a0a7a16047801b0d693695385d05b1fc7205d9dc"
+    },
+    {
+      "path": "data/content_ledgers/fixture_business_001/content_ledger_v1.json",
+      "sha256": "d137eb828de9d96a4680480f2fa3a5216983995e1c8a5c88762494a6692d5c97"
+    },
+    {
+      "path": "data/content_plans/fixture_mix_request_001/content_capacity_recalculation_v1.json",
+      "sha256": "816e3e35a7627031cd5ccb5bbc6743bfa55b4df06cd980b0609e79a5c38efe1d"
+    },
+    {
+      "path": "data/content_plans/fixture_mix_request_001/post_export_remaining_capacity_v1.json",
+      "sha256": "24a0b74c9f0397b526c5255b261643bff123350bf4e0b16881cc24b30f70e9e4"
+    },
+    {
+      "path": "data/creative_coverage/creative_coverage_report_v1.json",
+      "sha256": "7828598c1b7c45f8e8c0ba55cece9c3fc5953fe54cfc79ef47f1cca7825bb441"
+    },
+    {
+      "path": "data/creative_coverage/revisions/news_production_mvp_final_validation_update_v1.json",
+      "sha256": "effda9547c4f86c4f5811ccc0e7406c3f56404327aa05a8da95adc0560b1c302"
+    },
+    {
+      "path": "data/cross_case_research/fixture_comparison_001/cross_case_comparison_v1.json",
+      "sha256": "6e98aef3b00114633a3a713ae5b5887aa534273629dcf714e97297b6975081f4"
+    },
+    {
+      "path": "data/export_closures/fixture_mix_request_001/export_closure_v1.json",
+      "sha256": "a11f99310c312e99e05bb61aef604669e1cad6c0ff5f3aaa86a62b1f4d81d92c"
+    },
+    {
+      "path": "data/fingerprints/7999999999999999901/case_fingerprint_v1.json",
+      "sha256": "f3b2a9b6e7b106bf3112664f8a873e8ad812e0630741eaada943ea03b5c136fc"
+    },
+    {
+      "path": "data/generation_batches/fixture_mix_request_001/revisions/revision_0001/approved_generation_batch_v1.json",
+      "sha256": "8be6a72664fe9f1eddac6724310e1589594e4e92b72f20b54d4b49dd5f39e470"
+    },
+    {
+      "path": "data/generation_batches/fixture_mix_request_001/revisions/revision_0001/generation_batch_approval_receipt.json",
+      "sha256": "220cf9bd600aa41d9516df180b27b391abaa31556d27044302fdecbb49f8a4df"
+    },
+    {
+      "path": "data/generation_requests/fixture_mix_request_001/generation_request_v1.json",
+      "sha256": "3aef0c822c1e0eda7c94ec66b2c68294b2eabaaa80a18fa3dbd9963f9229a5b6"
+    },
+    {
+      "path": "data/news_deliveries/fixture_news_request_001/approved_news_export.txt",
+      "sha256": "be8ddbfaef614d07d211f808b4d8704d2b3993e5168fa9541c9ac6461ca2b5e8"
+    },
+    {
+      "path": "data/news_deliveries/fixture_news_request_001/news_delivery_export_closure_v1.json",
+      "sha256": "763cc284357daec563bcfbb8bffbe63aa848cfe9d40731906830d2192b8704d8"
+    },
+    {
+      "path": "data/news_deliveries/fixture_news_request_001/news_delivery_human_approval_v1.json",
+      "sha256": "48f3689c332d783ccfc943b8ab7e24e4fc5b52700026a9cc365c229c36ac94b4"
+    },
+    {
+      "path": "data/news_deliveries/fixture_news_request_001/news_dynamic_excel_export_receipt_v1.json",
+      "sha256": "6120f20a91e83e7763711e051fb35eefc541b20439bd2de3f7639fba43a48e1f"
+    },
+    {
+      "path": "data/operations/fixture_business_001/operational_controls_v1.json",
+      "sha256": "c86a4864253cf802f2b9434f477ddce4c466ea7edb2322b0575bed9013dc4f04"
+    },
+    {
+      "path": "data/patterns/approved/fixture_pattern_001/approval_receipt.json",
+      "sha256": "b9fe18ffb8f8112f6f1c9437446e9c9d3a382ea24721ad4994314a79d7c9368c"
+    },
+    {
+      "path": "data/patterns/approved/fixture_pattern_001/pattern_v1.json",
+      "sha256": "2a309b30273031790e349ddbf85e9dbfbaa9e6d9ca179585e6aef32a865d9046"
+    },
+    {
+      "path": "data/patterns/candidates/fixture_pattern_candidate_001/pattern_candidate_v1.json",
+      "sha256": "d47f84be2650b282f49797c4bc347d84f8062da2d048dddba06fdf3f3b1fba33"
+    },
+    {
+      "path": "data/personas/fixture_business_001/revision_0001/approval_receipt.json",
+      "sha256": "62d6bc77828092a99d913cc5e55c0bed94570c4801ec6e066fe37e5ad23749af"
+    },
+    {
+      "path": "data/personas/fixture_business_001/revision_0001/persona_v1.json",
+      "sha256": "28b606b36318effdadc1a615db63443b344a73f2b7babf0224aa03583ecdcb57"
+    },
+    {
+      "path": "data/personas/fixture_speaker_001/revision_0001/approval_receipt.json",
+      "sha256": "9bba09ba04febd844fdf1352b39323d5a3c028c93207e90c94c2a6274acb8096"
+    },
+    {
+      "path": "data/personas/fixture_speaker_001/revision_0001/persona_v1.json",
+      "sha256": "4cbecd5f80ee2cec7a2f2926d22b9cb3bfce1317c97605330af86a6bf59f4255"
+    },
+    {
+      "path": "data/production_footage/fixture_mix_request_001/customer_capture_missions_v1.json",
+      "sha256": "8aac5701c7334c1295814fddfb7bd7f6a357b15537223d161a77c178854aa36d"
+    },
+    {
+      "path": "data/production_footage/fixture_mix_request_001/production_asset_inventory_v1.json",
+      "sha256": "dc1be247defdb69299d54c393c36c7cb8795edc8e59344469341df9e22d83948"
+    },
+    {
+      "path": "data/production_footage/fixture_mix_request_001/production_footage_planning_human_approval_v1.json",
+      "sha256": "f4e7462797705dfd8bba6943a0c20f3f5c1aa3f46c97cf9f9e053b4ea110ba3a"
+    },
+    {
+      "path": "data/production_footage/fixture_mix_request_001/production_footage_planning_summary_v1.json",
+      "sha256": "4fde74d1f1d71165adad11c7b26edb628c365214d3681a27507af009c36c3219"
+    },
+    {
+      "path": "data/production_footage/fixture_mix_request_001/shot_requirement_plan_v1.json",
+      "sha256": "7e4c51e9ea2a7fe693c5ec1ff0e49e696bba93fd37f64163c62940c5633bd7fa"
+    },
+    {
+      "path": "data/production_footage/fixture_mix_request_001/storyboard_coverage_v1.json",
+      "sha256": "3cafc87b7c139f13b0d56fa911d10d79b7d0d739d1a70dcb472fc9a6bd264b76"
+    },
+    {
+      "path": "data/production_footage/fixture_mix_request_001/subject_media_use_confirmation_v1.json",
+      "sha256": "8ce15adf031362999a802652559ea55c28fe879dd261fe29cc55f4f6223d710e"
+    },
+    {
+      "path": "data/production_profiles/production_profile_registry_v1.json",
+      "sha256": "8fa0914f66aac3435935058ace68b4b5b1e98c83e6533f3798b9db85b86c6838"
+    },
+    {
+      "path": "output/fixture_mix_request_001_approved_export.export_receipt.json",
+      "sha256": "dbaa287cd33504f30dcda362eb9682c94adf6a957792375a3aaa237fb58a8879"
+    },
+    {
+      "path": "output/fixture_mix_request_001_approved_export.txt",
+      "sha256": "031186dfb13e444eddda6e0c61051145f09380b8c3022eaab742cbeaf27c0932"
+    }
+  ],
+  "identities": {
+    "business_id": "fixture_business_001",
+    "case_id": "7999999999999999901",
+    "mix_request_id": "fixture_mix_request_001",
+    "news_request_id": "fixture_news_request_001",
+    "speaker_id": "fixture_speaker_001"
+  },
+  "schema_version": "synthetic-authority-fixture-manifest-v1.0",
+  "synthetic": true
+}

@@ -1,0 +1,13 @@
+{
+  "approved_news_delivery": {
+    "path": "data/news_deliveries/fixture_news_request_001/news_delivery_human_approval_v1.json",
+    "sha256": "48f3689c332d783ccfc943b8ab7e24e4fc5b52700026a9cc365c229c36ac94b4"
+  },
+  "output_path": "data/news_deliveries/fixture_news_request_001/approved_news_export.txt",
+  "output_sha256": "be8ddbfaef614d07d211f808b4d8704d2b3993e5168fa9541c9ac6461ca2b5e8",
+  "request_id": "fixture_news_request_001",
+  "reuse_intent": "cross_profile_repurpose",
+  "schema_version": "news-dynamic-excel-export-receipt-v1.0",
+  "semantic_novelty": false,
+  "validation_passed": true
+}

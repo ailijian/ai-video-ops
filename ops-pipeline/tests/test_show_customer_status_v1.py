@@ -8,16 +8,18 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from authority_test_support import FIXTURE_ROOT
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
+REPO_ROOT = Path(__file__).resolve().parents[1]
+ROOT = FIXTURE_ROOT
+SCRIPTS = REPO_ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 import show_customer_status_v1 as status_v1  # noqa: E402
 
 
-BUSINESS_ID = "shufang_zhiyuan_community_canteen"
-SPEAKER_ID = "lin_dongfang_frontline_chef"
+BUSINESS_ID = "fixture_business_001"
+SPEAKER_ID = "fixture_speaker_001"
 
 
 def sha256(path: Path) -> str:
@@ -29,38 +31,38 @@ class CurrentCustomerStatusV1Tests(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls.status = status_v1.build_customer_status(ROOT, BUSINESS_ID)
 
-    def test_current_personas_resolve_to_approved_revision_two(self) -> None:
+    def test_current_personas_resolve_to_approved_fixture_revision(self) -> None:
         truth = self.status["customer_truth"]
-        self.assertEqual(truth["business_persona"]["revision"], 2)
+        self.assertEqual(truth["business_persona"]["revision"], 1)
         self.assertEqual(truth["business_persona"]["status"], "APPROVED")
         self.assertEqual(truth["speaker_persona"]["persona_id"], SPEAKER_ID)
-        self.assertEqual(truth["speaker_persona"]["revision"], 2)
+        self.assertEqual(truth["speaker_persona"]["revision"], 1)
         self.assertEqual(truth["speaker_persona"]["status"], "APPROVED")
 
     def test_ledger_uses_actual_entries_not_stale_validation_count(self) -> None:
         content = self.status["content"]
-        self.assertEqual(content["ledger_entries"], 21)
-        self.assertEqual(content["legacy_validation_entry_count"], 10)
+        self.assertEqual(content["ledger_entries"], 1)
+        self.assertEqual(content["legacy_validation_entry_count"], 1)
 
     def test_capacity_and_latest_mix_resolve_through_lineage(self) -> None:
         content = self.status["content"]
         self.assertEqual(content["remaining_high_quality_novel_capacity"], 7)
-        self.assertEqual(content["latest_approved_mix"]["request_id"], "real_shufang_mix_003")
-        self.assertEqual(content["latest_exported_mix"]["request_id"], "real_shufang_mix_003")
+        self.assertEqual(content["latest_approved_mix"]["request_id"], "fixture_mix_request_001")
+        self.assertEqual(content["latest_exported_mix"]["request_id"], "fixture_mix_request_001")
         self.assertEqual(content["latest_exported_mix"]["status"], "APPROVED")
         self.assertEqual(content["latest_exported_mix"]["export_status"], "EXPORTED")
 
     def test_footage_and_rights_are_bound_to_active_batch(self) -> None:
         footage = self.status["footage"]
         self.assertEqual(footage["planning"], "APPROVED")
-        self.assertEqual(footage["capture_missions"], 4)
+        self.assertEqual(footage["capture_missions"], 1)
         self.assertEqual(footage["capture_pack_status"], "READY_TO_SEND")
         self.assertFalse(footage["sent"])
         self.assertEqual(footage["registered_assets"], 0)
         self.assertEqual(footage["eligible_assets"], 0)
         self.assertEqual(footage["coverage"]["covered"], 0)
-        self.assertEqual(footage["coverage"]["capture_required"], 4)
-        self.assertEqual(footage["coverage"]["total"], 4)
+        self.assertEqual(footage["coverage"]["capture_required"], 1)
+        self.assertEqual(footage["coverage"]["total"], 1)
         self.assertEqual(self.status["rights"]["speaker_media"], "REVIEW_REQUIRED")
 
     def test_creative_status_preserves_narrow_news_boundary(self) -> None:
@@ -69,7 +71,7 @@ class CurrentCustomerStatusV1Tests(unittest.TestCase):
         self.assertEqual(creative["news_price"], "VALIDATED")
         self.assertEqual(
             creative["news_scene_contrast"],
-            "PENDING_REAL_CUSTOMER_OPPORTUNITY",
+            "PENDING",
         )
 
     def test_hold_overrides_normal_execution_with_exactly_one_primary_action(self) -> None:

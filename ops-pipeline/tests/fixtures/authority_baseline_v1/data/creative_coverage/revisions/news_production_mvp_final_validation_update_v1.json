@@ -1,0 +1,12 @@
+{
+  "pattern_production_validation": {
+    "pcv1_news_price_offer_led_micro_information": {
+      "status": "passed"
+    },
+    "pcv1_news_scene_contrast": {
+      "status": "pending"
+    }
+  },
+  "schema_version": "creative-coverage-update-v1.0",
+  "status": "current_derived_coverage_update"
+}

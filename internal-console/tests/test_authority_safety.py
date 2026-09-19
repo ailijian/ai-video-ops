@@ -45,8 +45,8 @@ def test_console_schema_contains_only_auth_session_and_task_projection(settings:
     assert not (tables & forbidden)
 
 
-def test_real_status_preserves_business_wide_novelty_and_media_rights(settings: Settings):
-    status = get_customer_status(settings, "shufang_zhiyuan_community_canteen")
+def test_fixture_status_preserves_business_wide_novelty_and_media_rights(settings: Settings):
+    status = get_customer_status(settings, "fixture_business_001")
     assert status["content"]["remaining_high_quality_novel_capacity"] == 7
     assert status["content"]["latest_exported_news"]["semantic_novelty"] is False
     assert status["rights"]["speaker_media"] == "REVIEW_REQUIRED"
@@ -57,7 +57,7 @@ def test_workbench_read_does_not_release_operational_hold_or_mutate_control(clie
         settings.pipeline_root
         / "data"
         / "operations"
-        / "shufang_zhiyuan_community_canteen"
+        / "fixture_business_001"
         / "operational_controls_v1.json"
     )
     before = sha256(control)
@@ -73,7 +73,7 @@ def test_workbench_read_does_not_release_operational_hold_or_mutate_control(clie
 def test_foundation_has_no_approval_export_or_generation_write_endpoints(client: TestClient):
     login_and_change_password(client)
     for path in (
-        "/api/cases/7059858129298803968/approve",
+        "/api/cases/7999999999999999901/approve",
         "/api/personas/approve",
         "/api/content/generate",
         "/api/exports/retry",

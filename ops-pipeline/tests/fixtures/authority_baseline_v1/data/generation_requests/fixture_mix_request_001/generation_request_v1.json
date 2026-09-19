@@ -1,0 +1,9 @@
+{
+  "human_review_required": true,
+  "persona_id": "fixture_business_001",
+  "quantity": 1,
+  "request_id": "fixture_mix_request_001",
+  "schema_version": "generation-request-v1.0",
+  "speaker_persona": "fixture_speaker_001",
+  "target_profile": "mix"
+}

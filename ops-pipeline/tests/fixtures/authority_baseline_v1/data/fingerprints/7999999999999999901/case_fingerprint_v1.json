@@ -1,0 +1,11 @@
+{
+  "case_file_sha256": "dcb48ffedd00e959a36f7332a0a7a16047801b0d693695385d05b1fc7205d9dc",
+  "case_id": "7999999999999999901",
+  "facts_transferred": false,
+  "schema_version": "case-fingerprint-v1.0",
+  "structural_signature": [
+    "question",
+    "evidence",
+    "human_judgment"
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "business_id": "fixture_business_001",
+  "capacity_status": "capacity_limited",
+  "lineage": {
+    "approved_batch": {
+      "file_sha256": "8be6a72664fe9f1eddac6724310e1589594e4e92b72f20b54d4b49dd5f39e470"
+    },
+    "content_ledger_after": {
+      "file_sha256": "d137eb828de9d96a4680480f2fa3a5216983995e1c8a5c88762494a6692d5c97"
+    },
+    "source_capacity_recalculation": {
+      "path": "data/content_plans/fixture_mix_request_001/content_capacity_recalculation_v1.json",
+      "sha256": "816e3e35a7627031cd5ccb5bbc6743bfa55b4df06cd980b0609e79a5c38efe1d"
+    }
+  },
+  "padding": false,
+  "post_export_remaining_capacity": 7,
+  "schema_version": "post-export-remaining-capacity-v1.0"
+}

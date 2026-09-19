@@ -1,0 +1,12 @@
+{
+  "business_id": "fixture_business_001",
+  "capacity": 7,
+  "lineage": {
+    "business_persona_content_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "business_persona_revision": 1,
+    "speaker_persona_content_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "speaker_persona_revision": 1
+  },
+  "schema_version": "content-capacity-recalculation-v1.0",
+  "speaker_id": "fixture_speaker_001"
+}

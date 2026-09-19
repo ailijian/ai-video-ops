@@ -1,0 +1,35 @@
+{
+  "approval": {
+    "human_gate": true,
+    "reviewer": "fixture_reviewer"
+  },
+  "business_persona_ref": {
+    "content_sha256": "1111111111111111111111111111111111111111111111111111111111111111",
+    "persona_id": "fixture_business_001",
+    "revision": 1,
+    "sha256": "28b606b36318effdadc1a615db63443b344a73f2b7babf0224aa03583ecdcb57",
+    "status": "approved"
+  },
+  "facts": {
+    "display_name": {
+      "fact_id": "fixture_speaker_fact_001",
+      "state": "known",
+      "value": "合成测试讲述者"
+    }
+  },
+  "identity": {
+    "display_name": "合成测试讲述者"
+  },
+  "lifecycle": {
+    "approved": true,
+    "status": "approved"
+  },
+  "persona_id": "fixture_speaker_001",
+  "persona_scope": "speaker",
+  "provenance": {
+    "content_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+    "synthetic": true
+  },
+  "revision": 1,
+  "schema_version": "persona-v1.0"
+}

@@ -7,8 +7,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pytest
 
-SCRIPTS = Path(__file__).resolve().parents[1] / "scripts"
+from authority_test_support import live_authority_root
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+SCRIPTS = REPO_ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from approve_pattern_v1 import (  # noqa: E402
@@ -26,7 +30,7 @@ from approve_pattern_v1 import (  # noqa: E402
 )
 
 
-ROOT = SCRIPTS.parent
+ROOT = live_authority_root()
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -204,6 +208,7 @@ class PatternApprovalTests(unittest.TestCase):
         self.assertFalse(receipt["remote_model_call_performed"])
 
 
+@pytest.mark.live_authority
 class NewsPatternFinalApprovalTests(unittest.TestCase):
     REGISTRY = ROOT / "data" / "production_profiles" / "production_profile_registry_v1.json"
     COVERAGE_BASELINE = ROOT / "data" / "creative_coverage" / "creative_coverage_report_v1.json"

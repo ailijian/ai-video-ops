@@ -1,0 +1,22 @@
+{
+  "business_id": "fixture_business_001",
+  "history": [
+    {
+      "action": "set_hold",
+      "actor": "fixture_operator",
+      "at": "2026-01-01T00:00:00+00:00",
+      "reason": "synthetic fixture requires explicit operator release"
+    }
+  ],
+  "last_action": "set_hold",
+  "last_actor": "fixture_operator",
+  "operational_hold": {
+    "active": true,
+    "reason": "synthetic fixture requires explicit operator release",
+    "release_requires": "explicit_operator_release",
+    "set_at": "2026-01-01T00:00:00+00:00",
+    "set_by": "fixture_operator"
+  },
+  "schema_version": "operational-controls-v1",
+  "updated_at": "2026-01-01T00:00:00+00:00"
+}

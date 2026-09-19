@@ -8,9 +8,13 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
+from authority_test_support import live_authority_root
 
-SCRIPTS = ROOT / "scripts"
+pytestmark = pytest.mark.live_authority
+REPO_ROOT = Path(__file__).resolve().parents[1]
+ROOT = live_authority_root()
+
+SCRIPTS = REPO_ROOT / "scripts"
 
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(

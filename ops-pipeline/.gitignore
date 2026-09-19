@@ -219,6 +219,8 @@ __marimo__/
 
 # Project outputs (generated at runtime, typically large and environment-specific)
 data/
+!tests/fixtures/authority_baseline_v1/data/
+!tests/fixtures/authority_baseline_v1/data/**
 
 # Runtime export artifacts
 output/*.export_receipt.json

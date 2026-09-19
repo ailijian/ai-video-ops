@@ -1,0 +1,10 @@
+{
+  "content_sha256": "2222222222222222222222222222222222222222222222222222222222222222",
+  "decision": "approved",
+  "human_gate": true,
+  "persona_id": "fixture_speaker_001",
+  "persona_sha256_after_approval": "4cbecd5f80ee2cec7a2f2926d22b9cb3bfce1317c97605330af86a6bf59f4255",
+  "reviewed_at": "2026-01-01T00:00:00+00:00",
+  "revision": 1,
+  "schema_version": "persona-approval-receipt-v1.0"
+}

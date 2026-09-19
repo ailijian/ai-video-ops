@@ -23,7 +23,7 @@ def test_case_library_uses_business_language(settings):
 
 
 def test_case_detail_is_privacy_safe_and_keeps_media_rights_separate(settings):
-    detail = get_case_detail(settings, "7683027343636542565")
+    detail = get_case_detail(settings, "7999999999999999901")
     serialized = json.dumps(detail, ensure_ascii=False).lower()
     assert detail["review"]["approved"] is True
     assert detail["media_rights"]["production_authorized"] is False

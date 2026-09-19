@@ -1,0 +1,8 @@
+{
+  "case_id": "7999999999999999901",
+  "case_sha256": "dcb48ffedd00e959a36f7332a0a7a16047801b0d693695385d05b1fc7205d9dc",
+  "decision": "approved",
+  "human_gate": true,
+  "reviewed_at": "2026-01-01T00:00:00+00:00",
+  "schema_version": "case-approval-receipt-v1.0"
+}

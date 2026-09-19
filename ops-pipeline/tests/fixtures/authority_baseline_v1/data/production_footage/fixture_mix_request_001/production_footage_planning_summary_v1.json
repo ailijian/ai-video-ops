@@ -1,0 +1,9 @@
+{
+  "customer_capture_pack_sent": false,
+  "customer_capture_pack_status": "ready_to_send",
+  "request_id": "fixture_mix_request_001",
+  "validation": {
+    "human_approval_persisted": true,
+    "passed": true
+  }
+}

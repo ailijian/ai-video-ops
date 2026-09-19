@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import re
 import shutil
 import sys
 import tempfile
@@ -10,9 +11,13 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
+from authority_test_support import live_authority_root
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+ROOT = live_authority_root()
+SCRIPTS = REPO_ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from customer_intake_v1 import (  # noqa: E402
@@ -72,6 +77,12 @@ class CustomerIntakePersonaOnboardingTests(unittest.TestCase):
             cls.initial_intakes[name] = intake
             cls.initial_candidates[name] = extract_initial_fact_candidates(intake)
 
+        cls._live_fixture_ready = False
+
+    @classmethod
+    def prepare_live_fixture(cls) -> None:
+        if cls._live_fixture_ready:
+            return
         raw_answers = parse_interview_markdown(INTERVIEW)
         cls.real_intake = build_customer_intake(
             intake_id="test_real_replenishment",
@@ -111,6 +122,12 @@ class CustomerIntakePersonaOnboardingTests(unittest.TestCase):
             cls.reviewed_candidates,
             created_at="2026-09-13T00:00:00+00:00",
         )
+        cls._live_fixture_ready = True
+
+    def setUp(self) -> None:
+        match = re.match(r"test_(\d+)_", self._testMethodName)
+        if (match and int(match.group(1)) >= 11) or self._testMethodName == "test_follow_up_planner_only_targets_critical_missing_truth":
+            self.prepare_live_fixture()
 
     @classmethod
     def tearDownClass(cls) -> None:
@@ -615,3 +632,15 @@ class CustomerIntakePersonaOnboardingTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+for _name in dir(CustomerIntakePersonaOnboardingTests):
+    _match = re.match(r"test_(\d+)_", _name)
+    if (_match and int(_match.group(1)) >= 11) or _name == "test_follow_up_planner_only_targets_critical_missing_truth":
+        setattr(
+            CustomerIntakePersonaOnboardingTests,
+            _name,
+            pytest.mark.live_authority(
+                getattr(CustomerIntakePersonaOnboardingTests, _name)
+            ),
+        )

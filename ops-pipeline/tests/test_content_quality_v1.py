@@ -7,9 +7,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
+import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
-SCRIPTS = ROOT / "scripts"
+from authority_test_support import live_authority_root
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+ROOT = live_authority_root()
+SCRIPTS = REPO_ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 from content_quality_v1 import (  # noqa: E402
@@ -1583,3 +1587,21 @@ class ContentQualityV1Tests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+for _name in (
+    "test_actual_v1_1_1_capacity_can_fall_from_three_to_two_offline",
+    "test_content_gap_report_is_read_only_and_uses_only_known_fact_atoms",
+    "test_replenishment_intake_is_gap_driven_and_skips_covered_basics",
+    "test_replenishment_intake_routes_questions_to_natural_roles",
+    "test_replenishment_intake_preserves_authority_and_defaults_answers",
+    "test_replenishment_human_pack_hides_internal_lineage",
+    "test_current_v1_diagnostic_artifacts_remain_unchanged",
+    "test_replenishment_sources_keep_approved_persona_hashes",
+    "test_old_b0_hashes_remain_unchanged",
+):
+    setattr(
+        ContentQualityV1Tests,
+        _name,
+        pytest.mark.live_authority(getattr(ContentQualityV1Tests, _name)),
+    )

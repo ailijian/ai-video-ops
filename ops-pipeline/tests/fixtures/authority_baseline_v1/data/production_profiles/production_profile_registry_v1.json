@@ -1,0 +1,13 @@
+{
+  "profiles": {
+    "mix": {
+      "generation_enabled": true
+    },
+    "news": {
+      "generation_enabled": true,
+      "generic_novel_news_ready": false
+    }
+  },
+  "schema_version": "production-profile-registry-v1.0",
+  "status": "approved_frozen"
+}
