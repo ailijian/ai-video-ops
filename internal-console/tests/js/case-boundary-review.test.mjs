@@ -29,3 +29,14 @@ test("90 percent manual gate is not presented as a generic failed download", () 
   assert.match(html, /分镜需要确认/);
   assert.doesNotMatch(html, /返回添加案例/);
 });
+
+test("video start cannot offer an ineffective merge action", () => {
+  const html = boundaryReviewPanel({
+    shot_sha256: "b".repeat(64),
+    items: [{ frame_id: "frame_000000000ms.jpg", issues: [{
+      type: "short_shot", start: 0, end: 0.28, merge_allowed: false,
+    }] }],
+  });
+  assert.match(html, /保留分镜/);
+  assert.doesNotMatch(html, /合并相邻分镜/);
+});

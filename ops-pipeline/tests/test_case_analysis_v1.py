@@ -301,6 +301,101 @@ def test_qiyun_failed_reanalysis_reuses_verified_media_without_api_call(tmp_path
     assert ("source_video", Path(reused["video"]).resolve()) in targets
 
 
+def test_failed_reanalysis_reuses_only_complete_source_bound_audio_and_visual(tmp_path: Path, monkeypatch):
+    first, acquisition, kwargs, calls = seed_failed_qiyun_attempt(tmp_path, monkeypatch)
+    old_video = Path(acquisition["video"])
+    evidence = first.attempt_root / "evidence"
+    transcript = evidence / "transcription" / "source" / "transcript_segments.json"
+    audio = evidence / "audio_v1" / "audio_word_timeline_v1.json"
+    manifest = evidence / "visual" / first.case_id / "visual_evidence_manifest.json"
+    visual = evidence / "visual" / first.case_id / "visual_v1" / "visual_timeline_v1.json"
+    module.write_atomic_json(transcript, {
+        "source_file": str(old_video), "model": first.whisper_model,
+        "duration": 1, "segments": [], "discarded_segments": [],
+    })
+    module.write_atomic_json(audio, {
+        "case_id": first.case_id, "source_audio_artifact": str(transcript),
+        "validation": {"passed": True}, "segments": [], "words": [],
+        "transcript_raw": "", "speech_evidence_status": "not_detected",
+    })
+    module.write_atomic_json(manifest, {
+        "case_id": first.case_id, "source_video": str(old_video),
+        "frames": [{"filename": "frame_000000000ms.jpg"}],
+    })
+    module.write_atomic_json(visual, {
+        "case_id": first.case_id, "source_manifest": str(manifest),
+        "model": "qwen3-vl:4b-instruct", "chunk_size": 6, "num_ctx": 16384,
+        "analysis_image_max_edge": 960,
+        "coverage": {"coverage_label": "candidate_complete"},
+        "validation": {"all_candidate_frames_analyzed_exactly_once": True},
+        "frames": [{"frame_id": "frame_000000000ms.jpg"}],
+    })
+    original = {path: path.read_bytes() for path in (transcript, audio, manifest, visual)}
+    second = module.Orchestrator(attempt_id="attempt_qiyun_failed_002", **kwargs)
+    source = second.acquire()
+    new_video = Path(source["video"])
+    target = second.attempt_root / "evidence"
+    new_transcript = target / "transcription" / "source" / "transcript_segments.json"
+    new_audio = target / "audio_v1" / "audio_word_timeline_v1.json"
+    new_manifest = target / "visual" / first.case_id / "visual_evidence_manifest.json"
+    new_visual = target / "visual" / first.case_id / "visual_v1" / "visual_timeline_v1.json"
+    assert module.read_json(new_transcript)["source_file"] == str(new_video)
+    assert module.read_json(new_audio)["source_audio_artifact"] == str(new_transcript)
+    assert module.read_json(new_manifest)["source_video"] == str(new_video)
+    assert module.read_json(new_visual)["source_manifest"] == str(new_manifest)
+    assert calls == [first.attempt_id]
+    assert all(path.read_bytes() == content for path, content in original.items())
+    receipt = module.read_json(second.attempt_root / "evidence_reuse_v1.json")
+    assert receipt["source_media_sha256"] == acquisition["source_video_sha256"]
+    assert set(receipt["stages"]) == {"transcript", "audio_timeline", "visual"}
+    assert not (target / "privacy" / "privacy_projection_v1.json").exists()
+    calls_after_resume = []
+
+    def stop_at_privacy(label, *_args, **_kwargs):
+        calls_after_resume.append(label)
+        raise module.CaseAnalysisError("EXPECTED_TEST_STOP", "Stop before downstream work")
+
+    monkeypatch.setattr(second, "run_command", stop_at_privacy)
+    with pytest.raises(module.CaseAnalysisError) as error:
+        second.run()
+    assert error.value.code == "EXPECTED_TEST_STOP"
+    assert calls_after_resume == ["privacy-projection"]
+    assert second.stage_record("transcribe")["recovered_from_checkpoint"] is True
+    assert calls == [first.attempt_id]
+
+
+def test_failed_reanalysis_does_not_reuse_mismatched_visual_model(tmp_path: Path, monkeypatch):
+    first, acquisition, kwargs, _ = seed_failed_qiyun_attempt(tmp_path, monkeypatch)
+    manifest = first.attempt_root / "evidence" / "visual" / first.case_id / "visual_evidence_manifest.json"
+    visual = manifest.parent / "visual_v1" / "visual_timeline_v1.json"
+    module.write_atomic_json(manifest, {"case_id": first.case_id, "source_video": acquisition["video"],
+                                        "frames": [{"filename": "frame_000000000ms.jpg"}]})
+    module.write_atomic_json(visual, {"case_id": first.case_id, "source_manifest": str(manifest),
+                                      "model": "other-model", "chunk_size": 6, "num_ctx": 16384,
+                                      "analysis_image_max_edge": 960,
+                                      "coverage": {"coverage_label": "candidate_complete"},
+                                      "validation": {"all_candidate_frames_analyzed_exactly_once": True},
+                                      "frames": [{"frame_id": "frame_000000000ms.jpg"}]})
+    second = module.Orchestrator(attempt_id="attempt_qiyun_failed_002", **kwargs)
+    second.acquire()
+    assert not (second.attempt_root / "evidence" / "visual" / first.case_id / "visual_v1" / "visual_timeline_v1.json").exists()
+
+
+def test_failed_reanalysis_can_reuse_transcript_before_audio_timeline_completed(tmp_path: Path, monkeypatch):
+    first, acquisition, kwargs, _ = seed_failed_qiyun_attempt(tmp_path, monkeypatch)
+    transcript = first.attempt_root / "evidence" / "transcription" / "source" / "transcript_segments.json"
+    module.write_atomic_json(transcript, {
+        "source_file": acquisition["video"], "model": first.whisper_model,
+        "duration": 1, "segments": [], "discarded_segments": [],
+    })
+    second = module.Orchestrator(attempt_id="attempt_qiyun_failed_002", **kwargs)
+    source = second.acquire()
+    copied = second.attempt_root / "evidence" / "transcription" / "source" / "transcript_segments.json"
+    assert module.read_json(copied)["source_file"] == source["video"]
+    assert set(module.read_json(second.attempt_root / "evidence_reuse_v1.json")["stages"]) == {"transcript"}
+    assert not (second.attempt_root / "evidence" / "audio_v1" / "audio_word_timeline_v1.json").exists()
+
+
 def test_qiyun_case_run_hands_off_canonical_manifest_without_models(tmp_path: Path, monkeypatch):
     first, _, kwargs, calls = seed_failed_qiyun_attempt(tmp_path, monkeypatch)
     operation = module.Orchestrator(attempt_id="attempt_qiyun_visual_002", **kwargs)

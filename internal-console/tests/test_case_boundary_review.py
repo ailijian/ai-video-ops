@@ -126,3 +126,52 @@ def test_second_review_round_keeps_prior_receipt_and_decisions(client, settings)
     assert [item["frame_id"] for item in latest["decisions"]] == [
         "frame_000003000ms.jpg", "frame_000008000ms.jpg", "frame_000010000ms.jpg",
     ]
+
+
+def test_review_correction_preserves_old_receipt_and_rejects_ineffective_repeat(client, settings):
+    csrf = login_and_change_password(client)
+    task_id, shots_dir, sha = seed_pending_review(client, settings, csrf)
+    endpoint = f"/api/tasks/{task_id}/boundary-review"
+    first = [
+        {"frame_id": "frame_000003000ms.jpg", "action": "reject"},
+        {"frame_id": "frame_000008000ms.jpg", "action": "keep"},
+    ]
+    assert client.post(endpoint, headers={"X-CSRF-Token": csrf}, json={
+        "shot_sha256": sha, "decisions": first,
+    }).status_code == 200
+    prior = (shots_dir / "boundary_review_001.json").read_bytes()
+    update_task(settings.database_path, task_id, status="failed", error_code="SHOT_BOUNDARY_REVIEW_REQUIRED")
+    repeated = client.post(endpoint, headers={"X-CSRF-Token": csrf}, json={
+        "shot_sha256": sha, "decisions": first,
+    })
+    assert repeated.status_code == 409
+    assert not (shots_dir / "boundary_review_002.json").exists()
+    corrected = [dict(first[0], action="keep"), first[1]]
+    response = client.post(endpoint, headers={"X-CSRF-Token": csrf}, json={
+        "shot_sha256": sha, "decisions": corrected,
+    })
+    assert response.status_code == 200, response.text
+    assert (shots_dir / "boundary_review_001.json").read_bytes() == prior
+    new = json.loads((shots_dir / "boundary_review_002.json").read_text(encoding="utf-8"))
+    assert new["supersedes_review"] == "boundary_review_001.json"
+    assert {item["frame_id"]: item["action"] for item in new["decisions"]} == {
+        item["frame_id"]: item["action"] for item in corrected
+    }
+
+
+def test_review_never_rejects_mandatory_video_start(client, settings):
+    csrf = login_and_change_password(client)
+    task_id, shots_dir, _ = seed_pending_review(client, settings, csrf)
+    shots = shots_dir / "shot_boundaries_v1_1.json"
+    data = json.loads(shots.read_text(encoding="utf-8"))
+    data["manual_review"]["items"] = [{
+        "type": "short_shot", "boundary_frame_id": "frame_000000000ms.jpg",
+        "start": 0, "end": 0.28, "merge_allowed": False,
+    }]
+    shots.write_text(json.dumps(data), encoding="utf-8")
+    sha = hashlib.sha256(shots.read_bytes()).hexdigest()
+    response = client.post(f"/api/tasks/{task_id}/boundary-review", headers={"X-CSRF-Token": csrf}, json={
+        "shot_sha256": sha, "decisions": [{"frame_id": "frame_000000000ms.jpg", "action": "reject"}],
+    })
+    assert response.status_code == 409
+    assert not list(shots_dir.glob("boundary_review_*.json"))

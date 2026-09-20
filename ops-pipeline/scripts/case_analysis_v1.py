@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -443,6 +444,126 @@ class Orchestrator:
                 f"{label} failed: {reason}",
             )
 
+    def reuse_failed_evidence(self, previous_root: Path, old_video: Path, new_video: Path, media_sha: str) -> None:
+        """Carry only complete, source-bound observations into this independent attempt.
+
+        This runs under the failed attempt's storage-maintenance lock. Partial
+        or mismatched checkpoints are never imported; downstream projections
+        (including privacy) are rebuilt for this attempt from the copied inputs.
+        """
+        old_transcript = previous_root / "evidence" / "transcription" / old_video.stem / "transcript_segments.json"
+        old_audio = previous_root / "evidence" / "audio_v1" / "audio_word_timeline_v1.json"
+        old_manifest = previous_root / "evidence" / "visual" / self.case_id / "visual_evidence_manifest.json"
+        old_visual = previous_root / "evidence" / "visual" / self.case_id / "visual_v1" / "visual_timeline_v1.json"
+        destinations = (
+            self.attempt_root / "evidence" / "transcription" / new_video.stem / "transcript_segments.json",
+            self.attempt_root / "evidence" / "audio_v1" / "audio_word_timeline_v1.json",
+            self.attempt_root / "evidence" / "visual" / self.case_id / "visual_evidence_manifest.json",
+            self.attempt_root / "evidence" / "visual" / self.case_id / "visual_v1" / "visual_timeline_v1.json",
+        )
+        paths = (old_transcript, old_audio, old_manifest, old_visual)
+        observations: dict[str, dict[str, Any]] = {}
+        if any(path.is_symlink() for path in paths + destinations) or any(
+            not path.resolve().is_relative_to(root.resolve())
+            for root, group in ((previous_root, paths), (self.attempt_root, destinations))
+            for path in group
+        ):
+            return
+        for label, path in zip(("transcript", "audio", "manifest", "visual"), paths):
+            try:
+                observations[label] = read_json(path)
+            except (OSError, ValueError, TypeError, json.JSONDecodeError, CaseAnalysisError):
+                pass
+        transcript = observations.get("transcript", {})
+        audio = observations.get("audio", {})
+        manifest = observations.get("manifest", {})
+        visual = observations.get("visual", {})
+        try:
+            transcript_valid = (
+                transcript.get("source_file") == str(old_video)
+                and transcript.get("model") == self.whisper_model
+                and isinstance(transcript.get("segments"), list)
+                and isinstance(transcript.get("discarded_segments"), list)
+                and isinstance(transcript.get("duration"), (int, float))
+                and not isinstance(transcript.get("duration"), bool)
+                and math.isfinite(float(transcript["duration"]))
+                and transcript["duration"] > 0
+                and classify_transcription_speech_evidence(transcript) != SPEECH_UNCERTAIN
+            )
+            audio_valid = (
+                transcript_valid
+                and audio.get("case_id") == self.case_id
+                and audio.get("source_audio_artifact") == str(old_transcript)
+                and isinstance(audio.get("segments"), list)
+                and isinstance(audio.get("words"), list)
+                and isinstance(audio.get("validation"), dict)
+                and audio["validation"].get("passed") is True
+                and require_audio_speech_evidence(audio) == classify_transcription_speech_evidence(transcript)
+            )
+        except (RuntimeError, TypeError, ValueError):
+            transcript_valid = False
+            audio_valid = False
+        manifest_frames = manifest.get("frames")
+        visual_frames = visual.get("frames")
+        visual_valid = (
+            manifest.get("case_id") == self.case_id
+            and manifest.get("source_video") == str(old_video)
+            and isinstance(manifest_frames, list) and bool(manifest_frames)
+            and visual.get("case_id") == self.case_id
+            and visual.get("source_manifest") == str(old_manifest)
+            and visual.get("model") == "qwen3-vl:4b-instruct"
+            and visual.get("chunk_size") == 6
+            and visual.get("num_ctx") == 16384
+            and visual.get("analysis_image_max_edge") == 960
+            and isinstance(visual.get("coverage"), dict)
+            and visual["coverage"].get("coverage_label") == "candidate_complete"
+            and isinstance(visual.get("validation"), dict)
+            and visual["validation"].get("all_candidate_frames_analyzed_exactly_once") is True
+            and isinstance(visual_frames, list)
+            and [frame.get("filename") for frame in manifest_frames if isinstance(frame, dict)]
+                == [frame.get("frame_id") for frame in visual_frames if isinstance(frame, dict)]
+            and len(manifest_frames) == len(visual_frames)
+        )
+        imported: dict[str, Any] = {}
+        if transcript_valid:
+            transcript["source_file"] = str(new_video)
+            if not destinations[0].exists():
+                write_atomic_json(destinations[0], transcript)
+                imported["transcript"] = {
+                    "source_sha256": sha256_file(old_transcript),
+                    "artifact_sha256": sha256_file(destinations[0]),
+                }
+        if (audio_valid and validate_json(destinations[0], lambda value: value == transcript)
+                and not destinations[1].exists()):
+            audio["source_audio_artifact"] = str(destinations[0])
+            write_atomic_json(destinations[1], audio)
+            imported["audio_timeline"] = {
+                "source_sha256": sha256_file(old_audio),
+                "artifact_sha256": sha256_file(destinations[1]),
+            }
+        if visual_valid and not destinations[2].exists() and not destinations[3].exists():
+            manifest["source_video"] = str(new_video)
+            visual["source_manifest"] = str(destinations[2])
+            write_atomic_json(destinations[2], manifest)
+            write_atomic_json(destinations[3], visual)
+            imported["visual"] = {
+                "source_sha256": [sha256_file(old_manifest), sha256_file(old_visual)],
+                "artifact_sha256": [sha256_file(destinations[2]), sha256_file(destinations[3])],
+            }
+        if imported:
+            receipt_path = self.attempt_root / "evidence_reuse_v1.json"
+            write_atomic_json(receipt_path, {
+                "schema_version": "case-evidence-reuse-v1.0",
+                "case_id": self.case_id,
+                "attempt_id": self.attempt_id,
+                "from_attempt_id": previous_root.name,
+                "source_media_sha256": media_sha,
+                "stages": imported,
+                "created_at": now_iso(),
+            })
+            self.state["artifacts"]["evidence_reuse_v1"] = str(receipt_path)
+            self.save()
+
     def reuse_failed_qiyun_media(self) -> dict[str, Any] | None:
         """Copy verified media from a failed attempt before making another paid call."""
 
@@ -530,6 +651,7 @@ class Orchestrator:
                         raise CaseAnalysisError("SOURCE_MEDIA_REUSE_FAILED", "Previously acquired video could not be copied.") from exc
                     finally:
                         partial.unlink(missing_ok=True)
+                    self.reuse_failed_evidence(previous_root, video, destination, recorded_sha)
                     return {
                         "video": str(destination),
                         "source_video_sha256": recorded_sha,

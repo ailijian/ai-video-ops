@@ -98,7 +98,8 @@ export function boundaryReviewPanel(review) {
       <p>${issue.type === "short_shot" ? "这段镜头不足半秒，请确认是否为独立画面。" : "这个切换点需要人工确认。"}</p>
       <div class="boundary-review-choices">
         <label><input type="radio" name="boundary-${index}" value="keep" required>保留分镜</label>
-        <label><input type="radio" name="boundary-${index}" value="reject" required>合并相邻分镜</label>
+        ${item.frame_id === "frame_000000000ms.jpg" || item.issues?.some(issue => issue.merge_allowed === false)
+          ? "" : `<label><input type="radio" name="boundary-${index}" value="reject" required>合并相邻分镜</label>`}
       </div></fieldset>`;
   }).join("");
   return `<section class="panel boundary-review-panel"><h2>确认视频分镜</h2>

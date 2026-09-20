@@ -67,6 +67,27 @@ def belongs(ts: float, start: float, end: float, is_last: bool) -> bool:
     return start <= ts < end
 
 
+def short_shot_review_item(shots: list[dict[str, Any]], index: int) -> dict[str, Any] | None:
+    shot = shots[index]
+    # Removing the next shot's start boundary merges this short shot forward;
+    # the first shot's mandatory video-start boundary must not be rejected.
+    merge_boundary = (
+        shots[index + 1]["boundary"] if index + 1 < len(shots)
+        else shot["boundary"]
+    )
+    if float(shot["duration"]) >= 0.5 or merge_boundary.get("review_action") == "keep":
+        return None
+    return {
+        "type": "short_shot",
+        "shot_id": shot["shot_id"],
+        "start": shot["start"],
+        "end": shot["end"],
+        "duration": shot["duration"],
+        "boundary_frame_id": merge_boundary["selected_from_frame_ref"],
+        "merge_allowed": index + 1 < len(shots) or index > 0,
+    }
+
+
 def usage_dict(response: Any) -> dict[str, Any]:
     usage = getattr(response, "usage", None)
     if usage is None:
@@ -972,23 +993,10 @@ def main() -> None:
                 }
             )
 
-    for shot in shots:
-        if (
-            float(shot["duration"]) < 0.5
-            and shot["boundary"].get("review_action") != "keep"
-        ):
-            manual_review_items.append(
-                {
-                    "type": "short_shot",
-                    "shot_id": shot["shot_id"],
-                    "start": shot["start"],
-                    "end": shot["end"],
-                    "duration": shot["duration"],
-                    "boundary_frame_id": shot["boundary"][
-                        "selected_from_frame_ref"
-                    ],
-                }
-            )
+    for index, shot in enumerate(shots):
+        item = short_shot_review_item(shots, index)
+        if item is not None:
+            manual_review_items.append(item)
 
     expected_frame_ids = [str(x["frame_id"]) for x in frames]
     expected_word_ids = [str(x["word_id"]) for x in words]

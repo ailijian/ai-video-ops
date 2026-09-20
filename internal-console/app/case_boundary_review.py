@@ -86,6 +86,7 @@ def pending_boundary_review(settings: Settings, task: dict[str, Any]) -> dict[st
             "start": item.get("start", item.get("timestamp_seconds")),
             "end": item.get("end"),
             "duration": item.get("duration"),
+            "merge_allowed": item.get("merge_allowed", True),
             "reason": str(item.get("reason") or "")[:300],
         })
     return {
@@ -115,6 +116,15 @@ def submit_boundary_review(
         item.get("action") not in {"keep", "reject"} for item in decisions
     ):
         raise BoundaryReviewError("请逐一确认所有待复核的分镜。")
+    if any(
+        item["action"] == "reject" and (
+            item["frame_id"] == "frame_000000000ms.jpg"
+            or any(issue.get("merge_allowed") is False for issue in next(
+                row["issues"] for row in pending["items"] if row["frame_id"] == item["frame_id"]
+            ))
+        ) for item in decisions
+    ):
+        raise BoundaryReviewError("视频起点不能合并，请保留这个分镜。")
     _, _, review_root = _paths(settings, task)
     previous_files = sorted(review_root.glob("boundary_review_???.json"))
     if len(previous_files) >= 999:
@@ -128,15 +138,19 @@ def submit_boundary_review(
         if previous.get("case_id") != task["subject_ref"] or previous.get("attempt_id") != task["task_id"]:
             raise BoundaryReviewError("此前的分镜复核记录不匹配。")
         prior_decisions = previous.get("decisions") or []
-    overlap = expected.intersection({item.get("frame_id") for item in prior_decisions})
-    previously_saved = bool(overlap)
-    if previously_saved and (
-        overlap != expected
-        or previous.get("shot_boundaries_sha256") != shot_sha256
-        or {item["frame_id"]: item["action"] for item in prior_decisions if item.get("frame_id") in expected}
-        != {item["frame_id"]: item["action"] for item in decisions}
+    if not isinstance(prior_decisions, list) or any(
+        not isinstance(item, dict) or not item.get("frame_id")
+        or item.get("action") not in {"keep", "reject"} for item in prior_decisions
     ):
-        raise BoundaryReviewError("分镜复核记录存在冲突，请联系管理员。")
+        raise BoundaryReviewError("此前的分镜复核记录无效。")
+    previous_by_frame = {item["frame_id"]: item for item in prior_decisions}
+    if len(previous_by_frame) != len(prior_decisions):
+        raise BoundaryReviewError("此前的分镜复核记录存在重复决定。")
+    if expected and all(
+        previous_by_frame.get(item["frame_id"], {}).get("action") == item["action"]
+        for item in decisions
+    ):
+        raise BoundaryReviewError("相同的分镜决定仍未解决问题，请调整选择后继续。")
     review_path = review_root / f"boundary_review_{len(previous_files) + 1:03d}.json"
     receipt = {
         "schema_version": "case-boundary-review-v1.0",
@@ -146,7 +160,8 @@ def submit_boundary_review(
         "reviewed_by_user_id": user_id,
         "reviewed_by_phone": phone,
         "reviewed_at": datetime.now(timezone.utc).isoformat(),
-        "decisions": prior_decisions + [
+        "supersedes_review": previous_files[-1].name if previous_files else None,
+        "decisions": [item for item in prior_decisions if item["frame_id"] not in expected] + [
             {
                 "frame_id": item["frame_id"],
                 "action": item["action"],
@@ -157,9 +172,8 @@ def submit_boundary_review(
         ],
     }
     # The caller holds the per-task operation lock. Never overwrite a human receipt.
-    if not previously_saved:
-        with review_path.open("x", encoding="utf-8") as stream:
-            json.dump(receipt, stream, ensure_ascii=False, indent=2)
+    with review_path.open("x", encoding="utf-8") as stream:
+        json.dump(receipt, stream, ensure_ascii=False, indent=2)
     with transaction(settings.database_path, immediate=True) as connection:
         changed = connection.execute(
             """UPDATE tasks SET status = 'queued', progress = 84,
