@@ -1,7 +1,7 @@
 import { createApiClient } from "./api-client.js?v=productized-stage3-3";
-import { createCaseViews } from "./case-views.js?v=source-upload-ui-2";
+import { createCaseViews } from "./case-views.js?v=boundary-review-1";
 import { createCustomerViews } from "./customer-views.js?v=productized-stage3-3";
-import { progressPanel } from "./case-components.js?v=source-upload-1";
+import { progressPanel } from "./case-components.js?v=boundary-review-1";
 import { startTaskPolling } from "./task-progress.js?v=mobile-reliability-1";
 import { customerProgressPanel } from "./customer-components.js?v=productized-stage2-3";
 import { matchWorkflowRoute } from "./routes.js";

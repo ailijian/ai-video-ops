@@ -76,6 +76,26 @@ def test_qiyun_source_only_task_records_provider_without_secret(client, settings
     assert duplicate.json()["existing_task"]["task_id"] == response.json()["task"]["task_id"]
 
 
+def test_case_capability_reports_configured_acquisition_without_secret(client, settings, monkeypatch):
+    login_and_change_password(client)
+    legacy = client.get("/api/capabilities").json()["case_analysis"]["source_acquisition"]
+    assert legacy == {"mode": "legacy_downloader", "configured": True}
+    object.__setattr__(settings, "case_acquisition_provider", "qiyun")
+    monkeypatch.delenv("QYAPI_APP_ID", raising=False)
+    monkeypatch.delenv("QYAPI_APP_KEY", raising=False)
+    missing = client.get("/api/capabilities").json()["case_analysis"]["source_acquisition"]
+    assert missing == {"mode": "qiyun", "configured": False}
+    monkeypatch.setenv("QYAPI_APP_ID", "fixture-id")
+    monkeypatch.setenv("QYAPI_APP_KEY", "fixture-secret")
+    ready = client.get("/api/capabilities").json()
+    assert ready["case_analysis"]["source_acquisition"] == {"mode": "qiyun", "configured": True}
+    assert "fixture-secret" not in str(ready)
+    object.__setattr__(settings, "case_acquisition_provider", "upload_only")
+    assert client.get("/api/capabilities").json()["case_analysis"]["source_acquisition"] == {
+        "mode": "upload_only", "configured": True,
+    }
+
+
 def test_qiyun_missing_credentials_rejects_source_only_but_keeps_upload(client, settings, probe, monkeypatch):
     csrf = login_and_change_password(client)
     object.__setattr__(settings, "case_acquisition_provider", "qiyun")

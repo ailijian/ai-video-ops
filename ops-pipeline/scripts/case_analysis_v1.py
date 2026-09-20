@@ -5,18 +5,22 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urlsplit
 from case_duplicate_guard_v1 import find_media_identity_duplicate
 from storage_retention_v1 import (
+    FAILED_RETENTION,
     cleanup_successful_attempt,
     mark_cleanup_retry_required,
+    parse_utc,
 )
+from operation_lock_v1 import OperationLockTimeout, operation_lock
 from speech_evidence_v1 import (
     SPEECH_NOT_DETECTED,
     SPEECH_UNCERTAIN,
@@ -391,7 +395,7 @@ class Orchestrator:
         stage["started_at"] = stage.get("started_at") or now_iso()
         self.state["status"] = "running"
         self.state["current_stage"] = stage_id
-        self.state["progress"] = max(0, int(stage["progress"]) - 10)
+        self.state["progress"] = max(int(self.state.get("progress") or 0), 0, int(stage["progress"]) - 10)
         self.state["error"] = None
         self.save()
 
@@ -400,7 +404,7 @@ class Orchestrator:
         stage["status"] = "completed"
         stage["completed_at"] = now_iso()
         stage["recovered_from_checkpoint"] = recovered
-        self.state["progress"] = int(stage["progress"])
+        self.state["progress"] = max(int(self.state.get("progress") or 0), int(stage["progress"]))
         self.save()
 
     def run_command(
@@ -438,6 +442,107 @@ class Orchestrator:
                 "PIPELINE_STAGE_FAILED",
                 f"{label} failed: {reason}",
             )
+
+    def reuse_failed_qiyun_media(self) -> dict[str, Any] | None:
+        """Copy verified media from a failed attempt before making another paid call."""
+
+        candidates: list[tuple[datetime, Path]] = []
+        now = datetime.now(timezone.utc)
+        for state_path in self.attempt_root.parent.glob("*/case_analysis_attempt_v1.json"):
+            previous_root = state_path.parent
+            if previous_root == self.attempt_root or previous_root.is_symlink():
+                continue
+            try:
+                state = read_json(state_path)
+                terminal_at = parse_utc(str(state.get("updated_at") or ""))
+            except (OSError, ValueError, TypeError, json.JSONDecodeError, CaseAnalysisError):
+                continue
+            if (
+                state.get("status") != "failed"
+                or state.get("case_id") != self.case_id
+                or state.get("attempt_id") != previous_root.name
+                or (state.get("source") or {}).get("canonical_url") != self.source_url
+                or (state.get("request") or {}).get("acquisition_provider") != "qiyun"
+                or state.get("cleanup_status") == "completed"
+                or terminal_at is None
+                or not timedelta(0) <= now - terminal_at < FAILED_RETENTION
+            ):
+                continue
+            candidates.append((terminal_at, previous_root))
+
+        for _, previous_root in sorted(candidates, key=lambda item: (item[0], item[1].name), reverse=True):
+            lock_key = f"storage_cleanup:{self.case_id}:{previous_root.name}"
+            try:
+                with operation_lock(self.pipeline_root, lock_key, timeout_seconds=30):
+                    video = previous_root / "source_media" / "source.mp4"
+                    metadata_path = previous_root / "source_metadata_v1.json"
+                    if video.is_symlink() or metadata_path.is_symlink():
+                        continue
+                    try:
+                        state = read_json(previous_root / "case_analysis_attempt_v1.json")
+                        acquisition = read_json(previous_root / "source_acquisition_v1.json")
+                        metadata = read_json(metadata_path)
+                        terminal_at = parse_utc(str(state.get("updated_at") or ""))
+                    except (OSError, ValueError, TypeError, json.JSONDecodeError, CaseAnalysisError):
+                        continue
+                    if (
+                        state.get("status") != "failed"
+                        or state.get("case_id") != self.case_id
+                        or state.get("attempt_id") != previous_root.name
+                        or (state.get("source") or {}).get("canonical_url") != self.source_url
+                        or (state.get("request") or {}).get("acquisition_provider") != "qiyun"
+                        or state.get("cleanup_status") == "completed"
+                        or terminal_at is None
+                        or not timedelta(0) <= datetime.now(timezone.utc) - terminal_at < FAILED_RETENTION
+                    ):
+                        continue
+                    recorded_sha = str(acquisition.get("source_video_sha256") or "").lower()
+                    if (
+                        acquisition.get("mode") != "qiyun_resolved_media"
+                        or acquisition.get("case_id") != self.case_id
+                        or acquisition.get("stable_video_id") != self.case_id
+                        or acquisition.get("source_url") != self.source_url
+                        or acquisition.get("platform") != "douyin"
+                        or Path(str(acquisition.get("video") or "")).resolve() != video.resolve()
+                        or Path(str(acquisition.get("metadata") or "")).resolve()
+                        != metadata_path.resolve()
+                        or metadata.get("provider") != "qiyun"
+                        or metadata.get("stable_video_id") != self.case_id
+                        or metadata.get("canonical_source_url") != self.source_url
+                        or re.fullmatch(r"[0-9a-f]{64}", recorded_sha) is None
+                        or not video.is_file()
+                    ):
+                        continue
+                    try:
+                        if sha256_file(video) != recorded_sha:
+                            continue
+                    except OSError:
+                        continue
+                    destination = self.attempt_root / "source_media" / "source.mp4"
+                    destination.parent.mkdir(parents=True, exist_ok=True)
+                    partial = destination.with_suffix(".mp4.part")
+                    try:
+                        shutil.copyfile(video, partial)
+                        if sha256_file(partial) != recorded_sha:
+                            raise CaseAnalysisError("SOURCE_MEDIA_REUSE_INVALID", "Previously acquired video failed verification.")
+                        os.replace(partial, destination)
+                    except OSError as exc:
+                        raise CaseAnalysisError("SOURCE_MEDIA_REUSE_FAILED", "Previously acquired video could not be copied.") from exc
+                    finally:
+                        partial.unlink(missing_ok=True)
+                    return {
+                        "video": str(destination),
+                        "source_video_sha256": recorded_sha,
+                        "source_description": str(acquisition.get("source_description") or ""),
+                        "source_author": str(acquisition.get("source_author") or ""),
+                        "metadata": metadata,
+                        "reused_from_attempt_id": previous_root.name,
+                    }
+            except OperationLockTimeout as exc:
+                raise CaseAnalysisError(
+                    "SOURCE_MEDIA_REUSE_BUSY", "Previously acquired video is being maintained; retry shortly."
+                ) from exc
+        return None
 
     def acquire(self) -> dict[str, Any]:
         acquisition_path = self.attempt_root / "source_acquisition_v1.json"
@@ -481,14 +586,16 @@ class Orchestrator:
             return read_json(acquisition_path)
 
         if self.acquisition_provider == "qiyun":
-            try:
-                acquired = acquire_qiyun_media(
-                    pipeline_root=self.pipeline_root, source_url=self.source_url,
-                    case_id=self.case_id, attempt_root=self.attempt_root,
-                    provider_source_url=self.provider_source_url,
-                )
-            except QiyunAcquisitionError as exc:
-                raise CaseAnalysisError(exc.code, str(exc)) from None
+            acquired = self.reuse_failed_qiyun_media()
+            if acquired is None:
+                try:
+                    acquired = acquire_qiyun_media(
+                        pipeline_root=self.pipeline_root, source_url=self.source_url,
+                        case_id=self.case_id, attempt_root=self.attempt_root,
+                        provider_source_url=self.provider_source_url,
+                    )
+                except QiyunAcquisitionError as exc:
+                    raise CaseAnalysisError(exc.code, str(exc)) from None
             metadata_path = self.attempt_root / "source_metadata_v1.json"
             write_atomic_json(metadata_path, acquired["metadata"])
             acquisition = {
@@ -500,6 +607,8 @@ class Orchestrator:
                 "source_description": acquired["source_description"],
                 "source_author": acquired["source_author"],
                 "source_video_sha256": acquired["source_video_sha256"],
+                "provider_api_called_this_attempt": "reused_from_attempt_id" not in acquired,
+                "reused_from_attempt_id": acquired.get("reused_from_attempt_id"),
                 "binding_method": "canonical_douyin_url_and_recorded_media_sha256",
                 "platform_original_verified": False,
                 "media_rights_granted": False, "production_footage_pool_eligible": False,
@@ -566,6 +675,7 @@ class Orchestrator:
             )
             source = self.acquire()
             self.state["artifacts"]["source_acquisition_v1"] = str(acquisition_path)
+            recovered = recovered or bool(source.get("reused_from_attempt_id"))
 
             media_duplicate = find_media_identity_duplicate(
                 self.pipeline_root,
@@ -692,6 +802,8 @@ class Orchestrator:
                         str(self.pipeline_root / "scripts" / "extract_visual_evidence.py"),
                         "--input",
                         str(video),
+                        "--case-id",
+                        self.case_id,
                         "--output-root",
                         str(visual_root),
                     ],
@@ -770,6 +882,8 @@ class Orchestrator:
             narration = narration_root / "narration_review_v1.json"
             shots_root = self.attempt_root / "evidence" / "shots"
             shots = shots_root / "shot_boundaries_v1_1.json"
+            boundary_reviews = sorted(shots_root.glob("boundary_review_???.json"))
+            boundary_review = boundary_reviews[-1] if boundary_reviews else None
             storyboard_root = self.attempt_root / "evidence" / "storyboard"
             storyboard = storyboard_root / "reverse_storyboard_v1.json"
             self.start_stage("structure")
@@ -808,34 +922,44 @@ class Orchestrator:
                 and value.get("manual_review", {}).get("required") is False,
             )
             if not shot_valid:
+                shot_command = [
+                    str(self.python),
+                    str(self.pipeline_root / "scripts" / "build_shot_boundaries_v1.py"),
+                    "--case-id",
+                    self.case_id,
+                    "--visual-v1",
+                    str(visual_v1),
+                    "--visual-manifest",
+                    str(manifest),
+                    "--audio-v1",
+                    str(audio_v1),
+                    "--privacy-projection",
+                    str(privacy),
+                    "--output-root",
+                    str(shots_root),
+                ]
+                if boundary_review is not None and boundary_review.is_file():
+                    shot_command.extend(["--review-file", str(boundary_review)])
                 self.run_command(
                     "shot-boundaries",
-                    [
-                        str(self.python),
-                        str(self.pipeline_root / "scripts" / "build_shot_boundaries_v1.py"),
-                        "--case-id",
-                        self.case_id,
-                        "--visual-v1",
-                        str(visual_v1),
-                        "--visual-manifest",
-                        str(manifest),
-                        "--audio-v1",
-                        str(audio_v1),
-                        "--privacy-projection",
-                        str(privacy),
-                        "--output-root",
-                        str(shots_root),
-                    ],
+                    shot_command,
                     "structure",
                     1800,
                     needs_deepseek=True,
+                )
+            if read_json(shots).get("manual_review", {}).get("required") is True:
+                raise CaseAnalysisError(
+                    "SHOT_BOUNDARY_REVIEW_REQUIRED",
+                    "Two or more adjacent shots need a human boundary decision before the Case can be built.",
                 )
             storyboard_valid = validate_json(
                 storyboard,
                 lambda value: value.get("case_id") == self.case_id
                 and value.get("validation", {}).get("passed") is True,
             )
-            if not storyboard_valid:
+            # A revised boundary projection invalidates the prior storyboard,
+            # even when its own validation had passed against the old shots.
+            if not storyboard_valid or not shot_valid:
                 self.run_command(
                     "reverse-storyboard",
                     [

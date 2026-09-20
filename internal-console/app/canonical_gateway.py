@@ -489,13 +489,19 @@ def resolve_case_source_duplicate(
     return None
 
 
-def case_analysis_capability(acquisition_provider: str = "legacy_downloader") -> dict[str, Any]:
+def case_analysis_capability(
+    acquisition_provider: str = "legacy_downloader", *, qiyun_configured: bool = False,
+) -> dict[str, Any]:
     return {
         "available": True,
         "operation": "case_analysis_v1",
         "message": "可以粘贴抖音分享内容、短链接或完整视频链接。",
         "next_action": "提交后可离开页面，任务进度会持续保留。",
         "upload_required": acquisition_provider == "upload_only",
+        "source_acquisition": {
+            "mode": acquisition_provider,
+            "configured": acquisition_provider != "qiyun" or qiyun_configured,
+        },
     }
 
 

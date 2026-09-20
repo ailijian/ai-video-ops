@@ -1,9 +1,18 @@
-import { caseCard, caseReviewContent, escapeHtml, progressPanel } from "./case-components.js?v=source-upload-1";
+import { boundaryReviewPanel, caseCard, caseReviewContent, escapeHtml, progressPanel } from "./case-components.js?v=boundary-review-1";
 import { bindCaseMediaPreview } from "./case-media-preview.mjs?v=case-media-fit-1";
 import { projectCaseSubmitState, projectFailedCaseTask, resetCaseSubmitState } from "./case-submit-state.mjs?v=mobile-reliability-2";
 import { startTaskPolling } from "./task-progress.js?v=mobile-reliability-1";
-import { detectCaseSourceInput } from "./case-source-detection.mjs?v=mobile-reliability-1";
+import { detectCaseSourceInput, extractCaseSourceUrls } from "./case-source-detection.mjs?v=case-batch-1";
 import { uploadCaseFile, validateCaseFile } from "./case-file-upload.mjs?v=source-upload-ui-2";
+import { submitCaseBatch } from "./case-batch-submit.mjs?v=case-batch-1";
+
+export function caseAcquisitionWarning(acquisition, { hasFile = false, unavailable = false } = {}) {
+  if (hasFile || (acquisition?.mode === "qiyun" && acquisition.configured)) return "";
+  if (acquisition?.mode === "qiyun") return "奇云付费解析尚未连接。请上传视频，或联系管理员检查配置。";
+  if (acquisition?.mode === "legacy_downloader") return "当前使用原有下载方式，未启用奇云付费解析。获取失败时可上传本地视频。";
+  if (acquisition?.mode === "upload_only") return "当前无法自动获取视频，请上传本地视频。";
+  return unavailable ? "暂时无法确认视频获取方式，请刷新页面后再提交。" : "";
+}
 
 function duplicateResultHtml(result) {
   const state = result.state || "";
@@ -80,16 +89,16 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
     } catch (error) { renderLoadError("案例库暂时无法读取", error); }
   }
 
-  function bindTaskProgress(task, onLifecycleChange = () => {}) {
+  function bindTaskProgress(task, onLifecycleChange = () => {}, boundaryReview = null) {
     const host = document.querySelector("[data-live-progress]");
     if (!host) return;
-    host.innerHTML = progressPanel(task, { embedded: host.dataset.embedded === "true" });
+    host.innerHTML = progressPanel(task, { embedded: host.dataset.embedded === "true", boundaryReview });
     onLifecycleChange(task.status, task);
     stopPolling = startTaskPolling({
       api,
       taskId: task.task_id,
       onUpdate: (next) => {
-        if (document.querySelector("[data-live-progress]")) host.innerHTML = progressPanel(next, { embedded: host.dataset.embedded === "true" });
+        if (document.querySelector("[data-live-progress]")) host.innerHTML = progressPanel(next, { embedded: host.dataset.embedded === "true", boundaryReview });
         onLifecycleChange(next.status, next);
       },
       onDone: (next) => {
@@ -100,11 +109,13 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
 
   function renderCaseNew() {
     dispose();
-    const body = `<main class="page page-form add-case-page">${pageHeading("", "添加案例", "粘贴抖音分享内容或视频链接，系统会自动获取视频。")}
+    const body = `<main class="page page-form add-case-page">${pageHeading("", "添加案例", "粘贴一个或多个抖音视频链接，系统会逐条建立分析任务。")}
       <section class="work-surface add-case-surface">
         <form id="case-url-form" novalidate><div data-case-input-panel><div class="field"><label for="case-url">粘贴抖音分享内容或视频链接</label>
-          <div class="input-combo"><input id="case-url" type="text" autocomplete="off" placeholder="粘贴抖音分享文本、短链接或完整视频链接" required><button class="paste-button" type="button" data-paste>粘贴</button></div>
-          <div id="source-detection" class="source-detection muted">输入内容后自动识别来源</div></div>
+          <div class="input-combo"><textarea id="case-url" autocomplete="off" rows="3" placeholder="粘贴分享文本或视频链接；多个链接可按行粘贴" required></textarea><button class="paste-button" type="button" data-paste>粘贴</button></div>
+          <div id="source-detection" class="source-detection muted">输入内容后自动识别来源</div>
+          <div id="case-acquisition-status" class="source-acquisition-status warning" role="status" hidden></div>
+          <div id="case-batch-choices" class="case-batch-choices" hidden></div></div>
           <div class="field case-file-field"><span class="case-file-label">或上传本地视频</span>
             <label class="case-file-picker">
               <input id="case-video-file" type="file" accept=".mp4,.mov,.m4v,.webm,video/mp4,video/quicktime,video/webm" aria-label="选择视频文件" aria-describedby="case-file-help case-file-selected">
@@ -138,12 +149,17 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
     let reviewCaseId = null;
     let reanalysisRequiresFile = false;
     let uploadRequired = false;
+    let acquisition = null;
+    let capabilityUnavailable = false;
     const pasteButton = document.querySelector("[data-paste]");
     const resultBox = document.querySelector("#case-result");
     const actionsHost = document.querySelector("[data-case-submit-actions]");
     const inputPanel = document.querySelector("[data-case-input-panel]");
     const profilePanel = document.querySelector("[data-case-profile-panel]");
+    const batchChoices = document.querySelector("#case-batch-choices");
+    const acquisitionStatus = document.querySelector("#case-acquisition-status");
     const selectedHint = () => form.querySelector('input[name="operator-profile-hint"]:checked')?.value || null;
+    const batchHints = new Map();
     let activeState = "idle";
     let activeCaseId = null;
     let activeTaskId = null;
@@ -179,9 +195,12 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       pasteButton.disabled = projection.pasteDisabled;
       fileInput.disabled = projection.inputDisabled;
       inputPanel.hidden = !["idle", "failed", "rejected"].includes(status);
-      profilePanel.hidden = !["idle", "failed", "rejected"].includes(status);
+      profilePanel.hidden = !["idle", "failed", "rejected"].includes(status) || extractCaseSourceUrls(input.value).length > 1;
       actionsHost.innerHTML = actionMarkup(projection);
-      bindCommonActions();
+      actionsHost.querySelectorAll("[data-route]").forEach((link) => link.addEventListener("click", (event) => {
+        event.preventDefault();
+        navigate(link.getAttribute("href"));
+      }));
     };
 
     const resetForAnotherCase = () => {
@@ -197,19 +216,46 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       uploadedFile = uploadedUrl = uploadedReceipt = null;
       reviewCaseId = null;
       reanalysisRequiresFile = false;
+      batchHints.clear();
       form.querySelectorAll('input[name="operator-profile-hint"]').forEach((radio) => { radio.checked = false; });
       resultBox.innerHTML = "";
       document.querySelector("#case-form-error").classList.remove("visible");
       const projection = resetCaseSubmitState();
       setSubmitState(projection.status);
       updateDetection();
+      updateAcquisitionNotice();
       input.focus();
     };
     const updateDetection = () => {
+      const urls = extractCaseSourceUrls(input.value);
       const projection = detectCaseSourceInput(input.value);
       detection.textContent = projection.label;
       detection.className = projection.recognized ? "source-detection" : "source-detection muted";
+      const multi = urls.length > 1 && !reviewCaseId;
+      profilePanel.hidden = multi || !["idle", "failed", "rejected"].includes(activeState);
+      batchChoices.hidden = !multi;
+      if (!multi) { batchChoices.innerHTML = ""; return; }
+      batchChoices.innerHTML = `<p class="field-hint">每个视频单独选择结构类型；已存在的案例不会重复建立任务。</p>
+        ${urls.map((url, index) => `<label class="case-batch-choice"><span><strong>${index + 1}. ${escapeHtml(url)}</strong></span>
+          <select data-batch-url="${escapeHtml(url)}" aria-label="第 ${index + 1} 个视频的结构类型">
+            <option value="">选择结构类型</option>
+            <option value="mix" ${batchHints.get(url) === "mix" ? "selected" : ""}>混剪型</option>
+            <option value="news" ${batchHints.get(url) === "news" ? "selected" : ""}>新闻体</option>
+            <option value="hybrid" ${batchHints.get(url) === "hybrid" ? "selected" : ""}>混合型</option>
+            <option value="uncertain" ${batchHints.get(url) === "uncertain" ? "selected" : ""}>不确定</option>
+          </select></label>`).join("")}`;
     };
+    const updateAcquisitionNotice = () => {
+      const warning = caseAcquisitionWarning(acquisition, {
+        hasFile: Boolean(fileInput.files.length), unavailable: capabilityUnavailable,
+      });
+      acquisitionStatus.textContent = warning;
+      acquisitionStatus.hidden = !warning;
+    };
+    batchChoices.addEventListener("change", (event) => {
+      const select = event.target.closest("[data-batch-url]");
+      if (select) batchHints.set(select.dataset.batchUrl, select.value);
+    });
     const showSubmissionResult = (result) => {
       if (!result.duplicate) {
         if (!result.task?.task_id) throw new Error("未取得任务编号，请到任务记录确认状态。");
@@ -226,6 +272,33 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
         taskId: result.existing_task?.task_id || null,
         reanalysis: result.state,
       });
+    };
+    const renderBatchResults = (results, total, pendingCount = null) => {
+      const added = results.filter(({ response }) => response && !response.duplicate).length;
+      const existing = results.filter(({ response }) => response?.duplicate).length;
+      const unfinished = pendingCount ?? total - results.length;
+      const rows = results.map(({ item, response, error }) => {
+        const label = escapeHtml(item.url);
+        if (error) {
+          return `<li><span>${label}</span><strong class="case-batch-error">未提交</strong><small>${escapeHtml(error.detail?.next_action || error.message || "请稍后重试。")}</small></li>`;
+        }
+        const taskId = response.duplicate ? response.existing_task?.task_id : response.task?.task_id;
+        const caseId = response.case_id;
+        const state = response.duplicate ? response.state : "queued";
+        const stateLabel = ({ queued: "已加入队列", running: "正在分析", awaiting_review: "待审核", approved: "已入库", failed: "需重新分析", rejected: "未收录" })[state] || "已有记录";
+        const href = taskId && ["queued", "running", "failed"].includes(state) ? `/tasks/${encodeURIComponent(taskId)}`
+          : caseId && ["awaiting_review", "approved", "rejected"].includes(state) ? `/cases/${encodeURIComponent(caseId)}` : null;
+        const action = href ? `<a href="${href}" data-route>查看${["queued", "running"].includes(state) ? "进度" : state === "failed" ? "任务" : "案例"}</a>` : "";
+        return `<li><span>${label}</span><strong>${stateLabel}</strong>${action}</li>`;
+      }).join("");
+      resultBox.innerHTML = `<div class="case-batch-results" role="status"><h3>${pendingCount === null ? "正在逐条提交" : "提交结果"}</h3>
+        <p>已加入队列 ${added} 条 · 已有记录 ${existing} 条 · ${pendingCount === null ? `处理中 ${unfinished} 条` : `未提交 ${unfinished} 条`}</p>
+        ${pendingCount ? '<p>未提交的链接已保留在输入框；请在任务完成或问题解决后重试。</p>' : ""}
+        <ol>${rows}</ol>${results.length ? '<a class="inline-link" href="/tasks" data-route>查看所有任务</a>' : ""}</div>`;
+      resultBox.querySelectorAll("[data-route]").forEach((link) => link.addEventListener("click", (event) => {
+        event.preventDefault();
+        navigate(link.getAttribute("href"));
+      }));
     };
     const submitCaseSource = async (extra = {}) => {
       const file = fileInput.files[0];
@@ -263,6 +336,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       const file = fileInput.files[0];
       fileSelected.textContent = file ? `${file.name} · ${(file.size / 1024 / 1024).toFixed(1)} MB` : "未选择文件";
       fileSelected.classList.toggle("has-file", Boolean(file));
+      updateAcquisitionNotice();
       setSubmitState(activeState);
     });
     pasteButton.addEventListener("click", async () => {
@@ -305,6 +379,43 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       const errorBox = document.querySelector("#case-form-error");
       if (activeState !== "idle") return;
       errorBox.classList.remove("visible"); resultBox.innerHTML = "";
+      const urls = extractCaseSourceUrls(input.value);
+      if (urls.length > 1) {
+        const showError = (message) => { errorBox.textContent = message; errorBox.classList.add("visible"); };
+        if (urls.length > 20) return showError("一次最多添加 20 个链接，请分批提交。");
+        if (fileInput.files.length) return showError("多个链接不能共用一个视频文件。请移除文件，或逐条上传对应视频。");
+        if (uploadRequired) return showError("当前需要上传视频文件，请逐条添加并上传对应的视频。");
+        if (urls.some((url) => !batchHints.get(url))) return showError("请为每个视频选择结构类型；不确定也可以选择。");
+        const items = urls.map((url) => ({ url, hint: batchHints.get(url) }));
+        const controller = new AbortController();
+        const abortBatch = () => controller.abort();
+        stopUpload = abortBatch;
+        const batchProgress = [];
+        setSubmitState("submitting");
+        try {
+          const batch = await submitCaseBatch(items, ({ url, hint }) => api("/api/cases/analyze", {
+            method: "POST", body: JSON.stringify({ url, operator_profile_hint: hint }), signal: controller.signal,
+          }), (result) => {
+            batchProgress.push(result);
+            if (document.querySelector("#case-url-form") === form) renderBatchResults(batchProgress, items.length);
+          });
+          if (document.querySelector("#case-url-form") !== form) return;
+          input.value = batch.pending.map((item) => item.url).join("\n");
+          if (batch.pending.length === 1) {
+            const hint = form.querySelector(`input[name="operator-profile-hint"][value="${batch.pending[0].hint}"]`);
+            if (hint) hint.checked = true;
+          }
+          setSubmitState("idle");
+          updateDetection();
+          renderBatchResults(batch.results, items.length, batch.pending.length);
+        } catch (error) {
+          if (document.querySelector("#case-url-form") !== form) return;
+          if (error.name !== "AbortError") showError(error.detail?.next_action || error.message || "请到任务记录确认提交状态。");
+          setSubmitState("idle");
+          updateDetection();
+        } finally { if (stopUpload === abortBatch) stopUpload = null; }
+        return;
+      }
       if (!selectedHint()) {
         errorBox.textContent = "请选择视频结构类型；不确定也可以选择。";
         errorBox.classList.add("visible");
@@ -327,14 +438,21 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
     api("/api/capabilities").then((capabilities) => {
       if (document.querySelector("#case-url-form") !== form) return;
       uploadRequired = capabilities.case_analysis?.upload_required === true;
+      acquisition = capabilities.case_analysis?.source_acquisition || null;
+      capabilityUnavailable = !["qiyun", "legacy_downloader", "upload_only"].includes(acquisition?.mode);
       if (uploadRequired) {
         const description = document.querySelector(".add-case-page .page-heading-copy > p");
         if (description) description.textContent = "粘贴来源链接，并上传对应的视频文件。";
         form.querySelector(".case-file-label").textContent = "上传本地视频";
         form.querySelector("#case-file-help").textContent = "当前需要上传视频。最长 10 分钟、最高 4K，需保留画面和音轨。";
       }
+      updateAcquisitionNotice();
       setSubmitState(activeState);
-    }).catch(() => {});
+    }).catch(() => {
+      if (document.querySelector("#case-url-form") !== form) return;
+      capabilityUnavailable = true;
+      updateAcquisitionNotice();
+    });
     const reanalysisCaseId = new URLSearchParams(location.search).get("reanalyze_case");
     if (reanalysisCaseId) {
       setSubmitState("restoring");
@@ -467,8 +585,34 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
     try {
       const payload = await api(`/api/tasks/${encodeURIComponent(taskId)}`);
       app.innerHTML = shell("任务进度", `<main class="page task-detail-page">${pageHeading("任务进度", "案例分析", "进度来自实际分析步骤，离开页面后仍会继续。")}
-        <div data-live-progress>${progressPanel(payload.task)}</div></main>`);
-      bindCommonActions(); bindTaskProgress(payload.task);
+        <div data-live-progress>${progressPanel(payload.task, { boundaryReview: payload.boundary_review })}</div>
+        ${boundaryReviewPanel(payload.boundary_review)}</main>`);
+      bindCommonActions();
+      const form = app.querySelector("[data-boundary-review]");
+      form?.addEventListener("submit", async (event) => {
+        event.preventDefault();
+        const button = form.querySelector('[type="submit"]');
+        button.disabled = true;
+        try {
+          const decisions = payload.boundary_review.items.map((item, index) => ({
+            frame_id: item.frame_id,
+            action: form.querySelector(`input[name="boundary-${index}"]:checked`)?.value,
+          }));
+          await api(`/api/tasks/${encodeURIComponent(taskId)}/boundary-review`, {
+            method: "POST",
+            body: JSON.stringify({ shot_sha256: payload.boundary_review.shot_sha256, decisions }),
+          });
+          showToast("已确认分镜，正在继续分析");
+          return renderTaskDetail(taskId);
+        } catch (error) {
+          button.disabled = false;
+          showToast(error.message || "确认失败，请刷新后重试。");
+        }
+      });
+      const initialStatus = payload.task.status;
+      bindTaskProgress(payload.task, (status) => {
+        if (status === "failed" && initialStatus !== "failed") renderTaskDetail(taskId);
+      }, payload.boundary_review);
     } catch (error) { renderLoadError("任务暂时无法读取", error); }
   }
 

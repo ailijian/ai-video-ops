@@ -38,6 +38,14 @@ def extract_case_id(source: Path) -> str:
     ).hexdigest()[:16]
 
 
+def resolve_case_id(source: Path, explicit_case_id: str | None) -> str:
+    if explicit_case_id is None:
+        return extract_case_id(source)
+    if not re.fullmatch(r"\d{10,24}", explicit_case_id):
+        raise ValueError("--case-id must be a stable Douyin video ID")
+    return explicit_case_id
+
+
 def save_jpeg_unicode(path: Path, frame) -> None:
     """
     Windows-safe image saving.
@@ -176,6 +184,12 @@ def main():
     )
 
     parser.add_argument(
+        "--case-id",
+        default=None,
+        help="Explicit stable Douyin video ID for Case Analysis inputs.",
+    )
+
+    parser.add_argument(
         "--interval",
         type=float,
         default=1.0,
@@ -218,7 +232,10 @@ def main():
             f"Input not found: {source}"
         )
 
-    case_id = extract_case_id(source)
+    try:
+        case_id = resolve_case_id(source, args.case_id)
+    except ValueError as exc:
+        parser.error(str(exc))
 
     project_root = (
         Path(__file__)

@@ -35,6 +35,7 @@ from app.task_service import (
     CaseTaskRunner,
     GPU_HEAVY,
     STANDARD_BACKGROUND,
+    TaskSubmissionError,
     claim_task,
     create_case_task,
     get_task,
@@ -127,6 +128,40 @@ def test_two_simultaneous_same_case_submits_create_one_active_task(
     finally:
         connection.close()
     assert count == 1
+
+
+def test_case_batch_uses_existing_fifo_and_per_user_gpu_limit(hardening_db: Path):
+    actor = user_id(hardening_db)
+
+    def submit(case_number: int) -> dict:
+        case_id = f"79999999999999999{case_number:02d}"
+        return create_case_task(
+            hardening_db,
+            source_url=f"https://www.douyin.com/video/{case_id}",
+            case_id=case_id,
+            operator_profile_hint="uncertain",
+            created_by_user_id=actor,
+            queue_max=20,
+            gpu_pending_per_user_max=3,
+        )
+
+    accepted = [submit(number) for number in range(3)]
+    assert [task["task_id"] for task in iter_queued_tasks(
+        hardening_db, task_types=("case_analysis",)
+    )] == [task["task_id"] for task in accepted]
+    assert submit(0)["task_id"] == accepted[0]["task_id"]
+    with pytest.raises(TaskSubmissionError, match="maximum number") as blocked:
+        submit(3)
+    assert blocked.value.code == "GPU_PENDING_LIMIT_REACHED"
+    with transaction(hardening_db) as connection:
+        connection.execute(
+            "UPDATE tasks SET status = 'completed' WHERE task_id = ?",
+            (accepted[0]["task_id"],),
+        )
+    next_task = submit(3)
+    assert [task["task_id"] for task in iter_queued_tasks(
+        hardening_db, task_types=("case_analysis",)
+    )] == [accepted[1]["task_id"], accepted[2]["task_id"], next_task["task_id"]]
 
 
 def test_two_workers_cannot_claim_same_task(hardening_db: Path):

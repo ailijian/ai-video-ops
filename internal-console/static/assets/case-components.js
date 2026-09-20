@@ -24,7 +24,7 @@ function currentStageIndex(task) {
   return CASE_PROGRESS_STAGES.findIndex(([, , threshold]) => task.progress < threshold);
 }
 
-export function progressPanel(task, { compact = false, embedded = false } = {}) {
+export function progressPanel(task, { compact = false, embedded = false, boundaryReview = null } = {}) {
   const activeIndex = currentStageIndex(task);
   const terminal = ["awaiting_review", "completed"].includes(task.status);
   const failed = task.status === "failed";
@@ -60,6 +60,8 @@ export function progressPanel(task, { compact = false, embedded = false } = {}) 
       ? `<div class="next-action"><a class="btn btn-primary" href="${caseHref}">去审核案例</a></div>`
       : isCaseTask && task.status === "completed"
         ? `<div class="next-action"><a class="btn btn-primary" href="${caseHref}">查看案例</a></div>`
+      : isCaseTask && failed && boundaryReview
+      ? `<div class="next-action"><strong>分镜需要确认</strong><span>请在下方对照原视频确认短镜头，确认后会继续本次分析，不会重新下载或重复分析画面。</span></div>`
       : isCaseTask && failed
       ? `<div class="next-action">
           <strong>下一步</strong>
@@ -72,13 +74,38 @@ export function progressPanel(task, { compact = false, embedded = false } = {}) 
           你可以离开这个页面，任务进度会保留在“任务记录”中。
         </p>`;
   return `<section class="${embedded ? "" : "card "}task-progress ${compact ? "compact" : ""} ${embedded ? "embedded" : ""}" data-task-progress>
-    <div class="task-progress-head"><div><h2>${isCaseTask ? (failed ? "案例分析未完成" : task.status === "completed" ? "案例已入库" : terminal ? "分析完成，等待审核" : "案例分析中") : (failed ? "任务未完成" : terminal ? "任务已完成" : "任务进行中")}</h2>
-      <p>${escapeHtml(failed ? task.error_message || "请稍后重试。" : task.stage || "等待开始")}</p></div>
+    <div class="task-progress-head"><div><h2>${isCaseTask ? (failed && boundaryReview ? "分镜待确认" : failed ? "案例分析未完成" : task.status === "completed" ? "案例已入库" : terminal ? "分析完成，等待审核" : "案例分析中") : (failed ? "任务未完成" : terminal ? "任务已完成" : "任务进行中")}</h2>
+      <p>${escapeHtml(failed && boundaryReview ? "分镜划分尚待人工确认。" : failed ? task.error_message || "请稍后重试。" : task.stage || "等待开始")}</p>
+      ${isCaseTask && task.payload?.acquisition_provider === "legacy_downloader" && !task.payload?.source_upload
+        ? `<p class="task-acquisition-label">视频获取方式：原有下载方式（未使用付费解析）</p>` : ""}</div>
       <strong>${Number(task.progress || 0)}%</strong></div>
     <div class="progress-track"><span style="width:${Math.max(0, Math.min(100, Number(task.progress || 0)))}%"></span></div>
     <ol class="progress-steps">${stages}</ol>
     ${failureAction}
   </section>`;
+}
+
+export function boundaryReviewPanel(review) {
+  if (!review?.items?.length) return "";
+  const rows = review.items.map((item, index) => {
+    const issue = item.issues?.[0] || {};
+    const start = Number(issue.start);
+    const end = Number(issue.end);
+    const span = Number.isFinite(start) && Number.isFinite(end)
+      ? `${start.toFixed(2)}–${end.toFixed(2)} 秒`
+      : Number.isFinite(start) ? `${start.toFixed(2)} 秒附近` : "请对照原视频";
+    return `<fieldset class="boundary-review-row"><legend>分镜 ${index + 1} · ${span}</legend>
+      <p>${issue.type === "short_shot" ? "这段镜头不足半秒，请确认是否为独立画面。" : "这个切换点需要人工确认。"}</p>
+      <div class="boundary-review-choices">
+        <label><input type="radio" name="boundary-${index}" value="keep" required>保留分镜</label>
+        <label><input type="radio" name="boundary-${index}" value="reject" required>合并相邻分镜</label>
+      </div></fieldset>`;
+  }).join("");
+  return `<section class="panel boundary-review-panel"><h2>确认视频分镜</h2>
+    <p>请先对照原视频逐项判断。保留或合并只影响分镜划分，不会自动批准案例。</p>
+    ${review.source_url ? `<a href="${escapeHtml(review.source_url)}" target="_blank" rel="noopener noreferrer">在抖音打开原视频 ↗</a>` : ""}
+    <form data-boundary-review data-shot-sha="${escapeHtml(review.shot_sha256)}">${rows}
+      <button class="btn btn-primary" type="submit">确认并继续分析</button></form></section>`;
 }
 
 function caseProfileMetadata(item) {

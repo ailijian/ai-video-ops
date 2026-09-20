@@ -17,6 +17,11 @@ from pydantic import BaseModel, Field
 from starlette.concurrency import run_in_threadpool
 
 from .case_uploads import receive_upload, validate_for_submission
+from .case_boundary_review import (
+    BoundaryReviewError,
+    pending_boundary_review,
+    submit_boundary_review,
+)
 
 from .auth_service import (
     SessionContext,
@@ -212,6 +217,16 @@ class CaseProfileAnnotationRequest(BaseModel):
     approved_case_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     expected_annotation_sha256: str | None = Field(..., pattern=r"^[0-9a-f]{64}$")
     note: str = Field(default="", max_length=1000)
+
+
+class CaseBoundaryDecision(BaseModel):
+    frame_id: str = Field(pattern=r"^frame_\d{9}ms\.jpg$")
+    action: Literal["keep", "reject"]
+
+
+class CaseBoundaryReviewRequest(BaseModel):
+    shot_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    decisions: list[CaseBoundaryDecision] = Field(min_length=1, max_length=100)
 
 
 class CustomerAnalysisRequest(BaseModel):
@@ -445,6 +460,13 @@ def public_user(session: SessionContext) -> dict[str, Any]:
 
 def build_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_environment()
+
+    def case_capability() -> dict[str, Any]:
+        return case_analysis_capability(
+            settings.case_acquisition_provider,
+            qiyun_configured=bool(os.environ.get("QYAPI_APP_ID") and os.environ.get("QYAPI_APP_KEY")),
+        )
+
     throttle = LoginThrottle()
     migrations_path = settings.console_root / "migrations"
     static_path = settings.console_root / "static"
@@ -1536,7 +1558,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             },
             "recent_tasks": tasks[:5],
             "capabilities": {
-                "case_analysis": case_analysis_capability(settings.case_acquisition_provider),
+                "case_analysis": case_capability(),
                 "add_case": {
                     "available": True,
                     "path": "/cases/new",
@@ -1986,7 +2008,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         projected = list_cases(settings)
         for case in projected:
             case["submitted_by"] = original_task_actor(settings.database_path, "case_analysis", case["case_id"])
-        return {"cases": projected, "analysis": case_analysis_capability(settings.case_acquisition_provider)}
+        return {"cases": projected, "analysis": case_capability()}
 
     @app.post("/api/cases/source-files")
     async def upload_case_source(
@@ -2375,13 +2397,49 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                     "TASK_NOT_FOUND", "没有找到这个任务。", "请返回任务记录重新选择。"
                 ),
             )
-        return {"task": task}
+        return {
+            "task": task,
+            "boundary_review": pending_boundary_review(settings, task)
+            if task["task_type"] == "case_analysis" else None,
+        }
+
+    @app.post("/api/tasks/{task_id}/boundary-review")
+    def review_case_boundaries(
+        task_id: str,
+        payload: CaseBoundaryReviewRequest,
+        session: SessionContext = Depends(require_console_access),
+        x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+    ) -> dict[str, Any]:
+        require_csrf(session, x_csrf_token)
+        with authority_operation_lock(settings, "case", task_id):
+            task = get_task(settings.database_path, task_id)
+            if task is None:
+                raise HTTPException(
+                    status_code=404,
+                    detail=error_detail("TASK_NOT_FOUND", "没有找到这个任务。", "请返回任务记录重新选择。"),
+                )
+            try:
+                resumed = submit_boundary_review(
+                    settings,
+                    task,
+                    shot_sha256=payload.shot_sha256,
+                    decisions=[item.model_dump() for item in payload.decisions],
+                    user_id=int(session.user["id"]),
+                    phone=str(session.user["phone"]),
+                )
+            except BoundaryReviewError as exc:
+                raise HTTPException(
+                    status_code=409,
+                    detail=error_detail("CASE_BOUNDARY_REVIEW_CONFLICT", str(exc), "刷新任务后重试。"),
+                ) from exc
+        task_runner.schedule(task_id)
+        return {"task": resumed}
 
     @app.get("/api/capabilities")
     def capabilities(
         _: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
-        return {"case_analysis": case_analysis_capability(settings.case_acquisition_provider)}
+        return {"case_analysis": case_capability()}
 
     assets_path = static_path / "assets"
     app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
