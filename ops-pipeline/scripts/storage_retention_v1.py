@@ -233,6 +233,19 @@ def _transient_targets(
     targets: list[tuple[str, Path]] = []
     unsafe: list[str] = []
 
+    uploaded_video = None
+    if acquisition.get("mode") == "operator_uploaded_file":
+        from case_source_upload_v1 import read_upload
+        try:
+            _, uploaded_video = read_upload(
+                attempt_root.parents[3], str(acquisition.get("upload_id") or ""),
+                source_url=str(acquisition.get("source_url") or ""),
+                receipt_sha256=str(acquisition.get("upload_receipt_sha256") or ""),
+                verify_media=False,
+            )
+        except (OSError, ValueError, TypeError):
+            unsafe.append("source_video:invalid_upload_receipt")
+
     for category, key in (
         ("source_video", "video"),
         ("source_music", "music"),
@@ -242,10 +255,26 @@ def _transient_targets(
         if not raw:
             continue
         path = Path(raw).expanduser()
-        if not _is_within(path, allowed_downloads):
+        provider_media_root = attempt_root / "source_media"
+        provider_video = (
+            acquisition.get("mode") == "qiyun_resolved_media"
+            and key == "video"
+            and path.resolve() == (provider_media_root / "source.mp4").resolve()
+            and _is_within(path, provider_media_root)
+        )
+        if not _is_within(path, allowed_downloads) and not provider_video and not (
+            key == "video" and uploaded_video is not None and path.resolve() == uploaded_video.resolve()
+        ):
             unsafe.append(f"{category}:{path}")
             continue
         targets.append((category, path.resolve()))
+
+    # A failed acquisition may not yet have a receipt. Its bounded partial
+    # download is still transient and is removed by failed-attempt maintenance.
+    provider_media_root = attempt_root / "source_media"
+    for candidate in (provider_media_root / "source.mp4", provider_media_root / "source.mp4.part"):
+        if candidate.exists() and _is_within(candidate, provider_media_root):
+            targets.append(("source_video", candidate.resolve()))
 
     raw_video = str(acquisition.get("video") or "").strip()
     if raw_video:
@@ -419,6 +448,7 @@ def _cleanup_attempt_transient_media_unlocked(
     visual_root = attempt_root / "evidence" / "visual" / case_id
     _prune_empty_directories(visual_root / "frames")
     _prune_empty_directories(visual_root / "visual_v1" / "proxies")
+    _prune_empty_directories(attempt_root / "source_media")
 
     acquisition_path = attempt_root / "source_acquisition_v1.json"
     acquisition = read_json(acquisition_path) if acquisition_path.is_file() else {}

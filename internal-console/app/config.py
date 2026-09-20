@@ -50,10 +50,16 @@ class Settings:
     storage_maintenance_interval_seconds: int = 3600
     session_last_seen_interval_seconds: int = 300
     default_business_id: str | None = None
+    case_acquisition_provider: str = "legacy_downloader"
 
     @classmethod
     def from_environment(cls) -> "Settings":
         _load_environment_file()
+        acquisition_provider = os.environ.get(
+            "AIVO_CASE_ACQUISITION_PROVIDER", "legacy_downloader"
+        ).strip()
+        if acquisition_provider not in {"legacy_downloader", "qiyun", "upload_only"}:
+            raise ValueError("AIVO_CASE_ACQUISITION_PROVIDER must be legacy_downloader, qiyun or upload_only")
         console_root = Path(__file__).resolve().parents[1]
         repo_root = console_root.parent
         database_path = Path(
@@ -122,4 +128,5 @@ class Settings:
             default_business_id=(
                 os.environ.get("AIVO_DEFAULT_BUSINESS_ID", "").strip() or None
             ),
+            case_acquisition_provider=acquisition_provider,
         )

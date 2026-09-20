@@ -17,13 +17,13 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from .config import Settings
+from .douyin_source_input import video_id_from_url
 from .path_safety import resolve_within
 from .subprocess_env import pipeline_subprocess_env
 
 logger = logging.getLogger(__name__)
 
 BUSINESS_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_]{1,127}$")
-DOUYIN_VIDEO_ID_RE = re.compile(r"(?:/video/|video_id=)(\d{10,24})")
 
 PROFILE_LABELS = {"mix": "口播混剪", "news": "信息卡点"}
 INDUSTRY_LABELS = {
@@ -352,7 +352,7 @@ def normalize_source_url(url: str) -> str:
     if parts.scheme not in {"http", "https"} or not parts.netloc:
         raise ValueError("URL must use http or https")
     host = parts.hostname.lower() if parts.hostname else ""
-    if host not in {"douyin.com", "www.douyin.com", "v.douyin.com", "iesdouyin.com"}:
+    if host not in {"douyin.com", "www.douyin.com", "v.douyin.com", "iesdouyin.com", "www.iesdouyin.com"}:
         raise ValueError("unsupported source")
     clean_path = re.sub(r"/+", "/", parts.path).rstrip("/") or "/"
     return urlunsplit((parts.scheme.lower(), host, clean_path, "", ""))
@@ -360,8 +360,7 @@ def normalize_source_url(url: str) -> str:
 
 def find_duplicate_case(settings: Settings, url: str) -> dict[str, Any] | None:
     normalized = normalize_source_url(url)
-    video_match = DOUYIN_VIDEO_ID_RE.search(url)
-    video_id = video_match.group(1) if video_match else None
+    video_id = video_id_from_url(url)
     for case in list_cases(settings):
         if video_id and case["case_id"] == video_id:
             return case
@@ -385,18 +384,12 @@ def resolve_case_source_duplicate(
     This does not perform semantic similarity matching.
     """
 
-    normalized = normalize_source_url(url)
+    normalize_source_url(url)
 
-    # Search the raw URL as well, because video_id may live in a query string
-    # that normalize_source_url intentionally removes.
-    match = DOUYIN_VIDEO_ID_RE.search(url)
-    if match is None:
-        match = DOUYIN_VIDEO_ID_RE.search(normalized)
-
-    if match is None:
+    # Resolve the stable ID before normalization removes URL query parameters.
+    case_id = video_id_from_url(url)
+    if case_id is None:
         return None
-
-    case_id = match.group(1)
 
     canonical = settings.pipeline_root / "data" / "cases" / case_id / "case_v1.json"
 
@@ -496,29 +489,24 @@ def resolve_case_source_duplicate(
     return None
 
 
-def case_analysis_capability() -> dict[str, Any]:
+def case_analysis_capability(acquisition_provider: str = "legacy_downloader") -> dict[str, Any]:
     return {
         "available": True,
         "operation": "case_analysis_v1",
-        "message": "可以分析完整的抖音视频链接。",
+        "message": "可以粘贴抖音分享内容、短链接或完整视频链接。",
         "next_action": "提交后可离开页面，任务进度会持续保留。",
+        "upload_required": acquisition_provider == "upload_only",
     }
 
 
 def source_case_id(url: str) -> str:
-    normalized = normalize_source_url(url)
+    normalize_source_url(url)
 
-    # Prefer the original URL because some valid Douyin variants may carry
-    # video_id in the query string, while normalization intentionally removes
-    # query parameters.
-    match = DOUYIN_VIDEO_ID_RE.search(url)
-    if match is None:
-        match = DOUYIN_VIDEO_ID_RE.search(normalized)
-
-    if match is None:
+    # Resolve before normalization removes query parameters.
+    case_id = video_id_from_url(url)
+    if case_id is None:
         raise ValueError("full video URL required")
-
-    return match.group(1)
+    return case_id
 
 
 def _find_case_path(
@@ -718,6 +706,7 @@ def get_case_detail(settings: Settings, case_id: str) -> dict[str, Any]:
             ),
         },
         "review_media": {
+            "operator_uploaded": (case.get("source_provenance") or {}).get("acquisition_mode") == "operator_uploaded_file",
             "local_available": local_media_available,
             "local_url": (
                 f"/api/cases/{case_id}/media" if local_media_available else None
@@ -753,7 +742,21 @@ def case_media_path(settings: Settings, case_id: str) -> Path:
     allowed = (settings.repo_root / "douyin-downloader" / "Downloaded").resolve()
     try:
         resolved = video.resolve(strict=True)
-        resolved.relative_to(allowed)
+        if not resolved.is_relative_to(allowed):
+            from .case_uploads import read_upload
+            provenance = case.get("source_provenance") or {}
+            ref = provenance.get("source_acquisition_ref") or {}
+            acquisition_path = resolve_within(settings.pipeline_root / "data", str(ref.get("path") or ""))
+            acquisition = _read_json(acquisition_path)
+            if acquisition.get("mode") != "operator_uploaded_file" or _sha256(acquisition_path) != ref.get("sha256"):
+                raise ValueError("Invalid upload lineage")
+            _, uploaded_video = read_upload(
+                settings.pipeline_root, str(acquisition.get("upload_id") or ""),
+                source_url=str(acquisition.get("source_url") or ""),
+                receipt_sha256=str(acquisition.get("upload_receipt_sha256") or ""),
+            )
+            if resolved != uploaded_video.resolve():
+                raise ValueError("Uploaded media path mismatch")
     except (OSError, ValueError) as exc:
         raise CanonicalOperationError(
             "CASE_MEDIA_UNAVAILABLE",

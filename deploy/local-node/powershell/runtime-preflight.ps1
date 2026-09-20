@@ -87,7 +87,7 @@ Write-Output "INFO: Git HEAD=$head"
 Write-Output "INFO: Internal Console Python=$consoleVersion ($consolePython)"
 Write-Output "INFO: ops-pipeline Python=$pipelineVersion ($pipelinePython)"
 
-foreach ($package in @("faster-whisper", "ctranslate2", "ollama", "openai", "opencv-python", "openpyxl", "scenedetect")) {
+foreach ($package in @("faster-whisper", "ctranslate2", "httpx", "ollama", "openai", "opencv-python", "openpyxl", "scenedetect")) {
     $version = Invoke-CapturedNative $pipelinePython @(
         "-c",
         "import importlib.metadata as m; print(m.version('$package'))"
@@ -116,6 +116,19 @@ $whisperModel = Get-EnvFileSetting $resolvedEnv "AIVO_WHISPER_MODEL"
 $consoleDb = Get-EnvFileSetting $resolvedEnv "AIVO_CONSOLE_DB"
 $configuredPipelinePython = Get-EnvFileSetting $resolvedEnv "AIVO_PIPELINE_PYTHON"
 $secureCookies = Get-EnvFileSetting $resolvedEnv "AIVO_SECURE_COOKIES"
+$caseAcquisitionProvider = Get-EnvFileSetting $resolvedEnv "AIVO_CASE_ACQUISITION_PROVIDER"
+if ($caseAcquisitionProvider -and $caseAcquisitionProvider -notin @("legacy_downloader", "qiyun", "upload_only")) {
+    throw "AIVO_CASE_ACQUISITION_PROVIDER must be legacy_downloader, qiyun or upload_only."
+}
+if ($caseAcquisitionProvider -eq "qiyun") {
+    $qiyunAppId = Get-EnvFileSetting $resolvedEnv "QYAPI_APP_ID"
+    $qiyunAppKey = Get-EnvFileSetting $resolvedEnv "QYAPI_APP_KEY"
+    if ([string]::IsNullOrWhiteSpace($qiyunAppId) -or [string]::IsNullOrWhiteSpace($qiyunAppKey) -or
+        $qiyunAppId -eq "REPLACE_ON_PRODUCTION_HOST" -or $qiyunAppKey -eq "REPLACE_ON_PRODUCTION_HOST") {
+        throw "Qiyun acquisition requires QYAPI_APP_ID and QYAPI_APP_KEY in the protected environment file."
+    }
+    Write-Output "PASS: Qiyun acquisition credentials present (values hidden)."
+}
 
 if ([string]::IsNullOrWhiteSpace($whisperModel)) {
     throw "Missing production setting: AIVO_WHISPER_MODEL"

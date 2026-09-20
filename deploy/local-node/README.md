@@ -57,6 +57,25 @@ Ledger data. Leave `AIVO_DEFAULT_BUSINESS_ID` unset at genesis. If configured
 later, it is only a Workbench convenience selection and must name an existing
 customer; it does not create or change business Authority.
 
+## Commercial source-media acquisition
+
+Set `AIVO_CASE_ACQUISITION_PROVIDER=qiyun` and both `QYAPI_APP_ID` and
+`QYAPI_APP_KEY` in the protected, out-of-repository production environment
+file. Do not put credentials in shell commands, Git, or reports. Run
+`runtime-preflight.ps1` before restarting the Console service. A new Case task
+records its provider selection at submission; existing queued tasks keep their
+recorded provider. The provider receives only the canonical Douyin URL and
+returns a temporary download URL. That URL and credentials are never Case
+identity or retained evidence. Uploaded media remains a separate fallback.
+The provider API is paced to one call per 60 seconds across local workers;
+provider rate-limit/quota errors surface as failed tasks with an upload option,
+not as implicit fallback to another source. Verify the first source-only task
+and cleanup receipt after deployment before broad use. Rollback is to set the
+provider to `upload_only` in the protected env and restart; it affects only
+future tasks, not existing attempts or approved Cases. `legacy_downloader`
+remains available for historical compatibility, but is not the commercial
+provider rollback path.
+
 The ops-pipeline runtime contract is `ops-pipeline/requirements.txt`; its
 separate test contract is `ops-pipeline/requirements-dev.txt`. Internal Console
 continues to use `pip install -e ".[dev]"` from its existing `pyproject.toml`.

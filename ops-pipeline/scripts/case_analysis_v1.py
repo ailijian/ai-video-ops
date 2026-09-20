@@ -23,6 +23,7 @@ from speech_evidence_v1 import (
     classify_transcription_speech_evidence,
     require_audio_speech_evidence,
 )
+from qiyun_acquisition_v1 import QiyunAcquisitionError, acquire_qiyun_media
 
 
 OPERATION_VERSION = "case_analysis_v1.py@1.0"
@@ -200,6 +201,10 @@ class Orchestrator:
         industry: str,
         reanalyze: bool,
         operator_profile_hint: str | None = None,
+        source_upload_id: str | None = None,
+        source_upload_receipt_sha256: str | None = None,
+        acquisition_provider: str = "legacy_downloader",
+        provider_source_url: str | None = None,
     ) -> None:
         if not ATTEMPT_ID_RE.fullmatch(attempt_id):
             raise CaseAnalysisError("INVALID_ATTEMPT_ID", "Attempt ID is invalid.")
@@ -210,6 +215,14 @@ class Orchestrator:
         self.attempt_id = attempt_id
         self.profile = profile
         self.operator_profile_hint = operator_profile_hint
+        self.source_upload_id = source_upload_id
+        self.source_upload_receipt_sha256 = source_upload_receipt_sha256
+        if acquisition_provider not in {"legacy_downloader", "qiyun", "upload_only"}:
+            raise CaseAnalysisError("SOURCE_PROVIDER_INVALID", "Unsupported acquisition provider.")
+        self.acquisition_provider = acquisition_provider
+        self.provider_source_url = provider_source_url
+        if bool(source_upload_id) != bool(source_upload_receipt_sha256):
+            raise CaseAnalysisError("SOURCE_UPLOAD_INVALID", "Upload receipt checksum is required.")
         if bool(profile) == bool(operator_profile_hint):
             raise CaseAnalysisError(
                 "CASE_PROFILE_INPUT_INVALID",
@@ -244,11 +257,15 @@ class Orchestrator:
             if not key.upper().startswith(edge_secret_prefixes)
         }
         self.child_env.pop("DEEPSEEK_API_KEY", None)
+        self.child_env.pop("QYAPI_APP_ID", None)
+        self.child_env.pop("QYAPI_APP_KEY", None)
         self.child_env["PYTHONIOENCODING"] = "utf-8"
         self.child_env["PYTHONUTF8"] = "1"
         self.deepseek_env = self.child_env.copy()
         for key, value in load_dotenv(self.pipeline_root / ".env").items():
             if key.upper().startswith(edge_secret_prefixes):
+                continue
+            if key in {"QYAPI_APP_ID", "QYAPI_APP_KEY"}:
                 continue
             if key.startswith("DEEPSEEK_"):
                 self.deepseek_env.setdefault(key, value)
@@ -266,6 +283,10 @@ class Orchestrator:
                 or state.get("case_id") != self.case_id
                 or state.get("source", {}).get("canonical_url") != self.source_url
                 or state.get("request", {}).get("operator_profile_hint") != self.operator_profile_hint
+                or state.get("request", {}).get("source_upload_id") != self.source_upload_id
+                or state.get("request", {}).get("source_upload_receipt_sha256") != self.source_upload_receipt_sha256
+                or state.get("request", {}).get("acquisition_provider", "legacy_downloader") != self.acquisition_provider
+                or state.get("request", {}).get("provider_source_url") != self.provider_source_url
             ):
                 raise CaseAnalysisError(
                     "ATTEMPT_IDENTITY_MISMATCH",
@@ -323,6 +344,7 @@ class Orchestrator:
             "request": {
                 "industry": self.industry,
                 "reanalyze": self.reanalyze,
+                "acquisition_provider": self.acquisition_provider,
             },
             "lineage": {
                 "previous_attempt_id": previous_attempts[-1][1] if previous_attempts else None,
@@ -348,6 +370,11 @@ class Orchestrator:
             state["request"]["profile"] = self.profile
         if self.operator_profile_hint:
             state["request"]["operator_profile_hint"] = self.operator_profile_hint
+        if self.source_upload_id:
+            state["request"]["source_upload_id"] = self.source_upload_id
+            state["request"]["source_upload_receipt_sha256"] = self.source_upload_receipt_sha256
+        if self.provider_source_url:
+            state["request"]["provider_source_url"] = self.provider_source_url
         write_atomic_json(self.state_path, state)
         return state
 
@@ -414,6 +441,34 @@ class Orchestrator:
 
     def acquire(self) -> dict[str, Any]:
         acquisition_path = self.attempt_root / "source_acquisition_v1.json"
+        if self.source_upload_id:
+            # An explicit upload never falls back to downloading a different file.
+            from case_source_upload_v1 import read_upload
+            try:
+                receipt, video = read_upload(
+                    self.pipeline_root, self.source_upload_id, source_url=self.source_url,
+                    receipt_sha256=self.source_upload_receipt_sha256,
+                )
+            except (OSError, ValueError, TypeError) as exc:
+                raise CaseAnalysisError("SOURCE_UPLOAD_INVALID", "上传文件已失效，请重新上传后分析。") from exc
+            metadata = self.attempt_root / "source_metadata_v1.json"
+            write_atomic_json(metadata, receipt)
+            acquisition = {
+                "schema_version": "case-source-acquisition-v1.0", "case_id": self.case_id,
+                "stable_video_id": self.case_id, "source_url": self.source_url, "platform": "douyin",
+                "mode": "operator_uploaded_file", "upload_id": self.source_upload_id,
+                "upload_receipt_sha256": self.source_upload_receipt_sha256,
+                "video": str(video), "metadata": str(metadata), "cover": None, "music": None,
+                "source_description": "", "source_author": "",
+                "source_video_sha256": receipt["source_video_sha256"],
+                "binding_method": "operator_attestation", "platform_original_verified": False,
+                "media_rights_granted": False, "production_footage_pool_eligible": False,
+                "created_at": now_iso(),
+            }
+            write_atomic_json(acquisition_path, acquisition)
+            return acquisition
+        if self.acquisition_provider == "upload_only":
+            raise CaseAnalysisError("SOURCE_UPLOAD_REQUIRED", "请上传与来源链接对应的视频文件。")
         if validate_json(
             acquisition_path,
             lambda value: (
@@ -424,6 +479,34 @@ class Orchestrator:
             ),
         ):
             return read_json(acquisition_path)
+
+        if self.acquisition_provider == "qiyun":
+            try:
+                acquired = acquire_qiyun_media(
+                    pipeline_root=self.pipeline_root, source_url=self.source_url,
+                    case_id=self.case_id, attempt_root=self.attempt_root,
+                    provider_source_url=self.provider_source_url,
+                )
+            except QiyunAcquisitionError as exc:
+                raise CaseAnalysisError(exc.code, str(exc)) from None
+            metadata_path = self.attempt_root / "source_metadata_v1.json"
+            write_atomic_json(metadata_path, acquired["metadata"])
+            acquisition = {
+                "schema_version": "case-source-acquisition-v1.0", "case_id": self.case_id,
+                "stable_video_id": self.case_id, "source_url": self.source_url,
+                "platform": "douyin", "mode": "qiyun_resolved_media",
+                "video": acquired["video"], "metadata": str(metadata_path),
+                "cover": None, "music": None,
+                "source_description": acquired["source_description"],
+                "source_author": acquired["source_author"],
+                "source_video_sha256": acquired["source_video_sha256"],
+                "binding_method": "canonical_douyin_url_and_recorded_media_sha256",
+                "platform_original_verified": False,
+                "media_rights_granted": False, "production_footage_pool_eligible": False,
+                "created_at": now_iso(),
+            }
+            write_atomic_json(acquisition_path, acquisition)
+            return acquisition
 
         source = find_local_source(self.downloader_root, self.case_id)
         acquisition_mode = "reused_verified_local_source"
@@ -875,6 +958,8 @@ class Orchestrator:
             )
             case["source_provenance"] = {
                 "platform": "douyin",
+                "acquisition_mode": source.get("mode"),
+                "source_binding_method": source.get("binding_method", "recorded_acquisition_lineage"),
                 "canonical_source_url": self.source_url,
                 "stable_video_id": self.case_id,
                 "recorded_source_media_sha256": str(
@@ -948,6 +1033,10 @@ def main() -> None:
     parser.add_argument("--pipeline-root", default=None)
     parser.add_argument("--repo-root", default=None)
     parser.add_argument("--downloader-root", default=None)
+    parser.add_argument("--source-upload-id", default=None)
+    parser.add_argument("--source-upload-receipt-sha256", default=None)
+    parser.add_argument("--acquisition-provider", choices=["legacy_downloader", "qiyun", "upload_only"], default="legacy_downloader")
+    parser.add_argument("--provider-source-url", default=None)
     args = parser.parse_args()
     if bool(args.profile) == bool(args.operator_profile_hint):
         parser.error("Provide exactly one of --profile or --operator-profile-hint")
@@ -978,6 +1067,10 @@ def main() -> None:
             industry=args.industry,
             reanalyze=args.reanalyze,
             operator_profile_hint=args.operator_profile_hint,
+            source_upload_id=args.source_upload_id,
+            source_upload_receipt_sha256=args.source_upload_receipt_sha256,
+            acquisition_provider=args.acquisition_provider,
+            provider_source_url=args.provider_source_url,
         ).run()
     except CaseAnalysisError as exc:
         print(json.dumps({"ok": False, "code": exc.code, "message": str(exc)}, ensure_ascii=False))

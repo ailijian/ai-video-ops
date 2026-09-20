@@ -1,8 +1,8 @@
 import { createApiClient } from "./api-client.js?v=productized-stage3-3";
-import { createCaseViews } from "./case-views.js?v=case-profile-annotation-1";
+import { createCaseViews } from "./case-views.js?v=source-upload-ui-2";
 import { createCustomerViews } from "./customer-views.js?v=productized-stage3-3";
-import { progressPanel } from "./case-components.js?v=case-profile-annotation-1";
-import { startTaskPolling } from "./task-progress.js";
+import { progressPanel } from "./case-components.js?v=source-upload-1";
+import { startTaskPolling } from "./task-progress.js?v=mobile-reliability-1";
 import { customerProgressPanel } from "./customer-components.js?v=productized-stage2-3";
 import { matchWorkflowRoute } from "./routes.js";
 import {
@@ -462,7 +462,7 @@ async function renderWorkbench() {
         <section class="workbench-section">
           <div class="section-head"><h2>快捷开始</h2></div>
           <div class="quick-actions">
-            <a class="quick-action" href="/cases/new" data-route><span class="quick-icon">${icons.link}</span><span><strong>添加案例</strong><small>粘贴抖音视频链接</small></span>${icons.arrow}</a>
+            <a class="quick-action" href="/cases/new" data-route><span class="quick-icon">${icons.link}</span><span><strong>添加案例</strong><small>粘贴抖音分享内容或链接</small></span>${icons.arrow}</a>
             <a class="quick-action" href="/customers/new" data-route><span class="quick-icon">${icons.customers}</span><span><strong>新建客户</strong><small>整理客户资料</small></span>${icons.arrow}</a>
             ${creationCard}
           </div>

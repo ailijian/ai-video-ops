@@ -91,7 +91,7 @@ a { color: inherit; text-decoration: none; }
 .nav-link { min-height: 44px; padding: 0 12px; display: flex; align-items: center; gap: 12px; border-radius: var(--radius-sm); color: rgba(255, 255, 255, .68); font-size: 14px; font-weight: 650; }
 .nav-link:hover { color: #fff; background: rgba(255, 255, 255, .07); }
 .nav-link.active { color: #fff; background: rgba(255, 255, 255, .13); font-weight: 750; }
-.main-column { min-height: 100dvh; padding-bottom: calc(76px + env(safe-area-inset-bottom)); }
+.main-column { min-height: 100dvh; padding-bottom: calc(80px + env(safe-area-inset-bottom)); }
 .topbar { height: 64px; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 20; border-bottom: 1px solid var(--line); background: rgba(246, 247, 244, .94); backdrop-filter: blur(14px); }
 .topbar-title { font-size: 16px; font-weight: 750; letter-spacing: -.02em; }
 .mobile-brand { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -172,7 +172,7 @@ a { color: inherit; text-decoration: none; }
 .workbench-recent-row > svg { width: 18px; color: var(--ink-faint); }
 .section-link { color: var(--forest); font-size: 13px; font-weight: 750; }
 
-.bottom-nav { position: fixed; inset: auto 0 0; z-index: 40; min-height: calc(66px + env(safe-area-inset-bottom)); padding: 6px 6px env(safe-area-inset-bottom); display: grid; grid-template-columns: repeat(5, 1fr); border-top: 1px solid var(--line); background: rgba(255, 255, 255, .96); backdrop-filter: blur(16px); }
+.bottom-nav { position: fixed; left: 0; right: 0; bottom: 0; width: 100%; z-index: 40; min-height: calc(66px + env(safe-area-inset-bottom)); padding: 6px 6px max(6px, env(safe-area-inset-bottom)); display: grid; grid-template-columns: repeat(5, 1fr); border-top: 1px solid var(--line); background: #fff; }
 .bottom-link { min-height: 54px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border-radius: var(--radius-sm); color: var(--ink-faint); font-size: 10px; font-weight: 700; }
 .bottom-link svg { width: 20px; height: 20px; }
 .bottom-link.active { background: var(--mint); color: var(--forest); }
@@ -197,6 +197,19 @@ a { color: inherit; text-decoration: none; }
 .paste-button { position: absolute; right: 3px; top: 3px; min-height: 42px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--mint); color: var(--forest); cursor: pointer; font-size: 12px; font-weight: 800; }
 .source-detection { min-height: 24px; margin-top: 8px; color: var(--forest); font-size: 13px; }
 .source-detection.muted { color: var(--ink-soft); }
+.case-file-label { display: block; margin-bottom: 8px; font-size: 14px; font-weight: 700; }
+.field .case-file-picker { position: relative; width: 100%; min-height: 80px; margin: 0; padding: 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; border: 1px dashed var(--line-strong); border-radius: var(--radius-md); background: #fbfcfa; cursor: pointer; }
+.field .case-file-picker:hover { border-color: var(--forest); background: var(--mint); }
+.field .case-file-picker:focus-within { outline: 3px solid rgba(33, 76, 61, .2); outline-offset: 2px; }
+.field .case-file-picker:has(input:disabled) { opacity: .6; cursor: not-allowed; }
+.case-file-picker input[type="file"] { position: absolute; width: 1px; height: 1px; min-height: 0; padding: 0; opacity: 0; overflow: hidden; }
+.case-file-picker-main { min-width: 0; display: grid; gap: 4px; }
+.case-file-picker-main strong { color: var(--ink); font-size: 14px; }
+.case-file-picker-main small { color: var(--ink-soft); font-size: 12px; font-weight: 400; line-height: 1.4; }
+.case-file-picker-action { flex: 0 0 auto; padding: 8px 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--forest); font-size: 13px; font-weight: 700; }
+.case-file-selected { margin: 8px 0 0; color: var(--ink-soft); font-size: 13px; overflow-wrap: anywhere; }
+.case-file-selected.has-file { color: var(--forest); font-weight: 700; }
+.case-file-field .field-hint { margin: 4px 0 0; }
 .case-profile-choice { min-width: 0; margin: 16px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; border: 0; }
 .case-profile-choice legend { margin-bottom: 8px; color: var(--ink); font-size: 14px; font-weight: 700; }
 .case-profile-choice label { min-width: 0; min-height: 72px; padding: 12px; display: flex; align-items: flex-start; gap: 10px; border: 1px solid var(--line); border-radius: var(--radius-md); cursor: pointer; }

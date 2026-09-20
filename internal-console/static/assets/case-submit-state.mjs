@@ -1,5 +1,6 @@
 const KNOWN_STATES = new Set([
   "idle",
+  "restoring",
   "submitting",
   "queued",
   "running",
@@ -11,7 +12,7 @@ const KNOWN_STATES = new Set([
 
 export function projectCaseSubmitState(status = "idle") {
   const normalized = KNOWN_STATES.has(status) ? status : "idle";
-  const submitted = !["idle", "submitting"].includes(normalized);
+  const submitted = !["idle", "restoring", "submitting"].includes(normalized);
   const projection = {
     status: normalized,
     inputDisabled: normalized !== "idle",
@@ -40,4 +41,25 @@ export function projectCaseSubmitState(status = "idle") {
 
 export function resetCaseSubmitState() {
   return projectCaseSubmitState("idle");
+}
+
+export function projectFailedCaseTask(task) {
+  const sourceUrl = task?.payload?.source_url;
+  if (
+    task?.task_type !== "case_analysis" ||
+    task.status !== "failed" ||
+    typeof task.task_id !== "string" ||
+    !/^\d{10,24}$/.test(String(task.subject_ref || "")) ||
+    typeof sourceUrl !== "string" ||
+    !sourceUrl.trim()
+  ) return null;
+
+  const hint = task.payload.operator_profile_hint || task.payload.profile;
+  return {
+    taskId: task.task_id,
+    caseId: String(task.subject_ref),
+    sourceUrl,
+    operatorProfileHint: ["mix", "news", "hybrid", "uncertain"].includes(hint) ? hint : null,
+    sourceAcquisitionFailed: task.error_code === "SOURCE_ACQUISITION_FAILED",
+  };
 }

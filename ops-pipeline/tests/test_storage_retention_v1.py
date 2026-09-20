@@ -27,10 +27,10 @@ def write_json(path: Path, value: dict) -> None:
 def build_attempt(
     tmp_path: Path,
     *,
+    case_id: str = "1",
     status: str = "awaiting_review",
     updated_at: datetime | None = None,
 ) -> dict[str, Path]:
-    case_id = "1"
     attempt_id = "a"
     pipeline = tmp_path / "p"
     downloader = tmp_path / "d"
@@ -212,6 +212,42 @@ def make_speechless(paths: dict[str, Path]) -> None:
     state = module.read_json(state_path)
     state["speech_evidence_status"] = "not_detected"
     write_json(state_path, state)
+
+
+def test_qiyun_transient_media_deleted_after_awaiting_review(tmp_path: Path):
+    paths = build_attempt(tmp_path)
+    provider_video = paths["attempt"] / "source_media" / "source.mp4"
+    provider_video.parent.mkdir(parents=True)
+    provider_video.write_bytes(b"provider-source-video")
+    acquisition = module.read_json(paths["acquisition"])
+    acquisition.update({
+        "mode": "qiyun_resolved_media", "video": str(provider_video),
+        "music": None, "cover": None,
+        "source_video_sha256": hashlib.sha256(provider_video.read_bytes()).hexdigest(),
+    })
+    write_json(paths["acquisition"], acquisition)
+    receipt = module.cleanup_successful_attempt(paths["attempt"], paths["downloader"])
+    assert not provider_video.exists()
+    assert paths["video"].exists()  # unrelated downloader media is not a cleanup target
+    assert paths["acquisition"].exists()
+    assert receipt["source_url_retained"] is True
+    assert receipt["source_media_sha256_retained"] is True
+
+
+def test_failed_qiyun_partial_media_retained_then_expired(tmp_path: Path):
+    now = datetime.now(timezone.utc)
+    paths = build_attempt(tmp_path, status="failed", updated_at=now - timedelta(hours=1))
+    partial = paths["attempt"] / "source_media" / "source.mp4.part"
+    partial.parent.mkdir(parents=True)
+    partial.write_bytes(b"partial-download")
+    module.run_storage_maintenance(paths["pipeline"], paths["downloader"], now=now)
+    assert partial.exists()
+    state_path = paths["attempt"] / "case_analysis_attempt_v1.json"
+    state = module.read_json(state_path)
+    state["updated_at"] = module.iso_utc(now - timedelta(hours=25))
+    write_json(state_path, state)
+    module.run_storage_maintenance(paths["pipeline"], paths["downloader"], now=now)
+    assert not partial.exists()
 
 
 @pytest.mark.parametrize(

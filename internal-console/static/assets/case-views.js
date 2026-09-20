@@ -1,7 +1,9 @@
-import { caseCard, caseReviewContent, escapeHtml, progressPanel } from "./case-components.js?v=case-profile-annotation-1";
+import { caseCard, caseReviewContent, escapeHtml, progressPanel } from "./case-components.js?v=source-upload-1";
 import { bindCaseMediaPreview } from "./case-media-preview.mjs?v=case-media-fit-1";
-import { projectCaseSubmitState, resetCaseSubmitState } from "./case-submit-state.mjs?v=productized-stage1-5";
-import { startTaskPolling } from "./task-progress.js";
+import { projectCaseSubmitState, projectFailedCaseTask, resetCaseSubmitState } from "./case-submit-state.mjs?v=mobile-reliability-2";
+import { startTaskPolling } from "./task-progress.js?v=mobile-reliability-1";
+import { detectCaseSourceInput } from "./case-source-detection.mjs?v=mobile-reliability-1";
+import { uploadCaseFile, validateCaseFile } from "./case-file-upload.mjs?v=source-upload-ui-2";
 
 function duplicateResultHtml(result) {
   const state = result.state || "";
@@ -51,8 +53,9 @@ function duplicateResultHtml(result) {
 export function createCaseViews({ app, api, navigate, shell, bindCommonActions, pageHeading, skeletonPage, statusPill, showToast, openModal, renderLoadError }) {
   let stopPolling = null;
   let stopMediaPreview = null;
+  let stopUpload = null;
   const stopTaskPolling = () => { stopPolling?.(); stopPolling = null; };
-  const dispose = () => { stopTaskPolling(); stopMediaPreview?.(); stopMediaPreview = null; };
+  const dispose = () => { stopTaskPolling(); stopMediaPreview?.(); stopMediaPreview = null; stopUpload?.(); stopUpload = null; };
 
   async function renderCases() {
     dispose();
@@ -97,11 +100,20 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
 
   function renderCaseNew() {
     dispose();
-    const body = `<main class="page page-form add-case-page">${pageHeading("", "添加案例", "粘贴抖音视频链接，分析会在后台继续。")}
+    const body = `<main class="page page-form add-case-page">${pageHeading("", "添加案例", "粘贴抖音分享内容或视频链接，系统会自动获取视频。")}
       <section class="work-surface add-case-surface">
-        <form id="case-url-form" novalidate><div data-case-input-panel><div class="field"><label for="case-url">粘贴抖音视频链接</label>
-          <div class="input-combo"><input id="case-url" type="url" inputmode="url" autocomplete="off" placeholder="https://www.douyin.com/video/..." required><button class="paste-button" type="button" data-paste>粘贴</button></div>
-          <div id="source-detection" class="source-detection muted">输入链接后自动识别来源</div></div></div>
+        <form id="case-url-form" novalidate><div data-case-input-panel><div class="field"><label for="case-url">粘贴抖音分享内容或视频链接</label>
+          <div class="input-combo"><input id="case-url" type="text" autocomplete="off" placeholder="粘贴抖音分享文本、短链接或完整视频链接" required><button class="paste-button" type="button" data-paste>粘贴</button></div>
+          <div id="source-detection" class="source-detection muted">输入内容后自动识别来源</div></div>
+          <div class="field case-file-field"><span class="case-file-label">或上传本地视频</span>
+            <label class="case-file-picker">
+              <input id="case-video-file" type="file" accept=".mp4,.mov,.m4v,.webm,video/mp4,video/quicktime,video/webm" aria-label="选择视频文件" aria-describedby="case-file-help case-file-selected">
+              <span class="case-file-picker-main"><strong>选择本地视频</strong><small>MP4、MOV、M4V、WebM · 最大 256 MB</small></span>
+              <span class="case-file-picker-action" aria-hidden="true">选择文件</span>
+            </label>
+            <p id="case-file-selected" class="case-file-selected" role="status" aria-live="polite">未选择文件</p>
+            <p id="case-file-help" class="field-hint">自动获取失败时可上传对应的视频。最长 10 分钟、最高 4K，需保留画面和音轨。</p>
+          </div></div>
           <fieldset class="case-profile-choice" data-case-profile-panel><legend>这个视频更接近哪种结构？</legend>
             <label><input type="radio" name="operator-profile-hint" value="mix"><span><strong>混剪型</strong><small>以口播 / 叙事为主，画面配合表达。</small></span></label>
             <label><input type="radio" name="operator-profile-hint" value="news"><span><strong>新闻体</strong><small>短促的信息卡点或新闻式表达。</small></span></label>
@@ -118,6 +130,14 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
     const input = document.querySelector("#case-url");
     const detection = document.querySelector("#source-detection");
     const form = document.querySelector("#case-url-form");
+    const fileInput = form.querySelector("#case-video-file");
+    const fileSelected = form.querySelector("#case-file-selected");
+    let uploadedFile = null;
+    let uploadedUrl = null;
+    let uploadedReceipt = null;
+    let reviewCaseId = null;
+    let reanalysisRequiresFile = false;
+    let uploadRequired = false;
     const pasteButton = document.querySelector("[data-paste]");
     const resultBox = document.querySelector("#case-result");
     const actionsHost = document.querySelector("[data-case-submit-actions]");
@@ -132,7 +152,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
     const actionMarkup = (projection) => {
       const actions = [];
       if (projection.submitVisible) {
-        actions.push(`<button class="btn btn-primary btn-wide" type="submit" ${projection.submitDisabled ? "disabled" : ""}>${projection.submitLabel}</button>`);
+        actions.push(`<button class="btn btn-primary btn-wide" type="submit" ${projection.submitDisabled || ((uploadRequired || reanalysisRequiresFile) && !fileInput.files.length) ? "disabled" : ""}>${projection.submitLabel}</button>`);
       }
       if (projection.primaryAction?.kind === "review") {
         actions.push(`<a class="btn btn-primary btn-wide" href="/cases/${encodeURIComponent(activeCaseId || "")}" data-route>去审核案例</a>`);
@@ -157,7 +177,8 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       const projection = projectCaseSubmitState(status);
       input.disabled = projection.inputDisabled;
       pasteButton.disabled = projection.pasteDisabled;
-      inputPanel.hidden = status !== "idle";
+      fileInput.disabled = projection.inputDisabled;
+      inputPanel.hidden = !["idle", "failed", "rejected"].includes(status);
       profilePanel.hidden = !["idle", "failed", "rejected"].includes(status);
       actionsHost.innerHTML = actionMarkup(projection);
       bindCommonActions();
@@ -165,10 +186,17 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
 
     const resetForAnotherCase = () => {
       stopTaskPolling();
+      if (location.search) history.replaceState({}, "", "/cases/new");
       activeCaseId = null;
       activeTaskId = null;
       reanalysisState = null;
       input.value = "";
+      fileInput.value = "";
+      fileSelected.textContent = "未选择文件";
+      fileSelected.classList.remove("has-file");
+      uploadedFile = uploadedUrl = uploadedReceipt = null;
+      reviewCaseId = null;
+      reanalysisRequiresFile = false;
       form.querySelectorAll('input[name="operator-profile-hint"]').forEach((radio) => { radio.checked = false; });
       resultBox.innerHTML = "";
       document.querySelector("#case-form-error").classList.remove("visible");
@@ -178,11 +206,65 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       input.focus();
     };
     const updateDetection = () => {
-      const value = input.value.trim();
-      detection.textContent = !value ? "输入链接后自动识别来源" : /douyin\.com/i.test(value) ? "已识别：抖音视频" : "当前未识别到支持的视频来源";
-      detection.className = value && /douyin\.com/i.test(value) ? "source-detection" : "source-detection muted";
+      const projection = detectCaseSourceInput(input.value);
+      detection.textContent = projection.label;
+      detection.className = projection.recognized ? "source-detection" : "source-detection muted";
+    };
+    const showSubmissionResult = (result) => {
+      if (!result.duplicate) {
+        if (!result.task?.task_id) throw new Error("未取得任务编号，请到任务记录确认状态。");
+        navigate(`/tasks/${encodeURIComponent(result.task.task_id)}`, true);
+        return;
+      }
+      if (["queued", "running"].includes(result.state) && result.existing_task?.task_id) {
+        navigate(`/tasks/${encodeURIComponent(result.existing_task.task_id)}`, true);
+        return;
+      }
+      resultBox.innerHTML = duplicateResultHtml(result);
+      setSubmitState(result.state, {
+        caseId: result.case_id,
+        taskId: result.existing_task?.task_id || null,
+        reanalysis: result.state,
+      });
+    };
+    const submitCaseSource = async (extra = {}) => {
+      const file = fileInput.files[0];
+      if (file) {
+        const invalid = validateCaseFile(file);
+        if (invalid) throw new Error(invalid);
+      } else if (reanalysisRequiresFile) {
+        throw new Error("请重新上传与来源对应的视频文件。");
+      }
+      if (!input.value.trim()) throw new Error("请粘贴来源链接或抖音分享内容。");
+      const controller = new AbortController();
+      stopUpload = () => controller.abort();
+      if (file && (file !== uploadedFile || input.value !== uploadedUrl || !uploadedReceipt)) {
+        resultBox.innerHTML = `<div class="result-banner" role="status"><h3>正在上传并检查视频</h3><p>请保持页面打开。上传完成后，会自动进入可恢复的任务进度页。</p></div>`;
+        uploadedReceipt = await uploadCaseFile(api, { file, sourceUrl: input.value, signal: controller.signal });
+        uploadedFile = file;
+        uploadedUrl = input.value;
+      }
+      if (controller.signal.aborted || document.querySelector("#case-url-form") !== form) throw new DOMException("Aborted", "AbortError");
+      resultBox.innerHTML = `<div class="result-banner" role="status"><h3>正在建立分析任务</h3></div>`;
+      if (reviewCaseId) {
+        const reviewed = await api(`/api/cases/${encodeURIComponent(reviewCaseId)}/review`, {
+          method: "POST", body: JSON.stringify({ decision: "reanalyze", reason: extra.reason,
+            operator_profile_hint: selectedHint(), ...(file ? { source_upload_id: uploadedReceipt.upload_id } : {}) }),
+        });
+        return { ...reviewed, duplicate: false, case_id: reviewCaseId };
+      }
+      return api("/api/cases/analyze", {
+        method: "POST", body: JSON.stringify({ url: file ? uploadedReceipt.canonical_url : input.value,
+          operator_profile_hint: selectedHint(), ...(file ? { source_upload_id: uploadedReceipt.upload_id } : {}), ...extra }),
+      });
     };
     input.addEventListener("input", updateDetection);
+    fileInput.addEventListener("change", () => {
+      const file = fileInput.files[0];
+      fileSelected.textContent = file ? `${file.name} · ${(file.size / 1024 / 1024).toFixed(1)} MB` : "未选择文件";
+      fileSelected.classList.toggle("has-file", Boolean(file));
+      setSubmitState(activeState);
+    });
     pasteButton.addEventListener("click", async () => {
       if (!navigator.clipboard?.readText) return showToast("当前浏览器不支持读取剪贴板，请长按输入框粘贴。");
       try { input.value = await navigator.clipboard.readText(); updateDetection(); input.focus(); }
@@ -208,17 +290,11 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       }
       setSubmitState("submitting");
       try {
-        const restarted = await api("/api/cases/analyze", {
-          method: "POST",
-          body: JSON.stringify({ url: input.value, reanalyze: true, reason, operator_profile_hint: selectedHint() }),
-        });
-        resultBox.innerHTML = `<div data-live-progress data-embedded="true"></div>`;
-        bindTaskProgress(restarted.task, (status, task) => setSubmitState(status, {
-          caseId: task.subject_ref || activeCaseId,
-          taskId: task.task_id,
-          reanalysis: status,
-        }));
+        const restarted = await submitCaseSource({ reanalyze: true, reason });
+        if (document.querySelector("#case-url-form") !== form) return;
+        showSubmissionResult(restarted);
       } catch (error) {
+        if (document.querySelector("#case-url-form") !== form) return;
         showToast(error.detail?.next_action || error.message);
         setSubmitState(reanalysisState || "failed");
       }
@@ -237,29 +313,70 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       }
       setSubmitState("submitting");
       try {
-        const result = await api("/api/cases/analyze", { method: "POST", body: JSON.stringify({ url: input.value, operator_profile_hint: selectedHint() }) });
-        if (result.duplicate) {
-          resultBox.innerHTML = duplicateResultHtml(result);
-          setSubmitState(result.state, {
-            caseId: result.case_id,
-            taskId: result.existing_task?.task_id || null,
-            reanalysis: result.state,
-          });
-        } else {
-          resultBox.innerHTML = `<div data-live-progress data-embedded="true"></div>`;
-          bindTaskProgress(result.task, (status, task) => setSubmitState(status, {
-            caseId: task.subject_ref || result.case_id,
-            taskId: task.task_id,
-            reanalysis: status,
-          }));
-        }
+        const result = await submitCaseSource();
+        if (document.querySelector("#case-url-form") !== form) return;
+        showSubmissionResult(result);
       } catch (error) {
-        const next = error.detail?.next_action || "请检查视频链接后重新提交。";
+        if (document.querySelector("#case-url-form") !== form) return;
+        const next = error.detail?.next_action || error.message || "请检查来源链接和视频文件后重新提交。";
         resultBox.innerHTML = `<div class="result-banner error"><h3>暂时无法分析这个视频</h3><p>${escapeHtml(next)}</p></div>`;
         setSubmitState("idle");
       }
     });
     setSubmitState("idle");
+    api("/api/capabilities").then((capabilities) => {
+      if (document.querySelector("#case-url-form") !== form) return;
+      uploadRequired = capabilities.case_analysis?.upload_required === true;
+      if (uploadRequired) {
+        const description = document.querySelector(".add-case-page .page-heading-copy > p");
+        if (description) description.textContent = "粘贴来源链接，并上传对应的视频文件。";
+        form.querySelector(".case-file-label").textContent = "上传本地视频";
+        form.querySelector("#case-file-help").textContent = "当前需要上传视频。最长 10 分钟、最高 4K，需保留画面和音轨。";
+      }
+      setSubmitState(activeState);
+    }).catch(() => {});
+    const reanalysisCaseId = new URLSearchParams(location.search).get("reanalyze_case");
+    if (reanalysisCaseId) {
+      setSubmitState("restoring");
+      api(`/api/cases/${encodeURIComponent(reanalysisCaseId)}`).then((detail) => {
+        if (document.querySelector("#case-url-form") !== form) return;
+        reviewCaseId = reanalysisCaseId;
+        reanalysisRequiresFile = detail.review_media?.operator_uploaded === true;
+        input.value = detail.source_url || "";
+        const hint = detail.operator_profile_hint;
+        if (["mix", "news", "hybrid", "uncertain"].includes(hint)) {
+          form.querySelector(`input[name="operator-profile-hint"][value="${hint}"]`).checked = true;
+        }
+        updateDetection();
+        resultBox.innerHTML = `<div class="result-banner"><h3>准备重新分析</h3><p>${reanalysisRequiresFile ? "请重新上传对应的视频文件。" : "可自动获取原视频，或上传对应的视频文件。"}提交时需要说明原因，原有记录不会被覆盖。</p></div>`;
+        setSubmitState("rejected", { caseId: reviewCaseId, reanalysis: "rejected" });
+      }).catch((error) => { if (document.querySelector("#case-url-form") === form) { showToast(error.message); setSubmitState("idle"); } });
+      return;
+    }
+    const retryTaskId = new URLSearchParams(location.search).get("retry_task");
+    if (retryTaskId) {
+      setSubmitState("restoring");
+      resultBox.innerHTML = `<div class="result-banner"><h3>正在恢复上次任务</h3></div>`;
+      api(`/api/tasks/${encodeURIComponent(retryTaskId)}`).then(({ task }) => {
+        if (document.querySelector("#case-url-form") !== form) return;
+        const retry = projectFailedCaseTask(task);
+        if (!retry || retry.taskId !== retryTaskId) {
+          throw new Error("这条任务不能从添加案例页恢复。请返回任务记录确认状态。");
+        }
+        input.value = retry.sourceUrl;
+        if (retry.operatorProfileHint) {
+          const choice = form.querySelector(`input[name="operator-profile-hint"][value="${retry.operatorProfileHint}"]`);
+          if (choice) choice.checked = true;
+        }
+        updateDetection();
+        resultBox.innerHTML = `<div class="result-banner error"><h3>上次分析未完成</h3><p>请核对来源后重新分析；也可以上传对应的视频文件。上次任务记录会保留。</p></div>`;
+        setSubmitState("failed", { caseId: retry.caseId, taskId: retry.taskId, reanalysis: "failed" });
+      }).catch((error) => {
+        if (document.querySelector("#case-url-form") !== form) return;
+        resultBox.innerHTML = `<div class="result-banner error"><h3>无法恢复这条任务</h3><p>${escapeHtml(error.message || "请返回任务记录确认状态。")}</p></div>`;
+        setSubmitState("idle");
+      });
+    }
   }
 
   async function renderCaseDetail(caseId) {
@@ -300,6 +417,9 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
         }
       });
       document.querySelectorAll("[data-review-action]").forEach((button) => button.addEventListener("click", async () => {
+        if (button.dataset.reviewAction === "reanalyze") {
+          return navigate(`/cases/new?reanalyze_case=${encodeURIComponent(caseId)}`);
+        }
         const action = button.dataset.reviewAction;
         let reason = "";
         let profileHint = null;

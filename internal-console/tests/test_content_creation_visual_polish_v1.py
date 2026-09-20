@@ -71,11 +71,19 @@ def test_console_branding_and_favicon_contract():
     assert 'href="/assets/brand/favicon-32x32.png?v=transparent-1"' in index
     assert 'href="/assets/brand/favicon-16x16.png?v=transparent-1"' in index
     assert 'href="/assets/brand/apple-touch-icon.png?v=transparent-1"' in index
-    assert 'styles.css?v=case-media-fit-1' in index
-    assert 'app.js?v=case-profile-annotation-1' in index
+    assert 'styles.css?v=source-upload-ui-2' in index
+    assert 'app.js?v=source-upload-ui-2' in index
     assert 'src="/assets/brand/logo.png?v=transparent-1"' in app
     assert "鲸汤AI视频代运营工作台" in app
     assert "视频创作" in app
+
+    case_views = (root / "static" / "assets" / "case-views.js").read_text(encoding="utf-8")
+    assert 'id="case-video-file"' in case_views
+    assert 'id="case-file-rights"' not in case_views
+    assert 'id="case-file-source-match"' not in case_views
+    assert 'id="case-video-file" type="file"' in case_views
+    assert 'aria-describedby="case-file-help case-file-selected" required' not in case_views
+    assert 'url: file ? uploadedReceipt.canonical_url : input.value' in case_views
 
     for asset in (
         "logo.png",

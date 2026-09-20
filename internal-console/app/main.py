@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import threading
 import time
 from collections import defaultdict, deque
@@ -13,6 +14,9 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
+from starlette.concurrency import run_in_threadpool
+
+from .case_uploads import receive_upload, validate_for_submission
 
 from .auth_service import (
     SessionContext,
@@ -35,9 +39,7 @@ from .canonical_gateway import (
     get_case_detail,
     get_customer_status,
     list_cases,
-    normalize_source_url,
     record_case_review_decision,
-    source_case_id,
 )
 from .customer_gateway import (
     approve_business_persona,
@@ -56,8 +58,9 @@ from .customer_task_service import (
 )
 from .config import Settings
 from .database import apply_migrations
+from .douyin_source_input import SourceInputError, resolve_douyin_source_input
 from .operator_projection import case_reanalysis_hint, operator_activity, original_task_actor, persona_approval_actor
-from .operation_lock import authority_mutation_barrier, authority_operation_lock
+from .operation_lock import authority_mutation_barrier, authority_operation_lock, operation_lock
 from .task_service import (
     CaseTaskRunner,
     create_case_task,
@@ -190,16 +193,18 @@ class ChangePasswordRequest(BaseModel):
 
 
 class CaseAnalysisRequest(BaseModel):
-    url: str = Field(min_length=1, max_length=2048)
+    url: str = Field(min_length=1, max_length=4096)
     operator_profile_hint: Literal["mix", "news", "hybrid", "uncertain"] | None = None
     reanalyze: bool = False
     reason: str = Field(default="", max_length=1000)
+    source_upload_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
 
 
 class CaseReviewRequest(BaseModel):
     decision: Literal["reject", "reanalyze", "approve"]
     reason: str = Field(default="", max_length=1000)
     operator_profile_hint: Literal["mix", "news", "hybrid", "uncertain"] | None = None
+    source_upload_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
 
 
 class CaseProfileAnnotationRequest(BaseModel):
@@ -496,6 +501,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         if request.url.path.startswith("/api/"):
             response.headers["Cache-Control"] = "private, no-store, max-age=0"
             response.headers["Pragma"] = "no-cache"
+        elif (request.url.path.startswith("/assets/")
+              and request.url.path.lower().endswith((".css", ".js", ".mjs"))):
+            response.headers["Cache-Control"] = "no-cache, max-age=0, must-revalidate"
         return response
 
     @app.exception_handler(CanonicalOperationError)
@@ -1528,7 +1536,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             },
             "recent_tasks": tasks[:5],
             "capabilities": {
-                "case_analysis": case_analysis_capability(),
+                "case_analysis": case_analysis_capability(settings.case_acquisition_provider),
                 "add_case": {
                     "available": True,
                     "path": "/cases/new",
@@ -1978,7 +1986,29 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         projected = list_cases(settings)
         for case in projected:
             case["submitted_by"] = original_task_actor(settings.database_path, "case_analysis", case["case_id"])
-        return {"cases": projected, "analysis": case_analysis_capability()}
+        return {"cases": projected, "analysis": case_analysis_capability(settings.case_acquisition_provider)}
+
+    @app.post("/api/cases/source-files")
+    async def upload_case_source(
+        request: Request,
+        url: str,
+        suffix: str,
+        rights_confirmed: bool = False,
+        source_match_confirmed: bool = False,
+        x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(session, x_csrf_token)
+        if len(url) > 4096:
+            raise HTTPException(422, detail="来源链接过长。")
+        try:
+            source = await run_in_threadpool(resolve_douyin_source_input, url)
+        except SourceInputError as exc:
+            raise HTTPException(422, detail=error_detail(exc.code, exc.message, exc.message)) from exc
+        return await receive_upload(
+            request, settings, source=source, user=session.user, suffix=suffix,
+            rights_confirmed=rights_confirmed, source_match_confirmed=source_match_confirmed,
+        )
 
     @app.post("/api/cases/analyze")
     def analyze_case(
@@ -1990,34 +2020,35 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
         require_csrf(session, x_csrf_token)
+        if payload.source_upload_id:
+            # Serialize claim with orphan cleanup. Task insertion separately
+            # enforces one task per upload and the existing canonical case identity.
+            with operation_lock(settings.pipeline_root, f"source-upload:{payload.source_upload_id}"):
+                return submit_case_analysis(payload, session)
+        return submit_case_analysis(payload, session)
 
+    def submit_case_analysis(payload: CaseAnalysisRequest, session: SessionContext) -> dict[str, Any]:
         try:
-            normalized_url = normalize_source_url(payload.url)
-        except ValueError as exc:
+            source = resolve_douyin_source_input(payload.url)
+        except SourceInputError as exc:
             raise HTTPException(
                 status_code=422,
                 detail=error_detail(
-                    "CASE_URL_INVALID",
-                    "暂时无法识别这个视频链接。",
-                    "请检查链接，并使用抖音视频链接重新尝试。",
+                    exc.code,
+                    exc.message,
+                    exc.message,
                 ),
             ) from exc
-
-        try:
-            case_id = source_case_id(payload.url)
-        except ValueError as exc:
-            raise HTTPException(
-                status_code=422,
-                detail=error_detail(
-                    "CASE_SOURCE_IDENTITY_UNRESOLVED",
-                    "暂时无法从这个链接确认唯一的视频。",
-                    "请使用包含视频编号的完整抖音视频链接。",
-                ),
-            ) from exc
+        normalized_url = source.canonical_url
+        case_id = source.video_id
+        provider_source_url = (
+            source.extracted_url.split("?", 1)[0].split("#", 1)[0]
+            if source.extracted_url.startswith("https://v.douyin.com/") else None
+        )
 
         duplicate = resolve_case_source_duplicate(
             settings,
-            payload.url,
+            normalized_url,
         )
 
         hint = payload.operator_profile_hint
@@ -2040,6 +2071,23 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                     ),
                 )
             return hint
+
+        def source_upload() -> dict | None:
+            if not payload.source_upload_id:
+                return None
+            return validate_for_submission(settings, payload.source_upload_id, normalized_url, int(session.user["id"]))
+
+        def require_media_provider() -> None:
+            if not payload.source_upload_id and settings.case_acquisition_provider == "upload_only":
+                raise HTTPException(422, detail=error_detail(
+                    "SOURCE_UPLOAD_REQUIRED", "当前需要上传本地视频。", "请上传与来源链接对应的视频文件。",
+                ))
+            if (not payload.source_upload_id and settings.case_acquisition_provider == "qiyun"
+                    and not (os.environ.get("QYAPI_APP_ID") and os.environ.get("QYAPI_APP_KEY"))):
+                raise HTTPException(503, detail=error_detail(
+                    "SOURCE_PROVIDER_NOT_CONFIGURED", "自动获取视频暂不可用。",
+                    "请上传本地视频，或联系管理员配置视频解析服务。",
+                ))
 
         if duplicate is not None:
             state = str(duplicate.get("state") or "")
@@ -2084,11 +2132,15 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             if not reason:
                 reason = "分析失败后由运营人员显式重新分析。"
 
+            require_media_provider()
             task = create_case_task(
                 settings.database_path,
                 source_url=normalized_url,
                 case_id=case_id,
                 operator_profile_hint=require_hint(),
+                source_upload=source_upload(),
+                acquisition_provider=settings.case_acquisition_provider,
+                provider_source_url=provider_source_url,
                 reanalyze=True,
                 reason=reason,
                 created_by_user_id=int(session.user["id"]),
@@ -2129,11 +2181,15 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 ),
             }
 
+        require_media_provider()
         task = create_case_task(
             settings.database_path,
             source_url=normalized_url,
             case_id=case_id,
             operator_profile_hint=require_hint(),
+            source_upload=source_upload(),
+            acquisition_provider=settings.case_acquisition_provider,
+            provider_source_url=provider_source_url,
             created_by_user_id=int(session.user["id"]),
             queue_max=settings.task_queue_max,
             gpu_pending_per_user_max=settings.gpu_pending_per_user_max,
@@ -2144,7 +2200,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             "duplicate": False,
             "task": task,
             "case_id": case_id,
-            "next_action": ("可以留在当前页面查看进度，" "也可以稍后从任务记录继续。"),
+            "next_action": "请前往任务进度查看；离开页面后任务会继续。",
         }
 
     @app.get("/api/cases/{case_id}")
@@ -2161,9 +2217,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         case_id: str,
         _: SessionContext = Depends(require_console_access),
     ) -> FileResponse:
+        path = case_media_path(settings, case_id)
         return FileResponse(
-            case_media_path(settings, case_id),
-            media_type="video/mp4",
+            path,
+            media_type="video/webm" if path.suffix.lower() == ".webm" else "video/mp4",
             headers={"Cache-Control": "private, no-store"},
         )
 
@@ -2193,6 +2250,20 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
         require_csrf(session, x_csrf_token)
+        if payload.source_upload_id:
+            if payload.decision != "reanalyze":
+                raise HTTPException(422, detail="只有重新分析可以提交新视频文件。")
+            with operation_lock(settings.pipeline_root, f"source-upload:{payload.source_upload_id}"):
+                detail = get_case_detail(settings, case_id)
+                upload = validate_for_submission(settings, payload.source_upload_id,
+                                                 str(detail.get("source_url") or ""), int(session.user["id"]))
+                return perform_case_review(case_id, payload, session, upload)
+        if payload.decision == "reanalyze" and get_case_detail(settings, case_id).get("review_media", {}).get("operator_uploaded"):
+            raise HTTPException(422, detail=error_detail("SOURCE_UPLOAD_REQUIRED", "请重新上传视频文件。", "请从添加案例页选择与来源对应的文件。"))
+        return perform_case_review(case_id, payload, session)
+
+    def perform_case_review(case_id: str, payload: CaseReviewRequest, session: SessionContext,
+                            source_upload: dict | None = None) -> dict[str, Any]:
         reason = payload.reason.strip()
         if payload.decision in {"reject", "reanalyze"} and not reason:
             raise HTTPException(
@@ -2204,10 +2275,12 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 ),
             )
         reanalysis_hint = None
+        reanalysis_source_url = None
         if payload.decision == "reanalyze":
+            reanalysis_detail = get_case_detail(settings, case_id)
             reanalysis_hint = payload.operator_profile_hint or case_reanalysis_hint(settings.database_path, case_id)
             if reanalysis_hint is None:
-                reanalysis_hint = get_case_detail(settings, case_id).get("operator_profile_hint")
+                reanalysis_hint = reanalysis_detail.get("operator_profile_hint")
             if reanalysis_hint is None:
                 raise HTTPException(
                     status_code=422,
@@ -2217,6 +2290,22 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                         "请先明确选择视频结构类型，再重新分析。",
                     ),
                 )
+            reanalysis_source_url = reanalysis_detail.get("source_url")
+            if not reanalysis_source_url:
+                raise HTTPException(422, detail=error_detail(
+                    "CASE_SOURCE_URL_MISSING", "原始视频链接缺失，暂时不能重新分析。",
+                    "请先恢复来源链接，再发起重新分析。",
+                ))
+            if (source_upload is None and settings.case_acquisition_provider == "qiyun"
+                    and not (os.environ.get("QYAPI_APP_ID") and os.environ.get("QYAPI_APP_KEY"))):
+                raise HTTPException(503, detail=error_detail(
+                    "SOURCE_PROVIDER_NOT_CONFIGURED", "自动获取视频暂不可用。",
+                    "请上传本地视频，或联系管理员配置视频解析服务。",
+                ))
+            if source_upload is None and settings.case_acquisition_provider == "upload_only":
+                raise HTTPException(422, detail=error_detail(
+                    "SOURCE_UPLOAD_REQUIRED", "当前需要上传本地视频。", "请上传与来源链接对应的视频文件。",
+                ))
         reviewer = str(session.user["phone"])
         if payload.decision == "approve":
             detail = locked_authority_call(
@@ -2243,23 +2332,14 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         if payload.decision == "reject":
             mark_task_reviewed(settings.database_path, case_id, "不收录")
             return {"decision": "rejected", "review": decision}
-        detail = get_case_detail(settings, case_id)
-        source_url = detail.get("source_url")
-        if not source_url:
-            raise HTTPException(
-                status_code=422,
-                detail=error_detail(
-                    "CASE_SOURCE_URL_MISSING",
-                    "原始视频链接缺失，暂时不能重新分析。",
-                    "请先恢复来源链接，再发起重新分析。",
-                ),
-            )
         mark_task_reviewed(settings.database_path, case_id, "已退回重新分析")
         task = create_case_task(
             settings.database_path,
-            source_url=str(source_url),
+            source_url=str(reanalysis_source_url),
             case_id=case_id,
             operator_profile_hint=reanalysis_hint,
+            source_upload=source_upload,
+            acquisition_provider=settings.case_acquisition_provider,
             reanalyze=True,
             reason=reason,
             created_by_user_id=int(session.user["id"]),
@@ -2301,7 +2381,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     def capabilities(
         _: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
-        return {"case_analysis": case_analysis_capability()}
+        return {"case_analysis": case_analysis_capability(settings.case_acquisition_provider)}
 
     assets_path = static_path / "assets"
     app.mount("/assets", StaticFiles(directory=assets_path), name="assets")

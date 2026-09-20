@@ -28,6 +28,8 @@ export function progressPanel(task, { compact = false, embedded = false } = {}) 
   const activeIndex = currentStageIndex(task);
   const terminal = ["awaiting_review", "completed"].includes(task.status);
   const failed = task.status === "failed";
+  const isCaseTask = task.task_type === "case_analysis";
+  const caseHref = task.subject_ref ? `/cases/${encodeURIComponent(task.subject_ref)}` : "/cases";
   const stages = CASE_PROGRESS_STAGES.map(([, label, threshold], index) => {
     const done = terminal || task.progress >= threshold;
     const active = !failed && !done && index === Math.max(0, activeIndex);
@@ -38,6 +40,7 @@ export function progressPanel(task, { compact = false, embedded = false } = {}) 
   }).join("");
     const mediaDuplicate =
     failed &&
+    isCaseTask &&
     task.error_code === "MEDIA_DUPLICATE_CASE" &&
     task.payload?.duplicate?.existing_case_id;
 
@@ -53,16 +56,23 @@ export function progressPanel(task, { compact = false, embedded = false } = {}) 
           查看已有案例
         </a>
       </div>`
-    : failed
+    : isCaseTask && task.status === "awaiting_review"
+      ? `<div class="next-action"><a class="btn btn-primary" href="${caseHref}">去审核案例</a></div>`
+      : isCaseTask && task.status === "completed"
+        ? `<div class="next-action"><a class="btn btn-primary" href="${caseHref}">查看案例</a></div>`
+      : isCaseTask && failed
       ? `<div class="next-action">
           <strong>下一步</strong>
-          <span>返回添加案例，检查视频链接后重新提交。</span>
+          <span>${task.error_code === "SOURCE_ACQUISITION_FAILED" ? "未能获取原视频，尚未形成可审核案例。" : "分析未完成，尚未形成可审核案例。"}如需再次尝试，请显式重新分析。</span>
+          <a class="btn btn-secondary" href="/cases/new?retry_task=${encodeURIComponent(task.task_id || "")}" data-route>返回添加案例</a>
         </div>`
+      : failed
+        ? `<div class="next-action"><strong>下一步</strong><span>本次任务未完成，请返回对应业务页面确认状态。</span><a class="btn btn-secondary" href="/tasks" data-route>返回任务记录</a></div>`
       : `<p class="progress-note">
           你可以离开这个页面，任务进度会保留在“任务记录”中。
         </p>`;
   return `<section class="${embedded ? "" : "card "}task-progress ${compact ? "compact" : ""} ${embedded ? "embedded" : ""}" data-task-progress>
-    <div class="task-progress-head"><div><h2>${failed ? "案例分析未完成" : terminal ? "分析完成，等待审核" : "案例分析中"}</h2>
+    <div class="task-progress-head"><div><h2>${isCaseTask ? (failed ? "案例分析未完成" : task.status === "completed" ? "案例已入库" : terminal ? "分析完成，等待审核" : "案例分析中") : (failed ? "任务未完成" : terminal ? "任务已完成" : "任务进行中")}</h2>
       <p>${escapeHtml(failed ? task.error_message || "请稍后重试。" : task.stage || "等待开始")}</p></div>
       <strong>${Number(task.progress || 0)}%</strong></div>
     <div class="progress-track"><span style="width:${Math.max(0, Math.min(100, Number(task.progress || 0)))}%"></span></div>
@@ -118,7 +128,9 @@ export function caseReviewContent(detail, statusPill) {
   const sourceLink = sourceUrl
     ? `<a class="source-video-link" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">在抖音打开原视频</a>`
     : "";
-  const reviewSurfaceNote = reviewMedia.local_available
+  const reviewSurfaceNote = reviewMedia.operator_uploaded
+    ? `<p class="review-source-note">本次分析使用提交人上传的文件。请对照抖音原视频确认文件对应且内容完整；来源不可核实时请勿批准。</p>`
+    : reviewMedia.local_available
     ? ""
     : `<p class="review-source-note">当前通过抖音原视频进行审核。</p>`;
   const shots = (detail.full_breakdown?.shots || []).map((shot) => `<article class="breakdown-shot">

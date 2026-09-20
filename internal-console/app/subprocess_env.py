@@ -13,7 +13,7 @@ EDGE_SECRET_PREFIXES = (
 )
 
 
-def pipeline_subprocess_env(*, needs_deepseek: bool = False) -> dict[str, str]:
+def pipeline_subprocess_env(*, needs_deepseek: bool = False, needs_qiyun: bool = False) -> dict[str, str]:
     """Build the least-privilege environment for an ops-pipeline child."""
 
     environment = {
@@ -23,6 +23,9 @@ def pipeline_subprocess_env(*, needs_deepseek: bool = False) -> dict[str, str]:
     }
     if not needs_deepseek:
         environment.pop("DEEPSEEK_API_KEY", None)
+    if not needs_qiyun:
+        environment.pop("QYAPI_APP_ID", None)
+        environment.pop("QYAPI_APP_KEY", None)
     environment["PYTHONIOENCODING"] = "utf-8"
     environment["PYTHONUTF8"] = "1"
     return environment

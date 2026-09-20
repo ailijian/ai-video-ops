@@ -117,15 +117,17 @@ def online_sqlite_backup(source: Path, destination: Path) -> None:
 def _excluded(path: Path) -> bool:
     lowered = {part.lower() for part in path.parts}
     case_attempt_transient = "case_analysis_attempts" in lowered and (
-        "frames" in lowered
+        "source_media" in lowered
+        or "frames" in lowered
         or "proxies" in lowered
         or path.suffix.lower()
         in {".mp4", ".mov", ".mkv", ".webm", ".jpg", ".jpeg", ".png", ".webp"}
     )
     return bool(
         case_attempt_transient
+        or "case_source_uploads" in lowered  # receipts are snapshotted into attempts; raw files are transient
         or lowered.intersection(
-            {".locks", ".venv", "__pycache__", ".pytest_cache", "cache", "tmp", "temp"}
+            {".locks", ".provider_rate", ".venv", "__pycache__", ".pytest_cache", "cache", "tmp", "temp"}
         )
         or path.suffix.lower() in {".lock", ".tmp", ".pyc"}
     )

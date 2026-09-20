@@ -109,6 +109,15 @@ def _row_to_task(row: Any) -> dict[str, Any]:
         elif task_type in {"content_generation", "excel_export"}:
             public_error = "后台操作没有完成，请按提示刷新业务状态后重试。"
 
+        elif row["error_code"] == "SOURCE_PROVIDER_RATE_LIMITED":
+            public_error = "视频解析请求较多，请稍后重新分析；也可以上传本地视频。"
+
+        elif row["error_code"] == "SOURCE_PROVIDER_QUOTA_EXHAUSTED":
+            public_error = "视频解析额度暂不可用，可以上传本地视频继续。"
+
+        elif str(row["error_code"]).startswith(("SOURCE_PROVIDER_", "SOURCE_MEDIA_")):
+            public_error = "原视频暂时无法自动获取，可以稍后重试或上传本地视频。"
+
         elif "no audio segments" in lowered or "audio-timeline" in lowered:
             public_error = "没有识别到可用于结构分析的口播内容。"
 
@@ -210,6 +219,9 @@ def create_case_task(
     source_url: str,
     case_id: str,
     operator_profile_hint: str,
+    source_upload: dict[str, str] | None = None,
+    acquisition_provider: str = "legacy_downloader",
+    provider_source_url: str | None = None,
     industry: str = "待分类",
     reanalyze: bool = False,
     reason: str | None = None,
@@ -219,13 +231,20 @@ def create_case_task(
 ) -> dict[str, Any]:
     if operator_profile_hint not in {"mix", "news", "hybrid", "uncertain"}:
         raise ValueError("Case operator_profile_hint must be explicitly selected")
+    if acquisition_provider not in {"legacy_downloader", "qiyun", "upload_only"}:
+        raise ValueError("Unsupported case acquisition provider")
     payload = {
         "source_url": source_url,
         "operator_profile_hint": operator_profile_hint,
         "industry": industry,
         "reanalyze": reanalyze,
         "reason": reason,
+        "acquisition_provider": acquisition_provider,
     }
+    if source_upload is not None:
+        payload["source_upload"] = source_upload
+    if provider_source_url and source_upload is None and acquisition_provider == "qiyun":
+        payload["provider_source_url"] = provider_source_url
     return submit_task(
         database_path,
         task_id_prefix=f"case-{case_id}",
@@ -282,6 +301,12 @@ def submit_task(
                     "The canonical operation already has an active task.",
                 )
         else:
+            upload_id = (payload.get("source_upload") or {}).get("upload_id")
+            if upload_id and connection.execute(
+                "SELECT 1 FROM tasks WHERE task_type = 'case_analysis' "
+                "AND json_extract(payload_json, '$.source_upload.upload_id') = ? LIMIT 1", (upload_id,),
+            ).fetchone():
+                raise TaskSubmissionError("SOURCE_UPLOAD_ALREADY_USED", "该文件已用于一条分析任务，重新分析请重新上传。")
             active_count = connection.execute(
                 "SELECT COUNT(*) AS count FROM tasks WHERE status IN ('queued', 'running')"
             ).fetchone()["count"]
@@ -674,6 +699,8 @@ class CaseTaskRunner:
             return
         self._last_storage_maintenance = current
         try:
+            from .case_uploads import cleanup_unused_uploads
+            cleanup_unused_uploads(self.settings)
             subprocess.run(
                 [
                     self.settings.pipeline_python_executable
@@ -775,6 +802,8 @@ class CaseTaskRunner:
                 task_id,
                 "--industry",
                 str(payload.get("industry") or "待分类"),
+                "--acquisition-provider",
+                str(payload.get("acquisition_provider") or "legacy_downloader"),
             ]
             if payload.get("operator_profile_hint") in {"mix", "news", "hybrid", "uncertain"}:
                 command.extend(["--operator-profile-hint", str(payload["operator_profile_hint"])])
@@ -786,7 +815,17 @@ class CaseTaskRunner:
                 raise ValueError("Case task has no recorded profile input")
             if payload.get("reanalyze"):
                 command.append("--reanalyze")
-            child_env = pipeline_subprocess_env(needs_deepseek=True)
+            if payload.get("source_upload"):
+                command.extend([
+                    "--source-upload-id", payload["source_upload"]["upload_id"],
+                    "--source-upload-receipt-sha256", payload["source_upload"]["receipt_sha256"],
+                ])
+            if payload.get("provider_source_url"):
+                command.extend(["--provider-source-url", str(payload["provider_source_url"])])
+            child_env = pipeline_subprocess_env(
+                needs_deepseek=True,
+                needs_qiyun=(payload.get("acquisition_provider") == "qiyun" and not payload.get("source_upload")),
+            )
             process = subprocess.Popen(
                 command,
                 cwd=self.settings.repo_root,

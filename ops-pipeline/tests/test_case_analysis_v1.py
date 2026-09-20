@@ -206,6 +206,41 @@ def test_source_acquisition_preserves_privacy_and_media_rights_boundary(tmp_path
     assert source["source_video_sha256"] == sha256(Path(source["video"]))
 
 
+def test_qiyun_acquisition_keeps_canonical_identity_and_no_signed_url(tmp_path: Path, monkeypatch):
+    repo, pipeline, downloader = roots(tmp_path)
+    case_id = "7682442957798161531"
+    calls = []
+
+    def fake_acquire(**kwargs):
+        calls.append(kwargs)
+        video = kwargs["attempt_root"] / "source_media" / "source.mp4"
+        video.parent.mkdir(parents=True)
+        video.write_bytes(b"transient-media")
+        return {
+            "video": str(video), "source_video_sha256": sha256(video),
+            "source_description": "标题", "source_author": "作者",
+            "metadata": {"provider": "qiyun", "stable_video_id": case_id},
+        }
+
+    monkeypatch.setattr(module, "acquire_qiyun_media", fake_acquire)
+    operation = module.Orchestrator(
+        pipeline_root=pipeline, repo_root=repo, downloader_root=downloader,
+        source_url=f"https://www.douyin.com/video/{case_id}",
+        attempt_id="attempt_qiyun_001", profile="news", industry="待分类",
+        reanalyze=False, acquisition_provider="qiyun",
+        provider_source_url="https://v.douyin.com/short123/",
+    )
+    source = operation.acquire()
+    assert calls[0]["source_url"] == f"https://www.douyin.com/video/{case_id}"
+    assert calls[0]["provider_source_url"] == "https://v.douyin.com/short123/"
+    assert source["source_url"] == f"https://www.douyin.com/video/{case_id}"
+    assert source["stable_video_id"] == case_id
+    assert source["media_rights_granted"] is False
+    assert source["production_footage_pool_eligible"] is False
+    assert "video_url" not in (operation.attempt_root / "source_acquisition_v1.json").read_text(encoding="utf-8")
+    assert not (downloader / "Downloaded").exists()
+
+
 def test_reanalysis_after_cleanup_reacquires_source(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
