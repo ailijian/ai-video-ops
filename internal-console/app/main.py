@@ -207,12 +207,26 @@ class CaseAnalysisRequest(BaseModel):
     source_upload_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
 
 
+class CaseEvidenceDecision(BaseModel):
+    item_id: str = Field(min_length=1, max_length=80)
+    action: Literal["keep"]
+
+
+class CaseEvidenceReviewRequest(BaseModel):
+    candidate_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    narration_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    shot_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    narration_decisions: list[CaseEvidenceDecision] = Field(default_factory=list, max_length=100)
+    shot_decisions: list[CaseEvidenceDecision] = Field(default_factory=list, max_length=100)
+
+
 class CaseReviewRequest(BaseModel):
     decision: Literal["reject", "reanalyze", "approve"]
     reason: str = Field(default="", max_length=1000)
     operator_profile_hint: Literal["mix", "news", "hybrid", "uncertain"] | None = None
     industry: str | None = Field(default=None, max_length=30)
     source_upload_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
+    evidence_review: CaseEvidenceReviewRequest | None = None
 
 
 class CaseProfileAnnotationRequest(BaseModel):
@@ -2435,14 +2449,20 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 ))
         reviewer = str(session.user["phone"])
         if payload.decision == "approve":
+            approval_kwargs: dict[str, Any] = {
+                "reviewer": reviewer,
+                "note": reason or "人工已对照原视频完成结构研究审核。",
+            }
+            if payload.evidence_review is not None:
+                approval_kwargs["evidence_review"] = payload.evidence_review.model_dump()
+                approval_kwargs["reviewer_user_id"] = int(session.user["id"])
             detail = locked_authority_call(
                 "case",
                 case_id,
                 approve_case_candidate,
                 settings,
                 case_id,
-                reviewer=reviewer,
-                note=reason or "人工已对照原视频完成结构研究审核。",
+                **approval_kwargs,
             )
             mark_task_reviewed(
                 settings.database_path, case_id, "已批准入库",

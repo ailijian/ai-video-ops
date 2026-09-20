@@ -74,6 +74,15 @@ def video_id_from_url(url: str) -> str | None:
     return next(iter(distinct), None)
 
 
+def _reject_non_video_page(url: str) -> None:
+    path = urlsplit(url).path
+    if re.match(r"^/(?:share/)?user(?:/|$)", path):
+        raise SourceInputError(
+            "CASE_SOURCE_NOT_VIDEO",
+            "这是抖音用户主页链接，不是单条视频。请打开具体视频，点击分享后复制视频链接。",
+        )
+
+
 def _public_address(host: str) -> str:
     try:
         addresses = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
@@ -153,6 +162,7 @@ def resolve_douyin_source_input(
                 video_id = video_id_from_url(current)
                 if video_id:
                     break
+                _reject_non_video_page(current)
             first_hop = False
             try:
                 status, location = request_location(current)
@@ -167,6 +177,7 @@ def resolve_douyin_source_input(
     else:
         video_id = video_id_from_url(current)
     if not video_id:
+        _reject_non_video_page(current)
         raise SourceInputError("CASE_SOURCE_IDENTITY_UNRESOLVED", "暂时无法确认这个视频的编号。")
     return DouyinSourceInput(
         input_kind=input_kind,

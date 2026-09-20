@@ -34,6 +34,70 @@ def sha256_file(path: Path) -> str:
     return digest.hexdigest()
 
 
+def validate_deferred_evidence_review(
+    case: dict[str, Any], candidate_sha256: str, receipt_path: Path | None,
+    reviewer: str,
+) -> tuple[dict[str, Any] | None, list[str]]:
+    pending = case.get("review_pending") or {}
+    if pending.get("requires_explicit_confirmation") is not True:
+        validation = case.get("validation") or {}
+        if validation.get("narration_review_closed") is False or validation.get("boundary_review_closed") is False:
+            return None, ["Unresolved evidence review cannot be approved without final confirmation."]
+        return None, (["Unexpected evidence review receipt."] if receipt_path else [])
+    errors: list[str] = []
+    if pending.get("mode") != "deferred_to_final_case_review":
+        errors.append("Deferred evidence review mode is invalid.")
+    if receipt_path is None or not receipt_path.is_file():
+        return None, errors + ["Deferred evidence review receipt is required."]
+    try:
+        receipt = read_json(receipt_path)
+        narration_path = Path(case["source_artifacts"]["narration_review_v1"])
+        shot_path = Path(case["source_artifacts"]["shot_boundaries"])
+        narration = read_json(narration_path)
+        shots = read_json(shot_path)
+    except (KeyError, OSError, ValueError, TypeError, json.JSONDecodeError):
+        return None, errors + ["Deferred evidence review artifacts are unavailable."]
+    expected_narration = {
+        str(item.get("segment_id") or "") for item in
+        (narration.get("manual_review") or {}).get("items", [])
+        if isinstance(item, dict)
+    }
+    expected_shots = {
+        str(item.get("frame_id") or item.get("boundary_frame_id") or "") for item in
+        (shots.get("manual_review") or {}).get("items", [])
+        if isinstance(item, dict)
+    }
+    if "" in expected_narration or "" in expected_shots:
+        errors.append("Pending evidence item identity is invalid.")
+    if narration.get("case_id") != case.get("case_id") or shots.get("case_id") != case.get("case_id"):
+        errors.append("Pending evidence Case identity mismatch.")
+    if receipt.get("schema_version") != "case-evidence-final-review-v1":
+        errors.append("Evidence review receipt schema is invalid.")
+    if not expected_narration and not expected_shots:
+        errors.append("Deferred review has no pending evidence.")
+    if pending.get("narration_item_count") != len((narration.get("manual_review") or {}).get("items", [])):
+        errors.append("Narration pending count differs from source evidence.")
+    if pending.get("shot_item_count") != len((shots.get("manual_review") or {}).get("items", [])):
+        errors.append("Shot pending count differs from source evidence.")
+    if pending.get("narration_sha256") != sha256_file(narration_path) or receipt.get("narration_sha256") != pending.get("narration_sha256"):
+        errors.append("Narration evidence hash mismatch.")
+    if pending.get("shot_sha256") != sha256_file(shot_path) or receipt.get("shot_sha256") != pending.get("shot_sha256"):
+        errors.append("Shot evidence hash mismatch.")
+    if receipt.get("case_id") != case.get("case_id") or receipt.get("candidate_sha256") != candidate_sha256:
+        errors.append("Evidence review is not bound to this Case candidate.")
+    if receipt.get("reviewed_by") != reviewer or not receipt.get("reviewed_at"):
+        errors.append("Evidence review attribution is invalid.")
+    for key, expected in (("narration_decisions", expected_narration), ("shot_decisions", expected_shots)):
+        decisions = receipt.get(key)
+        if not isinstance(decisions, list) or len(decisions) != len(expected):
+            errors.append(f"{key} must cover every pending item exactly once.")
+            continue
+        found = [str(item.get("item_id")) for item in decisions if isinstance(item, dict) and item.get("action") == "keep"]
+        if len(found) != len(expected) or len(set(found)) != len(found) or set(found) != expected:
+            errors.append(f"{key} contains an invalid or missing decision.")
+    return receipt, errors
+
+
 def write_atomic_json(path: Path, data: dict[str, Any]) -> str:
     payload = json.dumps(
         data,
@@ -203,6 +267,11 @@ def main() -> None:
             "that contain the legacy source_rights_gate field."
         ),
     )
+    parser.add_argument(
+        "--evidence-review-receipt",
+        default=None,
+        help="Explicit final human confirmation bound to a provisional Case candidate and its evidence hashes.",
+    )
     args = parser.parse_args()
 
     case_path = Path(args.case).expanduser().resolve()
@@ -226,6 +295,13 @@ def main() -> None:
     governance_context: dict[str, Any] | None = None
     source_provenance, source_provenance_errors = validate_source_provenance(case)
     errors.extend(source_provenance_errors)
+    evidence_receipt, evidence_errors = validate_deferred_evidence_review(
+        case,
+        original_sha256,
+        Path(args.evidence_review_receipt).expanduser().resolve() if args.evidence_review_receipt else None,
+        args.reviewer,
+    )
+    errors.extend(evidence_errors)
 
     if lifecycle.get("status") != "review_required":
         errors.append(
@@ -425,6 +501,19 @@ def main() -> None:
     if governance_context is not None:
         case["approval"]["source_governance"] = governance_context
         case["approval"]["media_reuse_authorized"] = False
+    if evidence_receipt is not None:
+        case["approval"]["evidence_review"] = {
+            "receipt_sha256": sha256_file(Path(args.evidence_review_receipt)),
+            "narration_decision_count": len(evidence_receipt["narration_decisions"]),
+            "shot_decision_count": len(evidence_receipt["shot_decisions"]),
+            "reviewed_by": evidence_receipt["reviewed_by"],
+            "reviewed_at": evidence_receipt["reviewed_at"],
+            "policy": "source_asr_and_current_shot_boundaries_explicitly_confirmed",
+        }
+        case["review_pending"]["status"] = "confirmed_at_final_case_review"
+        case.setdefault("narration_evidence", {})["manual_review_closed"] = True
+        case["validation"]["narration_review_closed"] = True
+        case["validation"]["boundary_review_closed"] = True
 
     case.setdefault("quality", {})
     case["quality"]["human_review_required"] = False

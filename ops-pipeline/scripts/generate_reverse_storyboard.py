@@ -327,6 +327,8 @@ def validate_and_prepare_narration_track(
     audio_data: dict[str, Any],
     shot_boundaries: dict[str, Any],
     narration_review_path: str | None,
+    *,
+    defer_manual_review: bool = False,
 ) -> tuple[list[dict[str, Any]], str | None, bool]:
     """
     Returns: (narration_track, narration_review_source, narration_review_closed)
@@ -384,8 +386,15 @@ def validate_and_prepare_narration_track(
         raise RuntimeError("Narration Review validation is not passed.")
 
     manual_review = review_data.get("manual_review", {})
-    if bool(manual_review.get("required")):
+    pending_ids = {
+        str(item.get("segment_id"))
+        for item in manual_review.get("items", [])
+        if isinstance(item, dict)
+    }
+    if bool(manual_review.get("required")) and not defer_manual_review:
         raise RuntimeError("Narration Review requires manual action.")
+    if bool(manual_review.get("required")) and not pending_ids:
+        raise RuntimeError("Narration Review has no actionable pending segments.")
 
     reviewed_segments = list(review_data.get("segments") or [])
     if len(reviewed_segments) != len(segments):
@@ -409,7 +418,13 @@ def validate_and_prepare_narration_track(
             raise RuntimeError(f"{segment_id}: missing review segment.")
 
         source_text = str(seg.get("source_text", ""))
-        reviewed_text = str(reviewed.get("reviewed_text", ""))
+        # A tentative model correction must not become narration evidence before
+        # the final Case reviewer has seen it. Keep the source ASR for pending
+        # segments while still allowing a complete, explicitly provisional Case.
+        pending = segment_id in pending_ids
+        reviewed_text = (
+            source_text if pending else str(reviewed.get("reviewed_text", ""))
+        )
 
         source_word_refs = [str(x) for x in seg.get("word_refs", [])]
         review_word_refs = [str(x) for x in reviewed.get("word_refs", [])]
@@ -443,13 +458,21 @@ def validate_and_prepare_narration_track(
                 "reviewed_text": reviewed_text,
                 "changed": reviewed_text != source_text,
                 "word_refs": source_word_refs,
-                "text_authority": "narration_review_v1",
+                "text_authority": (
+                    "faster-whisper_pending_case_review" if pending
+                    else "narration_review_v1"
+                ),
                 "timing_authority": "faster-whisper",
                 "word_refs_authority": "faster-whisper",
             }
         )
 
-    return out, "narration_review_v1", True
+    pending_review = bool(manual_review.get("required"))
+    return (
+        out,
+        "mixed_reviewed_and_source_asr_pending_case_review" if pending_review else "narration_review_v1",
+        not pending_review,
+    )
 
 
 def build_narration_links(
@@ -1554,6 +1577,11 @@ def main() -> None:
             "If provided, narration track will use reviewed text."
         ),
     )
+    parser.add_argument(
+        "--defer-manual-review",
+        action="store_true",
+        help="Build a provisional storyboard; unresolved narration uses source ASR and must be confirmed before Case approval.",
+    )
     parser.add_argument("--model", default="deepseek-v4-flash")
     parser.add_argument(
         "--interpretation-chunk-size",
@@ -1607,7 +1635,7 @@ def main() -> None:
     shot_validation = shot_data.get("validation", {})
     if shot_validation.get("passed") is not True:
         raise RuntimeError("Shot boundaries validation is not passed.")
-    if shot_validation.get("manual_review", {}).get("required"):
+    if shot_data.get("manual_review", {}).get("required") and not args.defer_manual_review:
         raise RuntimeError("Shot boundaries manual review is required.")
 
     audio_validation = audio_data.get("validation", {})
@@ -1645,6 +1673,7 @@ def main() -> None:
         audio_data,
         shot_data,
         args.narration_review,
+        defer_manual_review=args.defer_manual_review,
     )
 
     shot_inputs = [
@@ -1819,7 +1848,7 @@ def main() -> None:
     total_elapsed = time.perf_counter() - total_started
 
     shot_manual_review_closed = not bool(
-        shot_validation.get("manual_review", {}).get("required")
+        shot_data.get("manual_review", {}).get("required")
     )
     audio_manual_review_closed = not bool(
         audio_validation.get("manual_review", {}).get("required")

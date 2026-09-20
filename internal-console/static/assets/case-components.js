@@ -188,12 +188,31 @@ export function caseReviewContent(detail, statusPill) {
     ${shot.onscreen_text ? `<p><strong>画面文字</strong>${escapeHtml(shot.onscreen_text)}</p>` : ""}
     ${shot.function ? `<p><strong>作用</strong>${escapeHtml(shot.function)}</p>` : ""}
   </article>`).join("");
+  const evidenceReview = detail.evidence_review || null;
+  const narrationQuestions = (evidenceReview?.narration_items || []).map((item) => `<label class="case-evidence-item">
+    <span><strong>口播 ${Number(item.start || 0).toFixed(1)}–${Number(item.end || 0).toFixed(1)} 秒</strong>
+      <small>当前拆解保留原始语音识别${item.suggested_text && item.suggested_text !== item.source_text ? "，未自动采用系统修正" : ""}。</small>
+      ${item.source_text ? `<span class="case-evidence-text">${escapeHtml(item.source_text)}</span>` : ""}
+    </span>
+    <span class="case-evidence-check"><input type="checkbox" data-evidence-kind="narration" data-item-id="${escapeHtml(item.item_id)}">确认保留原识别</span>
+  </label>`).join("");
+  const shotQuestions = (evidenceReview?.shot_items || []).map((item) => `<label class="case-evidence-item">
+    <span><strong>分镜 ${Number(item.start || 0).toFixed(1)}${item.end == null ? "" : `–${Number(item.end).toFixed(1)}`} 秒</strong>
+      <small>这一处的分镜划分需要核对，当前拆解暂时保留现有划分。</small></span>
+    <span class="case-evidence-check"><input type="checkbox" data-evidence-kind="shot" data-item-id="${escapeHtml(item.item_id)}">确认保留当前分镜</span>
+  </label>`).join("");
+  const evidenceReviewSurface = evidenceReview?.required
+    ? evidenceReview.available
+      ? `<section class="panel case-evidence-review"><h2>入库前确认</h2><p>请对照原视频核对以下疑点。确认只认可当前展示的原识别与分镜，不会自动采用系统猜测；不准确时请重新分析，暂不要批准。</p>
+          <div class="case-evidence-list">${narrationQuestions}${shotQuestions}</div></section>`
+      : `<section class="panel case-evidence-review"><h2>入库前确认</h2><p>待确认的分析证据暂时无法读取，请勿批准。刷新后仍有问题时请联系管理员。</p></section>`
+    : "";
   const reviewDecision = detail.review?.approved
     ? `<div class="approved-message"><strong>已进入案例库</strong><p>这个案例已经完成审核。</p></div>`
     : detail.review?.approval_recovery_required
       ? `<p>上次批准尚未完整保存。继续后只会完成原有批准，不会重复审核。</p><button class="btn btn-primary btn-wide" type="button" data-review-action="approve">完成批准</button>`
       : `<p>请对照原视频检查内容理解、叙事顺序与画面拆解。</p>
-        <button class="btn btn-primary btn-wide" type="button" data-review-action="approve">批准入库</button>
+        <button class="btn btn-primary btn-wide" type="button" data-review-action="approve"${evidenceReview?.required && !evidenceReview.available ? " disabled" : ""}>${evidenceReview?.required ? "确认并批准入库" : "批准入库"}</button>
         <button class="btn btn-secondary btn-wide" type="button" data-review-action="reanalyze">重新分析</button>
         <button class="btn btn-ghost btn-wide danger-text" type="button" data-review-action="reject">不收录</button>`;
   return `<main class="page page-review case-review-page">
@@ -215,6 +234,7 @@ export function caseReviewContent(detail, statusPill) {
             </div>
           </div>
         </section>
+        ${evidenceReviewSurface}
         <section class="case-analysis"><h2>分析结果</h2>
         <div class="review-section"><h3>讲了什么</h3>
           ${detail.what_it_says?.topic ? `<div class="review-row"><span>内容主题</span><p>${escapeHtml(detail.what_it_says.topic)}</p></div>` : ""}

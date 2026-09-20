@@ -33,9 +33,45 @@ assert APPROVE_SPEC and APPROVE_SPEC.loader
 approve_module = importlib.util.module_from_spec(APPROVE_SPEC)
 APPROVE_SPEC.loader.exec_module(approve_module)
 
+STORYBOARD_SPEC = importlib.util.spec_from_file_location(
+    "generate_reverse_storyboard", SCRIPTS_DIR / "generate_reverse_storyboard.py"
+)
+assert STORYBOARD_SPEC and STORYBOARD_SPEC.loader
+storyboard_module = importlib.util.module_from_spec(STORYBOARD_SPEC)
+STORYBOARD_SPEC.loader.exec_module(storyboard_module)
+
 
 def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def test_pending_narration_uses_source_asr_in_provisional_storyboard(tmp_path: Path):
+    review_path = tmp_path / "narration_review_v1.json"
+    review_path.write_text(json.dumps({
+        "case_id": "7624492255264509193",
+        "validation": {"passed": True},
+        "manual_review": {"required": True, "items": [{"segment_id": "A001"}]},
+        "segments": [{
+            "segment_id": "A001", "start": 0.0, "end": 1.0,
+            "source_text": "原始识别内容", "reviewed_text": "模型推测内容",
+            "word_refs": ["W001"],
+        }],
+    }, ensure_ascii=False), encoding="utf-8")
+    audio = {"case_id": "7624492255264509193", "segments": [{
+        "segment_id": "A001", "start": 0.0, "end": 1.0,
+        "source_text": "原始识别内容", "word_refs": ["W001"],
+    }], "words": [{"word_id": "W001", "start": 0.0, "end": 1.0, "word": "原始识别内容"}],
+        "speech_evidence_status": "detected"}
+    shots = {"case_id": "7624492255264509193", "validation": {"passed": True}}
+    with pytest.raises(RuntimeError, match="requires manual action"):
+        storyboard_module.validate_and_prepare_narration_track(audio, shots, str(review_path))
+    track, _, closed = storyboard_module.validate_and_prepare_narration_track(
+        audio, shots, str(review_path), defer_manual_review=True,
+    )
+    assert closed is False
+    assert track[0]["text"] == "原始识别内容"
+    assert track[0]["changed"] is False
+    assert track[0]["text_authority"] == "faster-whisper_pending_case_review"
 
 
 def roots(tmp_path: Path) -> tuple[Path, Path, Path]:
@@ -463,7 +499,8 @@ def test_qiyun_case_run_hands_off_canonical_manifest_without_models(tmp_path: Pa
     assert operation.state["artifacts"]["source_acquisition_v1"]
 
 
-def test_boundary_review_pauses_before_storyboard_then_resumes_from_checkpoints(tmp_path: Path, monkeypatch):
+@pytest.mark.parametrize("pending_kind", ["narration", "shot"])
+def test_pending_evidence_reaches_final_case_review_without_repeating_acquisition(tmp_path: Path, monkeypatch, pending_kind: str):
     first, _, kwargs, provider_calls = seed_failed_qiyun_attempt(tmp_path, monkeypatch)
     operation = module.Orchestrator(attempt_id="attempt_boundary_review_002", **kwargs)
     source = operation.acquire()
@@ -487,14 +524,21 @@ def test_boundary_review_pauses_before_storyboard_then_resumes_from_checkpoints(
             "case_id": operation.case_id, "privacy_policy_version": "privacy-policy-v1.0",
         },
         root / "narration" / "narration_review_v1.json": {
-            "case_id": operation.case_id, "manual_review": {"required": False},
+            "case_id": operation.case_id, "validation": {"passed": True},
+            "manual_review": {
+                "required": pending_kind == "narration",
+                "items": [{"segment_id": "A001"}] if pending_kind == "narration" else [],
+            },
         },
         root / "shots" / "shot_boundaries_v1_1.json": {
             "case_id": operation.case_id, "validation": {"passed": True},
-            "manual_review": {"required": True, "items": [{"type": "short_shot"}]},
+            "manual_review": {
+                "required": pending_kind == "shot",
+                "items": [{"type": "short_shot", "frame_id": "frame_000003000ms.jpg"}] if pending_kind == "shot" else [],
+            },
         },
         root / "storyboard" / "reverse_storyboard_v1.json": {
-            "case_id": operation.case_id, "validation": {"passed": True},
+            "case_id": operation.case_id, "validation": {"passed": False},
         },
     }
     for path, value in artifacts.items():
@@ -503,42 +547,15 @@ def test_boundary_review_pauses_before_storyboard_then_resumes_from_checkpoints(
     first_pass_calls = []
     def first_pass_command(label, command, _stage_id, _timeout, **_kwargs):
         first_pass_calls.append(label)
-        assert label == "shot-boundaries"
-        assert "--review-file" not in command
+        assert label in {"reverse-storyboard", "build-case"}
+        assert "--defer-manual-review" in command
+        if label == "build-case":
+            raise module.CaseAnalysisError("EXPECTED_TEST_STOP", "No Case candidate in fixture")
     monkeypatch.setattr(operation, "run_command", first_pass_command)
     with pytest.raises(module.CaseAnalysisError) as error:
         operation.run()
-    assert error.value.code == "SHOT_BOUNDARY_REVIEW_REQUIRED"
-    assert first_pass_calls == ["shot-boundaries"]
-    assert provider_calls == [first.attempt_id]
-
-    review = root / "shots" / "boundary_review_001.json"
-    module.write_atomic_json(review, {"case_id": operation.case_id, "decisions": [
-        {"frame_id": "frame_000003000ms.jpg", "action": "keep"},
-    ]})
-    resumed = module.Orchestrator(attempt_id=operation.attempt_id, **kwargs)
-    called = []
-
-    def resume_command(label, command, _stage_id, _timeout, **_kwargs):
-        called.append(label)
-        if label == "shot-boundaries":
-            assert command[command.index("--review-file") + 1] == str(review)
-            module.write_atomic_json(root / "shots" / "shot_boundaries_v1_1.json", {
-                "case_id": operation.case_id, "validation": {"passed": True},
-                "manual_review": {"required": False, "items": []},
-            })
-        elif label == "reverse-storyboard":
-            assert (root / "shots" / "shot_boundaries_v1_1.json").is_file()
-        elif label == "build-case":
-            raise module.CaseAnalysisError("EXPECTED_TEST_STOP", "No Case candidate in fixture")
-        else:
-            pytest.fail(f"Unexpected repeated stage: {label}")
-
-    monkeypatch.setattr(resumed, "run_command", resume_command)
-    with pytest.raises(module.CaseAnalysisError) as error:
-        resumed.run()
     assert error.value.code == "EXPECTED_TEST_STOP"
-    assert called == ["shot-boundaries", "reverse-storyboard", "build-case"]
+    assert first_pass_calls == ["reverse-storyboard", "build-case"]
     assert provider_calls == [first.attempt_id]
 
 

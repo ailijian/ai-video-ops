@@ -1,8 +1,9 @@
 import { createApiClient } from "./api-client.js?v=productized-stage3-3";
-import { createCaseViews } from "./case-views.js?v=boundary-review-1";
+import { createCaseViews } from "./case-views.js?v=case-final-review-1";
 import { createCustomerViews } from "./customer-views.js?v=productized-stage3-3";
-import { progressPanel } from "./case-components.js?v=boundary-review-1";
+import { progressPanel } from "./case-components.js?v=case-final-review-1";
 import { startTaskPolling } from "./task-progress.js?v=mobile-reliability-1";
+import { CUSTOM_INDUSTRY, industryOptions, industryValue as readIndustryValue, setIndustryValue, syncCustomIndustry } from "./case-industry.mjs?v=industry-2";
 import { customerProgressPanel } from "./customer-components.js?v=productized-stage2-3";
 import { matchWorkflowRoute } from "./routes.js";
 import {
@@ -178,7 +179,7 @@ function openModal({
       <p id="dialog-description">${escapeHtml(description)}</p>
       ${reasonRequired || reasonOptional ? `<div class="field modal-reason"><label for="modal-reason">${escapeHtml(reasonLabel)}</label><textarea id="modal-reason" placeholder="${escapeHtml(reasonPlaceholder)}" ${reasonRequired ? "required" : ""} ${reasonOptional ? 'maxlength="1000"' : ""}></textarea><span class="form-error" data-modal-error role="alert">请填写原因后继续。</span></div>` : ""}
       ${profileHintRequired ? `<div class="field"><label for="modal-profile-hint">这个视频更接近哪种结构？</label><select id="modal-profile-hint" required><option value="">请选择</option><option value="mix">混剪型</option><option value="news">新闻体</option><option value="hybrid">混合型</option><option value="uncertain">不确定</option></select><span class="form-error" data-modal-profile-error role="alert">请选择结构类型。</span></div>` : ""}
-      ${industryRequired ? `<div class="field"><label for="modal-industry">所属行业</label><input id="modal-industry" type="text" list="modal-industry-suggestions" maxlength="30" value="${escapeHtml(industryValue)}" placeholder="选择建议或填写行业" required><datalist id="modal-industry-suggestions"><option value="餐饮"></option><option value="本地生活"></option><option value="零售"></option><option value="烘焙甜品"></option></datalist><span class="form-error" data-modal-industry-error role="alert">请填写具体行业。</span></div>` : ""}
+      ${industryRequired ? `<div class="field"><label for="modal-industry">所属行业</label><select id="modal-industry" required>${industryOptions(industryValue)}</select><input id="modal-industry-custom" type="text" maxlength="30" placeholder="填写行业名称" aria-label="自定义行业名称" hidden disabled><span class="form-error" data-modal-industry-error role="alert">请填写具体行业。</span></div>` : ""}
       <div class="modal-actions"><button class="btn btn-secondary" type="button" data-modal-cancel>${escapeHtml(cancelLabel)}</button><button class="btn ${danger ? "btn-danger" : "btn-primary"}" type="button" data-modal-confirm>${escapeHtml(confirmLabel)}</button></div>
     </section>`;
     document.body.append(backdrop);
@@ -188,6 +189,14 @@ function openModal({
     const reasonInput = backdrop.querySelector("#modal-reason");
     const profileInput = backdrop.querySelector("#modal-profile-hint");
     const industryInput = backdrop.querySelector("#modal-industry");
+    const industryCustomInput = backdrop.querySelector("#modal-industry-custom");
+    if (industryInput) {
+      setIndustryValue(industryInput, industryCustomInput, industryValue);
+      industryInput.addEventListener("change", () => {
+        syncCustomIndustry(industryInput, industryCustomInput);
+        if (industryInput.value === CUSTOM_INDUSTRY) industryCustomInput.focus();
+      });
+    }
     let settled = false;
 
     const close = (result) => {
@@ -212,10 +221,10 @@ function openModal({
         profileInput.focus();
         return;
       }
-      const industry = industryInput?.value.trim() || null;
+      const industry = industryInput ? readIndustryValue(industryInput, industryCustomInput) : null;
       if (industryRequired && (!industry || ["待分类", "unknown"].includes(industry.toLowerCase()))) {
         backdrop.querySelector("[data-modal-industry-error]").classList.add("visible");
-        industryInput.focus();
+        (industryInput.value === CUSTOM_INDUSTRY ? industryCustomInput : industryInput).focus();
         return;
       }
       close({ confirmed: true, reason, profileHint: profileInput?.value || null, industry });
@@ -242,7 +251,7 @@ function openModal({
     confirmButton.addEventListener("click", confirm);
     backdrop.addEventListener("click", (event) => { if (event.target === backdrop) cancel(); });
     document.addEventListener("keydown", onKeydown);
-    (industryInput || reasonInput || confirmButton).focus();
+    (industryInput?.value === CUSTOM_INDUSTRY ? industryCustomInput : industryInput || reasonInput || confirmButton).focus();
   });
 }
 

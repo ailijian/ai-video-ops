@@ -102,6 +102,45 @@ def test_short_link_timeout_and_missing_video_id_fail_closed():
     assert error.value.code == "CASE_SOURCE_IDENTITY_UNRESOLVED"
 
 
+def test_account_share_link_is_not_misreported_as_an_unidentified_video():
+    account_url = "https://www.iesdouyin.com/share/user/MS4wLjABAAAAexample/"
+
+    with pytest.raises(SourceInputError) as error:
+        resolve_douyin_source_input(
+            "https://v.douyin.com/WtOz1LhIWTw/ 7@1.com",
+            request_location=lambda _: (302, account_url),
+        )
+    assert error.value.code == "CASE_SOURCE_NOT_VIDEO"
+    assert "用户主页" in error.value.message
+
+    with pytest.raises(SourceInputError) as direct_error:
+        resolve_douyin_source_input(account_url)
+    assert direct_error.value.code == "CASE_SOURCE_NOT_VIDEO"
+
+
+def test_account_share_link_rejected_before_case_task_creation(client: TestClient, monkeypatch):
+    import app.douyin_source_input as resolver
+
+    monkeypatch.setattr(
+        resolver, "_request_location",
+        lambda _: (302, "https://www.iesdouyin.com/share/user/MS4wLjABAAAAexample/"),
+    )
+    csrf = login_and_change_password(client)
+    before = client.get("/api/tasks").json()["tasks"]
+    response = client.post(
+        "/api/cases/analyze",
+        headers={"X-CSRF-Token": csrf},
+        json={
+            "url": "https://v.douyin.com/WtOz1LhIWTw/ 7@1.com",
+            "industry": "服装",
+            "operator_profile_hint": "mix",
+        },
+    )
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "CASE_SOURCE_NOT_VIDEO"
+    assert client.get("/api/tasks").json()["tasks"] == before
+
+
 def test_short_link_dns_private_address_is_rejected(monkeypatch):
     import app.douyin_source_input as resolver
 

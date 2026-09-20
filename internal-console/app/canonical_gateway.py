@@ -562,6 +562,64 @@ def _case_title(case: dict[str, Any], case_path: Path) -> str:
     return _source_filename_title(source_video, str(case.get("case_id") or case_path.parent.name))
 
 
+def _case_evidence_review_projection(case: dict[str, Any], case_path: Path) -> dict[str, Any] | None:
+    lifecycle = case.get("lifecycle") or {}
+    evidence_review: dict[str, Any] | None = None
+    pending = case.get("review_pending") or {}
+    if lifecycle.get("status") == "review_required" and pending.get("requires_explicit_confirmation") is True:
+        evidence_review = {"required": True, "available": False}
+        try:
+            narration_path = Path(str((case.get("source_artifacts") or {}).get("narration_review_v1") or ""))
+            shot_path = Path(str((case.get("source_artifacts") or {}).get("shot_boundaries") or ""))
+            if (
+                narration_path.is_file() and shot_path.is_file()
+                and _sha256(narration_path) == pending.get("narration_sha256")
+                and _sha256(shot_path) == pending.get("shot_sha256")
+            ):
+                narration_data = _read_json(narration_path)
+                shot_data = _read_json(shot_path)
+                narration_items = (narration_data.get("manual_review") or {}).get("items") or []
+                shot_items = (shot_data.get("manual_review") or {}).get("items") or []
+                safe_narration = {
+                    str(item.get("segment_id") or ""): item
+                    for item in pending.get("narration_items", [])
+                    if isinstance(item, dict)
+                }
+                seen_frames: set[str] = set()
+                projected_shots: list[dict[str, Any]] = []
+                for item in shot_items:
+                    frame_id = str(item.get("frame_id") or item.get("boundary_frame_id") or "")
+                    if frame_id and frame_id not in seen_frames:
+                        seen_frames.add(frame_id)
+                        projected_shots.append({
+                            "item_id": frame_id,
+                            "start": item.get("start", item.get("timestamp_seconds")),
+                            "end": item.get("end"),
+                            "type": str(item.get("type") or ""),
+                        })
+                evidence_review = {
+                    "required": True,
+                    "available": True,
+                    "candidate_sha256": _sha256(case_path),
+                    "narration_sha256": pending["narration_sha256"],
+                    "shot_sha256": pending["shot_sha256"],
+                    "narration_items": [
+                        {
+                            "item_id": str(item.get("segment_id") or ""),
+                            "start": item.get("start"),
+                            "end": item.get("end"),
+                            "source_text": str(safe_narration.get(str(item.get("segment_id") or ""), {}).get("source_text_safe_verbatim") or "")[:260],
+                            "suggested_text": str(safe_narration.get(str(item.get("segment_id") or ""), {}).get("suggested_text_safe_verbatim") or "")[:260],
+                        }
+                        for item in narration_items if isinstance(item, dict)
+                    ],
+                    "shot_items": projected_shots,
+                }
+        except (OSError, ValueError, TypeError, KeyError, json.JSONDecodeError):
+            pass
+    return evidence_review
+
+
 def _partial_approval_state(
     settings: Settings, case_id: str, case: dict[str, Any]
 ) -> dict[str, Any] | None:
@@ -729,6 +787,7 @@ def get_case_detail(settings: Settings, case_id: str) -> dict[str, Any]:
                 else review_attempt_id or None
             ),
         },
+        "evidence_review": _case_evidence_review_projection(case, case_path),
         "review_media": {
             "operator_uploaded": (case.get("source_provenance") or {}).get("acquisition_mode") == "operator_uploaded_file",
             "local_available": local_media_available,
@@ -1259,6 +1318,89 @@ def _approval_block(message: str, next_action: str) -> CanonicalOperationError:
     return CanonicalOperationError("CASE_APPROVAL_BLOCKED", message, next_action)
 
 
+def _prepare_final_evidence_review(
+    candidate_path: Path,
+    case: dict[str, Any],
+    decisions: dict[str, Any] | None,
+    *,
+    reviewer: str,
+    reviewer_user_id: int | None,
+) -> Path | None:
+    pending = case.get("review_pending") or {}
+    required = pending.get("requires_explicit_confirmation") is True
+    if not required:
+        if decisions is not None:
+            raise CanonicalOperationError(
+                "CASE_EVIDENCE_REVIEW_NOT_REQUIRED", "这个案例没有待确认的分析疑点。", "请刷新案例后重试。"
+            )
+        return None
+    if not isinstance(decisions, dict) or reviewer_user_id is None:
+        raise CanonicalOperationError(
+            "CASE_EVIDENCE_REVIEW_REQUIRED", "请先确认分析中的疑点。", "逐项确认后再批准入库。"
+        )
+    attempt_root = candidate_path.parents[2].resolve()
+    paths: dict[str, Path] = {}
+    for key in ("narration_review_v1", "shot_boundaries"):
+        path = Path(str((case.get("source_artifacts") or {}).get(key) or ""))
+        if path.is_symlink() or not path.resolve().is_relative_to(attempt_root) or not path.is_file():
+            raise CanonicalOperationError(
+                "CASE_EVIDENCE_REVIEW_STALE", "待确认的分析证据已变化。", "请刷新案例后重试。"
+            )
+        paths[key] = path
+    narration = _read_json(paths["narration_review_v1"])
+    shots = _read_json(paths["shot_boundaries"])
+    narration_items = (narration.get("manual_review") or {}).get("items") or []
+    shot_items = (shots.get("manual_review") or {}).get("items") or []
+    expected_narration = {str(item.get("segment_id") or "") for item in narration_items if isinstance(item, dict)}
+    expected_shots = {str(item.get("frame_id") or item.get("boundary_frame_id") or "") for item in shot_items if isinstance(item, dict)}
+    hashes = {
+        "narration_sha256": _sha256(paths["narration_review_v1"]),
+        "shot_sha256": _sha256(paths["shot_boundaries"]),
+    }
+    if (
+        not (expected_narration or expected_shots)
+        or "" in expected_narration or "" in expected_shots
+        or pending.get("narration_item_count") != len(narration_items)
+        or pending.get("shot_item_count") != len(shot_items)
+        or any(pending.get(key) != value or decisions.get(key) != value for key, value in hashes.items())
+        or decisions.get("candidate_sha256") != _sha256(candidate_path)
+    ):
+        raise CanonicalOperationError(
+            "CASE_EVIDENCE_REVIEW_STALE", "待确认的分析证据已变化。", "请刷新案例后重试。"
+        )
+    for key, expected in (("narration_decisions", expected_narration), ("shot_decisions", expected_shots)):
+        rows = decisions.get(key)
+        if not isinstance(rows, list) or len(rows) != len(expected):
+            raise CanonicalOperationError("CASE_EVIDENCE_REVIEW_INCOMPLETE", "请逐项确认所有疑点。", "完成确认后再批准入库。")
+        found = [str(row.get("item_id") or "") for row in rows if isinstance(row, dict) and row.get("action") == "keep"]
+        if len(found) != len(expected) or len(set(found)) != len(found) or set(found) != expected:
+            raise CanonicalOperationError("CASE_EVIDENCE_REVIEW_INCOMPLETE", "请逐项确认所有疑点。", "完成确认后再批准入库。")
+    receipt = {
+        "schema_version": "case-evidence-final-review-v1",
+        "case_id": case["case_id"],
+        "candidate_sha256": _sha256(candidate_path),
+        **hashes,
+        "narration_decisions": decisions["narration_decisions"],
+        "shot_decisions": decisions["shot_decisions"],
+        "reviewed_by": reviewer,
+        "reviewed_by_user_id": reviewer_user_id,
+        "reviewed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    receipt_path = attempt_root / "case_evidence_final_review_v1.json"
+    if receipt_path.is_file():
+        previous = _read_json(receipt_path)
+        if any(previous.get(key) != receipt.get(key) for key in (
+            "case_id", "candidate_sha256", "narration_sha256", "shot_sha256",
+            "narration_decisions", "shot_decisions", "reviewed_by", "reviewed_by_user_id"
+        )):
+            raise CanonicalOperationError(
+                "CASE_EVIDENCE_REVIEW_CONFLICT", "这份分析疑点已经由另一位审核人确认。", "请刷新案例并核对审核记录。"
+            )
+        return receipt_path
+    _write_atomic(receipt_path, receipt)
+    return receipt_path
+
+
 def _validate_approved_case_artifacts(
     case_path: Path,
     *,
@@ -1532,6 +1674,8 @@ def approve_case_candidate(
     *,
     reviewer: str,
     note: str,
+    evidence_review: dict[str, Any] | None = None,
+    reviewer_user_id: int | None = None,
 ) -> dict[str, Any]:
     candidate = _approval_candidate(settings, case_id)
     canonical_dir = settings.pipeline_root / "data" / "cases" / case_id
@@ -1571,12 +1715,19 @@ def approve_case_candidate(
             "Attempt 状态与 canonical approval 状态不一致。",
             "请核对当前 Attempt 后重试；不要创建第二次人工审批。",
         )
+    candidate_value = _read_json(candidate_path)
+    evidence_receipt_path = _prepare_final_evidence_review(
+        candidate_path,
+        candidate_value,
+        evidence_review,
+        reviewer=reviewer,
+        reviewer_user_id=reviewer_user_id,
+    )
     transaction_id = uuid.uuid4().hex[:8]
     temporary_dir = canonical_dir.parent / f".{case_id}.{transaction_id}.stage"
     canonical_dir.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(candidate_path.parent, temporary_dir)
     staged_case_path = temporary_dir / "case_v1.json"
-    candidate_value = _read_json(candidate_path)
     policy = _governance_policy_path(settings)
     legacy_policy_required = candidate_value.get("source_rights_gate") is not None
     if legacy_policy_required and not policy.is_file():
@@ -1598,6 +1749,8 @@ def approve_case_candidate(
     ]
     if legacy_policy_required:
         command.extend(["--governance-policy", str(policy)])
+    if evidence_receipt_path is not None:
+        command.extend(["--evidence-review-receipt", str(evidence_receipt_path)])
     try:
         result = subprocess.run(
             command,

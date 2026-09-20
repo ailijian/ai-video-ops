@@ -1,12 +1,12 @@
-import { boundaryReviewPanel, caseCard, caseReviewContent, escapeHtml, progressPanel } from "./case-components.js?v=boundary-review-1";
+import { boundaryReviewPanel, caseCard, caseReviewContent, escapeHtml, progressPanel } from "./case-components.js?v=case-final-review-1";
 import { bindCaseMediaPreview } from "./case-media-preview.mjs?v=case-media-fit-1";
 import { caseTaskResumeDestination, projectCaseSubmitState, projectFailedCaseTask, resetCaseSubmitState } from "./case-submit-state.mjs?v=mobile-reliability-2";
 import { startTaskPolling } from "./task-progress.js?v=mobile-reliability-1";
 import { detectCaseSourceInput, extractCaseSourceUrls } from "./case-source-detection.mjs?v=case-batch-1";
 import { uploadCaseFile, validateCaseFile } from "./case-file-upload.mjs?v=source-upload-ui-2";
 import { submitCaseBatch } from "./case-batch-submit.mjs?v=case-batch-1";
+import { CASE_INDUSTRIES, CUSTOM_INDUSTRY, industryOptions, industryValue, setIndustryValue, syncCustomIndustry } from "./case-industry.mjs?v=industry-2";
 
-const CASE_INDUSTRY_SUGGESTIONS = ["餐饮", "本地生活", "零售", "烘焙甜品"];
 const hasSpecificIndustry = (value) => Boolean(value?.trim() && !["待分类", "unknown"].includes(value.trim().toLowerCase()));
 
 export function caseAcquisitionWarning(acquisition, { hasFile = false, unavailable = false } = {}) {
@@ -120,9 +120,9 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
           <div id="case-acquisition-status" class="source-acquisition-status warning" role="status" hidden></div>
           <div id="case-batch-choices" class="case-batch-choices" hidden></div></div>
           <div class="field case-industry-field" data-case-industry-panel><label for="case-industry">所属行业</label>
-            <input id="case-industry" type="text" list="case-industry-suggestions" maxlength="30" autocomplete="off" placeholder="选择建议或填写行业，例如餐饮" aria-describedby="case-industry-help">
-            <datalist id="case-industry-suggestions">${CASE_INDUSTRY_SUGGESTIONS.map((industry) => `<option value="${industry}"></option>`).join("")}</datalist>
-            <p id="case-industry-help" class="field-hint">可从建议中选择，也可填写其他行业。</p>
+            <select id="case-industry" aria-describedby="case-industry-help">${industryOptions()}</select>
+            <input id="case-industry-custom" type="text" maxlength="30" autocomplete="off" placeholder="填写行业名称" aria-label="自定义行业名称" hidden disabled>
+            <p id="case-industry-help" class="field-hint">选择行业；列表没有时可选“自定义”。</p>
           </div>
           <div class="field case-file-field"><span class="case-file-label">或上传本地视频</span>
             <label class="case-file-picker">
@@ -148,6 +148,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
     bindCommonActions();
     const input = document.querySelector("#case-url");
     const industryInput = document.querySelector("#case-industry");
+    const industryCustomInput = document.querySelector("#case-industry-custom");
     const industryPanel = document.querySelector("[data-case-industry-panel]");
     const detection = document.querySelector("#source-detection");
     const form = document.querySelector("#case-url-form");
@@ -169,9 +170,11 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
     const batchChoices = document.querySelector("#case-batch-choices");
     const acquisitionStatus = document.querySelector("#case-acquisition-status");
     const selectedHint = () => form.querySelector('input[name="operator-profile-hint"]:checked')?.value || null;
-    const selectedIndustry = () => industryInput.value.trim();
+    const selectedIndustry = () => industryValue(industryInput, industryCustomInput);
+    const focusIndustry = () => (industryInput.value === CUSTOM_INDUSTRY ? industryCustomInput : industryInput).focus();
     const batchHints = new Map();
     const batchIndustries = new Map();
+    const batchCustomUrls = new Set();
     let activeState = "idle";
     let activeCaseId = null;
     let activeTaskId = null;
@@ -205,6 +208,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       const projection = projectCaseSubmitState(status);
       input.disabled = projection.inputDisabled;
       industryInput.disabled = !["idle", "failed", "rejected"].includes(status);
+      syncCustomIndustry(industryInput, industryCustomInput);
       pasteButton.disabled = projection.pasteDisabled;
       fileInput.disabled = projection.inputDisabled;
       inputPanel.hidden = !["idle", "failed", "rejected"].includes(status);
@@ -224,7 +228,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       activeTaskId = null;
       reanalysisState = null;
       input.value = "";
-      industryInput.value = "";
+      setIndustryValue(industryInput, industryCustomInput);
       fileInput.value = "";
       fileSelected.textContent = "未选择文件";
       fileSelected.classList.remove("has-file");
@@ -233,6 +237,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       reanalysisRequiresFile = false;
       batchHints.clear();
       batchIndustries.clear();
+      batchCustomUrls.clear();
       form.querySelectorAll('input[name="operator-profile-hint"]').forEach((radio) => { radio.checked = false; });
       resultBox.innerHTML = "";
       document.querySelector("#case-form-error").classList.remove("visible");
@@ -252,16 +257,16 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       profilePanel.hidden = multi || !["idle", "failed", "rejected"].includes(activeState);
       batchChoices.hidden = !multi;
       if (!multi) { batchChoices.innerHTML = ""; return; }
-      batchChoices.innerHTML = `<p class="field-hint">每个视频单独填写行业并选择结构类型；已存在的案例不会重复建立任务。</p>
-        ${urls.map((url, index) => `<div class="case-batch-choice"><span><strong>${index + 1}. ${escapeHtml(url)}</strong></span>
-          <div class="case-batch-controls"><input type="text" data-batch-industry-url="${escapeHtml(url)}" list="case-industry-suggestions" maxlength="30" placeholder="所属行业" value="${escapeHtml(batchIndustries.get(url) || "")}" aria-label="第 ${index + 1} 个视频的所属行业">
+      batchChoices.innerHTML = `<p class="field-hint">每个视频单独选择行业和结构类型；已存在的案例不会重复建立任务。</p>
+        ${urls.map((url, index) => { const saved = batchIndustries.get(url) || ""; return `<div class="case-batch-choice"><span><strong>${index + 1}. ${escapeHtml(url)}</strong></span>
+          <div class="case-batch-controls"><select data-batch-industry-url="${escapeHtml(url)}" aria-label="第 ${index + 1} 个视频的所属行业">${industryOptions(saved || (batchCustomUrls.has(url) ? CUSTOM_INDUSTRY : ""))}</select>
           <select data-batch-url="${escapeHtml(url)}" aria-label="第 ${index + 1} 个视频的结构类型">
             <option value="">选择结构类型</option>
             <option value="mix" ${batchHints.get(url) === "mix" ? "selected" : ""}>混剪型</option>
             <option value="news" ${batchHints.get(url) === "news" ? "selected" : ""}>新闻体</option>
             <option value="hybrid" ${batchHints.get(url) === "hybrid" ? "selected" : ""}>混合型</option>
             <option value="uncertain" ${batchHints.get(url) === "uncertain" ? "selected" : ""}>不确定</option>
-          </select></div></div>`).join("")}`;
+          </select><input type="text" data-batch-industry-custom-url="${escapeHtml(url)}" maxlength="30" placeholder="填写行业名称" value="${escapeHtml(saved && !CASE_INDUSTRIES.includes(saved) ? saved : "")}" aria-label="第 ${index + 1} 个视频的自定义行业名称" ${batchCustomUrls.has(url) || saved && !CASE_INDUSTRIES.includes(saved) ? "" : "hidden disabled"}></div></div>`; }).join("")}`;
     };
     const updateAcquisitionNotice = () => {
       const warning = caseAcquisitionWarning(acquisition, {
@@ -273,10 +278,19 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
     batchChoices.addEventListener("change", (event) => {
       const select = event.target.closest("[data-batch-url]");
       if (select) batchHints.set(select.dataset.batchUrl, select.value);
+      const industry = event.target.closest("[data-batch-industry-url]");
+      if (industry) {
+        const custom = industry.closest(".case-batch-controls").querySelector("[data-batch-industry-custom-url]");
+        if (industry.value === CUSTOM_INDUSTRY) batchCustomUrls.add(industry.dataset.batchIndustryUrl);
+        else batchCustomUrls.delete(industry.dataset.batchIndustryUrl);
+        syncCustomIndustry(industry, custom);
+        batchIndustries.set(industry.dataset.batchIndustryUrl, industryValue(industry, custom));
+        if (industry.value === CUSTOM_INDUSTRY) custom.focus();
+      }
     });
     batchChoices.addEventListener("input", (event) => {
-      const industry = event.target.closest("[data-batch-industry-url]");
-      if (industry) batchIndustries.set(industry.dataset.batchIndustryUrl, industry.value);
+      const custom = event.target.closest("[data-batch-industry-custom-url]");
+      if (custom) batchIndustries.set(custom.dataset.batchIndustryCustomUrl, custom.value);
     });
     const showSubmissionResult = (result) => {
       if (!result.duplicate) {
@@ -356,6 +370,10 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       });
     };
     input.addEventListener("input", updateDetection);
+    industryInput.addEventListener("change", () => {
+      syncCustomIndustry(industryInput, industryCustomInput);
+      if (industryInput.value === CUSTOM_INDUSTRY) industryCustomInput.focus();
+    });
     fileInput.addEventListener("change", () => {
       const file = fileInput.files[0];
       fileSelected.textContent = file ? `${file.name} · ${(file.size / 1024 / 1024).toFixed(1)} MB` : "未选择文件";
@@ -375,7 +393,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       if (!reanalyzeButton || !projectCaseSubmitState(activeState).allowReanalysis) return;
       if (!hasSpecificIndustry(selectedIndustry())) {
         showToast("请填写案例所属行业。");
-        industryInput.focus();
+        focusIndustry();
         return;
       }
 
@@ -434,9 +452,9 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
           if (batch.pending.length === 1) {
             const hint = form.querySelector(`input[name="operator-profile-hint"][value="${batch.pending[0].hint}"]`);
             if (hint) hint.checked = true;
-            industryInput.value = batch.pending[0].industry;
+            setIndustryValue(industryInput, industryCustomInput, batch.pending[0].industry);
           } else {
-            industryInput.value = "";
+            setIndustryValue(industryInput, industryCustomInput);
           }
           setSubmitState("idle");
           updateDetection();
@@ -458,7 +476,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       if (!hasSpecificIndustry(selectedIndustry())) {
         errorBox.textContent = "请填写案例所属的具体行业。";
         errorBox.classList.add("visible");
-        industryInput.focus();
+        focusIndustry();
         return;
       }
       setSubmitState("submitting");
@@ -505,7 +523,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
         reviewCaseId = reanalysisCaseId;
         reanalysisRequiresFile = detail.review_media?.operator_uploaded === true;
         input.value = detail.source_url || "";
-        industryInput.value = detail.industry === "待分类" ? "" : detail.industry || "";
+        setIndustryValue(industryInput, industryCustomInput, detail.industry === "待分类" ? "" : detail.industry);
         const hint = detail.operator_profile_hint;
         if (["mix", "news", "hybrid", "uncertain"].includes(hint)) {
           form.querySelector(`input[name="operator-profile-hint"][value="${hint}"]`).checked = true;
@@ -532,7 +550,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
           throw new Error("这条任务不能从添加案例页恢复。请返回任务记录确认状态。");
         }
         input.value = retry.sourceUrl;
-        industryInput.value = retry.industry === "待分类" ? "" : retry.industry || "";
+        setIndustryValue(industryInput, industryCustomInput, retry.industry === "待分类" ? "" : retry.industry);
         if (retry.operatorProfileHint) {
           const choice = form.querySelector(`input[name="operator-profile-hint"][value="${retry.operatorProfileHint}"]`);
           if (choice) choice.checked = true;
@@ -623,13 +641,30 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
         const action = button.dataset.reviewAction;
         let reason = "";
         let profileHint = null;
+        let evidenceReview = null;
         if (action === "approve") {
+          if (detail.evidence_review?.required) {
+            const evidence = detail.evidence_review;
+            if (!evidence.available) { showToast("待确认的分析证据暂时无法读取，请刷新后重试。"); return; }
+            const checks = [...document.querySelectorAll("[data-evidence-kind][data-item-id]")];
+            const missing = checks.find((item) => !item.checked);
+            if (missing) { showToast("请先逐项确认分析疑点。"); missing.focus(); return; }
+            evidenceReview = {
+              candidate_sha256: evidence.candidate_sha256,
+              narration_sha256: evidence.narration_sha256,
+              shot_sha256: evidence.shot_sha256,
+              narration_decisions: checks.filter((item) => item.dataset.evidenceKind === "narration").map((item) => ({ item_id: item.dataset.itemId, action: "keep" })),
+              shot_decisions: checks.filter((item) => item.dataset.evidenceKind === "shot").map((item) => ({ item_id: item.dataset.itemId, action: "keep" })),
+            };
+          }
           const recovery = button.textContent.includes("恢复");
           const decision = await openModal({
             title: recovery ? "完成上次批准？" : "批准这个案例？",
             description: recovery
               ? "系统只会完成上次未保存完的批准，不会重复审核。批准不会改变原视频素材使用权。"
-              : "请确认你已经对照原视频检查内容与结构。批准后会进入案例库，但不会获得原视频素材使用权。",
+              : evidenceReview
+                ? "请确认你已对照原视频核对所有疑点，并认可当前展示的原识别与分镜。批准不会获得原视频素材使用权。"
+                : "请确认你已经对照原视频检查内容与结构。批准后会进入案例库，但不会获得原视频素材使用权。",
             confirmLabel: recovery ? "完成批准" : "批准入库",
           });
           if (!decision.confirmed) return;
@@ -650,7 +685,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
         }
         document.querySelectorAll("[data-review-action]").forEach((item) => { item.disabled = true; });
         try {
-          const result = await api(`/api/cases/${encodeURIComponent(caseId)}/review`, { method: "POST", body: JSON.stringify({ decision: action, reason, operator_profile_hint: profileHint }) });
+          const result = await api(`/api/cases/${encodeURIComponent(caseId)}/review`, { method: "POST", body: JSON.stringify({ decision: action, reason, operator_profile_hint: profileHint, evidence_review: evidenceReview }) });
           if (action === "approve") { showToast("案例已进入案例库"); return renderCaseDetail(caseId); }
           if (action === "reanalyze") { showToast("已退回重新分析"); return navigate(`/tasks/${result.task.task_id}`); }
           showToast("已记录为不收录"); navigate("/cases");

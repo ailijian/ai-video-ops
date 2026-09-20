@@ -1013,7 +1013,7 @@ class Orchestrator:
             narration_valid = validate_json(
                 narration,
                 lambda value: value.get("case_id") == self.case_id
-                and value.get("manual_review", {}).get("required") is False,
+                and value.get("validation", {}).get("passed") is True,
             )
             if not narration_valid:
                 self.run_command(
@@ -1042,7 +1042,10 @@ class Orchestrator:
                 shots,
                 lambda value: value.get("case_id") == self.case_id
                 and value.get("validation", {}).get("passed") is True
-                and value.get("manual_review", {}).get("required") is False,
+                and (
+                    boundary_review is None
+                    or value.get("manual_review", {}).get("required") is False
+                ),
             )
             if not shot_valid:
                 shot_command = [
@@ -1070,11 +1073,10 @@ class Orchestrator:
                     1800,
                     needs_deepseek=True,
                 )
-            if read_json(shots).get("manual_review", {}).get("required") is True:
-                raise CaseAnalysisError(
-                    "SHOT_BOUNDARY_REVIEW_REQUIRED",
-                    "Two or more adjacent shots need a human boundary decision before the Case can be built.",
-                )
+            pending_review = (
+                read_json(narration).get("manual_review", {}).get("required") is True
+                or read_json(shots).get("manual_review", {}).get("required") is True
+            )
             storyboard_valid = validate_json(
                 storyboard,
                 lambda value: value.get("case_id") == self.case_id
@@ -1083,9 +1085,7 @@ class Orchestrator:
             # A revised boundary projection invalidates the prior storyboard,
             # even when its own validation had passed against the old shots.
             if not storyboard_valid or not shot_valid:
-                self.run_command(
-                    "reverse-storyboard",
-                    [
+                storyboard_command = [
                         str(self.python),
                         str(self.pipeline_root / "scripts" / "generate_reverse_storyboard.py"),
                         "--shot-boundaries",
@@ -1098,7 +1098,12 @@ class Orchestrator:
                         str(privacy),
                         "--output-root",
                         str(storyboard_root),
-                    ],
+                    ]
+                if pending_review:
+                    storyboard_command.append("--defer-manual-review")
+                self.run_command(
+                    "reverse-storyboard",
+                    storyboard_command,
                     "structure",
                     2400,
                     needs_deepseek=True,
@@ -1141,7 +1146,8 @@ class Orchestrator:
                 lambda value: value.get("case_id") == self.case_id
                 and value.get("lifecycle", {}).get("status") == "review_required"
                 and value.get("lifecycle", {}).get("approved") is False
-                and value.get("validation", {}).get("auto_approved") is False,
+                and value.get("validation", {}).get("auto_approved") is False
+                and value.get("review_pending", {}).get("requires_explicit_confirmation") is pending_review,
             )
             if not candidate_valid:
                 command = [
@@ -1176,6 +1182,8 @@ class Orchestrator:
                     command.extend(["--operator-profile-hint", self.operator_profile_hint])
                 else:
                     command.extend(["--profile", str(self.profile)])
+                if pending_review:
+                    command.append("--defer-manual-review")
                 for option, key in (
                     ("--metadata", "metadata"),
                     ("--cover", "cover"),

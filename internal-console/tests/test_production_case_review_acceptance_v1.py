@@ -189,6 +189,93 @@ def approve(settings: Settings):
     )
 
 
+def provisional_review_fixture(tmp_path: Path) -> tuple[Settings, Path, dict]:
+    settings, candidate, _ = approval_fixture(tmp_path)
+    case = json.loads(candidate.read_text(encoding="utf-8"))
+    attempt = candidate.parents[2]
+    narration = attempt / "evidence" / "narration" / "narration_review_v1.json"
+    shots = attempt / "evidence" / "shots" / "shot_boundaries_v1_1.json"
+    write_json(narration, {
+        "case_id": CASE_ID,
+        "manual_review": {"required": True, "items": [{"segment_id": "A001", "start": 0, "end": 1, "source_text": "原始识别内容"}]},
+    })
+    write_json(shots, {
+        "case_id": CASE_ID,
+        "manual_review": {"required": True, "items": [{"frame_id": "frame_000003000ms.jpg", "timestamp_seconds": 3}]},
+    })
+    case["source_artifacts"].update({"narration_review_v1": str(narration), "shot_boundaries": str(shots)})
+    case["review_pending"] = {
+        "mode": "deferred_to_final_case_review",
+        "requires_explicit_confirmation": True,
+        "narration_item_count": 1,
+        "shot_item_count": 1,
+        "narration_sha256": sha256(narration),
+        "shot_sha256": sha256(shots),
+    }
+    case["validation"]["narration_review_closed"] = False
+    case["validation"]["boundary_review_closed"] = False
+    write_json(candidate, case)
+    decisions = {
+        "candidate_sha256": sha256(candidate),
+        "narration_sha256": sha256(narration),
+        "shot_sha256": sha256(shots),
+        "narration_decisions": [{"item_id": "A001", "action": "keep"}],
+        "shot_decisions": [{"item_id": "frame_000003000ms.jpg", "action": "keep"}],
+    }
+    return settings, candidate, decisions
+
+
+def test_final_evidence_review_is_required_and_bound_to_candidate(tmp_path: Path):
+    settings, candidate, decisions = provisional_review_fixture(tmp_path)
+    detail = get_case_detail(settings, CASE_ID)
+    assert detail["evidence_review"]["required"] is True
+    assert detail["evidence_review"]["available"] is True
+    assert detail["evidence_review"]["candidate_sha256"] == decisions["candidate_sha256"]
+    with pytest.raises(CanonicalOperationError) as error:
+        approve(settings)
+    assert error.value.code == "CASE_EVIDENCE_REVIEW_REQUIRED"
+    assert not (settings.pipeline_root / "data" / "cases" / CASE_ID / "case_v1.json").exists()
+    stale = {**decisions, "candidate_sha256": "0" * 64}
+    with pytest.raises(CanonicalOperationError) as error:
+        approve_case_candidate(settings, CASE_ID, reviewer=REVIEWER, note="审核", evidence_review=stale, reviewer_user_id=1)
+    assert error.value.code == "CASE_EVIDENCE_REVIEW_STALE"
+    incomplete = {**decisions, "narration_decisions": []}
+    with pytest.raises(CanonicalOperationError) as error:
+        approve_case_candidate(settings, CASE_ID, reviewer=REVIEWER, note="审核", evidence_review=incomplete, reviewer_user_id=1)
+    assert error.value.code == "CASE_EVIDENCE_REVIEW_INCOMPLETE"
+    assert sha256(candidate) == decisions["candidate_sha256"]
+
+
+def test_final_evidence_review_approves_without_changing_source_artifacts(tmp_path: Path):
+    settings, candidate, decisions = provisional_review_fixture(tmp_path)
+    case = json.loads(candidate.read_text(encoding="utf-8"))
+    narration = Path(case["source_artifacts"]["narration_review_v1"])
+    shots = Path(case["source_artifacts"]["shot_boundaries"])
+    before = (narration.read_bytes(), shots.read_bytes())
+    detail = approve_case_candidate(
+        settings, CASE_ID, reviewer=REVIEWER, note="已核对疑点",
+        evidence_review=decisions, reviewer_user_id=1,
+    )
+    assert detail["status"] == "approved"
+    approved = json.loads((settings.pipeline_root / "data" / "cases" / CASE_ID / "case_v1.json").read_text(encoding="utf-8"))
+    assert approved["approval"]["evidence_review"]["narration_decision_count"] == 1
+    assert approved["approval"]["evidence_review"]["shot_decision_count"] == 1
+    assert approved["validation"]["narration_review_closed"] is True
+    assert approved["validation"]["boundary_review_closed"] is True
+    assert (narration.read_bytes(), shots.read_bytes()) == before
+
+
+def test_deferred_review_cannot_be_bypassed_by_clearing_pending_flag(tmp_path: Path):
+    settings, candidate, _ = provisional_review_fixture(tmp_path)
+    case = json.loads(candidate.read_text(encoding="utf-8"))
+    case["review_pending"]["requires_explicit_confirmation"] = False
+    write_json(candidate, case)
+    with pytest.raises(CanonicalOperationError) as error:
+        approve(settings)
+    assert error.value.code == "CASE_APPROVAL_BLOCKED"
+    assert not (settings.pipeline_root / "data" / "cases" / CASE_ID / "case_v1.json").exists()
+
+
 def test_fresh_production_approval_is_complete_without_legacy_policy(tmp_path: Path):
     settings, candidate, state_path = approval_fixture(tmp_path)
     assert not (settings.pipeline_root / "data" / "case_governance" / "case_source_governance_policy_v1.json").exists()

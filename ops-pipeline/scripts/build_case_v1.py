@@ -11,6 +11,7 @@ from privacy_projection_v1 import (
     build_case_privacy_gate,
     load_privacy_projection,
     project_safe_semantic,
+    project_safe_verbatim,
 )
 from speech_evidence_v1 import (
     SPEECH_DETECTED,
@@ -168,6 +169,11 @@ def main() -> None:
     )
     parser.add_argument("--source-url", default=None)
     parser.add_argument("--output-root", default=None)
+    parser.add_argument(
+        "--defer-manual-review",
+        action="store_true",
+        help="Allow only unresolved narration/shot decisions in a provisional, human-review-required Case candidate.",
+    )
     args = parser.parse_args()
     if bool(args.profile) == bool(args.operator_profile_hint):
         parser.error("Provide exactly one of --profile or --operator-profile-hint")
@@ -281,7 +287,7 @@ def main() -> None:
     narration_review_is_closed = manual_review_closed(
         narration.get("manual_review")
     )
-    if not narration_review_is_closed:
+    if not narration_review_is_closed and not args.defer_manual_review:
         errors.append("narration_review_v1 manual review is not closed.")
     if len(narration_segments) != len(audio_segments):
         errors.append(
@@ -362,7 +368,7 @@ def main() -> None:
     boundary_review_is_closed = manual_review_closed(
         shot_data.get("manual_review")
     )
-    if not boundary_review_is_closed:
+    if not boundary_review_is_closed and not args.defer_manual_review:
         errors.append("shot_boundaries manual review is not closed.")
 
     deterministic_shots = list(shot_data.get("shots") or [])
@@ -395,10 +401,25 @@ def main() -> None:
     board_validation = storyboard.get("validation", {})
     if not board_validation.get("passed"):
         errors.append("storyboard_v1 validation is not passed.")
-    if board_validation.get("manual_review_closed") is not True:
+    if board_validation.get("manual_review_closed") is not True and not args.defer_manual_review:
         errors.append("storyboard_v1 does not confirm closed Shot Boundary review.")
-    if board_validation.get("narration_review_closed") is not True:
+    if board_validation.get("narration_review_closed") is not True and not args.defer_manual_review:
         errors.append("storyboard_v1 does not confirm closed Narration review.")
+    if args.defer_manual_review:
+        if board_validation.get("narration_review_closed") is not narration_review_is_closed:
+            errors.append("storyboard_v1 narration review state differs from narration evidence.")
+        if board_validation.get("manual_review_closed") is not (
+            narration_review_is_closed and boundary_review_is_closed
+        ):
+            errors.append("storyboard_v1 manual review state differs from source evidence.")
+        for label, review in (
+            ("narration", narration.get("manual_review")),
+            ("shot", shot_data.get("manual_review")),
+        ):
+            if not isinstance(review, dict) or not isinstance(review.get("items"), list):
+                errors.append(f"{label} review items are unavailable.")
+            elif review.get("required") is True and not review["items"]:
+                errors.append(f"{label} review has no actionable pending items.")
     if board_validation.get("pattern_not_generated") is not True:
         errors.append("storyboard_v1 did not preserve Pattern as not_performed.")
     if (
@@ -590,15 +611,23 @@ def main() -> None:
             "speech_evidence_status": speech_evidence_status,
             "segment_count": len(narration_segments),
             "changed_segment_count": sum(
-                1 for segment in narration_segments if segment.get("changed") is True
+                1 for segment in (
+                    (storyboard.get("narration_track") or []) if args.defer_manual_review
+                    else narration_segments
+                )
+                if segment.get("changed") is True
             ),
             "manual_review_closed": narration_review_is_closed,
             "reviewed_text_source_ref": {
-                "path": str(narration_path),
-                "field": "segments[*].reviewed_text",
+                "path": str(storyboard_path) if args.defer_manual_review else str(narration_path),
+                "field": "narration_track[*].text_safe_verbatim" if args.defer_manual_review else "segments[*].reviewed_text",
             },
             "artifact": artifact(narration_path),
-            "authority": "narration_review_v1",
+            "authority": (
+                "faster-whisper source ASR pending final Case review"
+                if args.defer_manual_review and not narration_review_is_closed
+                else "narration_review_v1"
+            ),
         },
         "visual_evidence": {
             "candidate_frame_count": candidate_count,
@@ -654,6 +683,25 @@ def main() -> None:
             "claim_count": len(claims),
             "warnings": warnings,
         },
+        "review_pending": {
+            "mode": "deferred_to_final_case_review" if args.defer_manual_review else "none",
+            "narration_item_count": len((narration.get("manual_review") or {}).get("items") or []),
+            "shot_item_count": len((shot_data.get("manual_review") or {}).get("items") or []),
+            "narration_sha256": sha256_file(narration_path),
+            "shot_sha256": sha256_file(shot_path),
+            "narration_items": [
+                {
+                    "segment_id": str(item.get("segment_id") or ""),
+                    "source_text_safe_verbatim": project_safe_verbatim(item.get("source_text") or ""),
+                    "suggested_text_safe_verbatim": project_safe_verbatim(item.get("reviewed_text") or ""),
+                }
+                for item in (narration.get("manual_review") or {}).get("items", [])
+                if isinstance(item, dict)
+            ],
+            "requires_explicit_confirmation": not (
+                narration_review_is_closed and boundary_review_is_closed
+            ),
+        },
         "timing": {
             "boundary_selection_seconds": shot_data.get(
                 "timing", {}
@@ -693,8 +741,8 @@ def main() -> None:
             "proof_consistency_valid": True,
             "narration_segments_match_audio_v1": True,
             "narration_word_refs_preserved_exactly_once": True,
-            "narration_review_closed": True,
-            "boundary_review_closed": True,
+            "narration_review_closed": narration_review_is_closed,
+            "boundary_review_closed": boundary_review_is_closed,
             "privacy_gate_passed": True,
             "privacy_policy_version_match": True,
             "claims_remain_candidate_unverified": True,
