@@ -461,6 +461,52 @@ def public_user(session: SessionContext) -> dict[str, Any]:
 def build_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or Settings.from_environment()
 
+    def project_case_task_statuses(tasks: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Keep attempt history intact while showing the current approved Case."""
+        contexts: dict[str, tuple[bool, str | None, str | None]] = {}
+        projected = []
+        for task in tasks:
+            if task["task_type"] != "case_analysis":
+                projected.append(task)
+                continue
+            case_id = str(task.get("subject_ref") or "")
+            if not case_id:
+                projected.append(task)
+                continue
+            if case_id not in contexts:
+                approved = False
+                approved_attempt = None
+                try:
+                    detail = get_case_detail(settings, case_id)
+                except CanonicalOperationError:
+                    pass
+                else:
+                    review = detail.get("review") or {}
+                    approved = (
+                        detail.get("status") == "approved"
+                        and review.get("approved") is True
+                    )
+                    if approved:
+                        approved_attempt = str(review.get("attempt_id") or "") or None
+                active = find_active_case_task(settings.database_path, case_id)
+                active_task_id = active["task_id"] if active else None
+                if active_task_id == approved_attempt:
+                    active_task_id = None
+                contexts[case_id] = (approved, approved_attempt, active_task_id)
+            approved, approved_attempt, active_task_id = contexts[case_id]
+            current = {**task}
+            if approved:
+                current["current_case_status"] = "approved"
+            if approved_attempt == task["task_id"] and task["status"] != "completed":
+                current.update(
+                    status="completed", progress=100, stage="已批准入库",
+                    error_code=None, error_message=None,
+                )
+            elif task["status"] in {"failed", "completed"} and active_task_id and active_task_id != task["task_id"]:
+                current["current_active_task_id"] = active_task_id
+            projected.append(current)
+        return projected
+
     def case_capability() -> dict[str, Any]:
         return case_analysis_capability(
             settings.case_acquisition_provider,
@@ -1497,7 +1543,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 )
 
         cases = list_cases(settings)
-        tasks = list_tasks(settings.database_path, limit=10)
+        tasks = project_case_task_statuses(list_tasks(settings.database_path, limit=10))
         try:
             creation_options = list_creation_options(settings)
             ready_customer_count = int(
@@ -2073,6 +2119,26 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             normalized_url,
         )
 
+        # The task table owns progress and navigation. An older attempt file may
+        # still say "running" while a newer task for the same source is active.
+        active = find_active_case_task(settings.database_path, case_id)
+        if active is not None and (duplicate is None or duplicate.get("state") != "approved"):
+            awaiting_review = active["status"] == "awaiting_review"
+            return {
+                "duplicate": True,
+                "duplicate_kind": "source_identity",
+                "state": "awaiting_review" if awaiting_review else "running",
+                "case_id": case_id,
+                "attempt_id": active["task_id"],
+                "existing_task": active,
+                "can_reanalyze": False,
+                "reanalyze_blocked": bool(payload.reanalyze),
+                "message": (
+                    "这个视频已经分析完成，正在等待审核。"
+                    if awaiting_review else "这个视频正在分析。"
+                ),
+            }
+
         hint = payload.operator_profile_hint
         if payload.reanalyze and hint is None:
             hint = case_reanalysis_hint(settings.database_path, case_id)
@@ -2113,6 +2179,15 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
         if duplicate is not None:
             state = str(duplicate.get("state") or "")
+            if state in {"queued", "running"}:
+                raise HTTPException(
+                    status_code=409,
+                    detail=error_detail(
+                        "CASE_TASK_PROGRESS_UNAVAILABLE",
+                        "暂时无法恢复这条案例分析进度。",
+                        "请到任务记录查看状态；如果没有对应任务，请联系管理员。",
+                    ),
+                )
             allowed_reanalysis = state in {
                 "failed",
                 "rejected",
@@ -2177,30 +2252,6 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 "task": task,
                 "case_id": case_id,
                 "next_action": ("新的分析 Attempt 已建立；" "原有分析记录不会被覆盖。"),
-            }
-
-        active = find_active_case_task(
-            settings.database_path,
-            case_id,
-        )
-
-        if active is not None:
-            return {
-                "duplicate": True,
-                "duplicate_kind": "source_identity",
-                "state": (
-                    "awaiting_review"
-                    if active["status"] == "awaiting_review"
-                    else "running"
-                ),
-                "case_id": case_id,
-                "existing_task": active,
-                "can_reanalyze": False,
-                "message": (
-                    "这个视频已经分析完成，正在等待审核。"
-                    if active["status"] == "awaiting_review"
-                    else "这个视频正在分析。"
-                ),
             }
 
         require_media_provider()
@@ -2339,7 +2390,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 reviewer=reviewer,
                 note=reason or "人工已对照原视频完成结构研究审核。",
             )
-            mark_task_reviewed(settings.database_path, case_id, "已批准入库")
+            mark_task_reviewed(
+                settings.database_path, case_id, "已批准入库",
+                attempt_id=(detail.get("review") or {}).get("attempt_id"),
+            )
             return {"decision": "approved", "case": detail}
         decision = locked_authority_call(
             "case",
@@ -2352,9 +2406,15 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             reason=reason,
         )
         if payload.decision == "reject":
-            mark_task_reviewed(settings.database_path, case_id, "不收录")
+            mark_task_reviewed(
+                settings.database_path, case_id, "不收录",
+                attempt_id=decision.get("attempt_id"),
+            )
             return {"decision": "rejected", "review": decision}
-        mark_task_reviewed(settings.database_path, case_id, "已退回重新分析")
+        mark_task_reviewed(
+            settings.database_path, case_id, "已退回重新分析",
+            attempt_id=decision.get("attempt_id"),
+        )
         task = create_case_task(
             settings.database_path,
             source_url=str(reanalysis_source_url),
@@ -2375,7 +2435,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     def tasks(
         _: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
-        return {"tasks": list_tasks(settings.database_path)}
+        return {"tasks": project_case_task_statuses(list_tasks(settings.database_path))}
 
     @app.get("/api/tasks/activity")
     def task_activity(
@@ -2397,10 +2457,12 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                     "TASK_NOT_FOUND", "没有找到这个任务。", "请返回任务记录重新选择。"
                 ),
             )
+        projected_task = project_case_task_statuses([task])[0]
         return {
-            "task": task,
+            "task": projected_task,
             "boundary_review": pending_boundary_review(settings, task)
-            if task["task_type"] == "case_analysis" else None,
+            if task["task_type"] == "case_analysis"
+            and projected_task.get("current_case_status") != "approved" else None,
         }
 
     @app.post("/api/tasks/{task_id}/boundary-review")

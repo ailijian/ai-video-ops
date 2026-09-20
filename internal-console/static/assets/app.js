@@ -245,6 +245,8 @@ function statusPill(status) {
     running: ["进行中", "pill-review"],
     completed: ["已完成", "pill-approved"],
     failed: ["失败", "pill-failed"],
+    historical_failed: ["历史未完成", "pill-archived"],
+    needs_check: ["需核对", "pill-review"],
     rejected: ["未收录", "pill-archived"],
     archived: ["已归档", "pill-archived"],
   };
@@ -429,12 +431,22 @@ async function renderWorkbench() {
       </a>`).join("");
     const recentTasks = (data.recent_tasks || []).slice(0, 4);
     const recentWork = recentTasks.length
-      ? recentTasks.map((task) => `
+      ? recentTasks.map((task) => {
+        const caseApproved = task.task_type === "case_analysis" && task.current_case_status === "approved";
+        const note = task.current_active_task_id ? "已有新的分析任务"
+          : caseApproved && task.status === "failed" ? "这次分析未完成 · 案例已入库"
+          : caseApproved && task.status === "awaiting_review" ? "案例已入库 · 本次结果待核对"
+          : task.payload?.customer_name || task.payload?.case_title || "查看最新进度";
+        const displayedStatus = caseApproved && task.status === "awaiting_review" ? "needs_check"
+          : task.status === "failed" && (caseApproved || task.current_active_task_id) ? "historical_failed"
+          : task.status;
+        return `
         <a class="workbench-recent-row" href="/tasks/${encodeURIComponent(task.task_id)}" data-route>
-          <span><strong>${escapeHtml(humanTaskType(task.task_type))}</strong><small>${escapeHtml(task.payload?.customer_name || task.payload?.case_title || "查看最新进度")}</small></span>
-          ${statusPill(task.status)}
+          <span><strong>${escapeHtml(humanTaskType(task.task_type))}</strong><small>${escapeHtml(note)}</small></span>
+          ${statusPill(displayedStatus)}
           ${icons.arrow}
-        </a>`).join("")
+        </a>`;
+      }).join("")
       : `<div class="attention-empty"><span class="status-dot status-success"></span><span>还没有最近任务。</span></div>`;
     const creationAvailable = creationOptions
       ? readyCustomerCount > 0

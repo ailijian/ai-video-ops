@@ -1,6 +1,6 @@
 import { boundaryReviewPanel, caseCard, caseReviewContent, escapeHtml, progressPanel } from "./case-components.js?v=boundary-review-1";
 import { bindCaseMediaPreview } from "./case-media-preview.mjs?v=case-media-fit-1";
-import { projectCaseSubmitState, projectFailedCaseTask, resetCaseSubmitState } from "./case-submit-state.mjs?v=mobile-reliability-2";
+import { caseTaskResumeDestination, projectCaseSubmitState, projectFailedCaseTask, resetCaseSubmitState } from "./case-submit-state.mjs?v=mobile-reliability-2";
 import { startTaskPolling } from "./task-progress.js?v=mobile-reliability-1";
 import { detectCaseSourceInput, extractCaseSourceUrls } from "./case-source-detection.mjs?v=case-batch-1";
 import { uploadCaseFile, validateCaseFile } from "./case-file-upload.mjs?v=source-upload-ui-2";
@@ -262,7 +262,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
         navigate(`/tasks/${encodeURIComponent(result.task.task_id)}`, true);
         return;
       }
-      if (["queued", "running"].includes(result.state) && result.existing_task?.task_id) {
+      if (["queued", "running", "awaiting_review"].includes(result.state) && result.existing_task?.task_id) {
         navigate(`/tasks/${encodeURIComponent(result.existing_task.task_id)}`, true);
         return;
       }
@@ -430,7 +430,12 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       } catch (error) {
         if (document.querySelector("#case-url-form") !== form) return;
         const next = error.detail?.next_action || error.message || "请检查来源链接和视频文件后重新提交。";
-        resultBox.innerHTML = `<div class="result-banner error"><h3>暂时无法分析这个视频</h3><p>${escapeHtml(next)}</p></div>`;
+        const progressUnavailable = error.detail?.code === "CASE_TASK_PROGRESS_UNAVAILABLE";
+        resultBox.innerHTML = `<div class="result-banner error"><h3>${progressUnavailable ? "未找到当前进度" : "暂时无法分析这个视频"}</h3><p>${escapeHtml(next)}</p>${progressUnavailable ? '<a class="btn btn-secondary" href="/tasks" data-route>查看任务记录</a>' : ""}</div>`;
+        resultBox.querySelector("[data-route]")?.addEventListener("click", (event) => {
+          event.preventDefault();
+          navigate("/tasks");
+        });
         setSubmitState("idle");
       }
     });
@@ -477,6 +482,11 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       resultBox.innerHTML = `<div class="result-banner"><h3>正在恢复上次任务</h3></div>`;
       api(`/api/tasks/${encodeURIComponent(retryTaskId)}`).then(({ task }) => {
         if (document.querySelector("#case-url-form") !== form) return;
+        const resumeDestination = caseTaskResumeDestination(task);
+        if (resumeDestination) {
+          navigate(resumeDestination, true);
+          return;
+        }
         const retry = projectFailedCaseTask(task);
         if (!retry || retry.taskId !== retryTaskId) {
           throw new Error("这条任务不能从添加案例页恢复。请返回任务记录确认状态。");

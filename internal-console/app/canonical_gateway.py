@@ -721,7 +721,7 @@ def get_case_detail(settings: Settings, case_id: str) -> dict[str, Any]:
             "attempt_id": (
                 str(recovery_state.get("attempt_id"))
                 if recovery_state is not None
-                else str(attempt.get("attempt_id")) if attempt else None
+                else review_attempt_id or None
             ),
         },
         "review_media": {
@@ -748,6 +748,19 @@ def get_case_detail(settings: Settings, case_id: str) -> dict[str, Any]:
             "message": "批准入库不代表原视频素材可以用于客户生产。",
         },
     }
+
+
+def approved_case_attempt_id(settings: Settings, case_id: str) -> str | None:
+    """Return the approved attempt only after the normal Case projection is complete."""
+    try:
+        detail = get_case_detail(settings, case_id)
+    except CanonicalOperationError:
+        return None
+    review = detail.get("review") or {}
+    if detail.get("status") != "approved" or review.get("approved") is not True:
+        return None
+    attempt_id = review.get("attempt_id")
+    return str(attempt_id) if attempt_id else None
 
 
 def case_media_path(settings: Settings, case_id: str) -> Path:

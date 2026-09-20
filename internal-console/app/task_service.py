@@ -12,6 +12,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+from .canonical_gateway import approved_case_attempt_id
 from .config import Settings
 from .database import connect, transaction
 from .subprocess_env import pipeline_subprocess_env
@@ -438,6 +439,11 @@ def update_task(
         row = connection.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
         if row is None:
             return
+        if (row["task_type"] == "case_analysis" and row["status"] == "completed"
+                and status in {"queued", "running", "awaiting_review", "failed"}):
+            # Human review is terminal for this attempt. A late worker poll or
+            # process exit must not reopen it after the decision is recorded.
+            return
         changes: dict[str, Any] = {}
         for name, value in (
             ("status", status),
@@ -522,18 +528,64 @@ def patch_task_payload(
         )
 
 
-def mark_task_reviewed(database_path: Path, case_id: str, stage: str) -> None:
+def mark_task_reviewed(
+    database_path: Path, case_id: str, stage: str, *, attempt_id: str | None = None,
+) -> None:
+    if not attempt_id:
+        return
     timestamp = iso_utc()
     with transaction(database_path) as connection:
         connection.execute(
             """
             UPDATE tasks
-            SET status = 'completed', progress = 100, stage = ?, updated_at = ?
-            WHERE task_type = 'case_analysis' AND subject_ref = ?
-              AND status = 'awaiting_review'
+            SET status = 'completed', progress = 100, stage = ?,
+                lease_expires_at = NULL, updated_at = ?
+            WHERE task_type = 'case_analysis' AND subject_ref = ? AND task_id = ?
+              AND status IN ('queued', 'running', 'awaiting_review')
             """,
-            (stage, timestamp, case_id),
+            (stage, timestamp, case_id, attempt_id),
         )
+
+
+def reconcile_approved_case_tasks(settings: Settings) -> int:
+    """Close only tasks whose own attempt became an approved canonical Case."""
+    connection = connect(settings.database_path)
+    try:
+        rows = connection.execute(
+            """
+            SELECT task_id, subject_ref FROM tasks
+            WHERE task_type = 'case_analysis'
+              AND status IN ('queued', 'running', 'awaiting_review', 'failed')
+            """
+        ).fetchall()
+    finally:
+        connection.close()
+    approved_attempts: dict[str, str | None] = {}
+    matched = []
+    for row in rows:
+        case_id = str(row["subject_ref"] or "")
+        if case_id not in approved_attempts:
+            approved_attempts[case_id] = approved_case_attempt_id(settings, case_id)
+        if approved_attempts[case_id] == row["task_id"]:
+            matched.append(str(row["task_id"]))
+    if not matched:
+        return 0
+    updated = 0
+    with transaction(settings.database_path) as connection:
+        for task_id in matched:
+            result = connection.execute(
+                """
+                UPDATE tasks
+                SET status = 'completed', progress = 100, stage = '已批准入库',
+                    error_code = NULL, error_message = NULL,
+                    lease_expires_at = NULL, updated_at = ?
+                WHERE task_id = ? AND task_type = 'case_analysis'
+                  AND status IN ('queued', 'running', 'awaiting_review', 'failed')
+                """,
+                (iso_utc(), task_id),
+            )
+            updated += result.rowcount
+    return updated
 
 
 def claim_task(
@@ -652,6 +704,8 @@ class CaseTaskRunner:
         if task is None:
             return None
         case_id = str(task["subject_ref"] or "")
+        if approved_case_attempt_id(self.settings, case_id) == task_id:
+            return "completed"
         state_path = (
             self.settings.pipeline_root
             / "data"
@@ -681,6 +735,7 @@ class CaseTaskRunner:
         self.maintenance.start()
 
     def _recover_and_schedule(self) -> None:
+        reconcile_approved_case_tasks(self.settings)
         recover_expired_tasks(
             self.settings.database_path,
             task_types=("case_analysis",),

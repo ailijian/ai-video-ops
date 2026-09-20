@@ -43,6 +43,16 @@ export function resetCaseSubmitState() {
   return projectCaseSubmitState("idle");
 }
 
+export function caseTaskResumeDestination(task) {
+  if (task?.task_type !== "case_analysis") return null;
+  if (task.current_active_task_id) return `/tasks/${encodeURIComponent(task.current_active_task_id)}`;
+  if (task.current_case_status === "approved" && task.subject_ref) {
+    return `/cases/${encodeURIComponent(task.subject_ref)}`;
+  }
+  if (task.status === "failed") return null;
+  return task.task_id ? `/tasks/${encodeURIComponent(task.task_id)}` : null;
+}
+
 export function projectFailedCaseTask(task) {
   const sourceUrl = task?.payload?.source_url;
   if (

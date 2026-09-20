@@ -29,6 +29,10 @@ export function progressPanel(task, { compact = false, embedded = false, boundar
   const terminal = ["awaiting_review", "completed"].includes(task.status);
   const failed = task.status === "failed";
   const isCaseTask = task.task_type === "case_analysis";
+  const caseApproved = isCaseTask && task.current_case_status === "approved";
+  const currentTaskId = isCaseTask && task.current_active_task_id && task.current_active_task_id !== task.task_id
+    ? task.current_active_task_id : null;
+  const reviewConflict = caseApproved && task.status === "awaiting_review";
   const caseHref = task.subject_ref ? `/cases/${encodeURIComponent(task.subject_ref)}` : "/cases";
   const stages = CASE_PROGRESS_STAGES.map(([, label, threshold], index) => {
     const done = terminal || task.progress >= threshold;
@@ -44,7 +48,11 @@ export function progressPanel(task, { compact = false, embedded = false, boundar
     task.error_code === "MEDIA_DUPLICATE_CASE" &&
     task.payload?.duplicate?.existing_case_id;
 
-  const failureAction = mediaDuplicate
+  const failureAction = currentTaskId
+    ? `<div class="next-action"><strong>已有新的分析任务</strong><span>这条记录保留本次分析的结果，请查看当前任务的真实进度。</span><a class="btn btn-primary" href="/tasks/${encodeURIComponent(currentTaskId)}" data-route>查看当前进度</a></div>`
+    : failed && caseApproved
+    ? `<div class="next-action"><strong>案例已经入库</strong><span>这次分析没有完成，但后续的案例已通过审核，无需重新分析。</span><a class="btn btn-primary" href="${caseHref}" data-route>查看已入库案例</a></div>`
+    : mediaDuplicate
     ? `<div class="next-action">
         <strong>这个视频内容已经存在</strong>
         <span>虽然来源链接不同，但获取到的视频文件与已有案例完全相同。</span>
@@ -56,10 +64,14 @@ export function progressPanel(task, { compact = false, embedded = false, boundar
           查看已有案例
         </a>
       </div>`
+    : reviewConflict
+      ? `<div class="next-action"><strong>本次结果需要核对</strong><span>这个来源已有入库案例，但本次任务的审核记录未与其对应。</span><a class="btn btn-secondary" href="${caseHref}" data-route>查看已入库案例</a></div>`
     : isCaseTask && task.status === "awaiting_review"
       ? `<div class="next-action"><a class="btn btn-primary" href="${caseHref}">去审核案例</a></div>`
-      : isCaseTask && task.status === "completed"
+      : isCaseTask && task.status === "completed" && caseApproved
         ? `<div class="next-action"><a class="btn btn-primary" href="${caseHref}">查看案例</a></div>`
+      : isCaseTask && task.status === "completed"
+        ? `<div class="next-action"><strong>本次任务已结束</strong><span>这条记录会保留；当前没有已入库案例需要查看。</span><a class="btn btn-secondary" href="/cases" data-route>返回案例库</a></div>`
       : isCaseTask && failed && boundaryReview
       ? `<div class="next-action"><strong>分镜需要确认</strong><span>请在下方对照原视频确认短镜头，确认后会继续本次分析，不会重新下载或重复分析画面。</span></div>`
       : isCaseTask && failed
@@ -74,8 +86,8 @@ export function progressPanel(task, { compact = false, embedded = false, boundar
           你可以离开这个页面，任务进度会保留在“任务记录”中。
         </p>`;
   return `<section class="${embedded ? "" : "card "}task-progress ${compact ? "compact" : ""} ${embedded ? "embedded" : ""}" data-task-progress>
-    <div class="task-progress-head"><div><h2>${isCaseTask ? (failed && boundaryReview ? "分镜待确认" : failed ? "案例分析未完成" : task.status === "completed" ? "案例已入库" : terminal ? "分析完成，等待审核" : "案例分析中") : (failed ? "任务未完成" : terminal ? "任务已完成" : "任务进行中")}</h2>
-      <p>${escapeHtml(failed && boundaryReview ? "分镜划分尚待人工确认。" : failed ? task.error_message || "请稍后重试。" : task.stage || "等待开始")}</p>
+    <div class="task-progress-head"><div><h2>${isCaseTask ? (failed && boundaryReview ? "分镜待确认" : failed ? "这次分析未完成" : reviewConflict ? "本次分析待核对" : task.status === "completed" ? (caseApproved ? "案例已入库" : "本次审核已结束") : terminal ? "分析完成，等待审核" : "案例分析中") : (failed ? "任务未完成" : terminal ? "任务已完成" : "任务进行中")}</h2>
+      <p>${escapeHtml(reviewConflict ? "这个来源已有入库案例，本次结果仍待核对。" : failed && boundaryReview ? "分镜划分尚待人工确认。" : failed && caseApproved ? "历史分析未完成；当前案例已入库。" : failed ? task.error_message || "请稍后重试。" : task.stage || "等待开始")}</p>
       ${isCaseTask && task.payload?.acquisition_provider === "legacy_downloader" && !task.payload?.source_upload
         ? `<p class="task-acquisition-label">视频获取方式：原有下载方式（未使用付费解析）</p>` : ""}</div>
       <strong>${Number(task.progress || 0)}%</strong></div>
