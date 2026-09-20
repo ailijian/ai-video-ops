@@ -209,7 +209,7 @@ def create_case_task(
     *,
     source_url: str,
     case_id: str,
-    profile: str = "mix",
+    operator_profile_hint: str,
     industry: str = "待分类",
     reanalyze: bool = False,
     reason: str | None = None,
@@ -217,9 +217,11 @@ def create_case_task(
     queue_max: int = 20,
     gpu_pending_per_user_max: int = 3,
 ) -> dict[str, Any]:
+    if operator_profile_hint not in {"mix", "news", "hybrid", "uncertain"}:
+        raise ValueError("Case operator_profile_hint must be explicitly selected")
     payload = {
         "source_url": source_url,
-        "profile": profile,
+        "operator_profile_hint": operator_profile_hint,
         "industry": industry,
         "reanalyze": reanalyze,
         "reason": reason,
@@ -771,11 +773,17 @@ class CaseTaskRunner:
                 str(payload["source_url"]),
                 "--attempt-id",
                 task_id,
-                "--profile",
-                str(payload.get("profile") or "mix"),
                 "--industry",
                 str(payload.get("industry") or "待分类"),
             ]
+            if payload.get("operator_profile_hint") in {"mix", "news", "hybrid", "uncertain"}:
+                command.extend(["--operator-profile-hint", str(payload["operator_profile_hint"])])
+            elif payload.get("profile") in {"mix", "news"}:
+                # Pre-closure queued tasks already durably recorded an explicit
+                # legacy profile. Resume that lineage without inventing a hint.
+                command.extend(["--profile", str(payload["profile"])])
+            else:
+                raise ValueError("Case task has no recorded profile input")
             if payload.get("reanalyze"):
                 command.append("--reanalyze")
             child_env = pipeline_subprocess_env(needs_deepseek=True)

@@ -196,6 +196,7 @@ def test_create_speaker_analysis_task_without_raw_materials_in_sqlite(
     assert task["task_type"] == "speaker_analysis"
 
     assert task["status"] == "queued"
+    assert task["created_by"]["phone"] == "13800000000"
 
     serialized = json.dumps(
         task["payload"],

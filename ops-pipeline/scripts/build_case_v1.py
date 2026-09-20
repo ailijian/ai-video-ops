@@ -143,7 +143,8 @@ def main() -> None:
         description="Build Canonical Case V1.1 from current validated Stage-2 artifacts."
     )
     parser.add_argument("--case-id", required=True)
-    parser.add_argument("--profile", required=True, choices=["news", "mix"])
+    parser.add_argument("--profile", choices=["news", "mix"])
+    parser.add_argument("--operator-profile-hint", choices=["mix", "news", "hybrid", "uncertain"])
     parser.add_argument("--industry", required=True)
     parser.add_argument("--video", required=True)
     parser.add_argument("--audio-v1", required=True)
@@ -168,6 +169,8 @@ def main() -> None:
     parser.add_argument("--source-url", default=None)
     parser.add_argument("--output-root", default=None)
     args = parser.parse_args()
+    if bool(args.profile) == bool(args.operator_profile_hint):
+        parser.error("Provide exactly one of --profile or --operator-profile-hint")
 
     case_id = args.case_id
 
@@ -557,7 +560,6 @@ def main() -> None:
         "identity": {
             "platform": "douyin",
             "source_url": args.source_url,
-            "analysis_profile": args.profile,
             "industry": args.industry,
             "duration_seconds": duration,
         },
@@ -720,6 +722,10 @@ def main() -> None:
             "privacy_projection_v1": artifact(privacy_path),
         },
     }
+    if args.profile:
+        case["identity"]["analysis_profile"] = args.profile
+    if args.operator_profile_hint:
+        case["operator_profile_hint"] = args.operator_profile_hint
 
     project_root = Path(__file__).resolve().parents[1]
     output_root = (

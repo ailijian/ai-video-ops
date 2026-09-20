@@ -55,6 +55,9 @@ class CaseProjection:
     status: str
     source_url: str | None
     approved_at: str | None
+    operator_profile_hint: str | None = None
+    observed_source_profile: str | None = None
+    approved_by: dict[str, Any] | None = None
     attempt_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -69,6 +72,9 @@ class CaseProjection:
             "status": self.status,
             "source_url": self.source_url,
             "approved_at": self.approved_at,
+            "operator_profile_hint": self.operator_profile_hint,
+            "observed_source_profile": self.observed_source_profile,
+            "approved_by": self.approved_by,
             "attempt_id": self.attempt_id,
         }
 
@@ -255,6 +261,18 @@ def _project_case(case_path: Path, *, attempt_id: str | None = None) -> CaseProj
         source_url=str(identity["source_url"]) if identity.get("source_url") else None,
         approved_at=(
             str(lifecycle["approved_at"]) if lifecycle.get("approved_at") else None
+        ),
+        operator_profile_hint=(
+            str(case["operator_profile_hint"])
+            if case.get("operator_profile_hint") in {"mix", "news", "hybrid", "uncertain"}
+            else None
+        ),
+        observed_source_profile=(
+            (case.get("profile_analysis") or {}).get("observed_source_profile")
+        ),
+        approved_by=(
+            {"phone": str(receipt["reviewer"])}
+            if approved and receipt.get("reviewer") else None
         ),
         attempt_id=attempt_id,
     )
@@ -630,8 +648,24 @@ def get_case_detail(settings: Settings, case_id: str) -> dict[str, Any]:
         local_media_available = True
     except CanonicalOperationError:
         local_media_available = False
+    review_attempt_id = str(
+        (attempt or {}).get("attempt_id")
+        or (case.get("analysis_lineage") or {}).get("attempt_id")
+        or ""
+    )
+    review_receipt = {}
+    if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{7,127}", review_attempt_id):
+        review_receipt_path = (
+            settings.pipeline_root / "data" / "case_analysis_attempts" / case_id
+            / review_attempt_id / "human_review_decision_v1.json"
+        )
+        if review_receipt_path.is_file():
+            review_receipt = _read_json(review_receipt_path)
     return {
         **projection,
+        "reviewed_by": (
+            {"phone": str(review_receipt["reviewer"])} if review_receipt.get("reviewer") else None
+        ),
         "title": _case_title(case, case_path),
         "description": _safe_chinese_text(metadata.get("desc"), max_length=360),
         "what_it_says": {

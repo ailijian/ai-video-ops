@@ -184,6 +184,7 @@ def test_discarded_only_transcription_fails_closed(
 def build_speechless_chain(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    operator_hint: str | None = None,
 ) -> dict[str, Path]:
     speechless_raw = raw_transcription(segments=[])
     speechless_raw["initial_prompt"] = "下载标题不能成为语音事实"
@@ -413,6 +414,9 @@ def build_speechless_chain(
             AssertionError("unexpected storyboard model call")
         ),
     )
+    # The reusable fixture must not append test metrics to the developer node's
+    # real data directory; model and metrics effects are both isolated here.
+    monkeypatch.setattr(storyboard_builder, "append_jsonl", lambda *_args: None)
     storyboard_root = tmp_path / "storyboard"
     run_main(
         monkeypatch,
@@ -447,8 +451,8 @@ def build_speechless_chain(
         [
             "--case-id",
             CASE_ID,
-            "--profile",
-            "mix",
+            "--operator-profile-hint" if operator_hint else "--profile",
+            operator_hint or "mix",
             "--industry",
             "测试行业",
             "--video",
@@ -496,6 +500,17 @@ def build_speechless_chain(
         "candidate": candidate_path,
         "video": video_path,
     }
+
+
+def test_operator_hint_is_retained_without_claiming_observed_or_compatibility(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    artifacts = build_speechless_chain(tmp_path, monkeypatch, operator_hint="news")
+    case = read_json(artifacts["candidate"])
+    assert case["operator_profile_hint"] == "news"
+    assert "analysis_profile" not in case["identity"]
+    assert not case.get("compatible_generation_profiles")
+    assert not case.get("profile_analysis", {}).get("observed_source_profile")
 
 
 def test_no_detected_speech_full_canonical_chain_and_model_accounting(

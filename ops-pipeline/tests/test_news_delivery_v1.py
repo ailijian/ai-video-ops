@@ -430,6 +430,23 @@ def build_review(
     return path
 
 
+def test_news_creator_metadata_is_immutable_on_recovery(tmp_path: Path):
+    fixture = build_fixture(tmp_path)
+    arguments = dict(pipeline_root=fixture["pipeline"], business_id=fixture["business_id"],
+        speaker_id=fixture["speaker_id"], source_content_id=fixture["source_content_id"],
+        idempotency_key="news-creator-test")
+    first, recovered = subject.create_news_delivery_request(**arguments,
+        created_by_user_id=21, created_by_phone="13800000002")
+    assert recovered is False
+    second, recovered = subject.create_news_delivery_request(**arguments,
+        created_by_user_id=22, created_by_phone="13800000003")
+    assert recovered is True
+    assert second == first
+    assert first["created_by_user_id"] == 21
+    assert first["created_by_phone"] == "13800000002"
+    assert first["created_at"]
+
+
 def test_preview_request_plan_approval_export_closure(
     tmp_path: Path,
 ):

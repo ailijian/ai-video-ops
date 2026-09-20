@@ -19,6 +19,7 @@ from .speaker_gateway import (
 )
 from .path_safety import validate_identifier
 from .subprocess_env import pipeline_subprocess_env
+from .operator_projection import request_actor
 
 GENERATION_REQUEST_SCHEMA = "generation-request-v1.0"
 
@@ -685,6 +686,7 @@ def get_active_generation_request(
 
     return {
         "active_request": {
+            "created_by": request_actor(request),
             "request_id": (
                 request.get(
                     "request_id"
@@ -971,6 +973,8 @@ def confirm_content_creation(
     requested_quantity: int,
     confirmed_quantity: int,
     idempotency_key: str,
+    created_by_user_id: int | None = None,
+    created_by_phone: str | None = None,
 ) -> dict[str, Any]:
     executable = settings.pipeline_python_executable or settings.python_executable
 
@@ -994,6 +998,9 @@ def confirm_content_creation(
         "--pipeline-root",
         str(settings.pipeline_root),
     ]
+    if created_by_user_id is not None:
+        command.extend(["--created-by-user-id", str(created_by_user_id)])
+        command.extend(["--created-by-phone", str(created_by_phone or "")])
 
     env = pipeline_subprocess_env(needs_deepseek=False)
 

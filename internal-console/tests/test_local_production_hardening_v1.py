@@ -105,6 +105,7 @@ def test_two_simultaneous_same_case_submits_create_one_active_task(
             hardening_db,
             source_url="https://www.douyin.com/video/7999999999999999999",
             case_id="7999999999999999999",
+            operator_profile_hint="mix",
             created_by_user_id=actor,
             queue_max=20,
             gpu_pending_per_user_max=3,
@@ -264,6 +265,7 @@ def test_case_recovery_prefers_exact_attempt_over_older_canonical(
         settings.database_path,
         source_url="https://www.douyin.com/video/7999999999999999999",
         case_id="7999999999999999999",
+        operator_profile_hint="mix",
         reanalyze=True,
     )
     canonical = (
@@ -641,6 +643,7 @@ def test_secure_cookie_and_authenticated_task_actor_cannot_be_spoofed(
             json={
                 "url": "https://www.douyin.com/video/7999999999999999977",
                 "created_by_user_id": 999999,
+                "operator_profile_hint": "mix",
             },
         )
         assert response.status_code == 200
@@ -680,7 +683,7 @@ def test_three_fake_users_can_submit_and_read_shared_tasks_without_db_lock(
             response = local.post(
                 "/api/cases/analyze",
                 headers={"X-CSRF-Token": login.json()["csrf_token"]},
-                json={"url": f"https://www.douyin.com/video/78899999999999999{index:02d}"},
+                json={"url": f"https://www.douyin.com/video/78899999999999999{index:02d}", "operator_profile_hint": "mix"},
             )
             local.close()
             return response.status_code

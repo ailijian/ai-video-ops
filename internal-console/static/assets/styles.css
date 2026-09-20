@@ -197,6 +197,14 @@ a { color: inherit; text-decoration: none; }
 .paste-button { position: absolute; right: 3px; top: 3px; min-height: 42px; padding: 0 12px; border: 0; border-radius: 8px; background: var(--mint); color: var(--forest); cursor: pointer; font-size: 12px; font-weight: 800; }
 .source-detection { min-height: 24px; margin-top: 8px; color: var(--forest); font-size: 13px; }
 .source-detection.muted { color: var(--ink-soft); }
+.case-profile-choice { min-width: 0; margin: 16px 0 0; padding: 0; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; border: 0; }
+.case-profile-choice legend { margin-bottom: 8px; color: var(--ink); font-size: 14px; font-weight: 700; }
+.case-profile-choice label { min-width: 0; min-height: 72px; padding: 12px; display: flex; align-items: flex-start; gap: 10px; border: 1px solid var(--line); border-radius: var(--radius-md); cursor: pointer; }
+.case-profile-choice label:has(input:checked) { border-color: var(--forest); background: var(--mint); }
+.case-profile-choice input { width: 18px; height: 18px; margin: 2px 0 0; flex: 0 0 18px; accent-color: var(--forest); }
+.case-profile-choice strong, .case-profile-choice small { display: block; }
+.case-profile-choice small { margin-top: 4px; color: var(--ink-soft); line-height: 1.4; }
+.case-profile-choice[hidden] { display: none; }
 .case-submit-actions { margin-top: 20px; display: flex; flex-wrap: wrap; gap: 10px; }
 .governance-copy { margin: 16px 0 0; color: var(--ink-faint); font-size: 12px; line-height: 1.55; }
 .result-banner { margin-bottom: 16px; padding: 16px; border: 1px solid #c9d9d0; border-radius: var(--radius-md); background: #eef6f1; }
@@ -226,6 +234,15 @@ a { color: inherit; text-decoration: none; }
 .task-list-item { min-width: 0; }
 .task-list-item > .inline-link { width: 100%; margin-top: -1px; padding: 8px 16px; border: 1px solid var(--line); border-top: 0; border-radius: 0 0 var(--radius-md) var(--radius-md); background: var(--surface); }
 .task-list-item .task-progress { border-radius: var(--radius-md) var(--radius-md) 0 0; }
+.task-operator { margin: 0; padding: 8px 16px; border-left: 1px solid var(--line); border-right: 1px solid var(--line); background: var(--surface); color: var(--ink-soft); font-size: 12px; }
+.activity-filter { margin-bottom: 16px; display: flex; align-items: center; gap: 12px; }
+.activity-filter label { flex: 0 0 auto; color: var(--ink-soft); font-size: 13px; }
+.activity-filter select { width: min(240px, 100%); }
+.operator-activity-list { border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); }
+.operator-activity-row { padding: 12px 16px; display: grid; grid-template-columns: 140px 120px 110px minmax(0, 1fr) 80px; gap: 12px; align-items: center; border-top: 1px solid var(--line); font-size: 13px; }
+.operator-activity-row:first-child { border-top: 0; }
+.operator-activity-row time, .operator-activity-row span { min-width: 0; overflow-wrap: anywhere; color: var(--ink-soft); }
+.operator-activity-row strong { font-weight: 700; }
 .task-progress { padding: 18px; }
 .task-progress.embedded { padding: 0; border: 0; background: transparent; }
 .task-progress-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
@@ -310,6 +327,14 @@ a { color: inherit; text-decoration: none; }
 @keyframes toast-in { from { transform: translateY(-8px); opacity: 0; } }
 
 @media (max-width: 767px) {
+  .case-profile-choice { grid-template-columns: 1fr; }
+  .case-profile-choice label { min-height: 56px; }
+  .operator-activity-row { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; }
+  .operator-activity-row time { grid-column: 1; }
+  .operator-activity-row > span:first-of-type { grid-column: 2; grid-row: 1; }
+  .operator-activity-row strong { grid-column: 1; }
+  .operator-activity-row > span:nth-of-type(2) { grid-column: 1 / -1; }
+  .operator-activity-row > span:last-child { grid-column: 2; grid-row: 2; }
   .page-heading { align-items: stretch; flex-direction: column; gap: 16px; }
   .page-heading > .btn { align-self: flex-start; }
   .case-row { min-height: 96px; padding: 14px; align-items: flex-start; }

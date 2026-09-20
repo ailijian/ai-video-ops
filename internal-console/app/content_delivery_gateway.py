@@ -11,6 +11,7 @@ from typing import Any
 from .canonical_gateway import CanonicalOperationError
 from .config import Settings
 from .path_safety import resolve_within, validate_identifier
+from .operator_projection import completed_operation_actor, request_actor
 from .subprocess_env import pipeline_subprocess_env
 
 
@@ -865,6 +866,11 @@ def get_content_delivery_state(
             request
         )
     )
+    approval_actor = None
+    if paths["approval_receipt"].is_file():
+        reviewer = _read_json(paths["approval_receipt"]).get("reviewer")
+        if reviewer:
+            approval_actor = {"phone": str(reviewer)}
 
     if (
         export["completed"]
@@ -890,6 +896,10 @@ def get_content_delivery_state(
         )
 
     return {
+        "created_by": request_actor(request),
+        "reviewed_by": approval_actor,
+        "approved_by": approval_actor if review["approved"] else None,
+        "exported_by": completed_operation_actor(settings.database_path, request_id, "mix_export") if export["completed"] else None,
         "request_id": request_id,
         "business_id": (
             request.get("persona_id")

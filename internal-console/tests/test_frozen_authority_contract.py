@@ -25,7 +25,7 @@ def test_01_case_analysis_does_not_auto_approve(client: TestClient, settings: Se
     response = client.post(
         "/api/cases/analyze",
         headers={"X-CSRF-Token": csrf},
-        json={"url": "https://www.douyin.com/video/7999999999999999999"},
+        json={"url": "https://www.douyin.com/video/7999999999999999999", "operator_profile_hint": "mix"},
     )
     after = sorted((settings.pipeline_root / "data" / "cases").glob("*/approval_receipt.json"))
     assert response.status_code == 200

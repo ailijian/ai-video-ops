@@ -131,6 +131,7 @@ def test_new_customer_creates_recoverable_task_without_raw_materials_in_sqlite(
     assert task["task_type"] == "customer_analysis"
 
     assert task["status"] == "queued"
+    assert task["created_by"]["phone"] == "13800000000"
 
     serialized_payload = json.dumps(
         task["payload"],
@@ -158,6 +159,7 @@ def test_new_customer_creates_recoverable_task_without_raw_materials_in_sqlite(
     assert projected[0]["display_name"] == "小爪宠物店"
 
     assert projected[0]["status"] == "analyzing"
+    assert projected[0]["submitted_by"]["phone"] == "13800000000"
 
 
 def test_duplicate_customer_does_not_create_second_task(

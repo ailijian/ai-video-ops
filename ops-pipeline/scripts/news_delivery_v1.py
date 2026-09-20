@@ -1343,6 +1343,8 @@ def create_news_delivery_request(
     speaker_id: str,
     source_content_id: str,
     idempotency_key: str,
+    created_by_user_id: int | None = None,
+    created_by_phone: str | None = None,
 ) -> tuple[dict[str, Any], bool]:
     pipeline_root = (
         pipeline_root
@@ -1356,6 +1358,11 @@ def create_news_delivery_request(
         raise NewsDeliveryError(
             "NEWS_DELIVERY_IDEMPOTENCY_REQUIRED",
             "News Delivery requires an idempotency key.",
+        )
+    if (created_by_user_id is None) != (created_by_phone is None):
+        raise NewsDeliveryError(
+            "NEWS_REQUEST_CREATOR_INCOMPLETE",
+            "Creator user ID and phone snapshot must be provided together.",
         )
 
     preview = preview_news_delivery(
@@ -1546,6 +1553,9 @@ def create_news_delivery_request(
             "exported": False,
         },
     }
+    if created_by_user_id is not None:
+        request["created_by_user_id"] = created_by_user_id
+        request["created_by_phone"] = created_by_phone
     write_new_json(
         path,
         request,
@@ -3959,6 +3969,8 @@ def _parse_action(
                 speaker_id=args.speaker_id,
                 source_content_id=args.source_content_id,
                 idempotency_key=args.idempotency_key,
+                created_by_user_id=args.created_by_user_id,
+                created_by_phone=args.created_by_phone,
             )
         )
         return {
@@ -4074,6 +4086,8 @@ def main() -> None:
     parser.add_argument(
         "--idempotency-key"
     )
+    parser.add_argument("--created-by-user-id", type=int)
+    parser.add_argument("--created-by-phone")
     parser.add_argument(
         "--request-id"
     )

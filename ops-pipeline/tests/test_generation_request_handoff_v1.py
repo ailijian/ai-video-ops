@@ -320,6 +320,24 @@ def test_creates_matcher_compatible_immutable_request_and_handoff(
     )
 
 
+def test_creator_metadata_is_immutable_and_idempotency_recovers_original(tmp_path: Path, monkeypatch):
+    patch_authority(tmp_path, monkeypatch)
+    arguments = dict(pipeline_root=tmp_path, business_id="fixture_pet_store",
+        speaker_id="fixture_pet_store_owner", profile="mix", requested_quantity=5,
+        confirmed_quantity=3, idempotency_key="creator-test-0001")
+    first = subject.create_generation_request_handoff(**arguments,
+        created_by_user_id=10, created_by_phone="13800000001")
+    request_path = Path(first["request_path"])
+    before = request_path.read_bytes()
+    second = subject.create_generation_request_handoff(**arguments,
+        created_by_user_id=20, created_by_phone="13800000002")
+    assert second["request_id"] == first["request_id"]
+    assert request_path.read_bytes() == before
+    request = json.loads(before)
+    assert request["created_by_user_id"] == 10
+    assert request["created_by_phone"] == "13800000001"
+    assert request["created_at"]
+
 def test_same_idempotency_key_recovers_same_request(
     tmp_path: Path,
     monkeypatch,

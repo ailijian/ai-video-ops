@@ -69,7 +69,7 @@ def test_fresh_empty_node_login_and_workbench_are_available(
         first_case = client.post(
             "/api/cases/analyze",
             headers={"X-CSRF-Token": csrf},
-            json={"url": "https://www.douyin.com/video/7999999999999999123"},
+            json={"url": "https://www.douyin.com/video/7999999999999999123", "operator_profile_hint": "uncertain"},
         )
         first_customer = client.post(
             "/api/customers/analyze",

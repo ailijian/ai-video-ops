@@ -196,9 +196,10 @@ class Orchestrator:
         downloader_root: Path,
         source_url: str,
         attempt_id: str,
-        profile: str,
+        profile: str | None,
         industry: str,
         reanalyze: bool,
+        operator_profile_hint: str | None = None,
     ) -> None:
         if not ATTEMPT_ID_RE.fullmatch(attempt_id):
             raise CaseAnalysisError("INVALID_ATTEMPT_ID", "Attempt ID is invalid.")
@@ -208,6 +209,14 @@ class Orchestrator:
         self.case_id, self.source_url = stable_source_identity(source_url)
         self.attempt_id = attempt_id
         self.profile = profile
+        self.operator_profile_hint = operator_profile_hint
+        if bool(profile) == bool(operator_profile_hint):
+            raise CaseAnalysisError(
+                "CASE_PROFILE_INPUT_INVALID",
+                "Provide exactly one legacy profile or operator profile hint.",
+            )
+        if operator_profile_hint and operator_profile_hint not in {"mix", "news", "hybrid", "uncertain"}:
+            raise CaseAnalysisError("CASE_OPERATOR_PROFILE_HINT_INVALID", "Operator profile hint is invalid.")
         self.industry = industry
         self.reanalyze = reanalyze
         self.whisper_model = resolve_whisper_model()
@@ -256,6 +265,7 @@ class Orchestrator:
                 or state.get("attempt_id") != self.attempt_id
                 or state.get("case_id") != self.case_id
                 or state.get("source", {}).get("canonical_url") != self.source_url
+                or state.get("request", {}).get("operator_profile_hint") != self.operator_profile_hint
             ):
                 raise CaseAnalysisError(
                     "ATTEMPT_IDENTITY_MISMATCH",
@@ -311,7 +321,6 @@ class Orchestrator:
                 "platform": "douyin",
             },
             "request": {
-                "profile": self.profile,
                 "industry": self.industry,
                 "reanalyze": self.reanalyze,
             },
@@ -335,6 +344,10 @@ class Orchestrator:
             "created_at": now_iso(),
             "updated_at": now_iso(),
         }
+        if self.profile:
+            state["request"]["profile"] = self.profile
+        if self.operator_profile_hint:
+            state["request"]["operator_profile_hint"] = self.operator_profile_hint
         write_atomic_json(self.state_path, state)
         return state
 
@@ -806,8 +819,6 @@ class Orchestrator:
                     str(self.pipeline_root / "scripts" / "build_case_v1.py"),
                     "--case-id",
                     self.case_id,
-                    "--profile",
-                    self.profile,
                     "--industry",
                     self.industry,
                     "--video",
@@ -831,6 +842,10 @@ class Orchestrator:
                     "--output-root",
                     str(candidate_root),
                 ]
+                if self.operator_profile_hint:
+                    command.extend(["--operator-profile-hint", self.operator_profile_hint])
+                else:
+                    command.extend(["--profile", str(self.profile)])
                 for option, key in (
                     ("--metadata", "metadata"),
                     ("--cover", "cover"),
@@ -926,13 +941,16 @@ def main() -> None:
     )
     parser.add_argument("--source-url", required=True)
     parser.add_argument("--attempt-id", required=True)
-    parser.add_argument("--profile", choices=["mix", "news"], default="mix")
+    parser.add_argument("--profile", choices=["mix", "news"])
+    parser.add_argument("--operator-profile-hint", choices=["mix", "news", "hybrid", "uncertain"])
     parser.add_argument("--industry", default="待分类")
     parser.add_argument("--reanalyze", action="store_true")
     parser.add_argument("--pipeline-root", default=None)
     parser.add_argument("--repo-root", default=None)
     parser.add_argument("--downloader-root", default=None)
     args = parser.parse_args()
+    if bool(args.profile) == bool(args.operator_profile_hint):
+        parser.error("Provide exactly one of --profile or --operator-profile-hint")
 
     pipeline_root = (
         Path(args.pipeline_root).expanduser().resolve()
@@ -959,6 +977,7 @@ def main() -> None:
             profile=args.profile,
             industry=args.industry,
             reanalyze=args.reanalyze,
+            operator_profile_hint=args.operator_profile_hint,
         ).run()
     except CaseAnalysisError as exc:
         print(json.dumps({"ok": False, "code": exc.code, "message": str(exc)}, ensure_ascii=False))

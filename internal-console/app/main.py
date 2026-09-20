@@ -55,6 +55,7 @@ from .customer_task_service import (
 )
 from .config import Settings
 from .database import apply_migrations
+from .operator_projection import case_reanalysis_hint, operator_activity, original_task_actor, persona_approval_actor
 from .operation_lock import authority_mutation_barrier, authority_operation_lock
 from .task_service import (
     CaseTaskRunner,
@@ -189,6 +190,7 @@ class ChangePasswordRequest(BaseModel):
 
 class CaseAnalysisRequest(BaseModel):
     url: str = Field(min_length=1, max_length=2048)
+    operator_profile_hint: Literal["mix", "news", "hybrid", "uncertain"] | None = None
     reanalyze: bool = False
     reason: str = Field(default="", max_length=1000)
 
@@ -196,6 +198,7 @@ class CaseAnalysisRequest(BaseModel):
 class CaseReviewRequest(BaseModel):
     decision: Literal["reject", "reanalyze", "approve"]
     reason: str = Field(default="", max_length=1000)
+    operator_profile_hint: Literal["mix", "news", "hybrid", "uncertain"] | None = None
 
 
 class CustomerAnalysisRequest(BaseModel):
@@ -756,6 +759,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         }
 
         for speaker in speakers:
+            speaker["submitted_by"] = original_task_actor(settings.database_path, "speaker_analysis", speaker["speaker_id"])
             task = tasks_by_speaker.get(speaker["speaker_id"])
 
             if task is None:
@@ -907,6 +911,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             business_id,
             speaker_id,
         )
+        detail["submitted_by"] = original_task_actor(settings.database_path, "speaker_analysis", speaker_id)
+        detail["reviewed_by"] = ({"phone": str(detail["fact_review"]["reviewer"])}
+            if (detail.get("fact_review") or {}).get("reviewer") else None)
+        detail["approved_by"] = persona_approval_actor(settings.pipeline_root, detail.get("speaker_persona"))
 
         latest_task = next(
             (
@@ -1077,6 +1085,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 requested_quantity=(payload.requested_quantity),
                 confirmed_quantity=(payload.confirmed_quantity),
                 idempotency_key=(payload.idempotency_key),
+                created_by_user_id=int(session.user["id"]),
+                created_by_phone=str(session.user["phone"]),
             )
 
         return {
@@ -1282,6 +1292,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 speaker_id=payload.speaker_id,
                 source_content_id=payload.source_content_id,
                 idempotency_key=payload.idempotency_key,
+                created_by_user_id=int(session.user["id"]),
+                created_by_phone=str(session.user["phone"]),
             )
         }
 
@@ -1541,6 +1553,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         }
 
         for customer in projected:
+            customer["submitted_by"] = original_task_actor(settings.database_path, "customer_analysis", customer["business_id"])
             task = customer_tasks.get(customer["business_id"])
 
             if task is None:
@@ -1818,6 +1831,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             settings,
             business_id,
         )
+        detail["submitted_by"] = original_task_actor(settings.database_path, "customer_analysis", business_id)
+        detail["reviewed_by"] = ({"phone": str(detail["fact_review"]["reviewer"])}
+            if (detail.get("fact_review") or {}).get("reviewer") else None)
+        detail["approved_by"] = persona_approval_actor(settings.pipeline_root, detail.get("business_persona"))
 
         latest_task = next(
             (
@@ -1949,7 +1966,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     def cases(
         _: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
-        return {"cases": list_cases(settings), "analysis": case_analysis_capability()}
+        projected = list_cases(settings)
+        for case in projected:
+            case["submitted_by"] = original_task_actor(settings.database_path, "case_analysis", case["case_id"])
+        return {"cases": projected, "analysis": case_analysis_capability()}
 
     @app.post("/api/cases/analyze")
     def analyze_case(
@@ -1990,6 +2010,27 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             settings,
             payload.url,
         )
+
+        hint = payload.operator_profile_hint
+        if payload.reanalyze and hint is None:
+            hint = case_reanalysis_hint(settings.database_path, case_id)
+            if hint is None:
+                try:
+                    hint = get_case_detail(settings, case_id).get("operator_profile_hint")
+                except CanonicalOperationError:
+                    pass
+
+        def require_hint() -> Literal["mix", "news", "hybrid", "uncertain"]:
+            if hint is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=error_detail(
+                        "CASE_OPERATOR_PROFILE_HINT_REQUIRED",
+                        "请选择视频结构类型。",
+                        "请选择混剪型、新闻体、混合型或不确定后再提交。",
+                    ),
+                )
+            return hint
 
         if duplicate is not None:
             state = str(duplicate.get("state") or "")
@@ -2038,6 +2079,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 settings.database_path,
                 source_url=normalized_url,
                 case_id=case_id,
+                operator_profile_hint=require_hint(),
                 reanalyze=True,
                 reason=reason,
                 created_by_user_id=int(session.user["id"]),
@@ -2082,6 +2124,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             settings.database_path,
             source_url=normalized_url,
             case_id=case_id,
+            operator_profile_hint=require_hint(),
             created_by_user_id=int(session.user["id"]),
             queue_max=settings.task_queue_max,
             gpu_pending_per_user_max=settings.gpu_pending_per_user_max,
@@ -2100,7 +2143,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         case_id: str,
         _: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
-        return get_case_detail(settings, case_id)
+        detail = get_case_detail(settings, case_id)
+        detail["submitted_by"] = original_task_actor(settings.database_path, "case_analysis", case_id)
+        return detail
 
     @app.get("/api/cases/{case_id}/media")
     def case_media(
@@ -2131,6 +2176,20 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                     "补充原因后再次提交。",
                 ),
             )
+        reanalysis_hint = None
+        if payload.decision == "reanalyze":
+            reanalysis_hint = payload.operator_profile_hint or case_reanalysis_hint(settings.database_path, case_id)
+            if reanalysis_hint is None:
+                reanalysis_hint = get_case_detail(settings, case_id).get("operator_profile_hint")
+            if reanalysis_hint is None:
+                raise HTTPException(
+                    status_code=422,
+                    detail=error_detail(
+                        "CASE_OPERATOR_PROFILE_HINT_REQUIRED",
+                        "历史案例没有提交时的结构类型记录。",
+                        "请先明确选择视频结构类型，再重新分析。",
+                    ),
+                )
         reviewer = str(session.user["phone"])
         if payload.decision == "approve":
             detail = locked_authority_call(
@@ -2173,6 +2232,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             settings.database_path,
             source_url=str(source_url),
             case_id=case_id,
+            operator_profile_hint=reanalysis_hint,
             reanalyze=True,
             reason=reason,
             created_by_user_id=int(session.user["id"]),
@@ -2187,6 +2247,13 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         _: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
         return {"tasks": list_tasks(settings.database_path)}
+
+    @app.get("/api/tasks/activity")
+    def task_activity(
+        user_id: int | None = None,
+        _: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        return operator_activity(settings.database_path, settings.pipeline_root, user_id)
 
     @app.get("/api/tasks/{task_id}")
     def task_detail(

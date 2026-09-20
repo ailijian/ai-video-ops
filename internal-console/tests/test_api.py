@@ -96,13 +96,15 @@ def test_novel_case_creates_one_recoverable_canonical_task(client: TestClient):
     response = client.post(
         "/api/cases/analyze",
         headers={"X-CSRF-Token": csrf},
-        json={"url": "https://www.douyin.com/video/7999999999999999999"},
+        json={"url": "https://www.douyin.com/video/7999999999999999999", "operator_profile_hint": "mix"},
     )
     assert response.status_code == 200
     assert response.json()["duplicate"] is False
     task = response.json()["task"]
     assert task["status"] == "queued"
     assert task["subject_ref"] == "7999999999999999999"
+    assert task["payload"]["operator_profile_hint"] == "mix"
+    assert task["created_by"]["phone"] == "13800000000"
 
     duplicate = client.post(
         "/api/cases/analyze",
@@ -120,7 +122,7 @@ def test_task_projection_survives_a_new_app_instance(client: TestClient, setting
     created = client.post(
         "/api/cases/analyze",
         headers={"X-CSRF-Token": csrf},
-        json={"url": "https://www.douyin.com/video/7999999999999999998"},
+        json={"url": "https://www.douyin.com/video/7999999999999999998", "operator_profile_hint": "mix"},
     ).json()["task"]
 
     from app.main import build_app

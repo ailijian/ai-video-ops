@@ -355,6 +355,8 @@ def test_news_create_request_route(
             ]
             == "mix_fixture-C001"
         )
+        assert calls["created_by_user_id"] == 1
+        assert calls["created_by_phone"] == "13800000000"
 
 
 def test_news_delivery_state_route(

@@ -73,8 +73,10 @@ export function caseCard(caseItem, statusPill) {
   const duration = caseItem.duration_seconds == null ? "时长未知" : `${Math.round(caseItem.duration_seconds)} 秒`;
   const source = caseItem.platform === "douyin" ? "抖音" : "视频来源";
   const optionalMeta = caseItem.industry ? `<span>${escapeHtml(caseItem.industry)}</span>` : "";
+  const hintLabels = { mix: "混剪型", news: "新闻体", hybrid: "混合型", uncertain: "不确定" };
+  const profileMeta = caseItem.operator_profile_hint ? `<span>提交标记：${hintLabels[caseItem.operator_profile_hint]}</span>` : "";
   return `<a class="case-row" href="/cases/${encodeURIComponent(caseItem.case_id)}" data-route data-case-status="${escapeHtml(caseItem.status)}">
-    <span class="case-row-main"><strong>${escapeHtml(caseItem.title)}</strong><span class="case-meta"><span>${source} · ${escapeHtml(duration)}</span>${optionalMeta}</span></span>
+    <span class="case-row-main"><strong>${escapeHtml(caseItem.title)}</strong><span class="case-meta"><span>${source} · ${escapeHtml(duration)}</span>${optionalMeta}${profileMeta}</span></span>
     <span class="case-row-end">${statusPill(caseItem.status)}<span class="case-chevron" aria-hidden="true">›</span></span>
   </a>`;
 }
@@ -84,6 +86,12 @@ function paragraphList(values) {
 }
 
 export function caseReviewContent(detail, statusPill) {
+  const hintLabels = { mix: "混剪型", news: "新闻体", hybrid: "混合型", uncertain: "不确定" };
+  const profileLine = detail.operator_profile_hint
+    ? `提交标记：${hintLabels[detail.operator_profile_hint]}`
+    : "历史案例 · 未记录提交类型";
+  const observedLine = detail.observed_source_profile
+    ? ` · 系统观察：${hintLabels[detail.observed_source_profile] || "未分类"}` : "";
   const development = paragraphList(detail.how_it_tells?.development);
   const reviewMedia = detail.review_media || {};
   const sourceUrl = reviewMedia.source_url || detail.source_url || "";
@@ -126,6 +134,7 @@ export function caseReviewContent(detail, statusPill) {
             <div class="review-media-player ${orientation}">${mediaSurface}</div>
             <div class="review-media-meta"><h1>${escapeHtml(detail.title)}</h1>
               <p class="media-meta-line">${detail.platform === "douyin" ? "抖音" : "视频来源"} · ${detail.duration_seconds == null ? "时长未知" : `${Math.round(detail.duration_seconds)} 秒`}</p>
+              <p class="media-meta-line">${escapeHtml(profileLine + observedLine)}</p>
               ${detail.description ? `<p class="media-description">${escapeHtml(detail.description)}</p>` : ""}
               ${sourceLink}
               ${reviewSurfaceNote}

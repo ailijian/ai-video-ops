@@ -1,4 +1,4 @@
-import { caseCard, caseReviewContent, escapeHtml, progressPanel } from "./case-components.js?v=productized-stage1-5";
+import { caseCard, caseReviewContent, escapeHtml, progressPanel } from "./case-components.js?v=operator-attribution-v1";
 import { projectCaseSubmitState, resetCaseSubmitState } from "./case-submit-state.mjs?v=productized-stage1-5";
 import { startTaskPolling } from "./task-progress.js";
 
@@ -99,6 +99,12 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
         <form id="case-url-form" novalidate><div data-case-input-panel><div class="field"><label for="case-url">粘贴抖音视频链接</label>
           <div class="input-combo"><input id="case-url" type="url" inputmode="url" autocomplete="off" placeholder="https://www.douyin.com/video/..." required><button class="paste-button" type="button" data-paste>粘贴</button></div>
           <div id="source-detection" class="source-detection muted">输入链接后自动识别来源</div></div></div>
+          <fieldset class="case-profile-choice" data-case-profile-panel><legend>这个视频更接近哪种结构？</legend>
+            <label><input type="radio" name="operator-profile-hint" value="mix"><span><strong>混剪型</strong><small>以口播 / 叙事为主，画面配合表达。</small></span></label>
+            <label><input type="radio" name="operator-profile-hint" value="news"><span><strong>新闻体</strong><small>短促的信息卡点或新闻式表达。</small></span></label>
+            <label><input type="radio" name="operator-profile-hint" value="hybrid"><span><strong>混合型</strong><small>两种结构都比较明显。</small></span></label>
+            <label><input type="radio" name="operator-profile-hint" value="uncertain"><span><strong>不确定</strong><small>先交给系统分析。</small></span></label>
+          </fieldset>
           <div id="case-form-error" class="form-error" role="alert"></div><div id="case-result"></div>
           <div class="case-submit-actions" data-case-submit-actions></div>
           <p class="governance-copy">批准后的案例只用于内部参考，不会获得原视频素材使用权。</p>
@@ -113,6 +119,8 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
     const resultBox = document.querySelector("#case-result");
     const actionsHost = document.querySelector("[data-case-submit-actions]");
     const inputPanel = document.querySelector("[data-case-input-panel]");
+    const profilePanel = document.querySelector("[data-case-profile-panel]");
+    const selectedHint = () => form.querySelector('input[name="operator-profile-hint"]:checked')?.value || null;
     let activeState = "idle";
     let activeCaseId = null;
     let activeTaskId = null;
@@ -147,6 +155,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       input.disabled = projection.inputDisabled;
       pasteButton.disabled = projection.pasteDisabled;
       inputPanel.hidden = status !== "idle";
+      profilePanel.hidden = !["idle", "failed", "rejected"].includes(status);
       actionsHost.innerHTML = actionMarkup(projection);
       bindCommonActions();
     };
@@ -157,6 +166,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       activeTaskId = null;
       reanalysisState = null;
       input.value = "";
+      form.querySelectorAll('input[name="operator-profile-hint"]').forEach((radio) => { radio.checked = false; });
       resultBox.innerHTML = "";
       document.querySelector("#case-form-error").classList.remove("visible");
       const projection = resetCaseSubmitState();
@@ -197,7 +207,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       try {
         const restarted = await api("/api/cases/analyze", {
           method: "POST",
-          body: JSON.stringify({ url: input.value, reanalyze: true, reason }),
+          body: JSON.stringify({ url: input.value, reanalyze: true, reason, operator_profile_hint: selectedHint() }),
         });
         resultBox.innerHTML = `<div data-live-progress data-embedded="true"></div>`;
         bindTaskProgress(restarted.task, (status, task) => setSubmitState(status, {
@@ -216,9 +226,15 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       const errorBox = document.querySelector("#case-form-error");
       if (activeState !== "idle") return;
       errorBox.classList.remove("visible"); resultBox.innerHTML = "";
+      if (!selectedHint()) {
+        errorBox.textContent = "请选择视频结构类型；不确定也可以选择。";
+        errorBox.classList.add("visible");
+        profilePanel.querySelector("input")?.focus();
+        return;
+      }
       setSubmitState("submitting");
       try {
-        const result = await api("/api/cases/analyze", { method: "POST", body: JSON.stringify({ url: input.value }) });
+        const result = await api("/api/cases/analyze", { method: "POST", body: JSON.stringify({ url: input.value, operator_profile_hint: selectedHint() }) });
         if (result.duplicate) {
           resultBox.innerHTML = duplicateResultHtml(result);
           setSubmitState(result.state, {
@@ -252,6 +268,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       document.querySelectorAll("[data-review-action]").forEach((button) => button.addEventListener("click", async () => {
         const action = button.dataset.reviewAction;
         let reason = "";
+        let profileHint = null;
         if (action === "approve") {
           const recovery = button.textContent.includes("恢复");
           const decision = await openModal({
@@ -271,13 +288,15 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
             reasonLabel: reanalyze ? "重新分析原因" : "不收录原因",
             reasonRequired: true,
             danger: !reanalyze,
+            profileHintRequired: reanalyze && !detail.operator_profile_hint,
           });
           if (!decision.confirmed) return;
           reason = decision.reason;
+          profileHint = decision.profileHint || null;
         }
         document.querySelectorAll("[data-review-action]").forEach((item) => { item.disabled = true; });
         try {
-          const result = await api(`/api/cases/${encodeURIComponent(caseId)}/review`, { method: "POST", body: JSON.stringify({ decision: action, reason }) });
+          const result = await api(`/api/cases/${encodeURIComponent(caseId)}/review`, { method: "POST", body: JSON.stringify({ decision: action, reason, operator_profile_hint: profileHint }) });
           if (action === "approve") { showToast("案例已进入案例库"); return renderCaseDetail(caseId); }
           if (action === "reanalyze") { showToast("已退回重新分析"); return navigate(`/tasks/${result.task.task_id}`); }
           showToast("已记录为不收录"); navigate("/cases");

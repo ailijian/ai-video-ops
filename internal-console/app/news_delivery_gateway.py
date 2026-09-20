@@ -10,6 +10,7 @@ from typing import Any
 from .canonical_gateway import CanonicalOperationError
 from .config import Settings
 from .path_safety import resolve_within, validate_identifier
+from .operator_projection import completed_operation_actor, request_actor
 from .subprocess_env import pipeline_subprocess_env
 
 
@@ -409,23 +410,20 @@ def create_news_request(
     speaker_id: str,
     source_content_id: str,
     idempotency_key: str,
+    created_by_user_id: int | None = None,
+    created_by_phone: str | None = None,
 ) -> dict[str, Any]:
+    command = [
+        "--action", "create-request", "--pipeline-root", str(settings.pipeline_root),
+        "--business-id", business_id, "--speaker-id", speaker_id,
+        "--source-content-id", source_content_id, "--idempotency-key", idempotency_key,
+    ]
+    if created_by_user_id is not None:
+        command.extend(["--created-by-user-id", str(created_by_user_id)])
+        command.extend(["--created-by-phone", str(created_by_phone or "")])
     parsed = _run_news_command(
         settings,
-        [
-            "--action",
-            "create-request",
-            "--pipeline-root",
-            str(settings.pipeline_root),
-            "--business-id",
-            business_id,
-            "--speaker-id",
-            speaker_id,
-            "--source-content-id",
-            source_content_id,
-            "--idempotency-key",
-            idempotency_key,
-        ],
+        command,
     )
     request = parsed["result"]
 
@@ -562,6 +560,7 @@ def get_active_news_request(
     )
     return {
         "active_request": {
+            "created_by": request_actor(request),
             "request_id": (
                 request[
                     "request_id"
@@ -1048,6 +1047,10 @@ def get_news_delivery_state(
     )
 
     return {
+        "created_by": request_actor(request),
+        "reviewed_by": {"phone": str(review["reviewer"])} if review.get("reviewer") else None,
+        "approved_by": {"phone": str(review["reviewer"])} if review.get("approved") and review.get("reviewer") else None,
+        "exported_by": completed_operation_actor(settings.database_path, request_id, "news_export") if export["completed"] else None,
         "request_id": request_id,
         "business_id": (
             request.get(

@@ -425,6 +425,8 @@ def test_generation_confirm_projects_canonical_request(
             "requested_quantity": 5,
             "confirmed_quantity": 3,
             "idempotency_key": ("console_test_0001"),
+            "created_by_user_id": 1,
+            "created_by_phone": "13800000000",
         }
 
 

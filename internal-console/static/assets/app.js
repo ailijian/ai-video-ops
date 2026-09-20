@@ -1,7 +1,7 @@
 import { createApiClient } from "./api-client.js?v=productized-stage3-3";
-import { createCaseViews } from "./case-views.js?v=productized-stage1-5";
+import { createCaseViews } from "./case-views.js?v=operator-attribution-v1";
 import { createCustomerViews } from "./customer-views.js?v=productized-stage3-3";
-import { progressPanel } from "./case-components.js?v=productized-stage1-5";
+import { progressPanel } from "./case-components.js?v=operator-attribution-v1";
 import { startTaskPolling } from "./task-progress.js";
 import { customerProgressPanel } from "./customer-components.js?v=productized-stage2-3";
 import { matchWorkflowRoute } from "./routes.js";
@@ -164,6 +164,7 @@ function openModal({
   reasonLabel = "原因",
   reasonPlaceholder = "请填写原因",
   reasonRequired = false,
+  profileHintRequired = false,
 } = {}) {
   return new Promise((resolve) => {
     const previousFocus = document.activeElement;
@@ -173,6 +174,7 @@ function openModal({
       <div class="modal-header"><h2 id="dialog-title">${escapeHtml(title)}</h2><button class="icon-button modal-close" type="button" data-modal-cancel aria-label="关闭">×</button></div>
       <p id="dialog-description">${escapeHtml(description)}</p>
       ${reasonRequired ? `<div class="field modal-reason"><label for="modal-reason">${escapeHtml(reasonLabel)}</label><textarea id="modal-reason" placeholder="${escapeHtml(reasonPlaceholder)}" required></textarea><span class="form-error" data-modal-error role="alert">请填写原因后继续。</span></div>` : ""}
+      ${profileHintRequired ? `<div class="field"><label for="modal-profile-hint">这个视频更接近哪种结构？</label><select id="modal-profile-hint" required><option value="">请选择</option><option value="mix">混剪型</option><option value="news">新闻体</option><option value="hybrid">混合型</option><option value="uncertain">不确定</option></select><span class="form-error" data-modal-profile-error role="alert">请选择结构类型。</span></div>` : ""}
       <div class="modal-actions"><button class="btn btn-secondary" type="button" data-modal-cancel>${escapeHtml(cancelLabel)}</button><button class="btn ${danger ? "btn-danger" : "btn-primary"}" type="button" data-modal-confirm>${escapeHtml(confirmLabel)}</button></div>
     </section>`;
     document.body.append(backdrop);
@@ -180,6 +182,7 @@ function openModal({
     const modal = backdrop.querySelector(".modal");
     const confirmButton = backdrop.querySelector("[data-modal-confirm]");
     const reasonInput = backdrop.querySelector("#modal-reason");
+    const profileInput = backdrop.querySelector("#modal-profile-hint");
     let settled = false;
 
     const close = (result) => {
@@ -199,7 +202,12 @@ function openModal({
         reasonInput.focus();
         return;
       }
-      close({ confirmed: true, reason });
+      if (profileHintRequired && !profileInput.value) {
+        backdrop.querySelector("[data-modal-profile-error]").classList.add("visible");
+        profileInput.focus();
+        return;
+      }
+      close({ confirmed: true, reason, profileHint: profileInput?.value || null });
     };
     const onKeydown = (event) => {
       if (event.key === "Escape") {
@@ -208,7 +216,7 @@ function openModal({
         return;
       }
       if (event.key !== "Tab") return;
-      const focusable = [...modal.querySelectorAll('button:not([disabled]), textarea:not([disabled])')];
+      const focusable = [...modal.querySelectorAll('button:not([disabled]), textarea:not([disabled]), select:not([disabled])')];
       const first = focusable[0];
       const last = focusable.at(-1);
       if (event.shiftKey && document.activeElement === first) {
@@ -473,7 +481,7 @@ async function renderWorkbench() {
 async function renderTasks() {
   skeletonPage("任务记录");
   try {
-    const data = await api("/api/tasks");
+    const [data, activity] = await Promise.all([api("/api/tasks"), api("/api/tasks/activity")]);
     const content = data.tasks.length ? `<div class="task-list">${data.tasks.map((task) => `
       <article class="task-list-item">${
     task.task_type === "customer_analysis"
@@ -487,10 +495,24 @@ async function renderTasks() {
         : progressPanel(task, {
             compact: true,
           })
-}<a class="inline-link" href="/tasks/${encodeURIComponent(task.task_id)}" data-route><span>查看任务</span><span aria-hidden="true">›</span></a></article>`).join("")}</div>` : `
+}${task.created_by?.phone ? `<p class="task-operator">提交人：${escapeHtml(maskPhone(task.created_by.phone))}</p>` : ""}<a class="inline-link" href="/tasks/${encodeURIComponent(task.task_id)}" data-route><span>查看任务</span><span aria-hidden="true">›</span></a></article>`).join("")}</div>` : `
       <section class="card empty-state"><div class="empty-icon">${icons.tasks}</div><h2>暂时没有任务</h2><p>案例分析、客户信息分析、出镜人分析和视频创作都会出现在这里。</p><a class="btn btn-secondary" href="/cases/new" data-route>添加案例</a></section>`;
-    app.innerHTML = shell("任务记录", `<main class="page">${pageHeading("任务", "任务记录", "这里显示执行进度；案例是否入库仍以人工审核结果为准。")}${content}</main>`);
+    const activityStatus = { queued: "排队中", running: "进行中", awaiting_review: "待审核", completed: "已完成", failed: "失败", approved: "已确认", created: "已创建", rejected: "未采用" };
+    const activityRows = (events) => events.length ? `<div class="operator-activity-list">${events.map((event) => `<div class="operator-activity-row"><time>${escapeHtml(event.at ? new Date(event.at).toLocaleString("zh-CN") : "时间未记录")}</time><span>${escapeHtml(event.actor?.phone_masked || "历史记录 / 未记录")}</span><strong>${escapeHtml(event.kind)}</strong><span>${escapeHtml(event.subject)}</span><span>${escapeHtml(activityStatus[event.status] || "已记录")}</span></div>`).join("")}</div>` : `<section class="state-panel"><h2>暂无操作记录</h2><p>提交、审核和导出操作会出现在这里。</p></section>`;
+    const accounts = activity.accounts || [];
+    app.innerHTML = shell("任务记录", `<main class="page">${pageHeading("任务", "任务记录", "这里可以查看执行进度和团队操作记录。")}
+      <div class="profile-tabs" role="tablist" aria-label="任务视图"><button class="profile-tab active" type="button" data-task-tab="tasks" role="tab" aria-selected="true">任务</button><button class="profile-tab" type="button" data-task-tab="activity" role="tab" aria-selected="false">操作记录</button></div>
+      <div data-task-panel="tasks">${content}</div><div data-task-panel="activity" hidden><div class="activity-filter"><label for="activity-account">操作账号</label><select id="activity-account"><option value="">全部账号</option>${accounts.map((account) => `<option value="${account.user_id}">${escapeHtml(account.phone_masked)}</option>`).join("")}</select></div><div data-activity-rows>${activityRows(activity.events || [])}</div></div></main>`);
     bindCommonActions();
+    document.querySelectorAll("[data-task-tab]").forEach((tab) => tab.addEventListener("click", () => {
+      document.querySelectorAll("[data-task-tab]").forEach((item) => { item.classList.toggle("active", item === tab); item.setAttribute("aria-selected", String(item === tab)); });
+      document.querySelectorAll("[data-task-panel]").forEach((panel) => { panel.hidden = panel.dataset.taskPanel !== tab.dataset.taskTab; });
+    }));
+    document.querySelector("#activity-account").addEventListener("change", async (event) => {
+      const selected = event.target.value;
+      const filtered = selected ? await api(`/api/tasks/activity?user_id=${encodeURIComponent(selected)}`) : activity;
+      document.querySelector("[data-activity-rows]").innerHTML = activityRows(filtered.events || []);
+    });
   } catch (error) {
     renderLoadError("任务暂时无法读取", error);
   }

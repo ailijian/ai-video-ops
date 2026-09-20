@@ -726,6 +726,8 @@ def create_generation_request_handoff(
     confirmed_quantity: int,
     idempotency_key: str,
     created_at: str | None = None,
+    created_by_user_id: int | None = None,
+    created_by_phone: str | None = None,
 ) -> dict[str, Any]:
     pipeline_root = pipeline_root.expanduser().resolve()
 
@@ -739,6 +741,11 @@ def create_generation_request_handoff(
         confirmed_quantity=(confirmed_quantity),
         idempotency_key=(idempotency_key),
     )
+    if (created_by_user_id is None) != (created_by_phone is None):
+        raise GenerationRequestError(
+            "GENERATION_REQUEST_CREATOR_INCOMPLETE",
+            "Creator user ID and phone snapshot must be provided together.",
+        )
 
     request_id = request_id_for(
         business_id,
@@ -982,6 +989,9 @@ def create_generation_request_handoff(
             "media_rights_established": (False),
         },
     }
+    if created_by_user_id is not None:
+        request["created_by_user_id"] = created_by_user_id
+        request["created_by_phone"] = created_by_phone
 
     created = write_atomic_new_json(
         request_path,
@@ -1084,6 +1094,8 @@ def main() -> None:
         "--pipeline-root",
         default=str(Path(__file__).resolve().parents[1]),
     )
+    parser.add_argument("--created-by-user-id", type=int)
+    parser.add_argument("--created-by-phone")
 
     args = parser.parse_args()
 
@@ -1096,6 +1108,8 @@ def main() -> None:
             requested_quantity=(args.requested_quantity),
             confirmed_quantity=(args.confirmed_quantity),
             idempotency_key=(args.idempotency_key),
+            created_by_user_id=args.created_by_user_id,
+            created_by_phone=args.created_by_phone,
         )
 
     except GenerationRequestError as exc:

@@ -113,6 +113,20 @@ def test_duplicate_canonical_case_fails_closed(tmp_path: Path):
     assert error.value.code == "DUPLICATE_CASE"
 
 
+@pytest.mark.parametrize("hint", ["mix", "news", "hybrid", "uncertain"])
+def test_operator_hint_persists_in_attempt_without_legacy_analysis_profile(tmp_path: Path, hint: str):
+    repo, pipeline, downloader = roots(tmp_path)
+    operation = module.Orchestrator(
+        pipeline_root=pipeline, repo_root=repo, downloader_root=downloader,
+        source_url="https://www.douyin.com/video/7682442957798161531",
+        attempt_id="attempt_hint_001", profile=None, operator_profile_hint=hint,
+        industry="待分类", reanalyze=False,
+    )
+    assert operation.state["request"]["operator_profile_hint"] == hint
+    assert "profile" not in operation.state["request"]
+    assert not (operation.attempt_root / "candidate_cases").exists()
+
+
 def test_reanalysis_lineage_never_overwrites_approved_case(tmp_path: Path):
     repo, pipeline, downloader = roots(tmp_path)
     canonical = pipeline / "data" / "cases" / "7682442957798161531" / "case_v1.json"
@@ -236,7 +250,8 @@ def test_reanalysis_after_cleanup_reacquires_source(
     assert Path(source["metadata"]).is_relative_to(operation.attempt_root)
 
 
-def test_human_approval_is_explicit_and_does_not_grant_media_rights(tmp_path: Path):
+@pytest.mark.parametrize("new_hint", [False, True])
+def test_human_approval_is_explicit_and_does_not_grant_media_rights(tmp_path: Path, new_hint: bool):
     pipeline = Path(__file__).resolve().parents[1]
     source_case = (
         pipeline
@@ -318,6 +333,9 @@ def test_human_approval_is_explicit_and_does_not_grant_media_rights(tmp_path: Pa
     )
     case["identity"]["platform"] = "douyin"
     case["identity"]["source_url"] = source_url
+    if new_hint:
+        case["identity"].pop("analysis_profile", None)
+        case["operator_profile_hint"] = "news"
     case["source_evidence"]["video"] = {
         "path": str(missing_video),
         "sha256": recorded_sha,
@@ -374,6 +392,9 @@ def test_human_approval_is_explicit_and_does_not_grant_media_rights(tmp_path: Pa
     )
     assert approved["lifecycle"]["approved"] is True
     assert approved["validation"]["auto_approved"] is False
+    if new_hint:
+        assert approved["operator_profile_hint"] == "news"
+        assert "analysis_profile" not in approved["identity"]
     assert approved["approval"]["source_traceability"]["local_source_exists"] is False
     assert approved["approval"]["source_traceability"]["traceable"] is True
     assert (
