@@ -24,7 +24,7 @@ export function detectCaseSourceInput(raw) {
   if (!value) return { recognized: false, label: "输入内容后自动识别来源" };
   const urls = extractCaseSourceUrls(value);
   if (!urls.length) return { recognized: false, label: "当前未识别到支持的视频来源" };
-  if (urls.length > 1) return { recognized: true, label: `已识别 ${urls.length} 个抖音链接，请逐条选择结构类型` };
+  if (urls.length > 1) return { recognized: true, label: `已识别 ${urls.length} 个抖音链接，请逐条填写行业并选择结构类型` };
   if (value !== urls[0]) {
     return { recognized: true, label: "已识别：抖音分享内容" };
   }

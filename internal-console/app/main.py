@@ -40,6 +40,7 @@ from .canonical_gateway import (
     resolve_case_source_duplicate,
     approve_case_candidate,
     annotate_case_profile,
+    annotate_case_industry,
     case_media_path,
     get_case_detail,
     get_customer_status,
@@ -200,6 +201,7 @@ class ChangePasswordRequest(BaseModel):
 class CaseAnalysisRequest(BaseModel):
     url: str = Field(min_length=1, max_length=4096)
     operator_profile_hint: Literal["mix", "news", "hybrid", "uncertain"] | None = None
+    industry: str | None = Field(default=None, max_length=30)
     reanalyze: bool = False
     reason: str = Field(default="", max_length=1000)
     source_upload_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
@@ -209,11 +211,19 @@ class CaseReviewRequest(BaseModel):
     decision: Literal["reject", "reanalyze", "approve"]
     reason: str = Field(default="", max_length=1000)
     operator_profile_hint: Literal["mix", "news", "hybrid", "uncertain"] | None = None
+    industry: str | None = Field(default=None, max_length=30)
     source_upload_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
 
 
 class CaseProfileAnnotationRequest(BaseModel):
     operator_profile_hint: Literal["mix", "news", "hybrid", "uncertain"]
+    approved_case_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_annotation_sha256: str | None = Field(..., pattern=r"^[0-9a-f]{64}$")
+    note: str = Field(default="", max_length=1000)
+
+
+class CaseIndustryAnnotationRequest(BaseModel):
+    industry: str = Field(min_length=1, max_length=30)
     approved_case_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     expected_annotation_sha256: str | None = Field(..., pattern=r"^[0-9a-f]{64}$")
     note: str = Field(default="", max_length=1000)
@@ -450,6 +460,19 @@ def error_detail(code: str, message: str, next_action: str) -> dict[str, str]:
     return {"code": code, "message": message, "next_action": next_action}
 
 
+def selected_case_industry(value: str | None, fallback: str = "待分类") -> str:
+    """Accept an explicit operator label without changing legacy API requests."""
+    if value is None:
+        return fallback.strip() or "待分类"
+    industry = value.strip()
+    if not industry or industry.lower() in {"待分类", "unknown"}:
+        raise HTTPException(
+            status_code=422,
+            detail=error_detail("CASE_INDUSTRY_REQUIRED", "请选择案例所属行业。", "填写行业后重新提交。"),
+        )
+    return industry
+
+
 def public_user(session: SessionContext) -> dict[str, Any]:
     return {
         "phone": session.user["phone"],
@@ -590,6 +613,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             "CASE_SOURCE_GOVERNANCE_BLOCKED",
             "CASE_APPROVAL_RECOVERY_REQUIRED",
             "CASE_PROFILE_ANNOTATION_BLOCKED",
+            "CASE_INDUSTRY_ANNOTATION_BLOCKED",
         } else 503
         return JSONResponse(
             status_code=status_code,
@@ -2229,12 +2253,19 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             if not reason:
                 reason = "分析失败后由运营人员显式重新分析。"
 
+            prior_task = get_task(settings.database_path, str(duplicate.get("attempt_id"))) if duplicate.get("attempt_id") else None
+            prior_industry = (
+                (prior_task or {}).get("payload", {}).get("industry")
+                or (duplicate.get("existing_case") or {}).get("industry")
+                or "待分类"
+            )
             require_media_provider()
             task = create_case_task(
                 settings.database_path,
                 source_url=normalized_url,
                 case_id=case_id,
                 operator_profile_hint=require_hint(),
+                industry=selected_case_industry(payload.industry, str(prior_industry)),
                 source_upload=source_upload(),
                 acquisition_provider=settings.case_acquisition_provider,
                 provider_source_url=provider_source_url,
@@ -2260,6 +2291,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             source_url=normalized_url,
             case_id=case_id,
             operator_profile_hint=require_hint(),
+            industry=selected_case_industry(payload.industry),
             source_upload=source_upload(),
             acquisition_provider=settings.case_acquisition_provider,
             provider_source_url=provider_source_url,
@@ -2315,6 +2347,24 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             note=payload.note,
         )}
 
+    @app.post("/api/cases/{case_id}/industry-annotation")
+    def case_industry_annotation(
+        case_id: str,
+        payload: CaseIndustryAnnotationRequest,
+        x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(session, x_csrf_token)
+        return {"case": locked_authority_call(
+            "case", case_id, annotate_case_industry, settings, case_id,
+            industry=payload.industry,
+            approved_case_sha256=payload.approved_case_sha256,
+            expected_annotation_sha256=payload.expected_annotation_sha256,
+            actor_user_id=int(session.user["id"]),
+            actor_phone=str(session.user["phone"]),
+            note=payload.note,
+        )}
+
     @app.post("/api/cases/{case_id}/review")
     def review_case(
         case_id: str,
@@ -2349,8 +2399,12 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             )
         reanalysis_hint = None
         reanalysis_source_url = None
+        reanalysis_industry = None
         if payload.decision == "reanalyze":
             reanalysis_detail = get_case_detail(settings, case_id)
+            reanalysis_industry = selected_case_industry(
+                payload.industry, str(reanalysis_detail.get("industry") or "待分类")
+            )
             reanalysis_hint = payload.operator_profile_hint or case_reanalysis_hint(settings.database_path, case_id)
             if reanalysis_hint is None:
                 reanalysis_hint = reanalysis_detail.get("operator_profile_hint")
@@ -2420,6 +2474,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             source_url=str(reanalysis_source_url),
             case_id=case_id,
             operator_profile_hint=reanalysis_hint,
+            industry=reanalysis_industry or "待分类",
             source_upload=source_upload,
             acquisition_provider=settings.case_acquisition_provider,
             reanalyze=True,

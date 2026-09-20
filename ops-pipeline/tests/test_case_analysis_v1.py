@@ -128,6 +128,32 @@ def test_operator_hint_persists_in_attempt_without_legacy_analysis_profile(tmp_p
     assert not (operation.attempt_root / "candidate_cases").exists()
 
 
+def test_selected_industry_persists_in_case_analysis_request(tmp_path: Path):
+    repo, pipeline, downloader = roots(tmp_path)
+    operation = module.Orchestrator(
+        pipeline_root=pipeline, repo_root=repo, downloader_root=downloader,
+        source_url="https://www.douyin.com/video/7682442957798161531",
+        attempt_id="attempt_industry_001", profile=None, operator_profile_hint="mix",
+        industry="餐饮", reanalyze=False,
+    )
+    assert operation.state["request"]["industry"] == "餐饮"
+    resumed = module.Orchestrator(
+        pipeline_root=pipeline, repo_root=repo, downloader_root=downloader,
+        source_url="https://www.douyin.com/video/7682442957798161531",
+        attempt_id="attempt_industry_001", profile=None, operator_profile_hint="mix",
+        industry="餐饮", reanalyze=False,
+    )
+    assert resumed.state["request"]["industry"] == "餐饮"
+    with pytest.raises(module.CaseAnalysisError) as mismatch:
+        module.Orchestrator(
+            pipeline_root=pipeline, repo_root=repo, downloader_root=downloader,
+            source_url="https://www.douyin.com/video/7682442957798161531",
+            attempt_id="attempt_industry_001", profile=None, operator_profile_hint="mix",
+            industry="零售", reanalyze=False,
+        )
+    assert mismatch.value.code == "ATTEMPT_IDENTITY_MISMATCH"
+
+
 def test_reanalysis_lineage_never_overwrites_approved_case(tmp_path: Path):
     repo, pipeline, downloader = roots(tmp_path)
     canonical = pipeline / "data" / "cases" / "7682442957798161531" / "case_v1.json"

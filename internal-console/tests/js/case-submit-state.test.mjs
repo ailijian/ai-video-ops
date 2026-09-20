@@ -46,6 +46,7 @@ const failedTask = {
   payload: {
     source_url: "https://www.douyin.com/video/7999999999999999901",
     operator_profile_hint: "hybrid",
+    industry: "餐饮",
   },
 };
 assert.deepEqual(projectFailedCaseTask(failedTask), {
@@ -53,6 +54,7 @@ assert.deepEqual(projectFailedCaseTask(failedTask), {
   caseId: failedTask.subject_ref,
   sourceUrl: failedTask.payload.source_url,
   operatorProfileHint: "hybrid",
+  industry: "餐饮",
   sourceAcquisitionFailed: true,
 });
 assert.equal(projectFailedCaseTask({ ...failedTask, status: "running" }), null);

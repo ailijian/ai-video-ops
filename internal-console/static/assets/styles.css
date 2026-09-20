@@ -203,7 +203,9 @@ a { color: inherit; text-decoration: none; }
 .field .case-batch-choice { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 0; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface); }
 .case-batch-choice span { min-width: 0; overflow-wrap: anywhere; font-size: 13px; font-weight: 400; }
 .case-batch-choice strong { font-weight: 600; }
-.case-batch-choice select { flex: 0 0 136px; min-height: 44px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); }
+.case-batch-controls { min-width: 0; flex: 0 1 360px; display: grid; grid-template-columns: minmax(0, 1fr) 136px; gap: 8px; }
+.case-batch-controls input { min-width: 0; width: 100%; min-height: 44px; }
+.case-batch-choice select { min-width: 0; width: 100%; min-height: 44px; padding: 0 8px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface); color: var(--ink); }
 .case-batch-results { margin: 16px 0; padding: 16px; border: 1px solid var(--line); border-radius: var(--radius-md); }
 .case-batch-results h3 { margin: 0 0 6px; font-size: 16px; }
 .case-batch-results p { margin: 0 0 12px; color: var(--ink-soft); font-size: 13px; }
@@ -371,7 +373,7 @@ a { color: inherit; text-decoration: none; }
 
 @media (max-width: 767px) {
   .field .case-batch-choice { align-items: stretch; flex-direction: column; }
-  .case-batch-choice select { flex-basis: auto; width: 100%; }
+  .case-batch-controls { width: 100%; grid-template-columns: minmax(0, 1fr); }
   .case-profile-choice { grid-template-columns: 1fr; }
   .case-profile-choice label { min-height: 56px; }
   .operator-activity-row { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; }

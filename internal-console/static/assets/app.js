@@ -166,6 +166,8 @@ function openModal({
   reasonRequired = false,
   reasonOptional = false,
   profileHintRequired = false,
+  industryRequired = false,
+  industryValue = "",
 } = {}) {
   return new Promise((resolve) => {
     const previousFocus = document.activeElement;
@@ -176,6 +178,7 @@ function openModal({
       <p id="dialog-description">${escapeHtml(description)}</p>
       ${reasonRequired || reasonOptional ? `<div class="field modal-reason"><label for="modal-reason">${escapeHtml(reasonLabel)}</label><textarea id="modal-reason" placeholder="${escapeHtml(reasonPlaceholder)}" ${reasonRequired ? "required" : ""} ${reasonOptional ? 'maxlength="1000"' : ""}></textarea><span class="form-error" data-modal-error role="alert">请填写原因后继续。</span></div>` : ""}
       ${profileHintRequired ? `<div class="field"><label for="modal-profile-hint">这个视频更接近哪种结构？</label><select id="modal-profile-hint" required><option value="">请选择</option><option value="mix">混剪型</option><option value="news">新闻体</option><option value="hybrid">混合型</option><option value="uncertain">不确定</option></select><span class="form-error" data-modal-profile-error role="alert">请选择结构类型。</span></div>` : ""}
+      ${industryRequired ? `<div class="field"><label for="modal-industry">所属行业</label><input id="modal-industry" type="text" list="modal-industry-suggestions" maxlength="30" value="${escapeHtml(industryValue)}" placeholder="选择建议或填写行业" required><datalist id="modal-industry-suggestions"><option value="餐饮"></option><option value="本地生活"></option><option value="零售"></option><option value="烘焙甜品"></option></datalist><span class="form-error" data-modal-industry-error role="alert">请填写具体行业。</span></div>` : ""}
       <div class="modal-actions"><button class="btn btn-secondary" type="button" data-modal-cancel>${escapeHtml(cancelLabel)}</button><button class="btn ${danger ? "btn-danger" : "btn-primary"}" type="button" data-modal-confirm>${escapeHtml(confirmLabel)}</button></div>
     </section>`;
     document.body.append(backdrop);
@@ -184,6 +187,7 @@ function openModal({
     const confirmButton = backdrop.querySelector("[data-modal-confirm]");
     const reasonInput = backdrop.querySelector("#modal-reason");
     const profileInput = backdrop.querySelector("#modal-profile-hint");
+    const industryInput = backdrop.querySelector("#modal-industry");
     let settled = false;
 
     const close = (result) => {
@@ -208,7 +212,13 @@ function openModal({
         profileInput.focus();
         return;
       }
-      close({ confirmed: true, reason, profileHint: profileInput?.value || null });
+      const industry = industryInput?.value.trim() || null;
+      if (industryRequired && (!industry || ["待分类", "unknown"].includes(industry.toLowerCase()))) {
+        backdrop.querySelector("[data-modal-industry-error]").classList.add("visible");
+        industryInput.focus();
+        return;
+      }
+      close({ confirmed: true, reason, profileHint: profileInput?.value || null, industry });
     };
     const onKeydown = (event) => {
       if (event.key === "Escape") {
@@ -217,7 +227,7 @@ function openModal({
         return;
       }
       if (event.key !== "Tab") return;
-      const focusable = [...modal.querySelectorAll('button:not([disabled]), textarea:not([disabled]), select:not([disabled])')];
+      const focusable = [...modal.querySelectorAll('button:not([disabled]), textarea:not([disabled]), select:not([disabled]), input:not([disabled])')];
       const first = focusable[0];
       const last = focusable.at(-1);
       if (event.shiftKey && document.activeElement === first) {
@@ -232,7 +242,7 @@ function openModal({
     confirmButton.addEventListener("click", confirm);
     backdrop.addEventListener("click", (event) => { if (event.target === backdrop) cancel(); });
     document.addEventListener("keydown", onKeydown);
-    (reasonInput || confirmButton).focus();
+    (industryInput || reasonInput || confirmButton).focus();
   });
 }
 

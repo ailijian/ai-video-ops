@@ -6,6 +6,9 @@ import { detectCaseSourceInput, extractCaseSourceUrls } from "./case-source-dete
 import { uploadCaseFile, validateCaseFile } from "./case-file-upload.mjs?v=source-upload-ui-2";
 import { submitCaseBatch } from "./case-batch-submit.mjs?v=case-batch-1";
 
+const CASE_INDUSTRY_SUGGESTIONS = ["餐饮", "本地生活", "零售", "烘焙甜品"];
+const hasSpecificIndustry = (value) => Boolean(value?.trim() && !["待分类", "unknown"].includes(value.trim().toLowerCase()));
+
 export function caseAcquisitionWarning(acquisition, { hasFile = false, unavailable = false } = {}) {
   if (hasFile || (acquisition?.mode === "qiyun" && acquisition.configured)) return "";
   if (acquisition?.mode === "qiyun") return "奇云付费解析尚未连接。请上传视频，或联系管理员检查配置。";
@@ -116,6 +119,11 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
           <div id="source-detection" class="source-detection muted">输入内容后自动识别来源</div>
           <div id="case-acquisition-status" class="source-acquisition-status warning" role="status" hidden></div>
           <div id="case-batch-choices" class="case-batch-choices" hidden></div></div>
+          <div class="field case-industry-field" data-case-industry-panel><label for="case-industry">所属行业</label>
+            <input id="case-industry" type="text" list="case-industry-suggestions" maxlength="30" autocomplete="off" placeholder="选择建议或填写行业，例如餐饮" aria-describedby="case-industry-help">
+            <datalist id="case-industry-suggestions">${CASE_INDUSTRY_SUGGESTIONS.map((industry) => `<option value="${industry}"></option>`).join("")}</datalist>
+            <p id="case-industry-help" class="field-hint">可从建议中选择，也可填写其他行业。</p>
+          </div>
           <div class="field case-file-field"><span class="case-file-label">或上传本地视频</span>
             <label class="case-file-picker">
               <input id="case-video-file" type="file" accept=".mp4,.mov,.m4v,.webm,video/mp4,video/quicktime,video/webm" aria-label="选择视频文件" aria-describedby="case-file-help case-file-selected">
@@ -139,6 +147,8 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
     app.innerHTML = shell("添加案例", body);
     bindCommonActions();
     const input = document.querySelector("#case-url");
+    const industryInput = document.querySelector("#case-industry");
+    const industryPanel = document.querySelector("[data-case-industry-panel]");
     const detection = document.querySelector("#source-detection");
     const form = document.querySelector("#case-url-form");
     const fileInput = form.querySelector("#case-video-file");
@@ -159,7 +169,9 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
     const batchChoices = document.querySelector("#case-batch-choices");
     const acquisitionStatus = document.querySelector("#case-acquisition-status");
     const selectedHint = () => form.querySelector('input[name="operator-profile-hint"]:checked')?.value || null;
+    const selectedIndustry = () => industryInput.value.trim();
     const batchHints = new Map();
+    const batchIndustries = new Map();
     let activeState = "idle";
     let activeCaseId = null;
     let activeTaskId = null;
@@ -192,9 +204,11 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       reanalysisState = reanalysis;
       const projection = projectCaseSubmitState(status);
       input.disabled = projection.inputDisabled;
+      industryInput.disabled = !["idle", "failed", "rejected"].includes(status);
       pasteButton.disabled = projection.pasteDisabled;
       fileInput.disabled = projection.inputDisabled;
       inputPanel.hidden = !["idle", "failed", "rejected"].includes(status);
+      industryPanel.hidden = extractCaseSourceUrls(input.value).length > 1 || !["idle", "failed", "rejected"].includes(status);
       profilePanel.hidden = !["idle", "failed", "rejected"].includes(status) || extractCaseSourceUrls(input.value).length > 1;
       actionsHost.innerHTML = actionMarkup(projection);
       actionsHost.querySelectorAll("[data-route]").forEach((link) => link.addEventListener("click", (event) => {
@@ -210,6 +224,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       activeTaskId = null;
       reanalysisState = null;
       input.value = "";
+      industryInput.value = "";
       fileInput.value = "";
       fileSelected.textContent = "未选择文件";
       fileSelected.classList.remove("has-file");
@@ -217,6 +232,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       reviewCaseId = null;
       reanalysisRequiresFile = false;
       batchHints.clear();
+      batchIndustries.clear();
       form.querySelectorAll('input[name="operator-profile-hint"]').forEach((radio) => { radio.checked = false; });
       resultBox.innerHTML = "";
       document.querySelector("#case-form-error").classList.remove("visible");
@@ -232,18 +248,20 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       detection.textContent = projection.label;
       detection.className = projection.recognized ? "source-detection" : "source-detection muted";
       const multi = urls.length > 1 && !reviewCaseId;
+      industryPanel.hidden = multi || !["idle", "failed", "rejected"].includes(activeState);
       profilePanel.hidden = multi || !["idle", "failed", "rejected"].includes(activeState);
       batchChoices.hidden = !multi;
       if (!multi) { batchChoices.innerHTML = ""; return; }
-      batchChoices.innerHTML = `<p class="field-hint">每个视频单独选择结构类型；已存在的案例不会重复建立任务。</p>
-        ${urls.map((url, index) => `<label class="case-batch-choice"><span><strong>${index + 1}. ${escapeHtml(url)}</strong></span>
+      batchChoices.innerHTML = `<p class="field-hint">每个视频单独填写行业并选择结构类型；已存在的案例不会重复建立任务。</p>
+        ${urls.map((url, index) => `<div class="case-batch-choice"><span><strong>${index + 1}. ${escapeHtml(url)}</strong></span>
+          <div class="case-batch-controls"><input type="text" data-batch-industry-url="${escapeHtml(url)}" list="case-industry-suggestions" maxlength="30" placeholder="所属行业" value="${escapeHtml(batchIndustries.get(url) || "")}" aria-label="第 ${index + 1} 个视频的所属行业">
           <select data-batch-url="${escapeHtml(url)}" aria-label="第 ${index + 1} 个视频的结构类型">
             <option value="">选择结构类型</option>
             <option value="mix" ${batchHints.get(url) === "mix" ? "selected" : ""}>混剪型</option>
             <option value="news" ${batchHints.get(url) === "news" ? "selected" : ""}>新闻体</option>
             <option value="hybrid" ${batchHints.get(url) === "hybrid" ? "selected" : ""}>混合型</option>
             <option value="uncertain" ${batchHints.get(url) === "uncertain" ? "selected" : ""}>不确定</option>
-          </select></label>`).join("")}`;
+          </select></div></div>`).join("")}`;
     };
     const updateAcquisitionNotice = () => {
       const warning = caseAcquisitionWarning(acquisition, {
@@ -255,6 +273,10 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
     batchChoices.addEventListener("change", (event) => {
       const select = event.target.closest("[data-batch-url]");
       if (select) batchHints.set(select.dataset.batchUrl, select.value);
+    });
+    batchChoices.addEventListener("input", (event) => {
+      const industry = event.target.closest("[data-batch-industry-url]");
+      if (industry) batchIndustries.set(industry.dataset.batchIndustryUrl, industry.value);
     });
     const showSubmissionResult = (result) => {
       if (!result.duplicate) {
@@ -322,13 +344,15 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       if (reviewCaseId) {
         const reviewed = await api(`/api/cases/${encodeURIComponent(reviewCaseId)}/review`, {
           method: "POST", body: JSON.stringify({ decision: "reanalyze", reason: extra.reason,
-            operator_profile_hint: selectedHint(), ...(file ? { source_upload_id: uploadedReceipt.upload_id } : {}) }),
+            operator_profile_hint: selectedHint(), industry: selectedIndustry(),
+            ...(file ? { source_upload_id: uploadedReceipt.upload_id } : {}) }),
         });
         return { ...reviewed, duplicate: false, case_id: reviewCaseId };
       }
       return api("/api/cases/analyze", {
         method: "POST", body: JSON.stringify({ url: file ? uploadedReceipt.canonical_url : input.value,
-          operator_profile_hint: selectedHint(), ...(file ? { source_upload_id: uploadedReceipt.upload_id } : {}), ...extra }),
+          operator_profile_hint: selectedHint(), industry: selectedIndustry(),
+          ...(file ? { source_upload_id: uploadedReceipt.upload_id } : {}), ...extra }),
       });
     };
     input.addEventListener("input", updateDetection);
@@ -349,6 +373,11 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       if (resetButton) return resetForAnotherCase();
       const reanalyzeButton = event.target.closest("[data-explicit-reanalysis]");
       if (!reanalyzeButton || !projectCaseSubmitState(activeState).allowReanalysis) return;
+      if (!hasSpecificIndustry(selectedIndustry())) {
+        showToast("请填写案例所属行业。");
+        industryInput.focus();
+        return;
+      }
 
       let reason = "分析失败后由运营人员显式重新分析。";
       if (reanalysisState === "rejected") {
@@ -386,15 +415,16 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
         if (fileInput.files.length) return showError("多个链接不能共用一个视频文件。请移除文件，或逐条上传对应视频。");
         if (uploadRequired) return showError("当前需要上传视频文件，请逐条添加并上传对应的视频。");
         if (urls.some((url) => !batchHints.get(url))) return showError("请为每个视频选择结构类型；不确定也可以选择。");
-        const items = urls.map((url) => ({ url, hint: batchHints.get(url) }));
+        if (urls.some((url) => !hasSpecificIndustry(batchIndustries.get(url)))) return showError("请为每个视频填写具体行业。");
+        const items = urls.map((url) => ({ url, hint: batchHints.get(url), industry: batchIndustries.get(url).trim() }));
         const controller = new AbortController();
         const abortBatch = () => controller.abort();
         stopUpload = abortBatch;
         const batchProgress = [];
         setSubmitState("submitting");
         try {
-          const batch = await submitCaseBatch(items, ({ url, hint }) => api("/api/cases/analyze", {
-            method: "POST", body: JSON.stringify({ url, operator_profile_hint: hint }), signal: controller.signal,
+          const batch = await submitCaseBatch(items, ({ url, hint, industry }) => api("/api/cases/analyze", {
+            method: "POST", body: JSON.stringify({ url, operator_profile_hint: hint, industry }), signal: controller.signal,
           }), (result) => {
             batchProgress.push(result);
             if (document.querySelector("#case-url-form") === form) renderBatchResults(batchProgress, items.length);
@@ -404,6 +434,9 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
           if (batch.pending.length === 1) {
             const hint = form.querySelector(`input[name="operator-profile-hint"][value="${batch.pending[0].hint}"]`);
             if (hint) hint.checked = true;
+            industryInput.value = batch.pending[0].industry;
+          } else {
+            industryInput.value = "";
           }
           setSubmitState("idle");
           updateDetection();
@@ -420,6 +453,12 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
         errorBox.textContent = "请选择视频结构类型；不确定也可以选择。";
         errorBox.classList.add("visible");
         profilePanel.querySelector("input")?.focus();
+        return;
+      }
+      if (!hasSpecificIndustry(selectedIndustry())) {
+        errorBox.textContent = "请填写案例所属的具体行业。";
+        errorBox.classList.add("visible");
+        industryInput.focus();
         return;
       }
       setSubmitState("submitting");
@@ -466,6 +505,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
         reviewCaseId = reanalysisCaseId;
         reanalysisRequiresFile = detail.review_media?.operator_uploaded === true;
         input.value = detail.source_url || "";
+        industryInput.value = detail.industry === "待分类" ? "" : detail.industry || "";
         const hint = detail.operator_profile_hint;
         if (["mix", "news", "hybrid", "uncertain"].includes(hint)) {
           form.querySelector(`input[name="operator-profile-hint"][value="${hint}"]`).checked = true;
@@ -492,6 +532,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
           throw new Error("这条任务不能从添加案例页恢复。请返回任务记录确认状态。");
         }
         input.value = retry.sourceUrl;
+        industryInput.value = retry.industry === "待分类" ? "" : retry.industry || "";
         if (retry.operatorProfileHint) {
           const choice = form.querySelector(`input[name="operator-profile-hint"][value="${retry.operatorProfileHint}"]`);
           if (choice) choice.checked = true;
@@ -538,6 +579,37 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
             }),
           });
           showToast("历史补充已保存");
+          return renderCaseDetail(caseId);
+        } catch (error) {
+          showToast(error.detail?.next_action || error.message);
+          button.disabled = false;
+        }
+      });
+      document.querySelector("[data-industry-annotation]")?.addEventListener("click", async (event) => {
+        const button = event.currentTarget;
+        const decision = await openModal({
+          title: detail.industry_annotation ? "修改历史补充行业" : "补充行业",
+          description: "这是对历史案例的人工补充，不改变已入库案例。",
+          confirmLabel: "保存补充",
+          industryRequired: true,
+          industryValue: detail.industry_annotation?.industry || "",
+          reasonOptional: true,
+          reasonLabel: "备注（选填）",
+          reasonPlaceholder: "可补充选择这个行业的原因",
+        });
+        if (!decision.confirmed) return;
+        button.disabled = true;
+        try {
+          await api(`/api/cases/${encodeURIComponent(caseId)}/industry-annotation`, {
+            method: "POST",
+            body: JSON.stringify({
+              industry: decision.industry,
+              note: decision.reason,
+              approved_case_sha256: detail.approved_case_sha256,
+              expected_annotation_sha256: detail.industry_annotation_sha256,
+            }),
+          });
+          showToast("行业补充已保存");
           return renderCaseDetail(caseId);
         } catch (error) {
           showToast(error.detail?.next_action || error.message);

@@ -12,5 +12,5 @@ const second = "https://v.douyin.com/OUUqMAZ3SvY/";
 assert.deepEqual(extractCaseSourceUrls(`复制打开抖音 ${first}。\n复制打开抖音 ${second} RXZ:/`), [first, second]);
 assert.deepEqual(extractCaseSourceUrls(`${first}\n${first}`), [first]);
 assert.deepEqual(extractCaseSourceUrls("https://not-douyin.com/video/7999999999999999901"), []);
-assert.equal(detectCaseSourceInput(`${first}\n${second}`).label, "已识别 2 个抖音链接，请逐条选择结构类型");
+assert.equal(detectCaseSourceInput(`${first}\n${second}`).label, "已识别 2 个抖音链接，请逐条填写行业并选择结构类型");
 console.log("case source detection PASS");

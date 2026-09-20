@@ -28,6 +28,7 @@ def test_case_detail_is_privacy_safe_and_keeps_media_rights_separate(settings):
     # not as business content or raw evidence in the default UI.
     detail.pop("approved_case_sha256")
     detail.pop("profile_annotation_sha256")
+    detail.pop("industry_annotation_sha256")
     serialized = json.dumps(detail, ensure_ascii=False).lower()
     assert detail["review"]["approved"] is True
     assert detail["media_rights"]["production_authorized"] is False

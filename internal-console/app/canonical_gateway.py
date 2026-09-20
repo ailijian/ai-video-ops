@@ -355,7 +355,11 @@ def list_cases(settings: Settings) -> list[dict[str, Any]]:
         key=lambda item: (item.approved_at or "", item.case_id), reverse=True
     )
     return [
-        {**item.to_dict(), **_case_profile_annotation_projection(settings, item.to_dict())}
+        {
+            **item.to_dict(),
+            **_case_profile_annotation_projection(settings, item.to_dict()),
+            **_case_industry_annotation_projection(settings, item.to_dict()),
+        }
         for item in projections
     ]
 
@@ -613,6 +617,7 @@ def get_case_detail(settings: Settings, case_id: str) -> dict[str, Any]:
     if recovery_state is not None:
         projection["status"] = "awaiting_review"
     projection.update(_case_profile_annotation_projection(settings, projection))
+    projection.update(_case_industry_annotation_projection(settings, projection))
     sequence = [
         _safe_chinese_text(item.get("description"), max_length=260)
         for item in (understanding.get("structure_sequence") or [])
@@ -822,26 +827,41 @@ CASE_PROFILE_ANNOTATION_AUTHORITY = {
     "annotation_grants_profile_compatibility": False,
     "approved_case_modified": False,
 }
+CASE_INDUSTRY_ANNOTATION_AUTHORITY = {
+    "annotation_is_operator_label": True,
+    "annotation_changes_case_industry": False,
+    "annotation_changes_matching": False,
+    "approved_case_modified": False,
+    "fingerprint_modified": False,
+}
 
 
-def _profile_annotation_paths(settings: Settings, case_id: str) -> tuple[Path, Path]:
+def _annotation_paths(settings: Settings, case_id: str, filename: str, error_code: str) -> tuple[Path, Path]:
     if not re.fullmatch(r"\d{10,24}", case_id):
         raise CanonicalOperationError(
-            "CASE_PROFILE_ANNOTATION_BLOCKED", "案例编号无效。", "请返回案例列表重新选择。"
+            error_code, "案例编号无效。", "请返回案例列表重新选择。"
         )
     try:
         root = settings.pipeline_root / "data"
         return (
             resolve_within(root, "cases", case_id, "case_v1.json"),
-            resolve_within(root, "case_governance", "cases", case_id, "case_profile_annotation_v1.json"),
+            resolve_within(root, "case_governance", "cases", case_id, filename),
         )
     except ValueError as exc:
         raise CanonicalOperationError(
-            "CASE_PROFILE_ANNOTATION_BLOCKED", "案例记录路径无效。", "请联系管理员检查存储位置。"
+            error_code, "案例记录路径无效。", "请联系管理员检查存储位置。"
         ) from exc
 
 
-def _validate_annotation_case(case_path: Path, case_id: str) -> str:
+def _profile_annotation_paths(settings: Settings, case_id: str) -> tuple[Path, Path]:
+    return _annotation_paths(settings, case_id, "case_profile_annotation_v1.json", "CASE_PROFILE_ANNOTATION_BLOCKED")
+
+
+def _industry_annotation_paths(settings: Settings, case_id: str) -> tuple[Path, Path]:
+    return _annotation_paths(settings, case_id, "case_industry_annotation_v1.json", "CASE_INDUSTRY_ANNOTATION_BLOCKED")
+
+
+def _validate_annotation_case(case_path: Path, case_id: str, *, field: str = "profile") -> str:
     """Check approval binding, including the historical receipt SHA field.
 
     This never re-approves a Case or grants profile/media compatibility.
@@ -868,9 +888,13 @@ def _validate_annotation_case(case_path: Path, case_id: str) -> str:
         raise CanonicalOperationError(
             "CASE_PROFILE_ANNOTATION_BLOCKED", "案例审批记录校验未通过。", "请检查审批记录后刷新，不要修改已批准案例。"
         )
-    if case.get("operator_profile_hint"):
+    if field == "profile" and case.get("operator_profile_hint"):
         raise CanonicalOperationError(
             "CASE_PROFILE_ANNOTATION_BLOCKED", "这个案例已有提交标记。", "请使用原有提交标记，无需历史补充。"
+        )
+    if field == "industry" and str((case.get("identity") or {}).get("industry") or "").strip().lower() not in {"", "unknown", "待分类"}:
+        raise CanonicalOperationError(
+            "CASE_INDUSTRY_ANNOTATION_BLOCKED", "这个案例已有行业记录。", "请使用原有行业记录，无需历史补充。"
         )
     return digest
 
@@ -958,6 +982,97 @@ def annotate_case_profile(
         "annotated_at": datetime.now(timezone.utc).isoformat(),
         "note": note.strip(),
         "authority": dict(CASE_PROFILE_ANNOTATION_AUTHORITY),
+    }
+    _write_atomic(annotation_path, annotation)
+    return get_case_detail(settings, case_id)
+
+
+def _case_industry_annotation_projection(settings: Settings, projection: dict[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "industry_annotation": None,
+        "industry_annotation_sha256": None,
+        "can_annotate_industry": False,
+    }
+    # A supplement never replaces the Case's canonical industry or its fingerprint.
+    if projection["status"] != "approved" or projection.get("industry") != "待分类":
+        return result
+    case_id = projection["case_id"]
+    case_path, annotation_path = _industry_annotation_paths(settings, case_id)
+    result.update(approved_case_sha256=_sha256(case_path), can_annotate_industry=True)
+    if not annotation_path.exists():
+        return result
+    try:
+        annotation_bytes = annotation_path.read_bytes()
+        annotation = json.loads(annotation_bytes.decode("utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise CanonicalOperationError(
+            "CASE_INDUSTRY_ANNOTATION_BLOCKED", "行业补充记录无法读取。", "请联系管理员检查补充记录。"
+        ) from exc
+    digest = _validate_annotation_case(case_path, case_id, field="industry")
+    industry = annotation.get("industry") if isinstance(annotation, dict) else None
+    if not (
+        isinstance(annotation, dict)
+        and annotation.get("schema_version") == "case-industry-annotation-v1.0"
+        and annotation.get("case_id") == case_id
+        and annotation.get("approved_case_sha256") == digest
+        and isinstance(industry, str)
+        and industry == industry.strip()
+        and 0 < len(industry) <= 30
+        and industry.lower() not in {"unknown", "待分类"}
+        and annotation.get("authority") == CASE_INDUSTRY_ANNOTATION_AUTHORITY
+        and type(annotation.get("annotated_by_user_id")) is int
+        and annotation.get("annotated_by_phone")
+        and annotation.get("annotated_at")
+        and isinstance(annotation.get("note"), str)
+    ):
+        raise CanonicalOperationError(
+            "CASE_INDUSTRY_ANNOTATION_BLOCKED", "行业补充记录与当前案例不一致。", "请联系管理员检查补充记录，不要改写案例。"
+        )
+    result.update(
+        industry_annotation=annotation,
+        industry_annotation_sha256=hashlib.sha256(annotation_bytes).hexdigest(),
+    )
+    return result
+
+
+def annotate_case_industry(
+    settings: Settings,
+    case_id: str,
+    *,
+    industry: str,
+    approved_case_sha256: str,
+    expected_annotation_sha256: str | None,
+    actor_user_id: int,
+    actor_phone: str,
+    note: str,
+) -> dict[str, Any]:
+    """Save a display-only historical label under the existing Case lock."""
+    case_path, annotation_path = _industry_annotation_paths(settings, case_id)
+    industry = industry.strip()
+    if not case_path.is_file() or not industry or len(industry) > 30 or industry.lower() in {"unknown", "待分类"}:
+        raise CanonicalOperationError(
+            "CASE_INDUSTRY_ANNOTATION_BLOCKED", "请选择有效行业。", "请填写具体行业后重新提交。"
+        )
+    digest = _validate_annotation_case(case_path, case_id, field="industry")
+    current = get_case_detail(settings, case_id)
+    if (
+        not current["can_annotate_industry"]
+        or digest != approved_case_sha256
+        or current["industry_annotation_sha256"] != expected_annotation_sha256
+    ):
+        raise CanonicalOperationError(
+            "AUTHORITY_CHANGED_REFRESH_REQUIRED", "案例或补充记录已变化。", "请刷新后重新确认，不会覆盖同事的补充记录。"
+        )
+    annotation = {
+        "schema_version": "case-industry-annotation-v1.0",
+        "case_id": case_id,
+        "approved_case_sha256": digest,
+        "industry": industry,
+        "annotated_by_user_id": actor_user_id,
+        "annotated_by_phone": actor_phone,
+        "annotated_at": datetime.now(timezone.utc).isoformat(),
+        "note": note.strip(),
+        "authority": dict(CASE_INDUSTRY_ANNOTATION_AUTHORITY),
     }
     _write_atomic(annotation_path, annotation)
     return get_case_detail(settings, case_id)

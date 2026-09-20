@@ -70,6 +70,7 @@ export function projectFailedCaseTask(task) {
     caseId: String(task.subject_ref),
     sourceUrl,
     operatorProfileHint: ["mix", "news", "hybrid", "uncertain"].includes(hint) ? hint : null,
+    industry: typeof task.payload.industry === "string" ? task.payload.industry : null,
     sourceAcquisitionFailed: task.error_code === "SOURCE_ACQUISITION_FAILED",
   };
 }

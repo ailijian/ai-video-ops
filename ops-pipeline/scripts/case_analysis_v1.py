@@ -287,6 +287,7 @@ class Orchestrator:
                 or state.get("attempt_id") != self.attempt_id
                 or state.get("case_id") != self.case_id
                 or state.get("source", {}).get("canonical_url") != self.source_url
+                or state.get("request", {}).get("industry", "待分类") != self.industry
                 or state.get("request", {}).get("operator_profile_hint") != self.operator_profile_hint
                 or state.get("request", {}).get("source_upload_id") != self.source_upload_id
                 or state.get("request", {}).get("source_upload_receipt_sha256") != self.source_upload_receipt_sha256

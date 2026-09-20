@@ -123,6 +123,68 @@ def test_novel_case_creates_one_recoverable_canonical_task(client: TestClient):
     assert len(client.get("/api/tasks").json()["tasks"]) == 1
 
 
+def test_selected_case_industry_is_saved_without_changing_source_identity(client: TestClient):
+    csrf = login_and_change_password(client)
+    url = "https://www.douyin.com/video/7999999999999999968"
+    created = client.post(
+        "/api/cases/analyze", headers={"X-CSRF-Token": csrf},
+        json={"url": url, "operator_profile_hint": "mix", "industry": "  餐饮  "},
+    )
+    assert created.status_code == 200, created.text
+    task = created.json()["task"]
+    assert task["payload"]["industry"] == "餐饮"
+    duplicate = client.post(
+        "/api/cases/analyze", headers={"X-CSRF-Token": csrf},
+        json={"url": url, "operator_profile_hint": "news", "industry": "零售"},
+    )
+    assert duplicate.status_code == 200
+    assert duplicate.json()["existing_task"]["task_id"] == task["task_id"]
+    assert duplicate.json()["existing_task"]["payload"]["industry"] == "餐饮"
+    assert len(client.get("/api/tasks").json()["tasks"]) == 1
+
+
+def test_blank_explicit_case_industry_is_rejected(client: TestClient):
+    csrf = login_and_change_password(client)
+    for invalid in ("   ", "待分类", "unknown"):
+        response = client.post(
+            "/api/cases/analyze", headers={"X-CSRF-Token": csrf},
+            json={
+                "url": "https://www.douyin.com/video/7999999999999999969",
+                "operator_profile_hint": "mix", "industry": invalid,
+            },
+        )
+        assert response.status_code == 422
+        assert response.json()["detail"]["code"] == "CASE_INDUSTRY_REQUIRED"
+    assert client.get("/api/tasks").json()["tasks"] == []
+
+
+def test_failed_case_retry_keeps_selected_industry_when_not_reentered(
+    client: TestClient, settings,
+):
+    csrf = login_and_change_password(client)
+    case_id = "7999999999999999970"
+    url = f"https://www.douyin.com/video/{case_id}"
+    first = client.post(
+        "/api/cases/analyze", headers={"X-CSRF-Token": csrf},
+        json={"url": url, "operator_profile_hint": "mix", "industry": "宠物服务"},
+    ).json()["task"]
+    update_task(settings.database_path, first["task_id"], status="failed")
+    state_path = (
+        settings.pipeline_root / "data" / "case_analysis_attempts" /
+        case_id / first["task_id"] / "case_analysis_attempt_v1.json"
+    )
+    state_path.parent.mkdir(parents=True)
+    state_path.write_text(json.dumps({
+        "attempt_id": first["task_id"], "status": "failed",
+    }), encoding="utf-8")
+    retry = client.post(
+        "/api/cases/analyze", headers={"X-CSRF-Token": csrf},
+        json={"url": url, "reanalyze": True, "reason": "再次分析"},
+    )
+    assert retry.status_code == 200, retry.text
+    assert retry.json()["task"]["payload"]["industry"] == "宠物服务"
+
+
 def test_duplicate_uses_active_task_when_attempt_file_points_to_another_id(
     client: TestClient, settings,
 ):

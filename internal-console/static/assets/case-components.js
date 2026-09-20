@@ -132,10 +132,15 @@ function caseProfileMetadata(item) {
   ].filter(Boolean);
 }
 
+function caseIndustryMetadata(item) {
+  const historical = item.industry_annotation?.industry;
+  return historical ? `行业（历史补充）：${historical}` : `行业：${item.industry || "待分类"}`;
+}
+
 export function caseCard(caseItem, statusPill) {
   const duration = caseItem.duration_seconds == null ? "时长未知" : `${Math.round(caseItem.duration_seconds)} 秒`;
   const source = caseItem.platform === "douyin" ? "抖音" : "视频来源";
-  const optionalMeta = `<span>行业：${escapeHtml(caseItem.industry || "待分类")}</span>`;
+  const optionalMeta = `<span>${escapeHtml(caseIndustryMetadata(caseItem))}</span>`;
   const profileMeta = caseProfileMetadata(caseItem).map((text) => `<span>${escapeHtml(text)}</span>`).join("");
   return `<a class="case-row" href="/cases/${encodeURIComponent(caseItem.case_id)}" data-route data-case-status="${escapeHtml(caseItem.status)}">
     <span class="case-row-main"><strong>${escapeHtml(caseItem.title)}</strong><span class="case-meta"><span>${source} · ${escapeHtml(duration)}</span>${optionalMeta}${profileMeta}</span></span>
@@ -149,8 +154,11 @@ function paragraphList(values) {
 
 export function caseReviewContent(detail, statusPill) {
   const profileLine = caseProfileMetadata(detail).join(" · ") || "未记录结构类型";
+  const industryLine = caseIndustryMetadata(detail);
   const annotationAction = detail.can_annotate_profile && !detail.operator_profile_hint
     ? `<button class="btn btn-secondary" type="button" data-profile-annotation>${detail.profile_annotation ? "修改历史补充" : "补充结构类型"}</button>` : "";
+  const industryAction = detail.can_annotate_industry && detail.industry === "待分类"
+    ? `<button class="btn btn-secondary" type="button" data-industry-annotation>${detail.industry_annotation ? "修改历史补充行业" : "补充行业"}</button>` : "";
   const development = paragraphList(detail.how_it_tells?.development);
   const reviewMedia = detail.review_media || {};
   const sourceUrl = reviewMedia.source_url || detail.source_url || "";
@@ -197,6 +205,8 @@ export function caseReviewContent(detail, statusPill) {
             <div class="review-media-player ${orientation}${isRemotePlayer ? " remote" : ""}">${mediaSurface}</div>
             <div class="review-media-meta"><h1>${escapeHtml(detail.title)}</h1>
               <p class="media-meta-line">${detail.platform === "douyin" ? "抖音" : "视频来源"} · ${detail.duration_seconds == null ? "时长未知" : `${Math.round(detail.duration_seconds)} 秒`}</p>
+              <p class="media-meta-line">${escapeHtml(industryLine)}</p>
+              ${industryAction}
               <p class="media-meta-line">${escapeHtml(profileLine)}</p>
               ${annotationAction}
               ${detail.description ? `<p class="media-description">${escapeHtml(detail.description)}</p>` : ""}

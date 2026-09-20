@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { submitCaseBatch } from "../../static/assets/case-batch-submit.mjs";
 
-const items = ["1", "2", "3", "4"].map((url) => ({ url, hint: "uncertain" }));
+const items = ["1", "2", "3", "4"].map((url) => ({ url, hint: "uncertain", industry: `行业${url}` }));
 const submitted = [];
 const progress = [];
 const capacityError = Object.assign(new Error("稍后重试"), { detail: { code: "GPU_PENDING_LIMIT_REACHED" }, status: 429 });
@@ -13,6 +13,7 @@ const result = await submitCaseBatch(items, async (item) => {
 }, (item) => progress.push(item));
 assert.deepEqual(submitted, ["1", "2", "3", "4"]);
 assert.deepEqual(result.pending.map((item) => item.url), ["4"]);
+assert.equal(result.pending[0].industry, "行业4");
 assert.equal(result.results.length, 4);
 assert.equal(progress.length, 4);
 assert.equal(result.results[1].response.state, "approved");
