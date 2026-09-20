@@ -180,6 +180,23 @@ def _case_metadata(case: dict[str, Any]) -> dict[str, Any]:
         return {}
 
 
+def _source_caption(metadata: dict[str, Any], *, max_length: int) -> str:
+    # The original downloader records the Douyin caption as `desc`; the paid
+    # acquisition provider records the same display field as `title`.
+    return (
+        _safe_chinese_text(metadata.get("desc"), max_length=max_length)
+        or _safe_chinese_text(metadata.get("title"), max_length=max_length)
+    )
+
+
+def _source_filename_title(video_path: Any, case_id: str) -> str:
+    raw = Path(str(video_path or case_id)).stem
+    cleaned = re.sub(rf"[_\s-]*{re.escape(case_id)}$", "", raw).strip(" _-")
+    if not cleaned or cleaned.lower() in {"source", "video", "normalized_source"}:
+        return f"抖音案例 {case_id[-6:]}"
+    return cleaned
+
+
 def _source_dimensions(metadata: dict[str, Any]) -> tuple[int | None, int | None]:
     video = metadata.get("video") if isinstance(metadata.get("video"), dict) else {}
     width = video.get("width")
@@ -216,12 +233,11 @@ def _project_case(case_path: Path, *, attempt_id: str | None = None) -> CaseProj
     )
 
     metadata = _case_metadata(case)
-    raw_title = _safe_chinese_text(metadata.get("desc"), max_length=76)
+    raw_title = _source_caption(metadata, max_length=76)
+    if raw_title:
+        raw_title = re.sub(rf"[_\s-]*{re.escape(case_id)}$", "", raw_title).strip(" _-")
     if not raw_title:
-        raw_title = Path(str(video.get("path") or case_id)).stem
-    raw_title = re.sub(rf"[_\s-]*{re.escape(case_id)}$", "", raw_title).strip(" _-")
-    if not raw_title or raw_title == case_id:
-        raw_title = f"抖音案例 {case_id[-6:]}"
+        raw_title = _source_filename_title(video.get("path"), case_id)
     title = raw_title if len(raw_title) <= 76 else f"{raw_title[:73]}…"
     summary = _safe_chinese_text(understanding.get("content_goal_candidate"))
 
@@ -535,14 +551,11 @@ def _find_case_path(
 
 def _case_title(case: dict[str, Any], case_path: Path) -> str:
     metadata = _case_metadata(case)
-    title = _safe_chinese_text(metadata.get("desc"), max_length=110)
+    title = _source_caption(metadata, max_length=110)
     if title:
         return title
     source_video = ((case.get("source_evidence") or {}).get("video") or {}).get("path")
-    raw = Path(str(source_video or case_path.parent.name)).stem
-    case_id = str(case.get("case_id") or case_path.parent.name)
-    cleaned = re.sub(rf"[_\s-]*{re.escape(case_id)}$", "", raw).strip(" _-")
-    return cleaned or f"抖音案例 {case_id[-6:]}"
+    return _source_filename_title(source_video, str(case.get("case_id") or case_path.parent.name))
 
 
 def _partial_approval_state(
@@ -666,9 +679,9 @@ def get_case_detail(settings: Settings, case_id: str) -> dict[str, Any]:
             {"phone": str(review_receipt["reviewer"])} if review_receipt.get("reviewer") else None
         ),
         "title": _case_title(case, case_path),
-        "description": _safe_chinese_text(metadata.get("desc"), max_length=360),
+        "description": _source_caption(metadata, max_length=360),
         "what_it_says": {
-            "topic": _safe_chinese_text(metadata.get("desc"), max_length=220),
+            "topic": _source_caption(metadata, max_length=220),
             "core_expression": _safe_chinese_text(
                 understanding.get("content_goal_candidate"), max_length=520
             ),
