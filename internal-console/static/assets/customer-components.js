@@ -1,11 +1,12 @@
 import { escapeHtml } from "./case-components.js";
+import { formatProfileValue } from "./profile-components.js?v=productized-stage2-3";
 
 export const CUSTOMER_PROGRESS_STAGES = [
-  ["保存客户原始资料", 20],
-  ["隐私检查", 35],
-  ["提取事实候选", 75],
-  ["评估信息完整度", 90],
-  ["生成审核结果", 99],
+  ["保存客户资料", 20],
+  ["整理公开信息", 35],
+  ["提取客户信息", 75],
+  ["检查信息完整度", 90],
+  ["准备确认内容", 99],
 ];
 
 const FIELD_LABELS = {
@@ -46,7 +47,7 @@ export function customerFieldLabel(field) {
 
 export function customerStatusPill(status) {
   const values = {
-    approved: ["已批准", "pill-approved"],
+    approved: ["已确认", "pill-approved"],
     fact_review_required: ["信息待确认", "pill-review"],
     persona_review_required: ["档案待确认", "pill-review"],
     analyzing: ["分析中", "pill-review"],
@@ -57,7 +58,7 @@ export function customerStatusPill(status) {
   };
 
   const [label, className] =
-    values[status] || [status || "未知", "pill-archived"];
+    values[status] || ["待处理", "pill-archived"];
 
   return `<span class="pill ${className}">${escapeHtml(label)}</span>`;
 }
@@ -104,11 +105,11 @@ export function customerProgressPanel(task, { compact = false } = {}) {
     },
   ).join("");
 
-  let title = "客户信息分析中";
+  let title = "正在整理客户信息";
 
   if (failed) title = "客户信息分析未完成";
-  else if (waiting) title = "分析完成，等待信息确认";
-  else if (completed) title = "客户信息审核已完成";
+  else if (waiting) title = "信息已经整理好";
+  else if (completed) title = "客户信息已确认";
 
   const footer = failed
     ? `<div class="next-action">
@@ -118,11 +119,11 @@ export function customerProgressPanel(task, { compact = false } = {}) {
         )}</span>
       </div>`
     : `<p class="progress-note">
-        你可以离开这个页面。分析任务会继续运行，并保留在“任务记录”中。
+        你可以离开这个页面，任务会在后台继续运行。
       </p>`;
 
   return `
-    <section class="card task-progress ${compact ? "compact" : ""}">
+    <section class="task-progress profile-progress ${compact ? "compact" : ""}">
       <div class="task-progress-head">
         <div>
           <h2>${title}</h2>
@@ -144,25 +145,7 @@ export function customerProgressPanel(task, { compact = false } = {}) {
 }
 
 export function displayFactValue(value) {
-  if (value == null) {
-    return `<span class="muted-value">暂时不知道</span>`;
-  }
-
-  if (Array.isArray(value)) {
-    if (!value.length) return `<span class="muted-value">暂时不知道</span>`;
-
-    return `<ul class="fact-value-list">${value
-      .map((item) => `<li>${escapeHtml(item)}</li>`)
-      .join("")}</ul>`;
-  }
-
-  if (typeof value === "object") {
-    return `<pre class="fact-json">${escapeHtml(
-      JSON.stringify(value, null, 2),
-    )}</pre>`;
-  }
-
-  return `<p class="fact-value-text">${escapeHtml(value)}</p>`;
+  return formatProfileValue(value, { labelFor: customerFieldLabel });
 }
 
 export function editableFactValue(value) {
@@ -216,40 +199,21 @@ export function parseEditedFactValue(originalValue, text) {
 
 export function customerCard(customer) {
   return `
-    <article class="card customer-card">
-      <div class="customer-card-head">
+    <a
+      class="customer-row"
+      href="/customers/${encodeURIComponent(customer.business_id)}"
+      data-route
+    >
+      <div class="customer-row-main">
         <div>
-          <h3>${escapeHtml(customer.display_name)}</h3>
+          <strong>${escapeHtml(customer.display_name)}</strong>
           <p>${escapeHtml(customer.industry || "行业待确认")}</p>
         </div>
+      </div>
+      <div class="customer-row-end">
+        <span class="customer-speaker-count">${Number(customer.speaker_count || 0)} 位出镜人</span>
         ${customerStatusPill(customer.status)}
+        <span class="case-chevron" aria-hidden="true">›</span>
       </div>
-
-      <div class="customer-card-metrics">
-        <div>
-          <span>客户档案</span>
-          <strong>${
-            customer.status === "approved"
-              ? "已批准"
-              : customer.status === "persona_review_required"
-                ? "待总审核"
-                : "建立中"
-          }</strong>
-        </div>
-
-        <div>
-          <span>出镜人</span>
-          <strong>${Number(customer.speaker_count || 0)} 个</strong>
-        </div>
-      </div>
-
-      <a
-        class="inline-link"
-        href="/customers/${encodeURIComponent(customer.business_id)}"
-        data-route
-      >
-        <span>查看客户</span>
-        <span aria-hidden="true">›</span>
-      </a>
-    </article>`;
+    </a>`;
 }

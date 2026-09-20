@@ -1,17 +1,17 @@
 import { createApiClient } from "./api-client.js";
 import { createCaseViews } from "./case-views.js?v=productized-stage1-5";
-import { createCustomerViews } from "./customer-views.js";
+import { createCustomerViews } from "./customer-views.js?v=productized-stage2-3";
 import { progressPanel } from "./case-components.js?v=productized-stage1-5";
 import { startTaskPolling } from "./task-progress.js";
-import { customerProgressPanel } from "./customer-components.js";
+import { customerProgressPanel } from "./customer-components.js?v=productized-stage2-3";
 import { matchWorkflowRoute } from "./routes.js";
 import {
   createSpeakerViews,
-} from "./speaker-views.js";
+} from "./speaker-views.js?v=productized-stage2-3";
 
 import {
   speakerProgressPanel,
-} from "./speaker-components.js";
+} from "./speaker-components.js?v=productized-stage2-3";
 
 import {
   createContentViews,
@@ -500,6 +500,7 @@ const customerViews = createCustomerViews({
   pageHeading,
   skeletonPage,
   showToast,
+  openModal,
   renderLoadError,
 });
 
@@ -512,6 +513,7 @@ const speakerViews = createSpeakerViews({
   pageHeading,
   skeletonPage,
   showToast,
+  openModal,
   renderLoadError,
 });
 

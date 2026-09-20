@@ -1,19 +1,84 @@
 import { escapeHtml } from "./case-components.js";
 
 import {
-  displayFactValue,
   editableFactValue,
   parseEditedFactValue,
-} from "./customer-components.js";
+} from "./customer-components.js?v=productized-stage2-3";
 
 import {
   speakerFieldLabel,
   speakerProgressPanel,
   speakerStatusPill,
   speakerTypeLabel,
-} from "./speaker-components.js";
+} from "./speaker-components.js?v=productized-stage2-3";
+
+import {
+  bindDecisionControls,
+  NeedsInfoState,
+  ProfileRow,
+  ProfileSection,
+  ReviewList,
+} from "./profile-components.js?v=productized-stage2-3";
 
 import { startTaskPolling } from "./task-progress.js";
+
+const SPEAKER_PROFILE_GROUPS = [
+  {
+    title: "基本信息",
+    fields: ["public_display_name", "public_role"],
+  },
+  {
+    title: "可以表达",
+    fields: ["speaker_role_facts", "first_person_allowed_topics"],
+  },
+  {
+    title: "明确不能表达",
+    fields: ["first_person_forbidden_claims", "role_scope_constraints"],
+  },
+  {
+    title: "暂未确认",
+    fields: ["unknown_facts"],
+  },
+];
+
+function speakerProfileSections(facts = []) {
+  const values = new Map(
+    facts
+      .filter((fact) => fact.state === "known")
+      .map((fact) => [fact.field, fact.value]),
+  );
+  const grouped = new Set(SPEAKER_PROFILE_GROUPS.flatMap((group) => group.fields));
+  const sections = SPEAKER_PROFILE_GROUPS.map((group) =>
+    ProfileSection({
+      title: group.title,
+      rows: group.fields.map((field) =>
+        ProfileRow({
+          label: speakerFieldLabel(field),
+          value: values.get(field),
+          labelFor: speakerFieldLabel,
+        }),
+      ),
+    }),
+  );
+  const other = facts.filter(
+    (fact) => fact.state === "known" && !grouped.has(fact.field),
+  );
+  if (other.length) {
+    sections.push(
+      ProfileSection({
+        title: "其他信息",
+        rows: other.map((fact) =>
+          ProfileRow({
+            label: speakerFieldLabel(fact.field),
+            value: fact.value,
+            labelFor: speakerFieldLabel,
+          }),
+        ),
+      }),
+    );
+  }
+  return sections.filter(Boolean).join("");
+}
 
 export function createSpeakerViews({
   app,
@@ -24,6 +89,7 @@ export function createSpeakerViews({
   pageHeading,
   skeletonPage,
   showToast,
+  openModal,
   renderLoadError,
 }) {
   let stopPolling = null;
@@ -75,15 +141,11 @@ export function createSpeakerViews({
           current.insertAdjacentHTML(
             "beforeend",
             `
-              <a
-                class="btn btn-primary btn-wide progress-review-link"
-                href="/customers/${encodeURIComponent(
-                  businessId,
-                )}/speakers/${encodeURIComponent(speakerId)}"
-                data-route
-              >
-                去确认出镜人信息
-              </a>`,
+              <div class="progress-complete-actions">
+                <p>出镜人信息已经整理好，可以开始确认。</p>
+                <a class="btn btn-primary" href="/customers/${encodeURIComponent(businessId)}/speakers/${encodeURIComponent(speakerId)}" data-route>确认出镜人信息</a>
+                <a class="btn btn-secondary" href="/customers/${encodeURIComponent(businessId)}#speakers" data-route>返回出镜人</a>
+              </div>`,
           );
 
           bindCommonActions();
@@ -109,8 +171,7 @@ export function createSpeakerViews({
           {
             message: "客户档案还没有批准。",
             detail: {
-              next_action:
-                "请先完成 Business Persona 审核。",
+              next_action: "请先完成客户档案确认。",
             },
           },
         );
@@ -119,7 +180,7 @@ export function createSpeakerViews({
       app.innerHTML = shell(
         "添加出镜人",
         `
-          <main class="page">
+          <main class="page page-form profile-mutation-page">
             <div class="case-review-heading">
               <a
                 class="back-link"
@@ -131,13 +192,12 @@ export function createSpeakerViews({
             </div>
 
             ${pageHeading(
-              "出镜人",
-              "添加一个出镜人",
-              `为“${customer.display_name}”建立独立的 Speaker Persona。这里只管理这个人可以以第一人称说什么。`,
+              "",
+              "添加出镜人",
+              `为“${customer.display_name}”整理一位出镜人的真实经历、职责和表达边界。`,
             )}
 
-            <div class="customer-new-layout">
-              <section class="card customer-new-panel">
+              <section class="work-surface profile-form-surface" data-speaker-new-surface>
                 <form id="speaker-new-form" novalidate>
                   <div class="field">
                     <label for="speaker-name">姓名</label>
@@ -182,7 +242,7 @@ export function createSpeakerViews({
                     ></textarea>
 
                     <span class="field-hint">
-                      Business Persona 中的经营事实不会自动变成这个人的第一人称经历。
+                      写入这个人的真实经历、职责和擅长表达的内容。
                     </span>
                   </div>
 
@@ -199,7 +259,7 @@ export function createSpeakerViews({
                     ></textarea>
 
                     <span class="field-hint">
-                      至少写一条明确边界。系统不会让 AI 自动决定这部分权限。
+                      这里写明确不能让这个人以第一人称表达的内容。
                     </span>
                   </div>
 
@@ -209,9 +269,7 @@ export function createSpeakerViews({
                     role="alert"
                   ></div>
 
-                  <div id="speaker-analysis-result"></div>
-
-                  <div class="sticky-action">
+                  <div class="profile-form-actions">
                     <button
                       class="btn btn-primary btn-wide"
                       type="submit"
@@ -219,20 +277,9 @@ export function createSpeakerViews({
                       分析出镜人信息
                     </button>
                   </div>
+                  <p class="governance-copy">确认出镜人档案，不会自动获得照片、视频或肖像素材使用权。</p>
                 </form>
               </section>
-
-              <aside class="card notice-card">
-                <h2>两件事保持独立</h2>
-                <p>
-                  出镜人设只定义这个人可以用第一人称表达什么。
-                </p>
-                <p>
-                  即使 Speaker Persona 最终批准，也不代表已经获得肖像、
-                  视频或其他媒体素材使用授权。
-                </p>
-              </aside>
-            </div>
           </main>`,
       );
 
@@ -255,13 +302,9 @@ export function createSpeakerViews({
                 "#speaker-form-error",
               );
 
-            const resultBox =
-              document.querySelector(
-                "#speaker-analysis-result",
-              );
+            const surface = document.querySelector("[data-speaker-new-surface]");
 
             errorBox.classList.remove("visible");
-            resultBox.innerHTML = "";
 
             const forbiddenClaims =
               document
@@ -318,7 +361,7 @@ export function createSpeakerViews({
                     result.existing_task.status,
                   )
                 ) {
-                  resultBox.innerHTML =
+                  surface.innerHTML =
                     `<div data-speaker-progress></div>`;
 
                   bindSpeakerProgress(
@@ -339,7 +382,7 @@ export function createSpeakerViews({
                 );
               }
 
-              resultBox.innerHTML =
+              surface.innerHTML =
                 `<div data-speaker-progress></div>`;
 
               bindSpeakerProgress(
@@ -375,49 +418,7 @@ export function createSpeakerViews({
         submit,
     },
     ) {
-    document
-      .querySelectorAll("[data-speaker-fact-card]")
-      .forEach((card) => {
-        card
-          .querySelectorAll("[data-speaker-fact-choice]")
-          .forEach((button) => {
-            button.addEventListener(
-              "click",
-              () => {
-                const decision =
-                  button.dataset.speakerFactChoice;
-
-                card.dataset.decision =
-                  decision;
-
-                card
-                  .querySelectorAll(
-                    "[data-speaker-fact-choice]",
-                  )
-                  .forEach((item) => {
-                    item.classList.toggle(
-                      "active",
-                      item === button,
-                    );
-                  });
-
-                const editPanel =
-                  card.querySelector(
-                    ".fact-edit-panel",
-                  );
-
-                editPanel.hidden =
-                  decision !== "edit";
-
-                if (decision === "edit") {
-                  editPanel
-                    .querySelector("textarea")
-                    .focus();
-                }
-              },
-            );
-          });
-      });
+    bindDecisionControls({ submitSelector: buttonId });
 
     document
       .querySelector(buttonId)
@@ -427,29 +428,14 @@ export function createSpeakerViews({
           const decisions = [];
 
           for (const candidate of needsReview) {
-            const card = document.querySelector(
-              `[data-speaker-fact-card="${CSS.escape(
+            const row = document.querySelector(
+              `[data-review-row="${CSS.escape(
                 candidate.candidate_id,
               )}"]`,
             );
 
             const decision =
-              card?.dataset.decision;
-
-            if (!decision) {
-              showToast(
-                `还有“${speakerFieldLabel(
-                  candidate.field,
-                )}”没有确认。`,
-              );
-
-              card?.scrollIntoView({
-                behavior: "smooth",
-                block: "center",
-              });
-
-              return;
-            }
+              row?.dataset.decision;
 
             const value = {
               candidate_id:
@@ -457,10 +443,10 @@ export function createSpeakerViews({
               decision,
               note:
                 decision === "approve"
-                  ? "Internal Console Human Review confirmed this Speaker fact."
+                  ? "Internal Console reviewer confirmed this speaker information."
                   : decision === "reject"
-                    ? "Internal Console Human Review did not accept this Speaker fact."
-                    : "Internal Console Human Review corrected this Speaker fact.",
+                    ? "Internal Console reviewer did not accept this speaker information."
+                    : "Internal Console reviewer corrected this speaker information.",
             };
 
             if (decision === "edit") {
@@ -468,8 +454,8 @@ export function createSpeakerViews({
                 value.edited_value =
                   parseEditedFactValue(
                     candidate.value,
-                    card.querySelector(
-                      ".fact-edit-panel textarea",
+                    row.querySelector(
+                      ".review-edit-panel textarea",
                     ).value,
                   );
               } catch (error) {
@@ -505,120 +491,26 @@ export function createSpeakerViews({
 
     const knownHtml = known.length
       ? `
-        <section class="section">
-          <div class="section-head">
-            <div>
-              <h2>已经明确的信息</h2>
-              <p>
-                姓名、公开身份和人工设定的表达边界来自直接输入。
-              </p>
-            </div>
-          </div>
-
-          <div class="fact-list">
+        <details class="known-facts-disclosure">
+          <summary>已经明确的信息 <span>${known.length} 项</span></summary>
+          <dl class="profile-rows">
             ${known
-              .map(
-                (item) => `
-                  <article class="card fact-card confirmed">
-                    <div class="fact-card-head">
-                      <strong>
-                        ${escapeHtml(
-                          speakerFieldLabel(item.field),
-                        )}
-                      </strong>
-                      <span class="pill pill-approved">
-                        已确认
-                      </span>
-                    </div>
-
-                    ${displayFactValue(item.value)}
-                  </article>`,
+              .map((item) =>
+                ProfileRow({
+                  label: speakerFieldLabel(item.field),
+                  value: item.value,
+                  labelFor: speakerFieldLabel,
+                }),
               )
               .join("")}
-          </div>
-        </section>`
+          </dl>
+        </details>`
       : "";
 
-    const reviewHtml = needsReview
-      .map(
-        (item) => `
-          <article
-            class="card fact-card"
-            data-speaker-fact-card="${escapeHtml(
-              item.candidate_id,
-            )}"
-          >
-            <div class="fact-card-head">
-              <strong>
-                ${escapeHtml(
-                  speakerFieldLabel(item.field),
-                )}
-              </strong>
-
-              <span class="pill pill-review">
-                需要确认
-              </span>
-            </div>
-
-            ${displayFactValue(item.value)}
-
-            ${
-              item.source_excerpt
-                ? `
-                  <details class="fact-source">
-                    <summary>查看依据</summary>
-                    <p>${escapeHtml(
-                      item.source_excerpt,
-                    )}</p>
-                  </details>`
-                : ""
-            }
-
-            <div class="fact-choice-row">
-              <button
-                class="fact-choice"
-                type="button"
-                data-speaker-fact-choice="reject"
-              >
-                不采用
-              </button>
-
-              <button
-                class="fact-choice"
-                type="button"
-                data-speaker-fact-choice="edit"
-              >
-                修改
-              </button>
-
-              <button
-                class="fact-choice primary"
-                type="button"
-                data-speaker-fact-choice="approve"
-              >
-                确认
-              </button>
-            </div>
-
-            <div class="fact-edit-panel" hidden>
-              <label>修改后的事实</label>
-
-              <textarea rows="4">${escapeHtml(
-                editableFactValue(item.value),
-              )}</textarea>
-
-              <span>
-                列表型内容请一行写一项。
-              </span>
-            </div>
-          </article>`,
-      )
-      .join("");
-
     app.innerHTML = shell(
-      "出镜人信息审核",
+      "确认出镜人信息",
       `
-        <main class="page customer-review-page">
+        <main class="page page-form customer-review-page profile-review-page">
           <div class="case-review-heading">
             <a
               class="back-link"
@@ -634,42 +526,31 @@ export function createSpeakerViews({
           </div>
 
           ${pageHeading(
-            "出镜人信息审核",
-            detail.display_name,
-            detail.public_role
+            "",
+            "确认出镜人信息",
+            `请检查“${detail.display_name}”本人可以承担的职责、经历和表达范围。`,
           )}
-
-          <div class="speaker-boundary-banner">
-            <strong>
-              Business Fact 不会自动变成这个人的第一人称事实。
-            </strong>
-            <span>
-              这里只审核这个人本人可以承担的职责、经历和表达范围。
-            </span>
-          </div>
 
           ${knownHtml}
 
-          <section class="section">
-            <div class="section-head">
-              <div>
-                <h2>需要你确认</h2>
-                <p>
-                  ${needsReview.length}
-                  条 AI 提取结果仍不是 Speaker Truth。
-                </p>
-              </div>
+          <section class="work-surface review-surface">
+            <div class="review-surface-heading">
+              <h2>需要你确认</h2>
+              <p>逐项选择不采用、修改或确认。</p>
             </div>
-
-            <div class="fact-list">
-              ${reviewHtml}
-            </div>
+            ${ReviewList({
+              items: needsReview,
+              labelFor: speakerFieldLabel,
+              namespace: "speaker",
+              editableValueFor: editableFactValue,
+            })}
           </section>
 
-          <div class="sticky-action">
+          <div class="sticky-action review-submit-bar">
+            <span data-review-progress>已确认 0 / ${needsReview.length}</span>
             <button
               id="submit-speaker-fact-review"
-              class="btn btn-primary btn-wide"
+              class="btn btn-primary"
               type="button"
             >
               确认这些信息
@@ -706,8 +587,7 @@ export function createSpeakerViews({
                 method: "POST",
                 body: JSON.stringify({
                   decisions,
-                  note:
-                    "Initial Speaker Fact Human Review completed.",
+                  note: "Internal Console speaker information review completed.",
                 }),
               },
             );
@@ -717,11 +597,11 @@ export function createSpeakerViews({
               "completed_persona_blocked"
             ) {
               showToast(
-                "已保存，但还缺少建立出镜人设所需的信息。",
+                "已保存，仍需补充一些关键信息。",
               );
             } else {
               showToast(
-                "出镜人事实已确认，进入人设总审核。",
+                "出镜人信息已确认，接下来请确认完整档案。",
               );
             }
 
@@ -758,9 +638,9 @@ export function createSpeakerViews({
     );
 
     app.innerHTML = shell(
-      "出镜人设审核",
+      "确认出镜人档案",
       `
-        <main class="page customer-review-page">
+        <main class="page page-form customer-review-page profile-review-page">
           <div class="case-review-heading">
             <a
               class="back-link"
@@ -776,72 +656,23 @@ export function createSpeakerViews({
           </div>
 
           ${pageHeading(
-            "出镜人设审核",
-            detail.display_name,
-            detail.public_role
+            "",
+            "确认出镜人档案",
+            "整体检查这个人的身份、经历与表达边界。",
           )}
 
-          <div class="authority-banner">
-            <strong>
-              这是第二道人工作业门。
-            </strong>
-
-            <span>
-              Speaker Facts 已确认，不等于 Speaker Persona 已批准。
-              请从整体上确认这个人的第一人称表达边界是否可靠。
-            </span>
+          <div class="work-surface profile-document">
+            ${speakerProfileSections(facts)}
           </div>
 
-          <section class="section">
-            <div class="section-head">
-              <div>
-                <h2>将进入正式人设的信息</h2>
-                <p>
-                  共 ${facts.length} 个已知 Speaker Facts。
-                </p>
-              </div>
-            </div>
-
-            <div class="fact-list">
-              ${facts
-                .map(
-                  (fact) => `
-                    <article class="card fact-card confirmed">
-                      <div class="fact-card-head">
-                        <strong>
-                          ${escapeHtml(
-                            speakerFieldLabel(fact.field),
-                          )}
-                        </strong>
-                        <span class="pill pill-approved">
-                          已确认
-                        </span>
-                      </div>
-
-                      ${displayFactValue(fact.value)}
-                    </article>`,
-                )
-                .join("")}
-            </div>
-          </section>
-
-          <div class="rights-banner">
-            <strong>
-              批准人设不会建立媒体使用权。
-            </strong>
-
-            <span>
-              肖像、视频、照片和其他生产素材授权仍由独立 Authority 管理。
-            </span>
-          </div>
-
-          <div class="sticky-action">
+          <div class="sticky-action profile-approval-bar">
+            <p>确认档案不会建立照片、视频或肖像素材使用权。</p>
             <button
               id="approve-speaker-persona"
-              class="btn btn-primary btn-wide"
+              class="btn btn-primary"
               type="button"
             >
-              确认并建立出镜人设
+              确认出镜人档案
             </button>
           </div>
         </main>`,
@@ -856,13 +687,12 @@ export function createSpeakerViews({
       .addEventListener(
         "click",
         async () => {
-          if (
-            !window.confirm(
-              "确认已经整体复核这个人的第一人称表达权限，并批准 Speaker Persona？\n\n这不会建立肖像或视频素材使用权。",
-            )
-          ) {
-            return;
-          }
+          const decision = await openModal({
+            title: "确认出镜人档案？",
+            description: "请确认你已经整体检查这个人的身份、经历和表达边界。确认不会建立照片、视频或肖像素材使用权。",
+            confirmLabel: "确认出镜人档案",
+          });
+          if (!decision.confirmed) return;
 
           const button =
             document.querySelector(
@@ -882,14 +712,13 @@ export function createSpeakerViews({
               {
                 method: "POST",
                 body: JSON.stringify({
-                  note:
-                    "Internal Console Human Review approved the complete Speaker Persona.",
+                  note: "Internal Console reviewer confirmed the complete speaker profile.",
                 }),
               },
             );
 
             showToast(
-              "出镜人设已批准",
+              "出镜人档案已确认",
             );
 
             renderSpeakerDetail(
@@ -904,7 +733,7 @@ export function createSpeakerViews({
 
             button.disabled = false;
             button.textContent =
-              "确认并建立出镜人设";
+              "确认出镜人档案";
           }
         },
       );
@@ -923,7 +752,7 @@ export function createSpeakerViews({
     app.innerHTML = shell(
       "出镜人详情",
       `
-        <main class="page">
+        <main class="page page-form approved-speaker-page">
           <div class="case-review-heading">
             <a
               class="back-link"
@@ -939,69 +768,16 @@ export function createSpeakerViews({
           </div>
 
           ${pageHeading(
-            "出镜人",
+            "",
             detail.display_name,
-            detail.public_role
+            detail.public_role,
           )}
 
-          <section class="customer-overview-grid">
-            <article class="card customer-overview-card">
-              <span>Speaker Persona</span>
-              <strong>已批准</strong>
-              <p>
-                这个人的第一人称表达 Authority 已经建立。
-              </p>
-            </article>
-
-            <article class="card customer-overview-card">
-              <span>媒体使用权</span>
-              <strong>未建立</strong>
-              <p>
-                人设批准不等于肖像、视频或素材使用授权。
-              </p>
-            </article>
-          </section>
-
-          <section class="section">
-            <div class="section-head">
-              <div>
-                <h2>出镜人设</h2>
-                <p>
-                  当前 Approved Speaker Persona 中的已知事实。
-                </p>
-              </div>
-            </div>
-
-            <div class="fact-list">
-              ${facts
-                .map(
-                  (fact) => `
-                    <article class="card fact-card confirmed">
-                      <div class="fact-card-head">
-                        <strong>
-                          ${escapeHtml(
-                            speakerFieldLabel(fact.field),
-                          )}
-                        </strong>
-                      </div>
-
-                      ${displayFactValue(fact.value)}
-                    </article>`,
-                )
-                .join("")}
-            </div>
-          </section>
-
-          <div class="rights-banner">
-            <strong>
-              Speaker Persona ≠ Media Rights
-            </strong>
-
-            <span>
-              当前只证明“这个人可以以什么身份说什么”，
-              不代表任何照片、视频或肖像素材已经获得生产授权。
-            </span>
+          <div class="work-surface profile-document">
+            ${speakerProfileSections(facts)}
           </div>
+
+          <p class="governance-copy speaker-rights-note">确认出镜人档案不代表已经获得这个人的照片、视频或肖像素材使用权。</p>
         </main>`,
     );
 
@@ -1035,30 +811,19 @@ export function createSpeakerViews({
           </div>
 
           ${pageHeading(
-            "出镜人",
-            detail.display_name,
-            "本轮确认结果已经保存，但现有 Speaker Truth 还不足以建立正式人设。",
+            "",
+            "还缺少一些关键信息",
+            `“${detail.display_name}”需要补充真实资料后才能继续。`,
           )}
 
-          <section class="card notice-card">
-            <h2>还缺少关键信息</h2>
-
-            <p>
-              ${
-                blockers.length
-                  ? blockers
-                      .map((field) =>
-                        speakerFieldLabel(field),
-                      )
-                      .join("、")
-                  : "仍有关键 Speaker Truth 未确认。"
-              }
-            </p>
-
-            <p>
-              系统不会为了完成 Speaker Persona 而让 AI 自动补齐未知信息。
-            </p>
-          </section>
+          ${NeedsInfoState({
+            description: "系统不会自动补写未知信息。请先核对资料，再重新建立或补充出镜人。",
+            items: blockers.map((field) => speakerFieldLabel(field)),
+            primaryHref: `/customers/${encodeURIComponent(businessId)}#speakers`,
+            primaryLabel: "返回出镜人",
+            secondaryHref: `/customers/${encodeURIComponent(businessId)}`,
+            secondaryLabel: "稍后处理",
+          })}
         </main>`,
     );
 
@@ -1138,7 +903,7 @@ export function createSpeakerViews({
               ${pageHeading(
                 "出镜人",
                 detail.display_name,
-                "正在把已有资料整理成待确认的 Speaker Facts。",
+                "正在把已有资料整理成待确认的出镜人信息。",
               )}
 
               <div data-speaker-progress></div>
@@ -1210,10 +975,8 @@ export function createSpeakerViews({
             )}
 
             <section class="card notice-card">
-              <h2>当前状态</h2>
-              <p>${escapeHtml(
-                detail.status || "未知",
-              )}</p>
+              <h2>正在准备出镜人信息</h2>
+              <p>当前还没有可审核内容，请稍后再回来查看。</p>
             </section>
           </main>`,
       );
@@ -1247,7 +1010,7 @@ export function createSpeakerViews({
             "任务进度",
             task.payload?.speaker_name ||
               "出镜人信息分析",
-            "正在从已有资料中提取待确认的 Speaker Facts。",
+            "正在从已有资料中整理待确认的出镜人信息。",
           )}
 
           <div data-speaker-progress>

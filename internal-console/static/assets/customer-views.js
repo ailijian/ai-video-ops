@@ -3,16 +3,115 @@ import {
   customerFieldLabel,
   customerProgressPanel,
   customerStatusPill,
-  displayFactValue,
   editableFactValue,
   parseEditedFactValue,
-} from "./customer-components.js";
+} from "./customer-components.js?v=productized-stage2-3";
 import {
   speakerCard,
-} from "./speaker-components.js";
+} from "./speaker-components.js?v=productized-stage2-3";
 
 import { escapeHtml } from "./case-components.js";
+import {
+  bindDecisionControls,
+  NeedsInfoState,
+  ProfileRow,
+  ProfileSection,
+  ProfileSummary,
+  ProfileTabs,
+  ReviewList,
+} from "./profile-components.js?v=productized-stage2-3";
 import { startTaskPolling } from "./task-progress.js";
+
+const CUSTOMER_PROFILE_GROUPS = [
+  {
+    title: "基础信息",
+    fields: [
+      "public_display_name",
+      "company_short_name",
+      "industry",
+      "years_in_business",
+      "service_area",
+      "location_public_area",
+    ],
+  },
+  {
+    title: "产品与服务",
+    fields: [
+      "primary_products_or_services",
+      "secondary_products_or_services",
+      "product_or_service_facts",
+      "pricing_facts",
+      "included_service_facts",
+      "process_facts",
+      "service_process",
+      "service_time_facts",
+    ],
+  },
+  {
+    title: "客户与场景",
+    fields: [
+      "core_audience",
+      "customer_use_cases",
+      "customer_pains",
+      "differentiators",
+      "selection_reasons",
+      "authorized_customer_cases_or_feedback",
+    ],
+  },
+  {
+    title: "经营与品牌",
+    fields: [
+      "brand_story",
+      "founder_or_operator_story",
+      "important_turning_points",
+      "business_volume_fact",
+      "time_efficiency_fact",
+      "values",
+      "business_principles",
+      "beliefs",
+      "tone_preferences",
+    ],
+  },
+];
+
+function customerProfileSections(facts = []) {
+  const values = new Map(
+    facts
+      .filter((fact) => fact.state === "known")
+      .map((fact) => [fact.field, fact.value]),
+  );
+  const grouped = new Set(CUSTOMER_PROFILE_GROUPS.flatMap((group) => group.fields));
+  const sections = CUSTOMER_PROFILE_GROUPS.map((group) =>
+    ProfileSection({
+      title: group.title,
+      rows: group.fields.map((field) =>
+        ProfileRow({
+          label: customerFieldLabel(field),
+          value: values.get(field),
+          labelFor: customerFieldLabel,
+        }),
+      ),
+    }),
+  );
+  const other = facts.filter(
+    (fact) => fact.state === "known" && !grouped.has(fact.field),
+  );
+  if (other.length) {
+    sections.push(
+      ProfileSection({
+        title: "其他信息",
+        rows: other.map((fact) =>
+          ProfileRow({
+            label: customerFieldLabel(fact.field),
+            value: fact.value,
+            labelFor: customerFieldLabel,
+          }),
+        ),
+      }),
+    );
+  }
+  return sections.filter(Boolean).join("");
+}
 
 export function createCustomerViews({
   app,
@@ -23,6 +122,7 @@ export function createCustomerViews({
   pageHeading,
   skeletonPage,
   showToast,
+  openModal,
   renderLoadError,
 }) {
   let stopPolling = null;
@@ -57,13 +157,11 @@ export function createCustomerViews({
           current.insertAdjacentHTML(
             "beforeend",
             `
-              <a
-                class="btn btn-primary btn-wide progress-review-link"
-                href="/customers/${encodeURIComponent(businessId)}"
-                data-route
-              >
-                去确认客户信息
-              </a>`,
+              <div class="progress-complete-actions">
+                <p>客户信息已经整理好，可以开始确认。</p>
+                <a class="btn btn-primary" href="/customers/${encodeURIComponent(businessId)}" data-route>确认客户信息</a>
+                <a class="btn btn-secondary" href="/customers" data-route>返回客户</a>
+              </div>`,
           );
 
           bindCommonActions();
@@ -74,7 +172,7 @@ export function createCustomerViews({
 
   async function renderCustomers() {
     stopTaskPolling();
-    skeletonPage("客户与人设");
+    skeletonPage("客户");
 
     try {
       const data = await api("/api/customers");
@@ -86,30 +184,27 @@ export function createCustomerViews({
             ${customers.map(customerCard).join("")}
           </div>`
         : `
-          <section class="card empty-state">
+          <section class="state-panel empty-state">
+            <span class="empty-icon" aria-hidden="true">＋</span>
             <h2>还没有客户</h2>
-            <p>
-              新建第一个客户，把已有介绍、采访记录和服务信息直接粘贴进来。
-            </p>
+            <p>把已有介绍、采访记录和服务信息放进来，建立第一个客户档案。</p>
             <a class="btn btn-primary" href="/customers/new" data-route>
               新建客户
             </a>
           </section>`;
 
       app.innerHTML = shell(
-        "客户与人设",
+        "客户",
         `
-          <main class="page">
+          <main class="page page-standard customer-list-page">
             ${pageHeading(
+              "",
               "客户",
-              "客户与人设",
-              "客户事实与出镜人设分别审核。AI 提取的信息不会自动进入正式客户档案。",
+              "集中查看客户状态、出镜人和下一步工作。",
               `
-                <div class="section">
-                  <a class="btn btn-primary" href="/customers/new" data-route>
-                    + 新建客户
-                  </a>
-                </div>`,
+                <a class="btn btn-primary" href="/customers/new" data-route>
+                  新建客户
+                </a>`,
             )}
 
             ${content}
@@ -128,15 +223,14 @@ export function createCustomerViews({
     app.innerHTML = shell(
       "新建客户",
       `
-        <main class="page">
+        <main class="page page-form profile-mutation-page">
           ${pageHeading(
+            "",
             "新建客户",
-            "先把你已经知道的放进来",
-            "不用整理成表格。门店介绍、采访记录、服务流程、顾客问题等已有资料都可以直接粘贴。",
+            "把你已经知道的客户资料放进来。",
           )}
 
-          <div class="customer-new-layout">
-            <section class="card customer-new-panel">
+          <section class="work-surface profile-form-surface" data-customer-new-surface>
               <form id="customer-new-form" novalidate>
                 <div class="field">
                   <label for="customer-name">客户名称</label>
@@ -170,29 +264,19 @@ export function createCustomerViews({
                     required
                   ></textarea>
                   <span class="field-hint">
-                    原始资料保留在本地 Authority；发送给模型前会先经过隐私安全投影。
+                    门店介绍、采访记录、服务流程、价格和顾客问题都可以直接粘贴。
                   </span>
                 </div>
 
                 <div id="customer-form-error" class="form-error" role="alert"></div>
-                <div id="customer-analysis-result"></div>
-
-                <div class="sticky-action">
+                <div class="profile-form-actions">
                   <button class="btn btn-primary btn-wide" type="submit">
                     分析客户信息
                   </button>
                 </div>
+                <p class="governance-copy">系统会先整理资料，之后仍需要你确认。</p>
               </form>
-            </section>
-
-            <aside class="card notice-card">
-              <h2>这一步不会建立正式客户档案</h2>
-              <p>
-                AI 只负责把已有资料整理成待确认事实。你仍需要逐条确认，
-                最后再单独批准 Business Persona。
-              </p>
-            </aside>
-          </div>
+          </section>
         </main>`,
     );
 
@@ -208,12 +292,9 @@ export function createCustomerViews({
         );
 
         const errorBox = document.querySelector("#customer-form-error");
-        const resultBox = document.querySelector(
-          "#customer-analysis-result",
-        );
+        const surface = document.querySelector("[data-customer-new-surface]");
 
         errorBox.classList.remove("visible");
-        resultBox.innerHTML = "";
 
         button.disabled = true;
         button.textContent = "正在提交…";
@@ -235,7 +316,7 @@ export function createCustomerViews({
               result.existing_task &&
               ["queued", "running"].includes(result.existing_task.status)
             ) {
-              resultBox.innerHTML = `<div data-customer-progress></div>`;
+              surface.innerHTML = `<div data-customer-progress></div>`;
               bindCustomerProgress(
                 result.existing_task,
                 result.business_id,
@@ -243,7 +324,7 @@ export function createCustomerViews({
               return;
             }
 
-            resultBox.innerHTML = `
+            surface.innerHTML = `
               <div class="result-banner">
                 <h3>这个客户已经存在</h3>
                 <p>无需重新建立，可以直接继续现有流程。</p>
@@ -260,7 +341,7 @@ export function createCustomerViews({
             return;
           }
 
-          resultBox.innerHTML = `<div data-customer-progress></div>`;
+          surface.innerHTML = `<div data-customer-progress></div>`;
           bindCustomerProgress(result.task, result.business_id);
         } catch (error) {
           errorBox.textContent =
@@ -276,139 +357,67 @@ export function createCustomerViews({
 
   function renderFactReview(detail) {
     const candidates = detail.fact_candidates || [];
-
     const known = candidates.filter(
       (item) => item.state === "known_candidate",
     );
-
     const needsReview = candidates.filter(
       (item) => item.state === "requires_review",
     );
-
     const knownHtml = known.length
       ? `
-        <section class="section">
-          <div class="section-head">
-            <div>
-              <h2>已经明确的信息</h2>
-              <p>这些来自你直接输入的客户身份信息。</p>
-            </div>
-          </div>
-
-          <div class="fact-list">
+        <details class="known-facts-disclosure">
+          <summary>已经明确的信息 <span>${known.length} 项</span></summary>
+          <dl class="profile-rows">
             ${known
-              .map(
-                (item) => `
-                  <article class="card fact-card confirmed">
-                    <div class="fact-card-head">
-                      <strong>${escapeHtml(
-                        customerFieldLabel(item.field),
-                      )}</strong>
-                      <span class="pill pill-approved">已确认</span>
-                    </div>
-                    ${displayFactValue(item.value)}
-                  </article>`,
+              .map((item) =>
+                ProfileRow({
+                  label: customerFieldLabel(item.field),
+                  value: item.value,
+                  labelFor: customerFieldLabel,
+                }),
               )
               .join("")}
-          </div>
-        </section>`
+          </dl>
+        </details>`
       : "";
 
-    const reviewHtml = needsReview
-      .map(
-        (item) => `
-          <article
-            class="card fact-card"
-            data-fact-card="${escapeHtml(item.candidate_id)}"
-          >
-            <div class="fact-card-head">
-              <strong>${escapeHtml(customerFieldLabel(item.field))}</strong>
-              <span class="pill pill-review">需要确认</span>
-            </div>
-
-            ${displayFactValue(item.value)}
-
-            ${
-              item.source_excerpt
-                ? `
-                  <details class="fact-source">
-                    <summary>查看依据</summary>
-                    <p>${escapeHtml(item.source_excerpt)}</p>
-                  </details>`
-                : ""
-            }
-
-            <div class="fact-choice-row">
-              <button
-                class="fact-choice"
-                type="button"
-                data-fact-choice="reject"
-              >
-                不采用
-              </button>
-
-              <button
-                class="fact-choice"
-                type="button"
-                data-fact-choice="edit"
-              >
-                修改
-              </button>
-
-              <button
-                class="fact-choice primary"
-                type="button"
-                data-fact-choice="approve"
-              >
-                确认
-              </button>
-            </div>
-
-            <div class="fact-edit-panel" hidden>
-              <label>修改后的事实</label>
-              <textarea rows="4">${escapeHtml(
-                editableFactValue(item.value),
-              )}</textarea>
-              <span>列表型内容请一行写一项。</span>
-            </div>
-          </article>`,
-      )
-      .join("");
-
     app.innerHTML = shell(
-      "客户信息审核",
+      "确认客户信息",
       `
-        <main class="page customer-review-page">
+        <main class="page page-form customer-review-page profile-review-page">
           <div class="case-review-heading">
             <a class="back-link" href="/customers" data-route>
-              ← 返回客户列表
+              ← 返回客户
             </a>
             ${customerStatusPill(detail.status)}
           </div>
 
           ${pageHeading(
-            "客户信息审核",
-            detail.display_name,
-            "AI 已经把现有资料整理成事实候选。请确认哪些信息可以进入正式客户档案。",
+            "",
+            "确认客户信息",
+            `请检查“${detail.display_name}”的待确认信息。确认后的信息将用于后续视频内容。`,
           )}
 
           ${knownHtml}
 
-          <section class="section">
-            <div class="section-head">
-              <div>
-                <h2>需要你确认</h2>
-                <p>${needsReview.length} 条 AI 提取结果尚未形成 Customer Truth。</p>
-              </div>
+          <section class="work-surface review-surface">
+            <div class="review-surface-heading">
+              <h2>需要你确认</h2>
+              <p>逐项选择不采用、修改或确认。</p>
             </div>
-
-            <div class="fact-list">${reviewHtml}</div>
+            ${ReviewList({
+              items: needsReview,
+              labelFor: customerFieldLabel,
+              namespace: "customer",
+              editableValueFor: editableFactValue,
+            })}
           </section>
 
-          <div class="sticky-action">
+          <div class="sticky-action review-submit-bar">
+            <span data-review-progress>已确认 0 / ${needsReview.length}</span>
             <button
               id="submit-fact-review"
-              class="btn btn-primary btn-wide"
+              class="btn btn-primary"
               type="button"
             >
               确认这些信息
@@ -418,29 +427,7 @@ export function createCustomerViews({
     );
 
     bindCommonActions();
-
-    document.querySelectorAll("[data-fact-card]").forEach((card) => {
-      card.querySelectorAll("[data-fact-choice]").forEach((button) => {
-        button.addEventListener("click", () => {
-          const decision = button.dataset.factChoice;
-
-          card.dataset.decision = decision;
-
-          card
-            .querySelectorAll("[data-fact-choice]")
-            .forEach((item) => {
-              item.classList.toggle("active", item === button);
-            });
-
-          const editPanel = card.querySelector(".fact-edit-panel");
-          editPanel.hidden = decision !== "edit";
-
-          if (decision === "edit") {
-            editPanel.querySelector("textarea").focus();
-          }
-        });
-      });
-    });
+    bindDecisionControls({ submitSelector: "#submit-fact-review" });
 
     document
       .querySelector("#submit-fact-review")
@@ -448,39 +435,27 @@ export function createCustomerViews({
         const decisions = [];
 
         for (const candidate of needsReview) {
-          const card = document.querySelector(
-            `[data-fact-card="${CSS.escape(candidate.candidate_id)}"]`,
+          const row = document.querySelector(
+            `[data-review-row="${CSS.escape(candidate.candidate_id)}"]`,
           );
-
-          const decision = card?.dataset.decision;
-
-          if (!decision) {
-            showToast(
-              `还有“${customerFieldLabel(candidate.field)}”没有确认。`,
-            );
-            card?.scrollIntoView({
-              behavior: "smooth",
-              block: "center",
-            });
-            return;
-          }
+          const decision = row?.dataset.decision;
 
           const value = {
             candidate_id: candidate.candidate_id,
             decision,
             note:
               decision === "approve"
-                ? "Internal Console Human Review confirmed this fact."
+                ? "Internal Console reviewer confirmed this customer information."
                 : decision === "reject"
-                  ? "Internal Console Human Review did not accept this fact."
-                  : "Internal Console Human Review corrected this fact.",
+                  ? "Internal Console reviewer did not accept this customer information."
+                  : "Internal Console reviewer corrected this customer information.",
           };
 
           if (decision === "edit") {
             try {
               value.edited_value = parseEditedFactValue(
                 candidate.value,
-                card.querySelector(".fact-edit-panel textarea").value,
+                row.querySelector(".review-edit-panel textarea").value,
               );
             } catch (error) {
               showToast(error.message);
@@ -504,7 +479,7 @@ export function createCustomerViews({
               method: "POST",
               body: JSON.stringify({
                 decisions,
-                note: "Initial Customer Truth Human Review completed.",
+                note: "Internal Console customer information review completed.",
               }),
             },
           );
@@ -512,9 +487,9 @@ export function createCustomerViews({
           if (
             result.review.status === "completed_persona_blocked"
           ) {
-            showToast("已保存，但仍缺少建立客户档案所需的关键信息。");
+            showToast("已保存，仍需补充一些关键信息。");
           } else {
-            showToast("客户信息已确认，进入客户档案总审核。");
+            showToast("客户信息已确认，接下来请确认完整档案。");
           }
 
           renderCustomerDetail(detail.business_id);
@@ -533,62 +508,34 @@ export function createCustomerViews({
     );
 
     app.innerHTML = shell(
-      "客户档案审核",
+      "确认客户档案",
       `
-        <main class="page customer-review-page">
+        <main class="page page-form customer-review-page profile-review-page">
           <div class="case-review-heading">
             <a class="back-link" href="/customers" data-route>
-              ← 返回客户列表
+              ← 返回客户
             </a>
             ${customerStatusPill(detail.status)}
           </div>
 
           ${pageHeading(
-            "客户档案审核",
-            detail.display_name,
-            "单条事实已经完成确认。现在请从整体上再次检查客户档案，批准后它才会成为正式 Business Persona。",
+            "",
+            "确认客户档案",
+            "请整体检查这些信息，确认后会用于后续内容创作。",
           )}
 
-          <div class="authority-banner">
-            <strong>这是第二道人工作业门。</strong>
-            <span>
-              “事实已确认”不等于“客户档案已批准”。请从整体上检查是否准确、完整且适合进入生产。
-            </span>
+          <div class="work-surface profile-document">
+            ${customerProfileSections(facts)}
           </div>
 
-          <section class="section">
-            <div class="section-head">
-              <div>
-                <h2>将进入正式档案的信息</h2>
-                <p>共 ${facts.length} 个已知事实。</p>
-              </div>
-            </div>
-
-            <div class="fact-list">
-              ${facts
-                .map(
-                  (fact) => `
-                    <article class="card fact-card confirmed">
-                      <div class="fact-card-head">
-                        <strong>${escapeHtml(
-                          customerFieldLabel(fact.field),
-                        )}</strong>
-                        <span class="pill pill-approved">已确认</span>
-                      </div>
-                      ${displayFactValue(fact.value)}
-                    </article>`,
-                )
-                .join("")}
-            </div>
-          </section>
-
-          <div class="sticky-action">
+          <div class="sticky-action profile-approval-bar">
+            <p>确认后的客户信息将用于后续视频内容。</p>
             <button
               id="approve-business-persona"
-              class="btn btn-primary btn-wide"
+              class="btn btn-primary"
               type="button"
             >
-              确认并建立客户档案
+              确认客户档案
             </button>
           </div>
         </main>`,
@@ -599,13 +546,12 @@ export function createCustomerViews({
     document
       .querySelector("#approve-business-persona")
       .addEventListener("click", async () => {
-        if (
-          !window.confirm(
-            "确认已经整体复核客户档案，并批准它成为正式 Business Persona？",
-          )
-        ) {
-          return;
-        }
+        const decision = await openModal({
+          title: "确认客户档案？",
+          description: "请确认你已经整体检查客户信息。确认后，这些信息会用于后续内容创作。",
+          confirmLabel: "确认客户档案",
+        });
+        if (!decision.confirmed) return;
 
         const button = document.querySelector(
           "#approve-business-persona",
@@ -622,18 +568,17 @@ export function createCustomerViews({
             {
               method: "POST",
               body: JSON.stringify({
-                note:
-                  "Internal Console Human Review approved the complete Business Persona.",
+                note: "Internal Console reviewer confirmed the complete customer profile.",
               }),
             },
           );
 
-          showToast("客户档案已批准");
+          showToast("客户档案已确认");
           renderCustomerDetail(detail.business_id);
         } catch (error) {
           showToast(error.detail?.next_action || error.message);
           button.disabled = false;
-          button.textContent = "确认并建立客户档案";
+          button.textContent = "确认客户档案";
         }
       });
   }
@@ -652,16 +597,16 @@ export function createCustomerViews({
         const source = payload.input;
 
         app.innerHTML = shell(
-        "修改客户资料",
+        "更新客户资料",
         `
-            <main class="page">
+            <main class="page page-form profile-mutation-page">
             ${pageHeading(
-                "重新分析",
-                "修改已有资料",
-                "本次修改不会覆盖之前的失败记录，而是建立一个新的 Intake。",
+                "",
+                "更新客户资料",
+                "修改后会重新分析，已确认的历史记录不会被静默覆盖。",
             )}
 
-            <section class="card customer-new-panel">
+            <section class="work-surface profile-form-surface">
                 <form id="customer-edit-form">
                 <div class="field">
                     <label for="customer-name">客户名称</label>
@@ -695,7 +640,7 @@ export function createCustomerViews({
 
                 <div id="customer-edit-error" class="form-error"></div>
 
-                <div class="sticky-action">
+                <div class="profile-form-actions">
                     <button class="btn btn-primary btn-wide" type="submit">
                     重新分析
                     </button>
@@ -746,8 +691,8 @@ export function createCustomerViews({
 
             showToast(
                 result.new_intake
-                ? `已建立 ${result.intake_id}`
-                : "已继续使用原始资料",
+                ? "已提交更新后的客户资料"
+                : "已重新提交客户资料",
             );
 
             navigate(
@@ -795,12 +740,12 @@ export function createCustomerViews({
             </div>
 
             ${pageHeading(
-            "客户",
+            "",
             detail.display_name,
-            "上一次客户信息分析没有完成。已录入资料和失败记录都会保留。",
+            "上一次客户信息分析没有完成，已经录入的资料仍然保留。",
             )}
 
-            <section class="card notice-card">
+            <section class="panel needs-info-state">
             <h2>分析没有完成</h2>
             <p>
                 ${escapeHtml(
@@ -830,13 +775,6 @@ export function createCustomerViews({
             </div>
             </section>
 
-            <div class="authority-banner">
-            <strong>失败记录不会被删除。</strong>
-            <span>
-                继续分析会使用原始 Intake；修改资料会建立新的 Intake，
-                旧资料和失败记录仍然保留。
-            </span>
-            </div>
         </main>`,
     );
 
@@ -899,221 +837,130 @@ export function createCustomerViews({
     }
 
   function renderApprovedCustomer(detail) {
-    const facts = (
-      detail.business_persona?.facts || []
-    ).filter(
+    const facts = (detail.business_persona?.facts || []).filter(
       (fact) => fact.state === "known",
     );
-
-    const speakers =
-      detail.speakers || [];
-    
-    const defaultSpeaker =
-      speakers.find(
-        (speaker) =>
-          speaker.status ===
-          "approved",
-      );
-
+    const speakers = detail.speakers || [];
+    const approvedSpeakers = speakers.filter(
+      (speaker) => speaker.status === "approved",
+    );
+    const pendingSpeaker = speakers.find(
+      (speaker) => speaker.status !== "approved",
+    );
+    const tabs = [
+      { id: "overview", label: "概览" },
+      { id: "profile", label: "客户资料" },
+      { id: "speakers", label: "出镜人" },
+      { id: "content", label: "内容" },
+    ];
+    const requestedTab = decodeURIComponent(location.hash.slice(1));
+    const activeTab = tabs.some((tab) => tab.id === requestedTab)
+      ? requestedTab
+      : "overview";
+    const primaryAction = detail.creation_entry_ready
+      ? `<a class="btn btn-primary" href="/create?business_id=${encodeURIComponent(detail.business_id)}" data-route>开始创作</a>`
+      : !speakers.length
+        ? `<a class="btn btn-primary" href="/customers/${encodeURIComponent(detail.business_id)}/speakers/new" data-route>添加出镜人</a>`
+        : pendingSpeaker
+          ? `<a class="btn btn-primary" href="/customers/${encodeURIComponent(detail.business_id)}/speakers/${encodeURIComponent(pendingSpeaker.speaker_id)}" data-route>确认出镜人信息</a>`
+          : `<a class="btn btn-primary" href="/customers/${encodeURIComponent(detail.business_id)}/speakers/new" data-route>添加出镜人</a>`;
     const speakerContent = speakers.length
-      ? `
-        <div class="speaker-list">
-          ${speakers
-            .map((speaker) =>
-              speakerCard(
-                speaker,
-                detail.business_id,
-              ),
-            )
-            .join("")}
-        </div>`
+      ? `<div class="speaker-list">${speakers
+          .map((speaker) => speakerCard(speaker, detail.business_id))
+          .join("")}</div>`
       : `
-        <section class="card speaker-empty-card">
-          <h3>还没有出镜人</h3>
-          <p>
-            客户档案已经批准。下一步可以建立一个独立的 Speaker Persona。
-          </p>
-
-          <a
-            class="btn btn-primary"
-            href="/customers/${encodeURIComponent(
-              detail.business_id,
-            )}/speakers/new"
-            data-route
-          >
-            + 添加出镜人
-          </a>
+        <section class="state-panel compact-empty-state">
+          <span class="empty-icon" aria-hidden="true">＋</span>
+          <h2>还没有出镜人</h2>
+          <p>添加出镜人后，可以确认这个人的身份、经历和表达范围。</p>
+          <a class="btn btn-primary" href="/customers/${encodeURIComponent(detail.business_id)}/speakers/new" data-route>添加出镜人</a>
         </section>`;
-
-    const readiness = detail.creation_entry_ready
-      ? `
-        <section class="section">
-          <article class="card creation-ready-card">
-            <div>
-              <span class="status-kicker">
-                <span class="status-dot"></span>
-                Persona 条件已完成
-              </span>
-
-              <h2>可以进入创作流程</h2>
-
-              <p>
-                已存在 Approved Business Persona 和至少一个
-                Approved Speaker Persona。
-              </p>
-
-              <p class="creation-rights-note">
-                这不代表肖像、视频或其他生产素材已经获得使用授权。
-              </p>
-            </div>
-
-            <div class="content-ops-actions">
-              <a
-                class="btn btn-secondary"
-                href="/customers/${encodeURIComponent(
-                  detail.business_id,
-                )}/content"
-                data-route
-              >
-                内容运营
-              </a>
-
-              <a
-                class="btn btn-primary"
-                href="/create?business_id=${encodeURIComponent(
-                  detail.business_id,
-                )}&speaker_id=${encodeURIComponent(
-                  defaultSpeaker?.speaker_id || "",
-                )}"
-                data-route
-              >
-                开始创作
-              </a>
-            </div>
-          </article>
-        </section>`
-      : "";
+    const tabContent = {
+      overview: `
+        ${ProfileSummary([
+          {
+            label: "客户资料",
+            value: "已确认",
+            note: `${facts.length} 项有效信息`,
+          },
+          {
+            label: "出镜人",
+            value: `${speakers.length} 位`,
+            note: `${approvedSpeakers.length} 位已确认`,
+          },
+          {
+            label: "创作状态",
+            value: detail.creation_entry_ready ? "可以开始" : "尚未就绪",
+            note: detail.creation_entry_ready
+              ? "选择出镜人后进入创作"
+              : "需要至少一位已确认出镜人",
+          },
+        ])}
+        <section class="profile-next-action">
+          <div>
+            <span>下一步</span>
+            <h2>${
+              detail.creation_entry_ready
+                ? "开始准备视频内容"
+                : !speakers.length
+                  ? "添加第一位出镜人"
+                  : "完成出镜人信息确认"
+            }</h2>
+            <p>系统只会在客户和出镜人信息满足条件后开放创作。</p>
+          </div>
+        </section>`,
+      profile: `<div class="work-surface profile-document">${customerProfileSections(facts)}</div>`,
+      speakers: `
+        <section class="profile-tab-section">
+          <div class="section-head">
+            <div><h2>出镜人</h2><p>管理谁可以以什么身份进行第一人称表达。</p></div>
+            ${speakers.length ? `<a class="btn btn-secondary" href="/customers/${encodeURIComponent(detail.business_id)}/speakers/new" data-route>添加出镜人</a>` : ""}
+          </div>
+          ${speakerContent}
+        </section>`,
+      content: `
+        <section class="profile-tab-section content-entry-list">
+          <a class="content-entry-row" href="/customers/${encodeURIComponent(detail.business_id)}/content" data-route>
+            <span><strong>内容管理</strong><small>查看客户的内容计划和交付进度</small></span><span class="case-chevron" aria-hidden="true">›</span>
+          </a>
+          <a class="content-entry-row ${detail.creation_entry_ready ? "" : "disabled"}" href="${detail.creation_entry_ready ? `/create?business_id=${encodeURIComponent(detail.business_id)}` : "#overview"}" ${detail.creation_entry_ready ? "data-route" : "data-profile-tab=\"overview\""}>
+            <span><strong>开始创作</strong><small>${detail.creation_entry_ready ? "选择出镜人和创作模式" : "完成出镜人确认后开放"}</small></span><span class="case-chevron" aria-hidden="true">›</span>
+          </a>
+        </section>`,
+    };
 
     app.innerHTML = shell(
       "客户详情",
       `
-        <main class="page">
+        <main class="page page-standard customer-detail-page">
           <div class="case-review-heading">
-            <a
-              class="back-link"
-              href="/customers"
-              data-route
-            >
-              ← 返回客户列表
-            </a>
-
+            <a class="back-link" href="/customers" data-route>← 返回客户</a>
             ${customerStatusPill(detail.status)}
           </div>
 
           ${pageHeading(
-            "客户",
+            "",
             detail.display_name,
             detail.industry,
+            `<div class="page-heading-actions">${primaryAction}<a class="btn btn-secondary" href="/customers/${encodeURIComponent(detail.business_id)}/edit" data-route>编辑资料</a></div>`,
           )}
 
-          <section class="customer-overview-grid">
-            <article class="card customer-overview-card">
-              <span>客户档案</span>
-              <strong>已批准</strong>
-              <p>
-                Business Persona 已完成 Human Approval。
-              </p>
-            </article>
-
-            <article class="card customer-overview-card">
-              <span>出镜人设</span>
-              <strong>
-                ${Number(detail.speaker_count || 0)} 个
-              </strong>
-              <p>
-                Business Persona 与 Speaker Persona 独立管理。
-              </p>
-            </article>
-          </section>
-
-          <section class="section">
-            <div class="section-head">
-              <div>
-                <h2>出镜人</h2>
-                <p>
-                  管理谁可以以什么身份进行第一人称表达。
-                </p>
-              </div>
-
-              ${
-                speakers.length
-                  ? `
-                    <a
-                      class="btn btn-secondary"
-                      href="/customers/${encodeURIComponent(
-                        detail.business_id,
-                      )}/speakers/new"
-                      data-route
-                    >
-                      + 添加出镜人
-                    </a>`
-                  : ""
-              }
-            </div>
-
-            ${speakerContent}
-          </section>
-
-          ${readiness}
-
-          <section class="section">
-            <div class="section-head">
-              <div>
-                <h2>客户信息</h2>
-                <p>
-                  当前 Approved Business Persona 中的已知事实。
-                </p>
-              </div>
-            </div>
-
-            <div class="fact-list">
-              ${facts
-                .map(
-                  (fact) => `
-                    <article class="card fact-card confirmed">
-                      <div class="fact-card-head">
-                        <strong>
-                          ${escapeHtml(
-                            customerFieldLabel(
-                              fact.field,
-                            ),
-                          )}
-                        </strong>
-                      </div>
-
-                      ${displayFactValue(
-                        fact.value,
-                      )}
-                    </article>`,
-                )
-                .join("")}
-            </div>
-          </section>
-
-          <div class="rights-banner">
-            <strong>
-              出镜人设与媒体使用权是两套 Authority。
-            </strong>
-
-            <span>
-              Speaker Persona Approved 只定义第一人称表达权限，
-              不自动赋予任何照片、视频或肖像素材生产使用权。
-            </span>
+          ${ProfileTabs(tabs, activeTab)}
+          <div class="profile-tab-panel" data-active-profile-tab="${escapeHtml(activeTab)}">
+            ${tabContent[activeTab]}
           </div>
         </main>`,
     );
 
     bindCommonActions();
+    document.querySelectorAll("[data-profile-tab]").forEach((tab) => {
+      tab.addEventListener("click", (event) => {
+        event.preventDefault();
+        const next = tab.dataset.profileTab;
+        history.replaceState({}, "", `${location.pathname}#${next}`);
+        renderApprovedCustomer(detail);
+      });
+    });
   }
 
   function renderNeedsMoreInfo(detail) {
@@ -1132,26 +979,18 @@ export function createCustomerViews({
           </div>
 
           ${pageHeading(
-            "客户信息",
-            detail.display_name,
-            "已经保存本轮人工确认结果，但现有 Customer Truth 还不足以建立 Business Persona。",
+            "",
+            "还缺少一些关键信息",
+            `“${detail.display_name}”需要补充资料后才能继续。`,
           )}
 
-          <section class="card notice-card">
-            <h2>还缺少关键信息</h2>
-            <p>
-              ${
-                blockers.length
-                  ? blockers
-                      .map((field) => customerFieldLabel(field))
-                      .join("、")
-                  : "仍有关键 Customer Truth 未确认。"
-              }
-            </p>
-            <p>
-              不会为了完成档案而让 AI 自动补齐未知信息。
-            </p>
-          </section>
+          ${NeedsInfoState({
+            description: "系统不会自动补写未知信息，请补充真实资料后重新分析。",
+            items: blockers.map((field) => customerFieldLabel(field)),
+            primaryHref: `/customers/${encodeURIComponent(detail.business_id)}/edit`,
+            primaryLabel: "补充客户资料",
+            secondaryHref: "/customers",
+          })}
         </main>`,
     );
 
@@ -1218,8 +1057,8 @@ export function createCustomerViews({
               "当前客户流程尚未到达可审核状态。",
             )}
             <section class="card notice-card">
-              <h2>当前状态</h2>
-              <p>${escapeHtml(detail.status || "未知")}</p>
+              <h2>正在准备客户信息</h2>
+              <p>当前还没有可审核内容，请稍后再回来查看。</p>
             </section>
           </main>`,
       );

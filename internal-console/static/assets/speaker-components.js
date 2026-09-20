@@ -1,11 +1,11 @@
 import { escapeHtml } from "./case-components.js";
 
 export const SPEAKER_PROGRESS_STAGES = [
-  ["保存出镜人原始资料", 20],
-  ["AI 正在提取出镜人事实", 55],
-  ["事实候选提取完成", 75],
-  ["评估出镜人信息完整度", 90],
-  ["生成审核结果", 99],
+  ["保存出镜人资料", 20],
+  ["整理经历与职责", 55],
+  ["提取表达范围", 75],
+  ["检查信息完整度", 90],
+  ["准备确认内容", 99],
 ];
 
 const FIELD_LABELS = {
@@ -35,9 +35,9 @@ export function speakerTypeLabel(type) {
 
 export function speakerStatusPill(status) {
   const values = {
-    approved: ["人设已批准", "pill-approved"],
-    fact_review_required: ["事实待确认", "pill-review"],
-    persona_review_required: ["人设待确认", "pill-review"],
+    approved: ["已确认", "pill-approved"],
+    fact_review_required: ["信息待确认", "pill-review"],
+    persona_review_required: ["档案待确认", "pill-review"],
     analyzing: ["分析中", "pill-review"],
     analysis_pending: ["待分析", "pill-review"],
     needs_more_info: ["需补充", "pill-review"],
@@ -46,7 +46,7 @@ export function speakerStatusPill(status) {
   };
 
   const [label, className] =
-    values[status] || [status || "未知", "pill-archived"];
+    values[status] || ["待处理", "pill-archived"];
 
   return `<span class="pill ${className}">${escapeHtml(label)}</span>`;
 }
@@ -95,11 +95,11 @@ export function speakerProgressPanel(task, { compact = false } = {}) {
     },
   ).join("");
 
-  let title = "出镜人信息分析中";
+  let title = "正在整理出镜人信息";
 
   if (failed) title = "出镜人信息分析未完成";
-  else if (waiting) title = "分析完成，等待事实确认";
-  else if (completed) title = "出镜人事实审核已完成";
+  else if (waiting) title = "出镜人信息已经整理好";
+  else if (completed) title = "出镜人信息已确认";
 
   const footer = failed
     ? `
@@ -111,11 +111,11 @@ export function speakerProgressPanel(task, { compact = false } = {}) {
       </div>`
     : `
       <p class="progress-note">
-        你可以离开当前页面。任务会继续运行，并保留在“任务记录”中。
+        你可以离开当前页面，任务会在后台继续运行。
       </p>`;
 
   return `
-    <section class="card task-progress ${compact ? "compact" : ""}">
+    <section class="task-progress profile-progress ${compact ? "compact" : ""}">
       <div class="task-progress-head">
         <div>
           <h2>${title}</h2>
@@ -138,31 +138,24 @@ export function speakerProgressPanel(task, { compact = false } = {}) {
 
 export function speakerCard(speaker, businessId) {
   return `
-    <article class="card speaker-card">
-      <div class="speaker-card-head">
+    <a
+      class="speaker-row"
+      href="/customers/${encodeURIComponent(
+        businessId,
+      )}/speakers/${encodeURIComponent(speaker.speaker_id)}"
+      data-route
+    >
+      <div class="speaker-row-main">
         <div>
-          <h3>${escapeHtml(speaker.display_name)}</h3>
+          <strong>${escapeHtml(speaker.display_name)}</strong>
           <p>
             ${escapeHtml(speaker.public_role)}
           </p>
         </div>
-
+      </div>
+      <div class="speaker-row-end">
         ${speakerStatusPill(speaker.status)}
+        <span class="case-chevron" aria-hidden="true">›</span>
       </div>
-
-      <div class="speaker-authority-mini">
-        <span>第一人称表达权限与 Business Persona 分开管理</span>
-      </div>
-
-      <a
-        class="inline-link"
-        href="/customers/${encodeURIComponent(
-          businessId,
-        )}/speakers/${encodeURIComponent(speaker.speaker_id)}"
-        data-route
-      >
-        <span>查看出镜人</span>
-        <span aria-hidden="true">›</span>
-      </a>
-    </article>`;
+    </a>`;
 }
