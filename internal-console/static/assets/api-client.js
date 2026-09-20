@@ -16,7 +16,12 @@ export function createApiClient({ state, onUnauthorized, onPasswordRequired }) {
     if (!["GET", "HEAD", "OPTIONS"].includes(method) && state.csrfToken) {
       headers.set("X-CSRF-Token", state.csrfToken);
     }
-    const response = await fetch(path, { ...options, headers, credentials: "same-origin" });
+    const response = await fetch(path, {
+      ...options,
+      headers,
+      credentials: "same-origin",
+      cache: method === "GET" || method === "HEAD" ? "no-store" : options.cache,
+    });
     let payload = null;
     try { payload = await response.json(); } catch { payload = null; }
     if (!response.ok) {

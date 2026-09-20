@@ -21,6 +21,7 @@ import {
   ReviewList,
 } from "./profile-components.js?v=productized-stage2-3";
 import { startTaskPolling } from "./task-progress.js";
+import { ContentOperationsPanel } from "./content-operations-views.js?v=productized-stage3-3";
 
 const CUSTOMER_PROFILE_GROUPS = [
   {
@@ -836,6 +837,26 @@ export function createCustomerViews({
         });
     }
 
+  async function renderCustomerContentOperations(businessId) {
+    const host = document.querySelector("[data-customer-content-operations]");
+    if (!host) return;
+    try {
+      const data = await api(`/api/customers/${encodeURIComponent(businessId)}/content-operations`);
+      if (!host.isConnected) return;
+      host.innerHTML = ContentOperationsPanel(data);
+      bindCommonActions();
+    } catch {
+      if (!host.isConnected) return;
+      host.innerHTML = `
+        <section class="state-panel state-error content-management-inline-state">
+          <h2>内容管理暂时无法读取</h2>
+          <p>请稍后重试，客户资料和已有内容不会受到影响。</p>
+          <a class="btn btn-secondary" href="/customers/${encodeURIComponent(businessId)}#content" data-route>重新加载</a>
+        </section>`;
+      bindCommonActions();
+    }
+  }
+
   function renderApprovedCustomer(detail) {
     const facts = (detail.business_persona?.facts || []).filter(
       (fact) => fact.state === "known",
@@ -919,13 +940,14 @@ export function createCustomerViews({
           ${speakerContent}
         </section>`,
       content: `
-        <section class="profile-tab-section content-entry-list">
-          <a class="content-entry-row" href="/customers/${encodeURIComponent(detail.business_id)}/content" data-route>
-            <span><strong>内容管理</strong><small>查看客户的内容计划和交付进度</small></span><span class="case-chevron" aria-hidden="true">›</span>
-          </a>
-          <a class="content-entry-row ${detail.creation_entry_ready ? "" : "disabled"}" href="${detail.creation_entry_ready ? `/create?business_id=${encodeURIComponent(detail.business_id)}` : "#overview"}" ${detail.creation_entry_ready ? "data-route" : "data-profile-tab=\"overview\""}>
-            <span><strong>开始创作</strong><small>${detail.creation_entry_ready ? "选择出镜人和创作模式" : "完成出镜人确认后开放"}</small></span><span class="case-chevron" aria-hidden="true">›</span>
-          </a>
+        <section class="profile-tab-section">
+          <div data-customer-content-operations aria-live="polite">
+            <section class="state-panel state-loading content-management-inline-state" aria-label="正在加载内容管理">
+              <span class="loading-indicator" aria-hidden="true"></span>
+              <h2>正在读取内容管理</h2>
+              <p>请稍候，已有内容与交付记录马上就好。</p>
+            </section>
+          </div>
         </section>`,
     };
 
@@ -953,6 +975,9 @@ export function createCustomerViews({
     );
 
     bindCommonActions();
+    if (activeTab === "content") {
+      void renderCustomerContentOperations(detail.business_id);
+    }
     document.querySelectorAll("[data-profile-tab]").forEach((tab) => {
       tab.addEventListener("click", (event) => {
         event.preventDefault();

@@ -34,4 +34,4 @@ def test_content_delivery_frontend_contract():
 
     assert "content-delivery-host" in content_views
     assert "deliveryViews.restore" in content_views
-    assert "Content Delivery Console V1" in styles
+    assert "Productized Creation System V1" in styles

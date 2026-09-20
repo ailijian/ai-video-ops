@@ -35,14 +35,25 @@ def test_unified_human_review_frontend_contract():
         encoding="utf-8"
     )
 
-    assert "修改后通过" in delivery
-    assert "淘汰" in delivery
-    assert "data-revised-title" in delivery
-    assert "data-revised-narration" in delivery
+    components = (
+        root
+        / "static"
+        / "assets"
+        / "creation-components.js"
+    ).read_text(
+        encoding="utf-8"
+    )
+
+    assert "ContentReviewItem" in delivery
+    assert "data-content-decision" in delivery
+    assert "data-revised-title" in components
+    assert "data-revised-body" in components
+    assert "<span>修改</span>" in components
+    assert 'value="rejected"' in components
     assert "REVIEW_COMPLETE_NO_EXPORT" in delivery
     assert "当前 V1 前端还没有开放 Revision" not in delivery
 
-    assert "已有历史内容" in content
-    assert "剩余高质量新内容" in content
+    assert "已有内容" in content
+    assert "暂时没有值得继续做的新内容" in content
 
-    assert "Unified Human Review V1" in styles
+    assert "Productized Creation System V1" in styles

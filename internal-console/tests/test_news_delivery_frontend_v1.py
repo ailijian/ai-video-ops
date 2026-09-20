@@ -44,11 +44,11 @@ def test_news_delivery_frontend_contract():
         in news
     )
     assert (
-        "最终需要保留 4–8 个标题"
+        "本次需要保留 4–8 个标题"
         in news
     )
     assert (
-        "Presentation History"
+        "data-content-decision"
         in news
     )
 
@@ -66,11 +66,11 @@ def test_news_delivery_frontend_contract():
         not in news
     )
     assert (
-        "已有 News 已完成"
+        "新闻体只重新组织已经确认的内容"
         in news
     )
     assert (
-        "当前没有新的历史内容可以转成 News"
+        "暂无适合生成新闻体的已有内容"
         in news
     )
     assert (
@@ -90,10 +90,8 @@ def test_news_delivery_frontend_contract():
         in content
     )
 
-    assert (
-        "control.name ===" in content
-        and '"create-profile"' in content
-    )
+    assert 'name="create-profile"' in content
+    assert '.profile-choice input' in content
 
     assert (
         "News Delivery Console V1"

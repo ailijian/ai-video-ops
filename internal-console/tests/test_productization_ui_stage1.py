@@ -36,6 +36,15 @@ def test_workbench_and_case_library_use_compact_product_surfaces():
     assert 'class="action-list"' in app
     assert 'class="action-row"' in app
     assert 'class="quick-actions"' in app
+    assert 'class="workbench-overview"' in app
+    assert 'class="workbench-recent"' in app
+    assert 'api("/api/workbench?projection=productized-stage3-3")' in app
+    assert 'api("/api/customers")' in app
+    assert 'api("/api/cases")' in app
+    assert "const hasCustomers = customers.length > 0" in app
+    assert "const customerCount = customers.length" in app
+    assert "const caseCount = cases.length" in app
+    assert 'cache: method === "GET" || method === "HEAD" ? "no-store"' in read_asset("api-client.js")
     assert "attention-card" not in app
     assert "customer-snapshot" not in app
     assert 'class="case-row"' in case_components

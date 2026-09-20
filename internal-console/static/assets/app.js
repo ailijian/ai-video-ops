@@ -1,6 +1,6 @@
-import { createApiClient } from "./api-client.js";
+import { createApiClient } from "./api-client.js?v=productized-stage3-3";
 import { createCaseViews } from "./case-views.js?v=productized-stage1-5";
-import { createCustomerViews } from "./customer-views.js?v=productized-stage2-3";
+import { createCustomerViews } from "./customer-views.js?v=productized-stage3-3";
 import { progressPanel } from "./case-components.js?v=productized-stage1-5";
 import { startTaskPolling } from "./task-progress.js";
 import { customerProgressPanel } from "./customer-components.js?v=productized-stage2-3";
@@ -15,11 +15,11 @@ import {
 
 import {
   createContentViews,
-} from "./content-views.js?v=productized-stage1-5";
+} from "./content-views.js?v=productized-stage3-3";
 
 import {
   createContentOperationsViews,
-} from "./content-operations-views.js?v=authority-resolver-1";
+} from "./content-operations-views.js?v=productized-stage3-3";
 
 const app = document.querySelector("#app");
 const toastRegion = document.querySelector("#toast-region");
@@ -368,21 +368,69 @@ function renderChangePassword() {
 async function renderWorkbench() {
   skeletonPage("工作台");
   try {
-    const data = await api("/api/workbench");
-    const status = data.status || null;
-    const hasCustomers = data.has_customers === true;
+    const [data, customerData, caseData, creationOptions] = await Promise.all([
+      api("/api/workbench?projection=productized-stage3-3"),
+      api("/api/customers"),
+      api("/api/cases"),
+      api("/api/create/options").catch(() => null),
+    ]);
+    const customers = customerData?.customers || data.customers || [];
+    const cases = caseData?.cases || [];
+    const selectedBusinessId = data.customer_selection?.selected_business_id || null;
+    const status = selectedBusinessId || customers.length === 1
+      ? data.status || null
+      : null;
+    const hasCustomers = customers.length > 0;
+    const attention = data.attention || {};
     const attentionItems = [
-      [data.attention.case_reviews, "个案例待审核", "/cases", "去审核"],
-      [data.attention.persona_reviews, "个客户信息待确认", "/customers", "去确认"],
-      [data.attention.content_reviews, "个内容批次待审核", "/tasks", "去审核"],
-      [data.attention.running_tasks, "个任务正在运行", "/tasks", "查看"],
+      [Number(attention.case_reviews || 0), "个案例待审核", "/cases", "去审核"],
+      [Number(attention.persona_reviews || 0), "个客户信息待确认", "/customers", "去确认"],
+      [Number(attention.content_reviews || 0), "个内容批次待审核", "/tasks", "去审核"],
+      [Number(attention.running_tasks || 0), "个任务正在运行", "/tasks", "查看"],
     ].filter(([number]) => number > 0);
     const attentionTotal = attentionItems.reduce((total, [number]) => total + number, 0);
     const attentionList = attentionItems.length
       ? attentionItems.map(([number, label, path, action]) => `<a class="action-row" href="${path}" data-route><span><strong>${number}</strong> ${label}</span><span class="action-row-link">${action}${icons.arrow}</span></a>`).join("")
       : `<div class="attention-empty"><span class="status-dot status-success"></span><span>当前没有需要处理的事项。</span></div>`;
     const contentCreation = data.capabilities?.content_creation || {};
-    const creationCard = contentCreation.available
+    const summary = data.summary || {};
+    const customerCount = customers.length;
+    const approvedCustomerCount = Number(
+      customers.filter((customer) => customer.status === "approved").length,
+    );
+    const caseCount = cases.length;
+    const approvedCaseCount = Number(
+      cases.filter((item) => item.status === "approved").length,
+    );
+    const readyCustomerCount = Number(
+      creationOptions?.ready_customer_count
+        ?? summary.ready_customer_count
+        ?? contentCreation.ready_customer_count
+        ?? 0,
+    );
+    const overviewRows = [
+      ["客户", customerCount, `${approvedCustomerCount} 个已确认`, "/customers"],
+      ["案例", caseCount, `${approvedCaseCount} 个已入库`, "/cases"],
+      ["可创作客户", readyCustomerCount, readyCustomerCount ? "可以开始新的内容创作" : "仍需确认客户与出镜人", readyCustomerCount ? "/create" : "/customers"],
+    ].map(([label, value, note, path]) => `
+      <a class="workbench-overview-row" href="${path}" data-route>
+        <span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(note)}</small></span>
+        <span class="workbench-overview-value">${Number(value)}</span>
+        ${icons.arrow}
+      </a>`).join("");
+    const recentTasks = (data.recent_tasks || []).slice(0, 4);
+    const recentWork = recentTasks.length
+      ? recentTasks.map((task) => `
+        <a class="workbench-recent-row" href="/tasks/${encodeURIComponent(task.task_id)}" data-route>
+          <span><strong>${escapeHtml(humanTaskType(task.task_type))}</strong><small>${escapeHtml(task.payload?.customer_name || task.payload?.case_title || "查看最新进度")}</small></span>
+          ${statusPill(task.status)}
+          ${icons.arrow}
+        </a>`).join("")
+      : `<div class="attention-empty"><span class="status-dot status-success"></span><span>还没有最近任务。</span></div>`;
+    const creationAvailable = creationOptions
+      ? readyCustomerCount > 0
+      : contentCreation.available;
+    const creationCard = creationAvailable
       ? `<a class="quick-action" href="/create" data-route><span class="quick-icon">${icons.create}</span><span><strong>开始创作</strong><small>选择客户与出镜人</small></span>${icons.arrow}</a>`
       : `<div class="quick-action quick-action-disabled" aria-disabled="true"><span class="quick-icon">${icons.create}</span><span><strong>开始创作</strong><small>需要已确认的客户与出镜人</small></span></div>`;
     const hold = status?.operational_hold;
@@ -399,12 +447,20 @@ async function renderWorkbench() {
           <div class="action-list" aria-label="待处理事项">${attentionList}</div>
         </section>
         <section class="workbench-section">
+          <div class="section-head"><h2>当前概览</h2></div>
+          <div class="workbench-overview" aria-label="当前业务数据">${overviewRows}</div>
+        </section>
+        <section class="workbench-section">
           <div class="section-head"><h2>快捷开始</h2></div>
           <div class="quick-actions">
             <a class="quick-action" href="/cases/new" data-route><span class="quick-icon">${icons.link}</span><span><strong>添加案例</strong><small>粘贴抖音视频链接</small></span>${icons.arrow}</a>
             <a class="quick-action" href="/customers/new" data-route><span class="quick-icon">${icons.customers}</span><span><strong>新建客户</strong><small>整理客户资料</small></span>${icons.arrow}</a>
             ${creationCard}
           </div>
+        </section>
+        <section class="workbench-section">
+          <div class="section-head"><h2>最近记录</h2><a class="section-link" href="/tasks" data-route>查看全部</a></div>
+          <div class="workbench-recent" aria-label="最近任务">${recentWork}</div>
         </section>
       </main>`;
     app.innerHTML = shell("工作台", body);

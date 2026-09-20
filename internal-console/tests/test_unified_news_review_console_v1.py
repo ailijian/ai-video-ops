@@ -33,9 +33,19 @@ def test_unified_news_review_contract():
         encoding="utf-8"
     )
 
+    components = (
+        root
+        / "static"
+        / "assets"
+        / "creation-components.js"
+    ).read_text(
+        encoding="utf-8"
+    )
+
     assert '"revised",' in main
     assert "NEWS_REVIEW_SCHEMA_V1_1" in gateway
-    assert "修改后通过" in views
-    assert "data-news-revised-text" in views
-    assert "首屏不可淘汰" in views
+    assert "ContentReviewItem" in views
+    assert "data-content-decision" in views
+    assert "data-revised-title" in components
+    assert "这条内容暂时不能移除" in views
     assert "不使用" not in views

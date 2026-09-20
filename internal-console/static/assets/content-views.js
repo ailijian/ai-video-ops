@@ -1,15 +1,13 @@
+import { escapeHtml } from "./case-components.js";
+import { createContentDeliveryViews } from "./content-delivery-views.js?v=productized-stage3-3";
+import { createNewsDeliveryViews } from "./news-delivery-views.js?v=productized-stage3-3";
 import {
-  escapeHtml,
-} from "./case-components.js";
-
-import {
-  createContentDeliveryViews,
-} from "./content-delivery-views.js";
-
-import {
-  createNewsDeliveryViews,
-} from "./news-delivery-views.js";
-
+  CreationHeader,
+  CreationMetricRow,
+  CreationState,
+  CreationSummary,
+  safeCreationMessage,
+} from "./creation-components.js?v=productized-stage3-3";
 
 export function createContentViews({
   app,
@@ -24,1885 +22,614 @@ export function createContentViews({
   let options = null;
   let confirmationKey = null;
 
-  const deliveryViews =
-    createContentDeliveryViews({
-      api,
-      showToast,
-      escapeHtml,
-    });
+  const deliveryViews = createContentDeliveryViews({ api, showToast, escapeHtml });
+  const newsDeliveryViews = createNewsDeliveryViews({ api, showToast, escapeHtml });
 
-  const newsDeliveryViews =
-    createNewsDeliveryViews({
-      api,
-      showToast,
-      escapeHtml,
-    });
-
-  function lockEntryForm(
-    submitLabel =
-      "Generation Request 已建立",
-  ) {
-    const entryForm =
-      document.querySelector(
-        "#content-entry-form",
-      );
-
-    if (!entryForm) return;
-
-    entryForm.classList.add(
-      "completed",
-    );
-
-    entryForm
-      .querySelectorAll(
-        "input, select, button",
-      )
-      .forEach((control) => {
-        if (
-          control.id ===
-          "create-business"
-          || control.name ===
-            "create-profile"
-        ) {
-          return;
-        }
-
-        control.disabled = true;
-      });
-
-    const submitButton =
-      entryForm.querySelector(
-        "#check-content-capacity",
-      );
-
-    if (submitButton) {
-      submitButton.textContent =
-        submitLabel;
-    }
-  }
-
-
-  function unlockEntryForm() {
-    const entryForm =
-      document.querySelector(
-        "#content-entry-form",
-      );
-
-    if (!entryForm) return;
-
-    entryForm.classList.remove(
-      "completed",
-    );
-
-    entryForm
-      .querySelectorAll(
-        "input, select, button",
-      )
-      .forEach((control) => {
-        control.disabled = false;
-      });
-
-    const submitButton =
-      entryForm.querySelector(
-        "#check-content-capacity",
-      );
-
-    if (submitButton) {
-      submitButton.textContent =
-        "检查内容容量";
-    }
+  function newConfirmationKey() {
+    if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
+    return ["console", Date.now(), Math.random().toString(36).slice(2, 14)].join("_");
   }
 
   function selectedProfileValue() {
-    return (
-      document.querySelector(
-        'input[name="create-profile"]:checked',
-      )?.value || "mix"
-    );
+    return document.querySelector('input[name="create-profile"]:checked')?.value || "mix";
+  }
+
+  function selectedCustomer(businessId) {
+    return (options?.customers || []).find((customer) => customer.business_id === businessId);
+  }
+
+  function approvedSpeakers(customer) {
+    return (customer?.speakers || []).filter((speaker) => speaker.status === "approved");
+  }
+
+  function selectionSummary() {
+    const business = document.querySelector("#create-business");
+    const speaker = document.querySelector("#create-speaker");
+    const quantity = document.querySelector("#create-quantity");
+    const profile = selectedProfileValue();
+    return [
+      { label: "客户", value: business?.selectedOptions?.[0]?.textContent?.trim() || "" },
+      { label: "出镜人", value: speaker?.selectedOptions?.[0]?.textContent?.trim() || "" },
+      { label: "内容类型", value: profile === "news" ? "新闻体" : "素材混剪" },
+      ...(profile === "mix" ? [{ label: "数量", value: `${Number(quantity?.value || 0)} 条` }] : []),
+    ];
+  }
+
+  function lockEntryForm(label = "继续上次创作") {
+    const form = document.querySelector("#content-entry-form");
+    if (!form) return;
+    form.classList.add("completed");
+    form.querySelectorAll("input, select, button").forEach((control) => {
+      control.disabled = !control.matches("[data-edit-creation-selection]");
+    });
+    const compact = form.querySelector("[data-creation-entry-locked]");
+    if (compact) {
+      compact.hidden = false;
+      compact.innerHTML = `
+        <div>
+          <span>本次创作</span>
+          <strong>${escapeHtml(label)}</strong>
+        </div>
+        ${CreationSummary(selectionSummary())}
+        <button type="button" class="btn btn-ghost" data-edit-creation-selection>更换选择</button>`;
+      compact.querySelector("[data-edit-creation-selection]")?.addEventListener("click", () => {
+        document.querySelector("#capacity-preview-result").innerHTML = "";
+        unlockEntryForm();
+      });
+    }
+  }
+
+  function unlockEntryForm() {
+    const form = document.querySelector("#content-entry-form");
+    if (!form) return;
+    form.classList.remove("completed", "has-capacity-result");
+    form.querySelectorAll("input, select, button").forEach((control) => { control.disabled = false; });
+    const compact = form.querySelector("[data-creation-entry-locked]");
+    if (compact) {
+      compact.hidden = true;
+      compact.innerHTML = "";
+    }
+    const speaker = form.querySelector("#create-speaker");
+    const submit = form.querySelector("#check-content-capacity");
+    const hasSpeaker = Boolean(speaker?.options?.length);
+    if (speaker) speaker.disabled = !hasSpeaker;
+    if (submit) submit.disabled = !hasSpeaker;
+    syncProfileSpecificUi();
   }
 
   function syncProfileSpecificUi() {
-    const news =
-      selectedProfileValue() ===
-      "news";
-
-    const quantityField =
-      document.querySelector(
-        "#create-quantity-field",
-      );
-
-    const quantityInput =
-      document.querySelector(
-        "#create-quantity",
-      );
-
-    if (quantityField) {
-      quantityField.hidden = news;
-    }
-
-    if (quantityInput) {
-      quantityInput.disabled = news;
-    }
-
-    const submitButton =
-      document.querySelector(
-        "#check-content-capacity",
-      );
-
-    if (
-      submitButton &&
-      !submitButton.closest(
-        "form",
-      )?.classList.contains(
-        "completed",
-      )
-    ) {
-      submitButton.textContent =
-        news
-          ? "检查 News 可用内容"
-          : "检查内容容量";
-    }
-
-    const title =
-      document.querySelector(
-        "#create-authority-title",
-      );
-
-    const body =
-      document.querySelector(
-        "#create-authority-body",
-      );
-
-    if (title) {
-      title.textContent = news
-        ? "News 当前仅支持已验证的价格与优惠场景"
-        : "先检查容量，再确认创建任务";
-    }
-
-    if (body) {
-      body.textContent = news
-        ? "系统会先从该客户已有的已发布内容中整理 4–8 个新闻体标题。切换创作模式不会重置已有内容记录。"
-        : "检查内容容量只用于评估。容量结果出来后，需要再次确认才会创建本次任务并准备内容来源。";
-    }
+    const news = selectedProfileValue() === "news";
+    const quantityField = document.querySelector("#create-quantity-field");
+    const quantityInput = document.querySelector("#create-quantity");
+    const submit = document.querySelector("#check-content-capacity");
+    if (quantityField) quantityField.hidden = news;
+    if (quantityInput) quantityInput.disabled = news || document.querySelector("#content-entry-form")?.classList.contains("completed");
+    if (submit && !submit.closest("form")?.classList.contains("completed")) submit.textContent = "查看可创作内容";
   }
 
-  async function restoreActiveNewsRequest() {
-    const businessSelect =
-      document.querySelector(
-        "#create-business",
-      );
-
-    const host =
-      document.querySelector(
-        "#capacity-preview-result",
-      );
-
-    if (
-      !businessSelect ||
-      !host
-    ) {
-      return false;
-    }
-
-    try {
-      const response = await api(
-        "/api/create/news/active" +
-          `?business_id=${encodeURIComponent(
-            businessSelect.value,
-          )}`,
-      );
-
-      const active =
-        response.active_request;
-
-      if (!active) {
-        unlockEntryForm();
-        syncProfileSpecificUi();
-        return false;
-      }
-
-      const speakerSelect =
-        document.querySelector(
-          "#create-speaker",
-        );
-
-      if (
-        speakerSelect &&
-        active.speaker_id
-      ) {
-        const found =
-          Array.from(
-            speakerSelect.options,
-          ).some(
-            (option) =>
-              option.value ===
-              active.speaker_id,
-          );
-
-        if (!found) {
-          host.innerHTML = `
-            <section class="card capacity-result blocked">
-              <span class="capacity-kicker">
-                News Request Authority 异常
-              </span>
-
-              <h2>
-                当前 News Request 的出镜人
-                无法从客户 Authority 恢复
-              </h2>
-            </section>`;
-
-          lockEntryForm(
-            "暂时无法继续",
-          );
-
-          return true;
-        }
-
-        speakerSelect.value =
-          active.speaker_id;
-      }
-
-      const newsRadio =
-        document.querySelector(
-          'input[name="create-profile"][value="news"]',
-        );
-
-      if (newsRadio) {
-        newsRadio.checked = true;
-      }
-
-      document
-        .querySelectorAll(
-          ".profile-choice",
-        )
-        .forEach((label) => {
-          label.classList.toggle(
-            "selected",
-            label.querySelector(
-              "input",
-            ).checked,
-          );
-        });
-
-      syncProfileSpecificUi();
-
-      lockEntryForm(
-        "News 内容任务已建立",
-      );
-
-      await newsDeliveryViews.restore(
-        active.request_id,
-        host,
-      );
-
-      return true;
-    } catch (error) {
-      host.innerHTML = `
-        <section class="card capacity-result blocked">
-          <span class="capacity-kicker">
-            暂时无法恢复 News 内容任务
-          </span>
-
-          <h2>当前已停止继续操作</h2>
-
-          <p>
-            ${escapeHtml(
-              error.detail?.next_action ||
-                error.detail?.message ||
-                error.message,
-            )}
-          </p>
-        </section>`;
-
-      lockEntryForm(
-        "暂时无法继续",
-      );
-
-      showToast(
-        error.detail?.next_action ||
-          error.detail?.message ||
-          error.message,
-      );
-
-      return true;
-    }
+  function syncSpeakerOptions(customer, requestedSpeaker = "") {
+    const select = document.querySelector("#create-speaker");
+    const empty = document.querySelector("[data-speaker-empty]");
+    const submit = document.querySelector("#check-content-capacity");
+    if (!select) return;
+    const speakers = approvedSpeakers(customer);
+    select.innerHTML = speakers.map((speaker) => `
+      <option value="${escapeHtml(speaker.speaker_id)}" ${speaker.speaker_id === requestedSpeaker ? "selected" : ""}>
+        ${escapeHtml(speaker.display_name)}${speaker.public_role ? ` · ${escapeHtml(speaker.public_role)}` : ""}
+      </option>`).join("");
+    select.disabled = !speakers.length;
+    if (empty) empty.hidden = Boolean(speakers.length);
+    if (submit) submit.disabled = !speakers.length;
   }
 
-  async function restoreSelectedProfileRequest() {
-    if (
-      selectedProfileValue() ===
-      "news"
-    ) {
-      return restoreActiveNewsRequest();
-    }
-
-    await restoreActiveRequest();
-    syncProfileSpecificUi();
-    return true;
-  }
-
-
-  function renderSourcePlanSection(
-    handoffReady,
-    sourcePlan,
-  ) {
+  function renderPreparation(handoffReady, sourcePlan) {
     if (handoffReady === false) {
-      return "";
+      return CreationState({
+        tone: "running",
+        eyebrow: "创作准备",
+        title: "正在恢复创作准备",
+        body: "本次选择已经保留，可以安全继续。",
+        actions: `<button id="recover-source-handoff" class="btn btn-primary" type="button">继续准备</button>`,
+      });
     }
-
-    if (
-      !sourcePlan ||
-      sourcePlan.ready !== true
-    ) {
-      return `
-        <div class="source-planning-handoff">
-          <strong>
-            Generation Source Plan 待解析
-          </strong>
-
-          <p>
-            将解析 Approved Pattern、
-            Approved Case 与 Fingerprint，
-            建立 deterministic
-            Generation Source Plan。
-          </p>
-
-          <button
-            id="resolve-sources"
-            class="btn btn-secondary btn-wide"
-            type="button"
-          >
-            解析创作来源
-          </button>
-        </div>`;
+    if (!sourcePlan || sourcePlan.ready !== true) {
+      return CreationState({
+        eyebrow: "创作准备",
+        title: "还需要准备创作内容",
+        body: "系统会整理客户信息、历史内容和可用参考。",
+        actions: `<button id="resolve-sources" class="btn btn-primary" type="button">准备创作内容</button>`,
+      });
     }
-
-    if (
-      sourcePlan.coverageStatus !==
-      "supported"
-    ) {
-      return `
-        <div class="source-planning-handoff">
-          <strong>
-            当前 Source Coverage 不足
-          </strong>
-
-          <div class="generation-request-meta">
-            <span>Coverage Code</span>
-            <code>${escapeHtml(
-              String(
-                sourcePlan.coverageCode ||
-                  "unknown",
-              ),
-            )}</code>
-          </div>
-
-          <p>
-            ${escapeHtml(
-              String(
-                sourcePlan.coverageReason ||
-                  "当前 Approved Pattern / " +
-                    "Case 覆盖不足。",
-              ),
-            )}
-          </p>
-
-          <p>
-            没有调用远程模型，
-            没有生成脚本，
-            没有创建 Generation Batch，
-            没有写入 Content Ledger。
-          </p>
-        </div>`;
+    if (sourcePlan.coverageStatus !== "supported") {
+      return CreationState({
+        tone: "warning",
+        eyebrow: "创作准备",
+        title: "现有参考不足，暂时无法继续生成",
+        body: safeCreationMessage(sourcePlan.coverageReason, "现有案例与参考还不足以支持这次创作。"),
+      });
     }
-
-    return `
-      <div class="source-planning-handoff">
-        <strong>
-          Generation Source Plan 已完成
-        </strong>
-
-        <div class="generation-request-meta">
-          <span>Coverage</span>
-          <strong>Supported</strong>
-        </div>
-
-        <div class="generation-request-meta">
-          <span>Approved Pattern</span>
-          <strong>
-            ${Number(
-              sourcePlan
-                .selectedPatternCount,
-            )}
-          </strong>
-        </div>
-
-        <div class="generation-request-meta">
-          <span>Eligible Cases</span>
-          <strong>
-            ${Number(
-              sourcePlan.eligibleCaseCount,
-            )}
-          </strong>
-        </div>
-      </div>`;
+    return CreationState({
+      tone: "success",
+      eyebrow: "创作准备",
+      title: "准备完成",
+      body: "已经找到足够的创作依据。",
+    });
   }
 
-  function renderRequestEstablished(
-    host,
-    {
-      requestId,
-      profile,
-      confirmedQuantity,
-      handoffReady,
-      sourcePlan = null,
-    },
-  ) {
-    const profileLabel =
-      profile === "news"
-        ? "News"
-        : "Mix";
-
-    const planCompleted =
-      sourcePlan &&
-      sourcePlan.ready === true &&
-      sourcePlan.coverageStatus ===
-        "supported";
-
+  function renderRequestEstablished(host, {
+    requestId,
+    profile,
+    confirmedQuantity,
+    handoffReady,
+    sourcePlan = null,
+    recovered = false,
+  }) {
+    const preparationComplete = handoffReady !== false
+      && sourcePlan?.ready === true
+      && sourcePlan?.coverageStatus === "supported";
     host.innerHTML = `
-      <section class="card generation-request-result">
-        <span class="generation-request-kicker">
-          Generation Request 已建立
-        </span>
-
-        <h2>
-          已确认生成
-          ${Number(confirmedQuantity)}
-          条
-        </h2>
-
-        <div class="generation-request-summary">
-          <div class="generation-request-meta">
-            <span>Request ID</span>
-            <code>${escapeHtml(
-              requestId,
-            )}</code>
-          </div>
-
-          <div class="generation-request-meta">
-            <span>Profile</span>
-            <strong>${escapeHtml(
-              profileLabel,
-            )}</strong>
-          </div>
-
-          <div class="generation-request-meta">
-            <span>确认数量</span>
-            <strong>
-              ${Number(confirmedQuantity)} 条
-            </strong>
-          </div>
-        </div>
-
-        <div class="source-planning-handoff">
-          <strong>
-            ${
-              handoffReady === false
-                ? "Source Planning Handoff 待建立"
-                : "Source Planning Handoff 已准备"
-            }
-          </strong>
-
-          ${
-            handoffReady === false
-              ? `
-                <p>
-                  下一步将恢复 Source Planning
-                  Handoff，再解析创作来源。
-                </p>
-
-                <button
-                  id="recover-source-handoff"
-                  class="btn btn-secondary btn-wide"
-                  type="button"
-                >
-                  恢复 Source Planning Handoff
-                </button>`
-              : ""
-          }
-        </div>
-
-        ${renderSourcePlanSection(
-          handoffReady,
-          sourcePlan,
-        )}
-
-        <div class="capacity-authority-note">
-          <strong>
-            Generation Request 已锁定
-          </strong>
-
-          <span>
-            后续 Content Plan、Script Generation、
-            Human Review 与 Excel Export
-            都从同一 canonical Request
-            恢复推进，不会静默覆盖本轮事实链。
-          </span>
-        </div>
-
-        <p class="generation-request-footnote">
-          ${
-            planCompleted
-              ? "继续下方 Content Delivery"
-              : "Generation Request 是不可" +
-                "静默覆盖的 canonical " +
-                "artifact。"
-          }
-        </p>
-      </section>
-
+      ${preparationComplete ? "" : `
+        <section class="work-surface creation-request-surface" data-request-id="${escapeHtml(requestId)}">
+          ${CreationHeader({
+            eyebrow: recovered ? "继续上次创作" : "本次创作已创建",
+            title: profile === "news" ? "新闻体创作" : "素材混剪创作",
+            description: "选择已经锁定，可以从当前步骤继续。",
+          })}
+          ${renderPreparation(handoffReady, sourcePlan)}
+        </section>`}
       <div id="content-delivery-host"></div>`;
   }
 
-  function bindResolveSourcesButton(
-    host,
-    requestId,
-  ) {
-    const resolveButton =
-      host.querySelector(
-        "#resolve-sources",
-      );
-
-    if (!resolveButton) return;
-
-    resolveButton.addEventListener(
-      "click",
-      async () => {
-        resolveButton.disabled = true;
-
-        resolveButton.textContent =
-          "正在解析 Approved Pattern " +
-          "/ Case / Fingerprint…";
-
-        try {
-          await api(
-            "/api/create/" +
-              encodeURIComponent(
-                requestId,
-              ) +
-              "/resolve-sources",
-            {
-              method: "POST",
-            },
-          );
-
-          showToast(
-            "Generation Source Plan 已完成。",
-          );
-
-          await restoreSelectedProfileRequest();
-
-        } catch (error) {
-          showToast(
-            error.detail?.next_action ||
-              error.detail?.message ||
-              error.message,
-          );
-
-          if (
-            resolveButton.isConnected
-          ) {
-            resolveButton.disabled =
-              false;
-
-            resolveButton.textContent =
-              "解析创作来源";
-          }
+  function bindResolveSourcesButton(host, requestId) {
+    const button = host.querySelector("#resolve-sources");
+    if (!button) return;
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      button.textContent = "正在准备…";
+      try {
+        await api(`/api/create/${encodeURIComponent(requestId)}/resolve-sources`, { method: "POST" });
+        showToast("创作内容准备完成。");
+        await restoreSelectedProfileRequest();
+      } catch (error) {
+        showToast(safeCreationMessage(error.detail?.next_action || error.detail?.message || error.message, "创作内容暂时无法准备，请稍后重试。"));
+        if (button.isConnected) {
+          button.disabled = false;
+          button.textContent = "准备创作内容";
         }
-      },
-    );
+      }
+    });
+  }
+
+  function activeSpeakerUnavailable(host) {
+    host.innerHTML = CreationState({
+      tone: "error",
+      title: "这次创作暂时无法继续",
+      body: "出镜人状态已经发生变化，请返回客户页面确认后再继续。",
+      actions: `<a class="btn btn-secondary" href="/customers">查看客户</a>`,
+    });
+    lockEntryForm("暂时无法继续");
+  }
+
+  async function restoreActiveNewsRequest() {
+    const business = document.querySelector("#create-business");
+    const host = document.querySelector("#capacity-preview-result");
+    if (!business || !host) return false;
+    try {
+      const response = await api(`/api/create/news/active?business_id=${encodeURIComponent(business.value)}`);
+      const active = response.active_request;
+      if (!active) {
+        unlockEntryForm();
+        return false;
+      }
+      const speaker = document.querySelector("#create-speaker");
+      if (speaker && active.speaker_id) {
+        const found = Array.from(speaker.options).some((option) => option.value === active.speaker_id);
+        if (!found) {
+          activeSpeakerUnavailable(host);
+          return true;
+        }
+        speaker.value = active.speaker_id;
+      }
+      const radio = document.querySelector('input[name="create-profile"][value="news"]');
+      if (radio) radio.checked = true;
+      document.querySelectorAll(".profile-choice").forEach((label) => label.classList.toggle("selected", label.querySelector("input").checked));
+      syncProfileSpecificUi();
+      lockEntryForm("继续上次新闻体创作");
+      await newsDeliveryViews.restore(active.request_id, host);
+      return true;
+    } catch (error) {
+      host.innerHTML = CreationState({
+        tone: "error",
+        title: "这次创作暂时无法继续",
+        body: safeCreationMessage(error.detail?.next_action || error.detail?.message || error.message, "当前状态无法安全恢复，请稍后重试或查看任务记录。"),
+        actions: `<a class="btn btn-secondary" href="/tasks">查看任务</a>`,
+      });
+      lockEntryForm("暂时无法继续");
+      return true;
+    }
   }
 
   async function restoreActiveRequest() {
-    const businessSelect =
-      document.querySelector(
-        "#create-business",
-      );
-
-    if (!businessSelect) return;
-
-    const host =
-      document.querySelector(
-        "#capacity-preview-result",
-      );
-
-    if (!host) return;
-
-    let active = null;
-
+    const business = document.querySelector("#create-business");
+    const host = document.querySelector("#capacity-preview-result");
+    if (!business || !host) return false;
+    let active;
     try {
-      const response = await api(
-        "/api/create/active-request" +
-          `?business_id=${encodeURIComponent(
-            businessSelect.value,
-          )}`,
-      );
-
-      active =
-        response.active_request;
-
+      const response = await api(`/api/create/active-request?business_id=${encodeURIComponent(business.value)}`);
+      active = response.active_request;
     } catch (error) {
-      host.innerHTML = `
-        <section
-          class="card capacity-result blocked"
-        >
-          <span class="capacity-kicker">
-            暂时无法确认当前创作状态
-          </span>
-
-          <h2>
-            当前 Mix 创作状态需要处理
-          </h2>
-
-          <p>
-            ${escapeHtml(
-              error.detail?.next_action ||
-                error.message,
-            )}
-          </p>
-
-          <p>
-            这个状态只阻止当前 Mix 路径。
-            你仍然可以切换到 News，
-            系统会独立恢复 News Delivery 状态。
-          </p>
-        </section>`;
-
-      lockEntryForm(
-        "暂时无法继续",
-      );
-
-      showToast(
-        error.detail?.next_action ||
-          error.message,
-      );
-
-      return;
+      host.innerHTML = CreationState({
+        tone: "error",
+        title: "这次创作暂时无法继续",
+        body: safeCreationMessage(error.detail?.next_action || error.detail?.message || error.message, "当前状态无法安全恢复，请稍后重试或查看任务记录。"),
+        actions: `<a class="btn btn-secondary" href="/tasks">查看任务</a>`,
+      });
+      lockEntryForm("暂时无法继续");
+      return true;
     }
-
     if (!active) {
       unlockEntryForm();
-      return;
+      return false;
     }
-
-    const speakerSelect =
-      document.querySelector(
-        "#create-speaker",
-      );
-
-    if (
-      speakerSelect
-      && active.speaker_id
-    ) {
-      const found =
-        Array.from(
-          speakerSelect.options,
-        ).some(
-          (option) =>
-            option.value ===
-            active.speaker_id,
-        );
-
+    const speaker = document.querySelector("#create-speaker");
+    if (speaker && active.speaker_id) {
+      const found = Array.from(speaker.options).some((option) => option.value === active.speaker_id);
       if (!found) {
-        host.innerHTML = `
-          <section
-            class="card capacity-result blocked"
-          >
-            <span class="capacity-kicker">
-              Active Request Authority 异常
-            </span>
-
-            <h2>
-              当前 Request 的出镜人
-              无法在客户 Authority 中恢复
-            </h2>
-          </section>`;
-
-        lockEntryForm(
-          "暂时无法继续",
-        );
-
-        return;
+        activeSpeakerUnavailable(host);
+        return true;
       }
-
-      speakerSelect.value =
-        active.speaker_id;
+      speaker.value = active.speaker_id;
     }
-
-    const profileRadio =
-      document.querySelector(
-        'input[name="create-profile"]' +
-          `[value="${active.profile}"]`,
-      );
-
-    if (profileRadio) {
-      profileRadio.checked = true;
-
-      document
-        .querySelectorAll(
-          ".profile-choice",
-        )
-        .forEach((label) => {
-          label.classList.toggle(
-            "selected",
-            label.querySelector(
-              "input",
-            ).checked,
-          );
-        });
-    }
-
-    const quantityInput =
-      document.querySelector(
-        "#create-quantity",
-      );
-
-    if (
-      quantityInput
-      && active.requested_quantity
-    ) {
-      quantityInput.value =
-        String(
-          active.requested_quantity
-        );
-    }
-
-    renderRequestEstablished(
-      host,
-      {
-        requestId:
-          active.request_id,
-        profile:
-          active.profile,
-        confirmedQuantity:
-          active.confirmed_quantity,
-        handoffReady:
-          active.handoff_ready,
-        sourcePlan: {
-          ready:
-            active.source_plan_ready ===
-            true,
-          coverageStatus:
-            active.coverage_status,
-          coverageCode:
-            active.coverage_code,
-          coverageReason:
-            active.coverage_reason,
-          selectedPatternCount:
-            active
-              .selected_pattern_count,
-          eligibleCaseCount:
-            active.eligible_case_count,
-        },
+    const radio = document.querySelector(`input[name="create-profile"][value="${active.profile}"]`);
+    if (radio) radio.checked = true;
+    document.querySelectorAll(".profile-choice").forEach((label) => label.classList.toggle("selected", label.querySelector("input").checked));
+    const quantity = document.querySelector("#create-quantity");
+    if (quantity && active.requested_quantity) quantity.value = String(active.requested_quantity);
+    syncProfileSpecificUi();
+    renderRequestEstablished(host, {
+      requestId: active.request_id,
+      profile: active.profile,
+      confirmedQuantity: active.confirmed_quantity,
+      handoffReady: active.handoff_ready,
+      recovered: true,
+      sourcePlan: {
+        ready: active.source_plan_ready === true,
+        coverageStatus: active.coverage_status,
+        coverageReason: active.coverage_reason,
       },
-    );
-
-    lockEntryForm();
-
-    if (
-      active.handoff_ready
-      === false
-    ) {
-      const recoverButton =
-        document.querySelector(
-          "#recover-source-handoff",
-        );
-
-      if (recoverButton) {
-        recoverButton.addEventListener(
-          "click",
-          async () => {
-            recoverButton.disabled =
-              true;
-
-            recoverButton.textContent =
-              "正在恢复…";
-
-            try {
-              const response =
-                await api(
-                  "/api/create/confirm",
-                  {
-                    method: "POST",
-                    body:
-                      JSON.stringify({
-                        business_id:
-                          active.business_id,
-                        speaker_id:
-                          active.speaker_id,
-                        profile:
-                          active.profile,
-                        requested_quantity:
-                          Number(
-                            active
-                              .requested_quantity,
-                          ),
-                        confirmed_quantity:
-                          Number(
-                            active
-                              .confirmed_quantity,
-                          ),
-                        idempotency_key:
-                          newConfirmationKey(),
-                      }),
-                  },
-                );
-
-              const result =
-                response.result;
-
-              renderRequestEstablished(
-                host,
-                {
-                  requestId:
-                    result.request_id,
-                  profile:
-                    active.profile,
-                  confirmedQuantity:
-                    result
-                      .confirmed_quantity,
-                  handoffReady: true,
-                },
-              );
-
-              lockEntryForm();
-
-              showToast(
-                "Source Planning Handoff 已恢复。",
-              );
-
-              bindResolveSourcesButton(
-                host,
-                result.request_id,
-              );
-
-            } catch (error) {
-              showToast(
-                error.detail
-                  ?.next_action ||
-                  error.message,
-              );
-
-              if (
-                recoverButton
-                  .isConnected
-              ) {
-                recoverButton.disabled =
-                  false;
-
-                recoverButton.textContent =
-                  (
-                    "恢复 Source "
-                    + "Planning Handoff"
-                  );
-              }
-            }
-          },
-        );
-      }
+    });
+    lockEntryForm("继续上次素材混剪创作");
+    if (active.handoff_ready === false) {
+      const recover = host.querySelector("#recover-source-handoff");
+      recover?.addEventListener("click", async () => {
+        recover.disabled = true;
+        recover.textContent = "正在恢复…";
+        try {
+          await api("/api/create/confirm", {
+            method: "POST",
+            body: JSON.stringify({
+              business_id: active.business_id,
+              speaker_id: active.speaker_id,
+              profile: active.profile,
+              requested_quantity: Number(active.requested_quantity),
+              confirmed_quantity: Number(active.confirmed_quantity),
+              idempotency_key: newConfirmationKey(),
+            }),
+          });
+          showToast("本次创作已经恢复。");
+          await restoreActiveRequest();
+        } catch (error) {
+          showToast(safeCreationMessage(error.detail?.next_action || error.detail?.message || error.message, "本次创作暂时无法恢复，请稍后重试。"));
+          if (recover.isConnected) {
+            recover.disabled = false;
+            recover.textContent = "继续准备";
+          }
+        }
+      });
     } else {
-      bindResolveSourcesButton(
-        host,
-        active.request_id,
-      );
+      bindResolveSourcesButton(host, active.request_id);
     }
-
-    if (
-      active.source_plan_ready ===
-      true
-    ) {
-      await deliveryViews.restore(
-        active.request_id,
-      );
-    }
+    if (active.source_plan_ready === true) await deliveryViews.restore(active.request_id);
+    return true;
   }
 
-    function newConfirmationKey() {
-    if (
-        globalThis.crypto
-        ?.randomUUID
-    ) {
-        return (
-        globalThis.crypto
-            .randomUUID()
-        );
-    }
-
-    return [
-        "console",
-        Date.now(),
-        Math.random()
-        .toString(36)
-        .slice(2, 14),
-    ].join("_");
-    }
-
-  function selectedCustomer(
-    businessId,
-  ) {
-    return (
-      options?.customers || []
-    ).find(
-      (customer) =>
-        customer.business_id ===
-        businessId,
-    );
+  async function restoreSelectedProfileRequest() {
+    return selectedProfileValue() === "news" ? restoreActiveNewsRequest() : restoreActiveRequest();
   }
 
-  function approvedSpeakers(
-    customer,
-  ) {
-    return (
-      customer?.speakers || []
-    ).filter(
-      (speaker) =>
-        speaker.status ===
-        "approved",
-    );
+  function bindAdjustQuantity(host) {
+    host.querySelector("[data-adjust-quantity]")?.addEventListener("click", () => {
+      host.innerHTML = "";
+      document.querySelector("#content-entry-form")?.classList.remove("has-capacity-result");
+      const input = document.querySelector("#create-quantity");
+      input?.focus();
+      input?.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
   }
 
-  function renderResult(
-    preview,
-  ) {
-    const host =
-      document.querySelector(
-        "#capacity-preview-result",
-      );
-
+  function renderResult(preview) {
+    const host = document.querySelector("#capacity-preview-result");
     if (!host) return;
-
-    const capacity =
-      preview.capacity || {};
-
-    const recommendation =
-      preview.recommendation || {};
-
-    const profile =
-      preview.selection?.profile ||
-      "mix";
-
-    const profileState =
-      preview.profiles?.[profile] ||
-      {};
-
+    const entryForm = document.querySelector("#content-entry-form");
+    entryForm?.classList.remove("has-capacity-result");
+    const capacity = preview.capacity || {};
+    const recommendation = preview.recommendation || {};
+    const profile = preview.selection?.profile || "mix";
     confirmationKey = null;
 
-    if (
-      recommendation.status ===
-      "profile_unavailable"
-    ) {
-      host.innerHTML = `
-        <section class="card capacity-result blocked">
-          <span class="capacity-kicker">
-            当前模式暂不可生产
-          </span>
-
-          <h2>
-            ${profile === "news"
-              ? "News 当前还没有达到生产就绪"
-              : "当前 Production Profile 不可用"}
-          </h2>
-
-          <p>
-            当前 Authority 状态：
-            <strong>${escapeHtml(
-              profileState.status ||
-                "unknown",
-            )}</strong>
-          </p>
-
-          <p>
-            没有生成脚本，也没有创建 Generation Request。
-          </p>
-
-          <div class="capacity-next">
-            建议切换到当前可用的 Mix 模式。
-          </div>
-        </section>`;
-
+    if (recommendation.status === "profile_unavailable") {
+      host.innerHTML = CreationState({
+        tone: "warning",
+        title: "这种内容目前暂时不能开始",
+        body: "请返回客户页面确认客户与出镜人状态，或选择其他内容类型。",
+      });
       return;
     }
 
-    const requested =
-      Number(
-        recommendation
-          .requested_quantity || 0,
-      );
+    const requested = Number(recommendation.requested_quantity || 0);
+    const available = Number(capacity.high_quality_novel_capacity || 0);
+    const historical = Number(capacity.ledger_entry_count || 0);
+    const recommended = Number(recommendation.recommended_quantity || 0);
 
-    const available =
-      Number(
-        capacity
-          .high_quality_novel_capacity ||
-          0,
-      );
-
-    const historicalCount =
-      Number(
-        capacity
-          .ledger_entry_count ||
-          0,
-      );
-
-    const recommended =
-      Number(
-        recommendation
-          .recommended_quantity || 0,
-      );
-
-    if (
-      recommendation.status ===
-      "capacity_exhausted"
-    ) {
-      host.innerHTML = `
-        <section class="card capacity-result blocked">
-          <span class="capacity-kicker">
-            当前没有可继续消耗的新内容容量
-          </span>
-
-          <h2>
-            高质量新内容容量为 0
-          </h2>
-
-          <div class="capacity-metrics">
-            <div>
-              <span>已有历史内容</span>
-              <strong>${historicalCount}</strong>
-            </div>
-
-            <div>
-              <span>剩余高质量新内容</span>
-              <strong>0</strong>
-            </div>
-          </div>
-
-          <p>
-            系统不会为了凑数量重复已有语义，也不会生成 Padding。
-            已有内容仍然保留在 Content Ledger 中。
-          </p>
-
-          <div class="capacity-next">
-            下一步需要补充新的 Customer Truth、真实问题、服务边界或具体案例。
-          </div>
-        </section>`;
-
+    if (recommendation.status === "capacity_exhausted") {
+      host.innerHTML = CreationState({
+        tone: "neutral",
+        eyebrow: "内容空间",
+        title: "暂时没有值得继续做的新内容",
+        body: "当前已有内容已经覆盖了这组可用方向。补充新的客户信息或素材后，可以再次检查。",
+        content: CreationMetricRow([
+          { label: "计划数量", value: requested },
+          { label: "当前可用", value: 0 },
+          ...(historical ? [{ label: "已有内容", value: historical }] : []),
+        ]),
+      });
       return;
     }
 
-    const limited =
-      recommendation.status ===
-      "capacity_limited";
-
-    confirmationKey =
-        newConfirmationKey();
-
-    const gaps =
-      capacity
-        .content_gap_summary || [];
-
-    host.innerHTML = `
-      <section class="card capacity-result ${
-        limited ? "limited" : "ready"
-      }">
-        <span class="capacity-kicker">
-          ${limited
-            ? "数量已按质量上限收缩"
-            : "当前容量可以支持"}
-        </span>
-
-        <h2>
-          ${limited
-            ? `建议本轮生成 ${recommended} 条`
-            : `可以生成 ${recommended} 条`}
-        </h2>
-
-        <div class="capacity-metrics">
-          <div>
-            <span>你希望生成</span>
-            <strong>${requested}</strong>
-          </div>
-
-          <div>
-            <span>已有历史内容</span>
-            <strong>${historicalCount}</strong>
-          </div>
-
-          <div>
-            <span>当前高质量容量</span>
-            <strong>${available}</strong>
-          </div>
-
-          <div>
-            <span>建议本轮</span>
-            <strong>${recommended}</strong>
-          </div>
-        </div>
-
-        ${
-          limited
-            ? `
-              <p class="capacity-explanation">
-                如果继续补到 ${requested} 条，
-                会开始出现事实重复、角度重复或信息增益不足。
-                系统不会为了完成数量生成 Padding。
-              </p>`
-            : `
-              <p class="capacity-explanation">
-                当前 Approved Persona 与历史内容容量足以支撑这次请求。
-                本次检查没有生成任何脚本。
-              </p>`
+    const limited = recommendation.status === "capacity_limited";
+    entryForm?.classList.toggle("has-capacity-result", Boolean(recommendation.can_continue));
+    confirmationKey = newConfirmationKey();
+    const gaps = capacity.content_gap_summary || [];
+    host.innerHTML = CreationState({
+      tone: limited ? "warning" : "success",
+      eyebrow: "可创作数量",
+      title: limited ? `本次最多建议做 ${recommended} 条` : `本次建议做 ${recommended} 条`,
+      body: limited
+        ? `你计划做 ${requested} 条，当前还有 ${available} 条值得继续做的新内容。系统不会为了凑够数量重复已经做过的内容。`
+        : `你计划做 ${requested} 条，当前可以支持。`,
+      content: `
+        ${CreationMetricRow([
+          { label: "计划数量", value: requested },
+          { label: "当前可用", value: available },
+          { label: "建议本次", value: recommended },
+        ])}
+        ${gaps.length ? `
+          <details class="creation-evidence">
+            <summary>查看后续补充方向</summary>
+            <ul>${gaps.map((gap) => `<li>${escapeHtml(gap)}</li>`).join("")}</ul>
+          </details>` : ""}
+        <p class="creation-governance-line">本次结果只判断内容是否值得继续做，不代表已获得相关素材使用权。</p>`,
+      actions: recommendation.can_continue ? `
+        <button id="content-generation-next" class="btn btn-primary" type="button">按 ${recommended} 条继续</button>
+        <button class="btn btn-secondary" type="button" data-adjust-quantity>调整数量</button>` : "",
+    });
+    bindAdjustQuantity(host);
+    const next = host.querySelector("#content-generation-next");
+    next?.addEventListener("click", async () => {
+      const key = confirmationKey || newConfirmationKey();
+      confirmationKey = key;
+      next.disabled = true;
+      next.textContent = "正在创建本次创作…";
+      try {
+        const response = await api("/api/create/confirm", {
+          method: "POST",
+          body: JSON.stringify({
+            business_id: preview.business.business_id,
+            speaker_id: preview.speaker.speaker_id,
+            profile,
+            requested_quantity: requested,
+            confirmed_quantity: recommended,
+            idempotency_key: key,
+          }),
+        });
+        const result = response.result;
+        renderRequestEstablished(host, {
+          requestId: result.request_id,
+          profile,
+          confirmedQuantity: result.confirmed_quantity,
+          handoffReady: true,
+          recovered: Boolean(result.recovered),
+        });
+        lockEntryForm(result.recovered ? "继续上次素材混剪创作" : "本次创作已创建");
+        bindResolveSourcesButton(host, result.request_id);
+        showToast(result.recovered ? "已恢复上次创作。" : "本次创作已创建。");
+      } catch (error) {
+        showToast(safeCreationMessage(error.detail?.next_action || error.detail?.message || error.message, "本次创作暂时无法创建，请稍后重试。"));
+        if (next.isConnected) {
+          next.disabled = false;
+          next.textContent = `按 ${recommended} 条继续`;
         }
-
-        ${
-          gaps.length
-            ? `
-              <div class="capacity-gap">
-                <strong>如果希望继续扩充容量</strong>
-                ${gaps
-                  .map(
-                    (gap) =>
-                      `<p>${escapeHtml(
-                        gap,
-                      )}</p>`,
-                  )
-                  .join("")}
-              </div>`
-            : ""
-        }
-
-        <div class="capacity-authority-note">
-          <strong>
-            Content Capacity ≠ Media Rights
-          </strong>
-          <span>
-            当前只确认脚本语义容量。
-            肖像、视频和素材使用授权仍是独立 Authority。
-          </span>
-        </div>
-
-        ${
-          recommendation.can_continue
-            ? `
-              <button
-                id="content-generation-next"
-                class="btn btn-primary btn-wide"
-                type="button"
-              >
-                下一步：确认生成 ${recommended} 条
-              </button>
-
-              <p class="field-hint capacity-temporary-note">
-                点击后会建立 immutable Generation Request 与 Source Planning Handoff；
-                仍不会调用模型或生成脚本。
-              </p>`
-            : ""
-        }
-      </section>`;
-
-    const nextButton =
-      document.querySelector(
-        "#content-generation-next",
-      );
-
-    if (nextButton) {
-        nextButton.addEventListener(
-            "click",
-            async () => {
-            const key =
-                confirmationKey ||
-                newConfirmationKey();
-
-            confirmationKey = key;
-
-            nextButton.disabled = true;
-            nextButton.textContent =
-                "正在建立 Generation Request…";
-
-            try {
-                const response = await api(
-                "/api/create/confirm",
-                {
-                    method: "POST",
-                    body: JSON.stringify({
-                    business_id:
-                        preview.business
-                        .business_id,
-                    speaker_id:
-                        preview.speaker
-                        .speaker_id,
-                    profile,
-                    requested_quantity:
-                        requested,
-                    confirmed_quantity:
-                        recommended,
-                    idempotency_key:
-                        key,
-                    }),
-                },
-                );
-
-                const result =
-                response.result;
-
-                renderRequestEstablished(
-                host,
-                {
-                    requestId:
-                    result.request_id,
-                    profile,
-                    confirmedQuantity:
-                    result.confirmed_quantity,
-                    handoffReady: true,
-                },
-                );
-
-                bindResolveSourcesButton(
-                host,
-                result.request_id,
-                );
-
-                showToast(
-                result.recovered
-                    ? "已恢复现有 Generation Request。"
-                    : "Generation Request 已建立。",
-                );
-
-                lockEntryForm();
-            } catch (error) {
-                showToast(
-                error.detail?.next_action ||
-                    error.message,
-                );
-
-                if (
-                nextButton.isConnected
-                ) {
-                nextButton.disabled = false;
-                nextButton.textContent =
-                    `下一步：确认生成 ${recommended} 条`;
-                }
-            }
-            },
-        );
-        }
+      }
+    });
   }
 
-  function renderForm(
-    data,
-  ) {
+  function renderForm(data) {
     options = data;
-
-    const customers =
-      (data.customers || [])
-        .filter(
-          (customer) =>
-            customer.creation_ready,
-        );
-
+    const customers = (data.customers || []).filter((customer) => customer.creation_ready);
     if (!customers.length) {
-      app.innerHTML = shell(
-        "视频创作",
-        `
-          <main class="page">
-            ${pageHeading(
-              "创作",
-              "开始一次视频创作",
-              "需要先有 Approved Business Persona 和 Approved Speaker Persona。",
-            )}
-
-            <section class="card empty-state">
-              <h2>还没有可用于创作的客户</h2>
-
-              <p>
-                先到“客户”完成客户档案和至少一个出镜人设的人工批准。
-              </p>
-
-              <a
-                class="btn btn-primary"
-                href="/customers"
-                data-route
-              >
-                去客户与人设
-              </a>
-            </section>
-          </main>`,
-      );
-
+      app.innerHTML = shell("创作", `
+        <main class="page page-form">
+          ${pageHeading("", "创作", "选择客户、出镜人和内容类型，开始一次新的内容创作。")}
+          <section class="state-panel state-empty">
+            <h2>还没有可用于创作的客户</h2>
+            <p>请先确认客户档案，并确认至少一位出镜人。</p>
+            <a class="btn btn-primary" href="/customers" data-route>查看客户</a>
+          </section>
+        </main>`);
       bindCommonActions();
       return;
     }
 
-    const params =
-      new URLSearchParams(
-        window.location.search,
-      );
+    const params = new URLSearchParams(window.location.search);
+    const initialCustomer = customers.find((customer) => customer.business_id === params.get("business_id")) || customers[0];
+    const speakers = approvedSpeakers(initialCustomer);
+    const initialSpeaker = speakers.find((speaker) => speaker.speaker_id === params.get("speaker_id")) || speakers[0];
 
-    const requestedBusiness =
-      params.get("business_id");
-
-    const initialCustomer =
-      customers.find(
-        (customer) =>
-          customer.business_id ===
-          requestedBusiness,
-      ) || customers[0];
-
-    const speakers =
-      approvedSpeakers(
-        initialCustomer,
-      );
-
-    const requestedSpeaker =
-      params.get("speaker_id");
-
-    const initialSpeaker =
-      speakers.find(
-        (speaker) =>
-          speaker.speaker_id ===
-          requestedSpeaker,
-      ) || speakers[0];
-
-    app.innerHTML = shell(
-      "视频创作",
-      `
-        <main class="page create-entry-page">
-          ${pageHeading(
-            "创作",
-            "开始一次视频创作",
-            "先确认客户、出镜人、创作模式和数量。系统会先检查高质量内容容量，不会直接生成。",
-          )}
-
-          <div class="create-workflow">
-          <section class="card create-entry-card">
-            <form
-              id="content-entry-form"
-              novalidate
-            >
-              <div class="field">
-                <label for="create-business">
-                  客户
-                </label>
-
-                <select
-                  id="create-business"
-                  required
-                >
-                  ${customers
-                    .map(
-                      (customer) => `
-                        <option
-                          value="${escapeHtml(
-                            customer.business_id,
-                          )}"
-                          ${
-                            customer.business_id ===
-                            initialCustomer.business_id
-                              ? "selected"
-                              : ""
-                          }
-                        >
-                          ${escapeHtml(
-                            customer.display_name,
-                          )}
-                        </option>`,
-                    )
-                    .join("")}
-                </select>
-              </div>
-
-              <div class="field">
-                <label for="create-speaker">
-                  出镜人
-                </label>
-
-                <select
-                  id="create-speaker"
-                  required
-                >
-                  ${speakers
-                    .map(
-                      (speaker) => `
-                        <option
-                          value="${escapeHtml(
-                            speaker.speaker_id,
-                          )}"
-                          ${
-                            speaker.speaker_id ===
-                            initialSpeaker?.speaker_id
-                              ? "selected"
-                              : ""
-                          }
-                        >
-                          ${escapeHtml(
-                            speaker.display_name,
-                          )} ·
-                          ${escapeHtml(
-                            speaker.public_role,
-                          )}
-                        </option>`,
-                    )
-                    .join("")}
-                </select>
-              </div>
-
-              <div class="field">
-                <label>
-                  创作模式
-                </label>
-
-                <div class="profile-choice-grid">
-                  <label class="profile-choice selected">
-                    <input
-                      type="radio"
-                      name="create-profile"
-                      value="mix"
-                      checked
-                    >
-
-                    <strong>Mix</strong>
-                    <span>
-                      素材混剪 / 数字人口播混剪
-                    </span>
-                  </label>
-
-                  <label class="profile-choice">
-                    <input
-                      type="radio"
-                      name="create-profile"
-                      value="news"
-                    >
-
-                    <strong>News</strong>
-                    <span>
-                      新闻体内容；提交前会检查当前是否可用
-                    </span>
-                  </label>
+    app.innerHTML = shell("创作", `
+      <main class="page create-entry-page">
+        ${pageHeading("", "创作", "选择客户、出镜人和内容类型，开始一次新的内容创作。")}
+        <div class="create-workflow">
+          <section class="work-surface create-entry-card">
+            <form id="content-entry-form" novalidate>
+              <div class="creation-entry-fields">
+                <div class="field">
+                  <label for="create-business">客户</label>
+                  <select id="create-business" required>
+                    ${customers.map((customer) => `<option value="${escapeHtml(customer.business_id)}" ${customer.business_id === initialCustomer.business_id ? "selected" : ""}>${escapeHtml(customer.display_name)}</option>`).join("")}
+                  </select>
                 </div>
+                <div class="field">
+                  <label for="create-speaker">出镜人</label>
+                  <select id="create-speaker" required>
+                    ${speakers.map((speaker) => `<option value="${escapeHtml(speaker.speaker_id)}" ${speaker.speaker_id === initialSpeaker?.speaker_id ? "selected" : ""}>${escapeHtml(speaker.display_name)}${speaker.public_role ? ` · ${escapeHtml(speaker.public_role)}` : ""}</option>`).join("")}
+                  </select>
+                  <p class="field-hint" data-speaker-empty ${speakers.length ? "hidden" : ""}>还没有可用的出镜人。请先在客户页面确认至少一位出镜人。</p>
+                </div>
+                <fieldset class="field creation-type-field">
+                  <legend>内容类型</legend>
+                  <div class="profile-choice-grid">
+                    <label class="profile-choice selected">
+                      <input type="radio" name="create-profile" value="mix" checked>
+                      <strong>素材混剪</strong>
+                      <span>结合客户真实信息和可用参考，生成新的选题与视频文案。</span>
+                    </label>
+                    <label class="profile-choice">
+                      <input type="radio" name="create-profile" value="news">
+                      <strong>新闻体</strong>
+                      <span>从已有内容中重新组织新闻式标题，不新增事实。</span>
+                    </label>
+                  </div>
+                </fieldset>
+                <div class="field quantity-field" id="create-quantity-field">
+                  <label for="create-quantity">计划生成</label>
+                  <div class="quantity-control">
+                    <input id="create-quantity" type="number" min="1" max="20" step="1" value="4" inputmode="numeric" required>
+                    <span>条</span>
+                  </div>
+                  <span class="field-hint">系统会先检查当前还有多少值得做的新内容。</span>
+                </div>
+                <div id="content-entry-error" class="form-error" role="alert"></div>
+                <button id="check-content-capacity" class="btn btn-primary" type="submit" ${speakers.length ? "" : "disabled"}>查看可创作内容</button>
               </div>
-
-              <div
-                class="field"
-                id="create-quantity-field"
-              >
-                <label for="create-quantity">
-                  希望生成多少条
-                </label>
-
-                <input
-                  id="create-quantity"
-                  type="number"
-                  min="1"
-                  max="20"
-                  step="1"
-                  value="5"
-                  inputmode="numeric"
-                  required
-                >
-
-                <span class="field-hint">
-                  1–20 条。请求数量不是生成承诺；
-                  系统会先检查当前高质量容量。
-                </span>
-              </div>
-
-              <div
-                id="content-entry-error"
-                class="form-error"
-                role="alert"
-              ></div>
-
-              <button
-                id="check-content-capacity"
-                class="btn btn-primary btn-wide"
-                type="submit"
-              >
-                检查内容容量
-              </button>
+              <div class="creation-entry-locked" data-creation-entry-locked hidden></div>
             </form>
           </section>
-
           <div id="capacity-preview-result"></div>
-
-          <section class="card notice-card create-authority-card">
-            <h2 id="create-authority-title">
-              先检查容量，再确认创建任务
-            </h2>
-
-            <p id="create-authority-body">
-              检查内容容量只用于评估。
-              容量结果出来后，需要再次确认
-              才会创建本次任务并准备内容来源。
-            </p>
-
-            <p>
-            这一步不会立即生成脚本或成品内容。
-            </p>
-          </section>
-          </div>
-        </main>`,
-    );
+        </div>
+      </main>`);
 
     bindCommonActions();
-
     syncProfileSpecificUi();
+    const business = document.querySelector("#create-business");
+    const speaker = document.querySelector("#create-speaker");
+    const host = document.querySelector("#capacity-preview-result");
 
-    const businessSelect =
-      document.querySelector(
-        "#create-business",
-      );
-
-    const speakerSelect =
-      document.querySelector(
-        "#create-speaker",
-      );
-
-    businessSelect.addEventListener(
-      "change",
-      async () => {
-        unlockEntryForm();
-
-        const customer =
-          selectedCustomer(
-            businessSelect.value,
-          );
-
-        const nextSpeakers =
-          approvedSpeakers(
-            customer,
-          );
-
-        speakerSelect.innerHTML =
-          nextSpeakers
-            .map(
-              (speaker) => `
-                <option
-                  value="${escapeHtml(
-                    speaker.speaker_id,
-                  )}"
-                >
-                  ${escapeHtml(
-                    speaker.display_name,
-                  )} ·
-                  ${escapeHtml(
-                    speaker.public_role,
-                  )}
-                </option>`,
-            )
-            .join("");
-
-        document.querySelector(
-          "#capacity-preview-result",
-        ).innerHTML = "";
-
+    business.addEventListener("change", async () => {
+      unlockEntryForm();
+      syncSpeakerOptions(selectedCustomer(business.value));
+      host.innerHTML = "";
+      confirmationKey = null;
+      lockEntryForm("正在检查现有创作…");
+      await restoreSelectedProfileRequest();
+    });
+    speaker.addEventListener("change", () => {
+      host.innerHTML = "";
+      document.querySelector("#content-entry-form")?.classList.remove("has-capacity-result");
+      confirmationKey = null;
+    });
+    document.querySelectorAll(".profile-choice input").forEach((input) => {
+      input.addEventListener("change", async () => {
+        document.querySelectorAll(".profile-choice").forEach((label) => label.classList.toggle("selected", label.querySelector("input").checked));
+        host.innerHTML = "";
+        document.querySelector("#content-entry-form")?.classList.remove("has-capacity-result");
         confirmationKey = null;
-
-        lockEntryForm(
-          "正在检查现有任务…",
-        );
-
+        syncProfileSpecificUi();
+        lockEntryForm("正在检查现有创作…");
         await restoreSelectedProfileRequest();
-      },
-    );
-
-    speakerSelect.addEventListener(
-      "change",
-      () => {
-        document.querySelector(
-          "#capacity-preview-result",
-        ).innerHTML = "";
-
-        confirmationKey = null;
-      },
-    );
-
-    document
-      .querySelectorAll(
-        ".profile-choice input",
-      )
-      .forEach((input) => {
-        input.addEventListener(
-          "change",
-          async () => {
-            document
-              .querySelectorAll(
-                ".profile-choice",
-              )
-              .forEach(
-                (label) => {
-                  label.classList.toggle(
-                    "selected",
-                    label.querySelector(
-                      "input",
-                    ).checked,
-                  );
-                },
-              );
-
-            document.querySelector(
-              "#capacity-preview-result",
-            ).innerHTML = "";
-
-            confirmationKey = null;
-
-            syncProfileSpecificUi();
-
-            lockEntryForm(
-              "正在检查现有任务…",
-            );
-
-            await restoreSelectedProfileRequest();
-          },
-        );
       });
+    });
+    document.querySelector("#create-quantity").addEventListener("input", () => {
+      host.innerHTML = "";
+      document.querySelector("#content-entry-form")?.classList.remove("has-capacity-result");
+      confirmationKey = null;
+    });
 
-    document
-      .querySelector(
-        "#create-quantity",
-      )
-      .addEventListener(
-        "input",
-        () => {
-          document.querySelector(
-            "#capacity-preview-result",
-          ).innerHTML = "";
-
-          confirmationKey = null;
-        },
-      );
-
-    document
-      .querySelector(
-        "#content-entry-form",
-      )
-      .addEventListener(
-        "submit",
-        async (event) => {
-          event.preventDefault();
-
-          const errorBox =
-            document.querySelector(
-              "#content-entry-error",
-            );
-
-          errorBox.classList.remove(
-            "visible",
+    document.querySelector("#content-entry-form").addEventListener("submit", async (event) => {
+      event.preventDefault();
+      const errorBox = document.querySelector("#content-entry-error");
+      errorBox.classList.remove("visible");
+      const profile = selectedProfileValue();
+      const speakerId = speaker.value;
+      if (!speakerId) {
+        errorBox.textContent = "还没有可用的出镜人，请先在客户页面确认至少一位出镜人。";
+        errorBox.classList.add("visible");
+        return;
+      }
+      const button = document.querySelector("#check-content-capacity");
+      host.innerHTML = "";
+      confirmationKey = null;
+      button.disabled = true;
+      button.textContent = "正在查看…";
+      try {
+        if (profile === "news") {
+          const result = await api("/api/create/news/preview", {
+            method: "POST",
+            body: JSON.stringify({ business_id: business.value, speaker_id: speakerId }),
+          });
+          newsDeliveryViews.renderPreview(host, result.preview, {
+            onRequestCreated: async (requestId) => {
+              lockEntryForm("继续新闻体创作");
+              await newsDeliveryViews.restore(requestId, host);
+            },
+          });
+          document.querySelector("#content-entry-form")?.classList.toggle(
+            "has-capacity-result",
+            Boolean(result.preview?.available && Number(result.preview?.eligible_source_count || 0) > 0),
           );
-
-          const profile =
-            selectedProfileValue();
-
-          const speakerId =
-            speakerSelect.value;
-
-          if (!speakerId) {
-            errorBox.textContent =
-              "请选择一个已批准的出镜人。";
-
-            errorBox.classList.add(
-              "visible",
-            );
-
-            return;
+        } else {
+          const quantity = Number(document.querySelector("#create-quantity").value);
+          if (!Number.isInteger(quantity) || quantity < 1 || quantity > 20) {
+            throw new Error("请输入 1–20 之间的整数。");
           }
-
-          if (profile === "news") {
-            const host =
-              document.querySelector(
-                "#capacity-preview-result",
-              );
-
-            host.innerHTML = "";
-            confirmationKey = null;
-
-            const button =
-              document.querySelector(
-                "#check-content-capacity",
-              );
-
-            button.disabled = true;
-            button.textContent =
-              "正在检查 News…";
-
-            try {
-              const result =
-                await api(
-                  "/api/create/news/preview",
-                  {
-                    method: "POST",
-                    body:
-                      JSON.stringify({
-                        business_id:
-                          businessSelect.value,
-                        speaker_id:
-                          speakerId,
-                      }),
-                  },
-                );
-
-              newsDeliveryViews.renderPreview(
-                host,
-                result.preview,
-                {
-                  onRequestCreated:
-                    async (requestId) => {
-                      lockEntryForm(
-                        "News 内容任务已建立",
-                      );
-
-                      await newsDeliveryViews.restore(
-                        requestId,
-                        host,
-                      );
-                    },
-                },
-              );
-
-              host?.scrollIntoView({
-                behavior: "smooth",
-                block: "start",
-              });
-            } catch (error) {
-              errorBox.textContent =
-                error.detail?.next_action ||
-                error.detail?.message ||
-                error.message;
-
-              errorBox.classList.add(
-                "visible",
-              );
-            } finally {
-              button.disabled = false;
-              button.textContent =
-                "检查 News 可用内容";
-            }
-
-            return;
-          }
-
-          const quantity =
-            Number(
-              document.querySelector(
-                "#create-quantity",
-              ).value,
-            );
-
-          if (
-            !Number.isInteger(
-              quantity,
-            )
-            || quantity < 1
-            || quantity > 20
-          ) {
-            errorBox.textContent =
-              "请输入 1–20 之间的整数。";
-
-            errorBox.classList.add(
-              "visible",
-            );
-
-            return;
-          }
-
-          document.querySelector(
-            "#capacity-preview-result",
-          ).innerHTML = "";
-
-          confirmationKey = null;
-
-          const button =
-            document.querySelector(
-              "#check-content-capacity",
-            );
-
-          button.disabled = true;
-          button.textContent =
-            "正在检查…";
-
-          try {
-            const result = await api(
-              "/api/create/capacity-preview",
-              {
-                method: "POST",
-                body: JSON.stringify({
-                  business_id:
-                    businessSelect.value,
-                  speaker_id:
-                    speakerId,
-                  profile,
-                  quantity,
-                }),
-              },
-            );
-
-            renderResult(
-              result.preview,
-            );
-
-            document
-              .querySelector(
-                "#capacity-preview-result",
-              )
-              ?.scrollIntoView({
-                behavior: "smooth",
-                block: "start",
-              });
-          } catch (error) {
-            errorBox.textContent =
-              error.detail?.next_action ||
-              error.message;
-
-            errorBox.classList.add(
-              "visible",
-            );
-          } finally {
-            button.disabled = false;
-            button.textContent =
-              "检查内容容量";
-          }
-        },
-      );
+          const result = await api("/api/create/capacity-preview", {
+            method: "POST",
+            body: JSON.stringify({ business_id: business.value, speaker_id: speakerId, profile, quantity }),
+          });
+          renderResult(result.preview);
+        }
+        host.scrollIntoView({ behavior: "smooth", block: "start" });
+      } catch (error) {
+        errorBox.textContent = safeCreationMessage(error.detail?.next_action || error.detail?.message || error.message, "当前可创作内容暂时无法读取，请稍后重试。");
+        errorBox.classList.add("visible");
+      } finally {
+        button.disabled = false;
+        button.textContent = "查看可创作内容";
+      }
+    });
   }
 
   async function renderCreate() {
-    skeletonPage(
-      "视频创作",
-    );
-
+    skeletonPage("创作");
     try {
-      const data = await api(
-        "/api/create/options",
-      );
-
-      renderForm(
-        data,
-      );
-
-      syncProfileSpecificUi();
-
-      lockEntryForm(
-        "正在检查现有任务…",
-      );
-
+      const data = await api("/api/create/options");
+      renderForm(data);
+      if (!document.querySelector("#content-entry-form")) return;
+      lockEntryForm("正在检查现有创作…");
       await restoreSelectedProfileRequest();
     } catch (error) {
-      renderLoadError(
-        "创作入口暂时无法读取",
-        error,
-      );
+      renderLoadError("创作入口暂时无法读取", error);
     }
   }
 
-  return {
-    renderCreate,
-  };
+  return { renderCreate };
 }

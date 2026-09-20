@@ -26,39 +26,37 @@ def test_content_creation_visual_polish_v1():
         encoding="utf-8"
     )
 
-    # Creation page structure remains the canonical entry surface.
+    # Creation page remains one continuous product surface.
     assert 'class="page create-entry-page"' in views
     assert 'class="create-workflow"' in views
-    assert 'class="card create-entry-card"' in views
+    assert 'class="work-surface create-entry-card"' in views
     assert 'id="content-entry-form"' in views
     assert 'class="profile-choice-grid"' in views
     assert 'id="check-content-capacity"' in views
-    assert 'class="card notice-card create-authority-card"' in views
+    assert 'data-creation-entry-locked' in views
 
-    # UX copy preserves the frozen "capacity first, generation later" rule
-    # without exposing internal architecture vocabulary on the default surface.
+    # UX copy preserves the capacity-first rule in operator language.
     assert (
-        "系统会先检查高质量内容容量，不会直接生成。"
+        "系统会先检查当前还有多少值得做的新内容。"
         in views
     )
-    assert (
-        "先检查容量，再确认创建任务"
-        in views
-    )
-    assert "检查内容容量只用于评估" in views
+    assert "查看可创作内容" in views
+    assert "素材混剪" in views
+    assert "新闻体" in views
+    assert "create-authority-card" not in views
 
     # Visual contract: page width, card, profile selector and authority note
     # all have dedicated styling hooks rather than relying on generic cards.
     assert ".create-entry-page" in styles
     assert ".create-workflow" in styles
     assert ".create-entry-card" in styles
-    assert ".create-entry-card > form" in styles
-    assert ".create-entry-card > form {\n  width: 100%;\n}" in styles
+    assert ".creation-entry-fields" in styles
+    assert ".creation-entry-locked" in styles
     assert "#capacity-preview-result" in styles
     assert "#content-delivery-host" in styles
     assert ".profile-choice-grid" in styles
     assert ".profile-choice.selected" in styles
-    assert ".create-authority-card" in styles
+    assert ".creation-state" in styles
 
 
 def test_console_branding_and_favicon_contract():
@@ -73,7 +71,8 @@ def test_console_branding_and_favicon_contract():
     assert 'href="/assets/brand/favicon-32x32.png?v=transparent-1"' in index
     assert 'href="/assets/brand/favicon-16x16.png?v=transparent-1"' in index
     assert 'href="/assets/brand/apple-touch-icon.png?v=transparent-1"' in index
-    assert "productized-stage2-3" in index
+    assert 'styles.css?v=productized-stage3-3' in index
+    assert 'app.js?v=productized-stage3-5' in index
     assert 'src="/assets/brand/logo.png?v=transparent-1"' in app
     assert "鲸汤AI视频代运营工作台" in app
     assert "视频创作" in app

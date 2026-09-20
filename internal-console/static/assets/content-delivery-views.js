@@ -1,12 +1,19 @@
 import { startTaskPolling } from "./task-progress.js";
+import {
+  ContentReviewItem,
+  ContentReviewList,
+  CreationCompletedState,
+  CreationHeader,
+  CreationState,
+  CreationStepper,
+  ExportSummary,
+  TopicList,
+  safeCreationMessage,
+} from "./creation-components.js?v=productized-stage3-3";
 
-export function createContentDeliveryViews({
-  api,
-  showToast,
-  escapeHtml,
-}) {
+export function createContentDeliveryViews({ api, showToast, escapeHtml }) {
   function watchTask(task, refresh, completedMessage) {
-    showToast("任务已进入后台队列，可以离开页面后再返回。");
+    showToast("任务已进入后台，可以离开页面后再返回。");
     startTaskPolling({
       api,
       taskId: task.task_id,
@@ -16,1099 +23,313 @@ export function createContentDeliveryViews({
         showToast(
           current.status === "completed"
             ? completedMessage
-            : current.error_message || "后台任务没有完成。",
+            : safeCreationMessage(current.error_message, "后台任务没有完成，请稍后重试。"),
         );
       },
       onError: () => {},
     });
   }
-  const actionLabel = {
-    CREATE_CONTENT_PLAN: "生成内容规划",
-    GENERATE_SCRIPTS: "生成脚本",
-    HUMAN_REVIEW: "人工审核",
-    EXPORT_EXCEL: "导出 Excel",
-    EXCEL_EXPORTED: "Excel 已导出",
-  };
 
   function flagText(flag) {
     const value = String(flag || "");
-
-    if (
-      value ===
-      "cross_concept_material_overlap_requires_human_review"
-    ) {
-      return "与同批其他稿存在信息重叠，请重点判断是否值得分别发布";
+    if (value === "cross_concept_material_overlap_requires_human_review") {
+      return "与同批其他稿存在信息重叠，请判断是否值得分别发布";
     }
-
-    if (
-      value ===
-      "claim_candidates_require_human_review"
-    ) {
-      return "关键主张需要人工确认";
-    }
-
-    if (
-      value.startsWith(
-        "claim_language_requires_human_review",
-      )
-    ) {
-      return "对比式表达需要人工确认";
-    }
-
-    if (
-      value.startsWith(
-        "grounding_requires_human_review",
-      )
-    ) {
-      return "关键表达需要核对事实依据";
-    }
-
-    return value;
+    if (value === "claim_candidates_require_human_review") return "关键表达需要人工确认";
+    if (value.startsWith("claim_language_requires_human_review")) return "对比式表达需要人工确认";
+    if (value.startsWith("grounding_requires_human_review")) return "关键表达需要核对事实依据";
+    return "这条内容需要重点核对";
   }
 
-  function progress(state) {
-    const current = state.next_action;
-
-    const steps = [
-      ["CREATE_CONTENT_PLAN", "内容规划"],
-      ["GENERATE_SCRIPTS", "脚本生成"],
-      ["HUMAN_REVIEW", "人工审核"],
-      ["EXPORT_EXCEL", "Excel 导出"],
-    ];
-
-    const order = {
+  function stepIndex(next) {
+    return ({
       CREATE_CONTENT_PLAN: 0,
       GENERATE_SCRIPTS: 1,
       HUMAN_REVIEW: 2,
       EXPORT_EXCEL: 3,
       REVIEW_COMPLETE_NO_EXPORT: 3,
       EXCEL_EXPORTED: 4,
+    })[next] ?? 0;
+  }
+
+  function workflowHeader(state) {
+    const labels = {
+      CREATE_CONTENT_PLAN: "生成选题",
+      GENERATE_SCRIPTS: "选题已经准备好",
+      HUMAN_REVIEW: "审核文案",
+      REVIEW_COMPLETE_NO_EXPORT: "审核已完成",
+      EXPORT_EXCEL: state.export?.completed ? "正在完成导出" : "审核完成",
+      EXCEL_EXPORTED: "已完成",
     };
-
-    const currentIndex =
-      order[current] ?? 0;
-
     return `
-      <div class="delivery-progress">
-        ${steps
-          .map(
-            ([key, label], index) => `
-              <div class="delivery-step ${
-                index < currentIndex
-                  ? "done"
-                  : index === currentIndex
-                    ? "current"
-                    : ""
-              }">
-                <span>${index < currentIndex ? "✓" : index + 1}</span>
-                <strong>${escapeHtml(label)}</strong>
-              </div>`,
-          )
-          .join("")}
-      </div>`;
-  }
-
-  function conceptCards(state) {
-    const concepts =
-      state.content_plan?.selected_concepts ||
-      [];
-
-    if (!concepts.length) {
-      return "";
-    }
-
-    return `
-      <section class="card review-section">
-        <h2>本轮最终选题</h2>
-        <p>
-          内容规划已锁定。
-          脚本生成只能扩写这些选题，
-          不能重新选题或新增事实。
-        </p>
-
-        <div class="delivery-script-list">
-          ${concepts
-            .map(
-              (concept) => `
-                <article class="delivery-script-card">
-                  <div class="delivery-script-head">
-                    <strong>${escapeHtml(
-                      String(
-                        concept.concept_id ||
-                          "Concept",
-                      ),
-                    )}</strong>
-                    <span class="badge approved">
-                      ${escapeHtml(
-                        String(
-                          concept.effective_gate_decision ||
-                            "selected",
-                        ),
-                      )}
-                    </span>
-                  </div>
-
-                  <h3>
-                    ${escapeHtml(
-                      String(
-                        concept.primary_topic ||
-                          concept.content_job ||
-                          "",
-                      ),
-                    )}
-                  </h3>
-
-                  <div class="review-row">
-                    <span>用户问题</span>
-                    <p>${escapeHtml(
-                      String(
-                        concept.audience_need ||
-                          "",
-                      ),
-                    )}</p>
-                  </div>
-
-                  <div class="review-row">
-                    <span>核心表达</span>
-                    <p>${escapeHtml(
-                      String(
-                        concept.central_claim ||
-                          "",
-                      ),
-                    )}</p>
-                  </div>
-                </article>`,
-            )
-            .join("")}
-        </div>
+      <section class="work-surface creation-workflow-header">
+        ${CreationHeader({
+          eyebrow: "素材混剪",
+          title: labels[state.next_action] || "继续创作",
+          description: "按选题、文案、审核和导出完成本次创作。",
+        })}
+        ${CreationStepper({ steps: ["选题", "文案", "审核", "导出"], currentIndex: stepIndex(state.next_action) })}
       </section>`;
   }
 
-  function reviewCards(state) {
-    const contents =
-      state.generation?.contents || [];
+  function concepts(state) {
+    return state.content_plan?.selected_concepts || [];
+  }
 
+  function topicsSurface(state) {
+    const items = concepts(state).map((concept) => ({
+      title: concept.primary_topic || concept.content_job || "待命名选题",
+      audienceNeed: concept.audience_need || "",
+      coreExpression: concept.central_claim || "",
+    }));
+    if (!items.length) return "";
     return `
-      <section class="card review-section">
-        <h2>审核生成稿</h2>
-
-        <p>
-          每一条都需要选择：
-          <strong>通过</strong>、
-          <strong>修改后通过</strong>
-          或 <strong>淘汰</strong>。
-          Generated Candidate 会永久保留；
-          人工修改只形成 Reviewed Revision，
-          不会覆盖模型原稿。
-        </p>
-
-        <div class="delivery-script-list">
-          ${contents
-            .map(
-              (item, index) => `
-                <article
-                  class="delivery-script-card unified-review-card"
-                  data-review-item
-                  data-content-id="${escapeHtml(
-                    String(
-                      item.content_id || "",
-                    ),
-                  )}"
-                >
-                  <div class="delivery-script-head">
-                    <strong>
-                      ${index + 1}.
-                      ${escapeHtml(
-                        String(
-                          item.concept_ref || "",
-                        ),
-                      )}
-                    </strong>
-                    <span class="badge review">
-                      待人工确认
-                    </span>
-                  </div>
-
-                  <div class="review-row">
-                    <span>模型原始标题</span>
-                    <p>${escapeHtml(
-                      String(
-                        item.title || "",
-                      ),
-                    )}</p>
-                  </div>
-
-                  <div class="review-row">
-                    <span>模型原始口播</span>
-                    <p>${escapeHtml(
-                      String(
-                        item.narration || "",
-                      ),
-                    )}</p>
-                  </div>
-
-                  <details class="full-breakdown">
-                    <summary>
-                      查看 Authority 信息
-                      <span>
-                        Central Claim / Review Flags
-                      </span>
-                    </summary>
-
-                    <div class="breakdown-body">
-                      <h3>Central Claim（Revision 不可修改）</h3>
-                      <p class="narration-text">
-                        ${escapeHtml(
-                          String(
-                            item.central_claim || "",
-                          ),
-                        )}
-                      </p>
-
-                      <h3>需要关注</h3>
-                      <div class="delivery-flags">
-                        ${
-                          (
-                            item.potential_review_flags ||
-                            []
-                          ).length
-                            ? (
-                                item.potential_review_flags ||
-                                []
-                              )
-                                .map(
-                                  (flag) => `
-                                    <span class="delivery-flag">
-                                      ${escapeHtml(
-                                        flagText(flag),
-                                      )}
-                                    </span>`,
-                                )
-                                .join("")
-                            : `
-                              <span class="delivery-flag quiet">
-                                无额外 Review Flag
-                              </span>`
-                        }
-                      </div>
-                    </div>
-                  </details>
-
-                  <div class="unified-review-decisions">
-                    <label class="unified-review-choice">
-                      <input
-                        type="radio"
-                        name="review-${escapeHtml(
-                          String(
-                            item.content_id || "",
-                          ),
-                        )}"
-                        value="approved"
-                        data-review-decision
-                      >
-                      <span>
-                        <strong>通过</strong>
-                        <small>原稿直接进入 Approved Projection</small>
-                      </span>
-                    </label>
-
-                    <label class="unified-review-choice">
-                      <input
-                        type="radio"
-                        name="review-${escapeHtml(
-                          String(
-                            item.content_id || "",
-                          ),
-                        )}"
-                        value="revised"
-                        data-review-decision
-                      >
-                      <span>
-                        <strong>修改后通过</strong>
-                        <small>只允许编辑标题与口播，不新增事实</small>
-                      </span>
-                    </label>
-
-                    <label class="unified-review-choice">
-                      <input
-                        type="radio"
-                        name="review-${escapeHtml(
-                          String(
-                            item.content_id || "",
-                          ),
-                        )}"
-                        value="rejected"
-                        data-review-decision
-                      >
-                      <span>
-                        <strong>淘汰</strong>
-                        <small>不进入 Excel，也不进入 Historical Exposure</small>
-                      </span>
-                    </label>
-                  </div>
-
-                  <div
-                    class="unified-revision-editor"
-                    data-revision-editor
-                    hidden
-                  >
-                    <div class="field">
-                      <label>修改后的标题</label>
-                      <input
-                        type="text"
-                        data-revised-title
-                        value="${escapeHtml(
-                          String(
-                            item.title || "",
-                          ),
-                        )}"
-                      >
-                    </div>
-
-                    <div class="field">
-                      <label>修改后的口播</label>
-                      <textarea
-                        rows="6"
-                        data-revised-narration
-                      >${escapeHtml(
-                        String(
-                          item.narration || "",
-                        ),
-                      )}</textarea>
-                    </div>
-
-                    <p class="field-hint">
-                      Revision V1 是编辑性改写：
-                      Central Claim 不变、不能新增数字事实、
-                      不能加入“保证 / 一定 / 最低价”等强化承诺。
-                      如果要加入新事实，应回到 Customer Truth。
-                    </p>
-                  </div>
-
-                  <div class="field">
-                    <label>审核备注（可选）</label>
-                    <input
-                      type="text"
-                      data-review-note
-                      placeholder="例如：表达更自然；与同批内容重复；暂不值得发布"
-                    >
-                  </div>
-                </article>`,
-            )
-            .join("")}
-        </div>
-
-        <div class="delivery-action-row">
-          <button
-            type="button"
-            class="btn btn-secondary"
-            data-approve-all
-          >
-            全部标记通过
-          </button>
-
-          <button
-            type="button"
-            class="btn btn-primary"
-            data-submit-review
-          >
-            提交人工审核
-          </button>
-        </div>
-
-        <p class="field-hint">
-          可以部分批准。
-          例如生成 5 条，最终
-          3 条原稿通过 + 1 条修改后通过 + 1 条淘汰，
-          正式 Excel 只导出 4 条。
-        </p>
+      <section class="work-surface creation-section">
+        ${CreationHeader({ title: `${items.length} 个选题`, description: "这些选题来自客户信息、历史内容和当前可用参考。" })}
+        ${TopicList(items)}
       </section>`;
   }
+
+  function reviewSurface(state) {
+    const contents = state.generation?.contents || [];
+    const rows = contents.map((item, index) => ContentReviewItem({
+      namespace: "mix-review",
+      itemId: String(item.content_id || ""),
+      index: index + 1,
+      eyebrow: "待审核文案",
+      title: String(item.title || ""),
+      body: String(item.narration || ""),
+      bodyLabel: "文案",
+      coreExpression: String(item.central_claim || ""),
+      flags: (item.potential_review_flags || []).map(flagText),
+      editorMode: "mix",
+    }));
+    return `
+      <section class="work-surface creation-section content-review-surface">
+        ${CreationHeader({ title: "审核文案", description: "逐条确认，只有通过的内容才能进入最终导出。" })}
+        <div class="content-review-progress" data-review-progress>已处理 0 / ${contents.length}</div>
+        ${ContentReviewList(rows)}
+        <div class="creation-action-bar">
+          <button type="button" class="btn btn-secondary" data-approve-all>全部通过</button>
+          <button type="button" class="btn btn-primary" data-submit-review disabled>提交审核</button>
+        </div>
+        <p class="creation-governance-line">修改文案只能调整表达，不能新增未经确认的事实。</p>
+      </section>`;
+  }
+
   function renderBody(state) {
-    const next =
-      state.next_action ||
-      "CREATE_CONTENT_PLAN";
-
-    let body = "";
-
+    const next = state.next_action || "CREATE_CONTENT_PLAN";
+    if (next === "RESOLVE_GENERATION_SOURCES") {
+      return CreationState({ tone: "warning", eyebrow: "创作准备", title: "创作依据还没有准备完成", body: "请返回上一步完成创作准备后再继续。" });
+    }
     if (next === "CREATE_CONTENT_PLAN") {
-      body = `
-        <section class="card review-section">
-          <h2>准备生成 Content Plan</h2>
-          <p>
-            Source Plan 已完成。
-            下一步会基于 Approved Persona、
-            Content History 和 Source Plan
-            生成候选选题，并通过 V1.1.1
-            质量门筛选最终可生成内容。
-          </p>
-
-          <button
-            type="button"
-            class="btn btn-primary btn-wide"
-            data-resolve-content-plan
-          >
-            生成并筛选 Content Plan
-          </button>
-        </section>`;
+      return CreationState({
+        eyebrow: "第 1 步",
+        title: "生成选题",
+        body: "系统会根据客户信息、历史内容和可用参考，整理本次值得做的选题。",
+        actions: `<button type="button" class="btn btn-primary" data-resolve-content-plan>生成选题</button>`,
+      });
     }
-
     if (next === "GENERATE_SCRIPTS") {
-      body = `
-        ${conceptCards(state)}
-
-        <section class="card review-section">
-          <h2>Content Plan 已通过</h2>
-          <p>
-            本轮共有
-            <strong>${Number(
-              state.content_plan
-                ?.selected_quantity || 0,
-            )}</strong>
-            个高质量选题。
-            下一步才会真正调用 Script Generator。
-          </p>
-
-          <button
-            type="button"
-            class="btn btn-primary btn-wide"
-            data-generate-scripts
-          >
-            根据最终选题生成脚本
-          </button>
-        </section>`;
+      const count = Number(state.content_plan?.selected_quantity || concepts(state).length || 0);
+      return `${topicsSurface(state)}${CreationState({
+        tone: "success",
+        title: "选题已经准备好",
+        body: `本次共有 ${count} 个选题，可以继续生成文案。`,
+        actions: `<button type="button" class="btn btn-primary" data-generate-scripts>生成文案</button>`,
+      })}`;
     }
-
-    if (next === "HUMAN_REVIEW") {
-      body = `
-        ${conceptCards(state)}
-        ${reviewCards(state)}
-      `;
+    if (next === "HUMAN_REVIEW") return reviewSurface(state);
+    if (next === "REVIEW_COMPLETE_NO_EXPORT") {
+      return CreationState({
+        tone: "neutral",
+        eyebrow: "审核完成",
+        title: "本次没有通过审核的内容",
+        body: "这些内容不会进入最终导出。",
+        actions: `<a class="btn btn-secondary" href="/create">返回创作</a>`,
+      });
     }
-
-    if (
-      next === "REVIEW_COMPLETE_NO_EXPORT"
-    ) {
-      body = `
-        <section class="card capacity-result ready">
-          <span class="capacity-kicker">
-            Human Review 已完成
-          </span>
-
-          <h2>本批次没有可导出的内容</h2>
-
-          <p>
-            本批次所有 Generated Candidate 均已淘汰。
-            它们不会进入 Excel，也不会写入 Historical Exposure。
-            原始生成稿与审核记录仍会保留。
-          </p>
-        </section>`;
-    }
-
     if (next === "EXPORT_EXCEL") {
-      const excelAlreadyReady =
-        state.export?.completed === true;
-
-      body = `
-        <section class="card capacity-result ready">
-          <span class="capacity-kicker">
-            人工审核已通过
-          </span>
-
-          <h2>
-            ${
-              excelAlreadyReady
-                ? "Excel 已生成，正在等待内容历史闭合"
-                : `${Number(
-                    state.review
-                      ?.approved_item_count || 0,
-                  )} 条内容可以正式导出`
-            }
-          </h2>
-
-          <div class="delivery-export-meta">
-            <div>
-              <span>客户</span>
-              <strong>${escapeHtml(
-                String(
-                  state.business_display_name ||
-                    state.business_id ||
-                    "",
-                ),
-              )}</strong>
-            </div>
-
-            <div>
-              <span>出镜人</span>
-              <strong>${escapeHtml(
-                String(
-                  state.speaker_display_name ||
-                    state.speaker_id ||
-                    "",
-                ),
-              )}</strong>
-            </div>
-
-            <div>
-              <span>视频类型</span>
-              <strong>${escapeHtml(
-                String(
-                  state.profile_label ||
-                    state.profile ||
-                    "",
-                ),
-              )}</strong>
-            </div>
-
-            <div>
-              <span>导出文件</span>
-              <strong>${escapeHtml(
-                String(
-                  state.export?.output_name ||
-                    "",
-                ),
-              )}</strong>
-            </div>
-          </div>
-
-          <p>
-            ${
-              excelAlreadyReady
-                ? "Excel 文件已经通过校验。本次操作只会完成内容历史闭合，不会重复导出或重新调用模型。"
-                : "导出只读取已人工批准的稿件；内部审核字段不会写入运营 Excel。导出成功后，系统会同步闭合内容历史。"
-            }
-          </p>
-
-          <button
-            type="button"
-            class="btn btn-primary btn-wide"
-            data-export-excel
-          >
-            ${
-              excelAlreadyReady
-                ? "完成导出记录"
-                : "导出正式 Excel"
-            }
-          </button>
-        </section>`;
+      const excelReady = state.export?.completed === true;
+      const approved = Number(state.review?.approved_item_count || 0);
+      return CreationState({
+        tone: excelReady ? "running" : "success",
+        eyebrow: excelReady ? "导出处理中" : "审核完成",
+        title: excelReady ? "正在完成导出" : `${approved} 条内容可以导出`,
+        body: excelReady
+          ? "文件已经生成，正在完成最后记录；不会重复生成内容或文件。"
+          : "导出文件只包含已经人工通过的内容。",
+        content: ExportSummary([
+          { label: "客户", value: state.business_display_name || state.business_id || "" },
+          { label: "出镜人", value: state.speaker_display_name || state.speaker_id || "" },
+          { label: "内容类型", value: "素材混剪" },
+          { label: "通过数量", value: `${approved} 条` },
+          ...(state.export?.output_name ? [{ label: "文件名", value: state.export.output_name, wide: true }] : []),
+        ]),
+        actions: `<button type="button" class="btn btn-primary" data-export-excel>${excelReady ? "完成导出" : "导出 Excel"}</button>`,
+      });
     }
-
     if (next === "EXCEL_EXPORTED") {
-      const name =
-        state.export?.output_name ||
-        "approved_mix_scripts.xlsx";
-
-      body = `
-        <section class="card capacity-result ready delivery-success">
-          <span class="capacity-kicker">
-            本轮停止点已达到
-          </span>
-
-          <h2>正式 Excel 已导出</h2>
-
-          <div class="delivery-export-meta">
-            <div>
-              <span>客户</span>
-              <strong>${escapeHtml(
-                String(
-                  state.business_display_name ||
-                    state.business_id ||
-                    "",
-                ),
-              )}</strong>
-            </div>
-
-            <div>
-              <span>出镜人</span>
-              <strong>${escapeHtml(
-                String(
-                  state.speaker_display_name ||
-                    state.speaker_id ||
-                    "",
-                ),
-              )}</strong>
-            </div>
-
-            <div>
-              <span>视频类型</span>
-              <strong>${escapeHtml(
-                String(
-                  state.profile_label ||
-                    state.profile ||
-                    "",
-                ),
-              )}</strong>
-            </div>
-
-            <div>
-              <span>导出条数</span>
-              <strong>
-                ${Number(
-                  state.export
-                    ?.exported_row_count || 0,
-                )} 条
-              </strong>
-            </div>
-
-            <div class="wide">
-              <span>文件名</span>
-              <strong>${escapeHtml(name)}</strong>
-            </div>
-
-            <div>
-              <span>内容历史</span>
-              <strong>
-                ${
-                  state.export_closure
-                    ?.completed
-                    ? "已闭合"
-                    : "待闭合"
-                }
-              </strong>
-            </div>
-          </div>
-
-          <a
-            class="btn btn-primary btn-wide"
-            href="/api/create/${encodeURIComponent(
-              state.request_id,
-            )}/exported-excel"
-          >
-            下载 ${escapeHtml(name)}
-          </a>
-        </section>`;
+      const name = state.export?.output_name || "素材混剪内容.xlsx";
+      const count = Number(state.export?.exported_row_count || 0);
+      return CreationCompletedState({
+        title: "已完成",
+        description: `${count} 条内容已经导出。`,
+        summary: [
+          { label: "客户", value: state.business_display_name || state.business_id || "" },
+          { label: "出镜人", value: state.speaker_display_name || state.speaker_id || "" },
+          { label: "导出条数", value: `${count} 条` },
+          { label: "文件名", value: name, wide: true },
+        ],
+        downloadHref: `/api/create/${encodeURIComponent(state.request_id)}/exported-excel`,
+        downloadLabel: "下载 Excel",
+      });
     }
-
-    return body;
+    return "";
   }
 
-  function bind(
-    host,
-    state,
-    refresh,
-  ) {
-    const planButton =
-      host.querySelector(
-        "[data-resolve-content-plan]",
-      );
+  function updateReviewProgress(host) {
+    const items = Array.from(host.querySelectorAll("[data-content-review-item]"));
+    const completed = items.filter((item) => item.querySelector("input[data-content-decision]:checked")).length;
+    const progress = host.querySelector("[data-review-progress]");
+    const submit = host.querySelector("[data-submit-review]");
+    if (progress) progress.textContent = `已处理 ${completed} / ${items.length}`;
+    if (submit) submit.disabled = !items.length || completed !== items.length;
+  }
 
-    if (planButton) {
-      planButton.addEventListener(
-        "click",
-        async () => {
-          planButton.disabled = true;
-          planButton.textContent =
-            "正在生成并筛选 Content Plan…";
-
-          try {
-            const response = await api(
-              `/api/create/${encodeURIComponent(
-                state.request_id,
-              )}/resolve-content-plan`,
-              { method: "POST" },
-            );
-
-            watchTask(
-              response.task,
-              refresh,
-              "Content Plan 任务已结束，已重新读取当前业务状态。",
-            );
-          } catch (error) {
-            showToast(
-              error.detail?.next_action ||
-                error.detail?.message ||
-                error.message,
-            );
-
-            if (planButton.isConnected) {
-              planButton.disabled = false;
-              planButton.textContent =
-                "生成并筛选 Content Plan";
-            }
-          }
-        },
-      );
-    }
-
-    const generateButton =
-      host.querySelector(
-        "[data-generate-scripts]",
-      );
-
-    if (generateButton) {
-      generateButton.addEventListener(
-        "click",
-        async () => {
-          generateButton.disabled = true;
-          generateButton.textContent =
-            "正在生成脚本…";
-
-          try {
-            const response = await api(
-              `/api/create/${encodeURIComponent(
-                state.request_id,
-              )}/generate-scripts`,
-              { method: "POST" },
-            );
-
-            watchTask(
-              response.task,
-              refresh,
-              "Script Generation 任务已结束，已重新读取当前业务状态。",
-            );
-          } catch (error) {
-            showToast(
-              error.detail?.next_action ||
-                error.detail?.message ||
-                error.message,
-            );
-
-            if (
-              generateButton.isConnected
-            ) {
-              generateButton.disabled =
-                false;
-              generateButton.textContent =
-                "根据最终选题生成脚本";
-            }
-          }
-        },
-      );
-    }
-
-    host
-      .querySelectorAll(
-        "[data-review-item]",
-      )
-      .forEach((card) => {
-        const editor =
-          card.querySelector(
-            "[data-revision-editor]",
-          );
-
-        card
-          .querySelectorAll(
-            "[data-review-decision]",
-          )
-          .forEach((input) => {
-            input.addEventListener(
-              "change",
-              () => {
-                if (editor) {
-                  editor.hidden =
-                    input.value !== "revised";
-                }
-              },
-            );
-          });
+  function bindReview(host, state, refresh) {
+    host.querySelectorAll("[data-content-review-item]").forEach((item) => {
+      const editor = item.querySelector("[data-content-revision-editor]");
+      item.querySelectorAll("[data-content-decision]").forEach((input) => {
+        input.addEventListener("change", () => {
+          if (editor) editor.hidden = input.value !== "revised";
+          updateReviewProgress(host);
+        });
       });
-
-    const approveAll =
-      host.querySelector(
-        "[data-approve-all]",
-      );
-
-    if (approveAll) {
-      approveAll.addEventListener(
-        "click",
-        () => {
-          host
-            .querySelectorAll(
-              "[data-review-item]",
-            )
-            .forEach((card) => {
-              const approved =
-                card.querySelector(
-                  'input[data-review-decision][value="approved"]',
-                );
-              const editor =
-                card.querySelector(
-                  "[data-revision-editor]",
-                );
-
-              if (approved) {
-                approved.checked = true;
-              }
-              if (editor) {
-                editor.hidden = true;
-              }
-            });
-        },
-      );
-    }
-
-    const submitReview =
-      host.querySelector(
-        "[data-submit-review]",
-      );
-
-    if (submitReview) {
-      submitReview.addEventListener(
-        "click",
-        async () => {
-          const cards = Array.from(
-            host.querySelectorAll(
-              "[data-review-item]",
-            ),
-          );
-
-          if (!cards.length) {
-            showToast(
-              "当前没有可审核内容。",
-            );
+    });
+    host.querySelector("[data-approve-all]")?.addEventListener("click", () => {
+      host.querySelectorAll("[data-content-review-item]").forEach((item) => {
+        const approved = item.querySelector('input[data-content-decision][value="approved"]');
+        const editor = item.querySelector("[data-content-revision-editor]");
+        if (approved) approved.checked = true;
+        if (editor) editor.hidden = true;
+      });
+      updateReviewProgress(host);
+    });
+    const submit = host.querySelector("[data-submit-review]");
+    submit?.addEventListener("click", async () => {
+      const items = [];
+      for (const item of host.querySelectorAll("[data-content-review-item]")) {
+        const decision = item.querySelector("input[data-content-decision]:checked")?.value;
+        if (!decision) return;
+        const record = {
+          content_id: item.dataset.itemId,
+          decision,
+          note: item.querySelector("[data-content-review-note]")?.value?.trim() || "",
+        };
+        if (decision === "revised") {
+          const title = item.querySelector("[data-revised-title]")?.value?.trim() || "";
+          const narration = item.querySelector("[data-revised-body]")?.value?.trim() || "";
+          if (!title || !narration) {
+            showToast("修改后的标题和文案都不能为空。");
             return;
           }
+          record.revised_title = title;
+          record.revised_narration = narration;
+        }
+        items.push(record);
+      }
+      submit.disabled = true;
+      submit.textContent = "正在保存审核结果…";
+      try {
+        const response = await api(`/api/create/${encodeURIComponent(state.request_id)}/review`, {
+          method: "POST",
+          body: JSON.stringify({ note: "Internal Console content review.", items }),
+        });
+        const result = response.result?.result;
+        showToast(result?.approved_item_count > 0
+          ? `审核已完成：${Number(result.approved_item_count)} 条可以导出。`
+          : "审核已完成：本次没有可导出内容。");
+        await refresh();
+      } catch (error) {
+        showToast(safeCreationMessage(error.detail?.next_action || error.detail?.message || error.message, "审核结果暂时无法保存，请稍后重试。"));
+        if (submit.isConnected) {
+          submit.disabled = false;
+          submit.textContent = "提交审核";
+        }
+      }
+    });
+    updateReviewProgress(host);
+  }
 
-          const items = [];
-
-          for (const card of cards) {
-            const decision =
-              card.querySelector(
-                "input[data-review-decision]:checked",
-              )?.value;
-
-            if (!decision) {
-              showToast(
-                "请逐条选择“通过 / 修改后通过 / 淘汰”。",
-              );
-              return;
-            }
-
-            const item = {
-              content_id:
-                card.dataset.contentId,
-              decision,
-              note:
-                card.querySelector(
-                  "[data-review-note]",
-                )?.value?.trim() || "",
-            };
-
-            if (decision === "revised") {
-              const revisedTitle =
-                card.querySelector(
-                  "[data-revised-title]",
-                )?.value?.trim() || "";
-              const revisedNarration =
-                card.querySelector(
-                  "[data-revised-narration]",
-                )?.value?.trim() || "";
-
-              if (
-                !revisedTitle
-                || !revisedNarration
-              ) {
-                showToast(
-                  "修改后通过的标题和口播都不能为空。",
-                );
-                return;
-              }
-
-              item.revised_title =
-                revisedTitle;
-              item.revised_narration =
-                revisedNarration;
-            }
-
-            items.push(item);
-          }
-
-          submitReview.disabled = true;
-          submitReview.textContent =
-            "正在提交 Human Review…";
-
-          try {
-            const response = await api(
-              `/api/create/${encodeURIComponent(
-                state.request_id,
-              )}/review`,
-              {
-                method: "POST",
-                body: JSON.stringify({
-                  note:
-                    "Internal Console Unified Human Review V1.",
-                  items,
-                }),
-              },
-            );
-
-            const result =
-              response.result?.result;
-
-            if (
-              result?.approved_item_count > 0
-            ) {
-              showToast(
-                `Human Review 已完成：${Number(
-                  result.approved_item_count,
-                )} 条可导出，${Number(
-                  result.rejected_item_count || 0,
-                )} 条淘汰。`,
-              );
-            } else {
-              showToast(
-                "Human Review 已完成：本批次没有可导出内容。",
-              );
-            }
-
-            await refresh();
-          } catch (error) {
-            showToast(
-              error.detail?.next_action ||
-                error.detail?.message ||
-                error.message,
-            );
-
-            if (
-              submitReview.isConnected
-            ) {
-              submitReview.disabled = false;
-              submitReview.textContent =
-                "提交人工审核";
-            }
-          }
-        },
-      );
-    }
-
-    const exportButton =
-      host.querySelector(
-        "[data-export-excel]",
-      );
-
-    if (exportButton) {
-      exportButton.addEventListener(
-        "click",
-        async () => {
-          exportButton.disabled = true;
-          exportButton.textContent =
-            state.export?.completed
-              ? "正在闭合内容历史…"
-              : "正在导出并验证 Excel…";
-
-          try {
-            const response = await api(
-              `/api/create/${encodeURIComponent(
-                state.request_id,
-              )}/export-mix`,
-              { method: "POST" },
-            );
-            watchTask(
-              response.task,
-              refresh,
-              "导出任务已结束，已重新读取 Export Receipt 与 Ledger 状态。",
-            );
-          } catch (error) {
-            showToast(
-              error.detail?.next_action ||
-                error.detail?.message ||
-                error.message,
-            );
-
-            if (
-              exportButton.isConnected
-            ) {
-              exportButton.disabled =
-                false;
-              exportButton.textContent =
-                state.export?.completed
-                  ? "完成导出记录"
-                  : "导出正式 Excel";
-            }
-          }
-        },
-      );
-    }
+  function bind(host, state, refresh) {
+    const plan = host.querySelector("[data-resolve-content-plan]");
+    plan?.addEventListener("click", async () => {
+      plan.disabled = true;
+      plan.textContent = "正在生成选题…";
+      try {
+        const response = await api(`/api/create/${encodeURIComponent(state.request_id)}/resolve-content-plan`, { method: "POST" });
+        watchTask(response.task, refresh, "选题已生成，已读取最新状态。");
+      } catch (error) {
+        showToast(safeCreationMessage(error.detail?.next_action || error.detail?.message || error.message, "选题暂时无法生成，请稍后重试。"));
+        if (plan.isConnected) {
+          plan.disabled = false;
+          plan.textContent = "生成选题";
+        }
+      }
+    });
+    const generate = host.querySelector("[data-generate-scripts]");
+    generate?.addEventListener("click", async () => {
+      generate.disabled = true;
+      generate.textContent = "正在生成文案…";
+      try {
+        const response = await api(`/api/create/${encodeURIComponent(state.request_id)}/generate-scripts`, { method: "POST" });
+        watchTask(response.task, refresh, "文案已生成，已进入审核。");
+      } catch (error) {
+        showToast(safeCreationMessage(error.detail?.next_action || error.detail?.message || error.message, "文案暂时无法生成，请稍后重试。"));
+        if (generate.isConnected) {
+          generate.disabled = false;
+          generate.textContent = "生成文案";
+        }
+      }
+    });
+    if (state.next_action === "HUMAN_REVIEW") bindReview(host, state, refresh);
+    const exportButton = host.querySelector("[data-export-excel]");
+    exportButton?.addEventListener("click", async () => {
+      exportButton.disabled = true;
+      exportButton.textContent = "正在完成导出…";
+      try {
+        const response = await api(`/api/create/${encodeURIComponent(state.request_id)}/export-mix`, { method: "POST" });
+        watchTask(response.task, refresh, "导出已完成，已读取最新状态。");
+      } catch (error) {
+        showToast(safeCreationMessage(error.detail?.next_action || error.detail?.message || error.message, "导出暂时无法完成，请稍后重试。"));
+        if (exportButton.isConnected) {
+          exportButton.disabled = false;
+          exportButton.textContent = state.export?.completed ? "完成导出" : "导出 Excel";
+        }
+      }
+    });
   }
 
   async function restore(requestId) {
-    const host =
-      document.querySelector(
-        "#content-delivery-host",
-      );
-
-    if (!host || !requestId) {
-      return;
-    }
-
-    host.innerHTML = `
-      <section class="card review-section">
-        <h2>正在恢复 内容交付 状态…</h2>
-      </section>`;
-
+    const host = document.querySelector("#content-delivery-host");
+    if (!host || !requestId) return;
+    host.innerHTML = CreationState({ tone: "running", title: "正在恢复本次创作", body: "正在读取最新进度…" });
     try {
-      const response = await api(
-        `/api/create/${encodeURIComponent(
-          requestId,
-        )}/delivery`,
-      );
-
+      const response = await api(`/api/create/${encodeURIComponent(requestId)}/delivery`);
       const state = response.state;
-
-      host.innerHTML = `
-        <div class="content-delivery-stack">
-          <section class="card review-section">
-            <div class="delivery-script-head">
-              <div>
-                <span class="capacity-kicker">
-                  内容交付
-                </span>
-                <h2>
-                  ${escapeHtml(
-                    actionLabel[
-                      state.next_action
-                    ] ||
-                      state.next_action ||
-                      "继续创作",
-                  )}
-                </h2>
-              </div>
-
-              <code>
-                ${escapeHtml(
-                  String(
-                    state.request_id || "",
-                  ),
-                )}
-              </code>
-            </div>
-
-            ${progress(state)}
-          </section>
-
-          ${renderBody(state)}
-        </div>`;
-
-      bind(
-        host,
-        state,
-        () => restore(requestId),
-      );
+      host.innerHTML = `<div class="content-delivery-stack">${workflowHeader(state)}${renderBody(state)}</div>`;
+      bind(host, state, () => restore(requestId));
     } catch (error) {
-      host.innerHTML = `
-        <section class="card capacity-result blocked">
-          <span class="capacity-kicker">
-            内容交付 状态恢复失败
-          </span>
-          <h2>当前没有继续执行</h2>
-          <p>
-            ${escapeHtml(
-              error.detail?.next_action ||
-                error.detail?.message ||
-                error.message,
-            )}
-          </p>
-        </section>`;
-
-      showToast(
-        error.detail?.next_action ||
-          error.detail?.message ||
-          error.message,
-      );
+      host.innerHTML = CreationState({
+        tone: "error",
+        title: "这次创作暂时无法继续",
+        body: safeCreationMessage(error.detail?.next_action || error.detail?.message || error.message, "当前状态无法安全恢复，请稍后重试或查看任务记录。"),
+        actions: `<a class="btn btn-secondary" href="/tasks">查看任务</a>`,
+      });
+      showToast("本次创作暂时无法恢复。");
     }
   }
 
-  return {
-    restore,
-  };
+  return { restore };
 }

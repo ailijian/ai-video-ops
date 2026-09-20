@@ -482,6 +482,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             "script-src 'self'; connect-src 'self'; "
             "frame-src https://open.douyin.com; frame-ancestors 'none'; base-uri 'self'"
         )
+        if request.url.path.startswith("/api/"):
+            response.headers["Cache-Control"] = "private, no-store, max-age=0"
+            response.headers["Pragma"] = "no-cache"
         return response
 
     @app.exception_handler(CanonicalOperationError)
@@ -1461,6 +1464,17 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             "has_customers": bool(customers),
             "status": status,
             "customers": customers,
+            "summary": {
+                "customer_count": len(customers),
+                "approved_customer_count": sum(
+                    customer.get("status") == "approved" for customer in customers
+                ),
+                "case_count": len(cases),
+                "approved_case_count": sum(
+                    case.get("status") == "approved" for case in cases
+                ),
+                "ready_customer_count": ready_customer_count,
+            },
             "customer_selection": {
                 "configured_business_id": configured_business_id,
                 "selected_business_id": selected_business_id,

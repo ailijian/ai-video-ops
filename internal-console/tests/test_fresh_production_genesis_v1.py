@@ -94,6 +94,13 @@ def test_fresh_empty_node_login_and_workbench_are_available(
         "running_tasks": 0,
     }
     assert body["recent_tasks"] == []
+    assert body["summary"] == {
+        "customer_count": 0,
+        "approved_customer_count": 0,
+        "case_count": 0,
+        "approved_case_count": 0,
+        "ready_customer_count": 0,
+    }
     assert body["capabilities"]["add_case"]["available"] is True
     assert body["capabilities"]["new_customer"]["available"] is True
     assert body["capabilities"]["content_creation"]["available"] is False
@@ -200,6 +207,59 @@ def test_one_customer_resolves_but_multiple_customers_do_not_pick_first(
         "CURRENT_CUSTOMER_REQUIRED"
     )
     assert calls == []
+
+
+def test_workbench_projects_current_customer_case_and_recent_task_data(
+    empty_settings: Settings,
+    monkeypatch,
+):
+    customers = [
+        {"business_id": "business_a", "display_name": "客户 A", "status": "approved"},
+        {"business_id": "business_b", "display_name": "客户 B", "status": "approved"},
+        {"business_id": "business_c", "display_name": "客户 C", "status": "draft"},
+    ]
+    cases = [
+        {"case_id": "case_a", "status": "approved"},
+        {"case_id": "case_b", "status": "approved"},
+        {"case_id": "case_c", "status": "awaiting_review"},
+    ]
+    tasks = [
+        {
+            "task_id": "task_latest",
+            "task_type": "case_analysis",
+            "status": "completed",
+            "payload": {},
+        }
+    ]
+    monkeypatch.setattr(main_module, "list_customers", lambda settings: customers)
+    monkeypatch.setattr(main_module, "list_cases", lambda settings: cases)
+    monkeypatch.setattr(main_module, "list_tasks", lambda database_path, limit=10: tasks)
+    monkeypatch.setattr(
+        main_module,
+        "list_creation_options",
+        lambda settings: {"ready_customer_count": 2},
+    )
+    monkeypatch.setattr(main_module, "speaker_attention_count", lambda settings: 0)
+
+    with TestClient(main_module.build_app(empty_settings)) as client:
+        provision_user(empty_settings.database_path, "13800000000")
+        login_and_change_password(client)
+        response = client.get("/api/workbench")
+
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "private, no-store, max-age=0"
+    assert response.headers["pragma"] == "no-cache"
+    body = response.json()
+    assert body["has_customers"] is True
+    assert body["summary"] == {
+        "customer_count": 3,
+        "approved_customer_count": 2,
+        "case_count": 3,
+        "approved_case_count": 2,
+        "ready_customer_count": 2,
+    }
+    assert body["recent_tasks"] == tasks
+    assert body["attention"]["case_reviews"] == 1
 
 
 def test_configured_default_is_convenience_and_invalid_value_creates_no_authority(
