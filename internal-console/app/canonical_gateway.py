@@ -17,6 +17,7 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 from .config import Settings
+from .path_safety import resolve_within
 from .subprocess_env import pipeline_subprocess_env
 
 logger = logging.getLogger(__name__)
@@ -337,7 +338,10 @@ def list_cases(settings: Settings) -> list[dict[str, Any]]:
     projections.sort(
         key=lambda item: (item.approved_at or "", item.case_id), reverse=True
     )
-    return [item.to_dict() for item in projections]
+    return [
+        {**item.to_dict(), **_case_profile_annotation_projection(settings, item.to_dict())}
+        for item in projections
+    ]
 
 
 def normalize_source_url(url: str) -> str:
@@ -601,6 +605,7 @@ def get_case_detail(settings: Settings, case_id: str) -> dict[str, Any]:
     source_width, source_height = _source_dimensions(metadata)
     if recovery_state is not None:
         projection["status"] = "awaiting_review"
+    projection.update(_case_profile_annotation_projection(settings, projection))
     sequence = [
         _safe_chinese_text(item.get("description"), max_length=260)
         for item in (understanding.get("structure_sequence") or [])
@@ -774,6 +779,153 @@ def _write_atomic(path: Path, value: dict[str, Any]) -> None:
         json.dump(value, handle, ensure_ascii=False, indent=2)
         temporary = Path(handle.name)
     os.replace(temporary, path)
+
+
+CASE_PROFILE_HINTS = {"mix", "news", "hybrid", "uncertain"}
+CASE_PROFILE_ANNOTATION_AUTHORITY = {
+    "annotation_is_operator_hint": True,
+    "annotation_grants_profile_compatibility": False,
+    "approved_case_modified": False,
+}
+
+
+def _profile_annotation_paths(settings: Settings, case_id: str) -> tuple[Path, Path]:
+    if not re.fullmatch(r"\d{10,24}", case_id):
+        raise CanonicalOperationError(
+            "CASE_PROFILE_ANNOTATION_BLOCKED", "案例编号无效。", "请返回案例列表重新选择。"
+        )
+    try:
+        root = settings.pipeline_root / "data"
+        return (
+            resolve_within(root, "cases", case_id, "case_v1.json"),
+            resolve_within(root, "case_governance", "cases", case_id, "case_profile_annotation_v1.json"),
+        )
+    except ValueError as exc:
+        raise CanonicalOperationError(
+            "CASE_PROFILE_ANNOTATION_BLOCKED", "案例记录路径无效。", "请联系管理员检查存储位置。"
+        ) from exc
+
+
+def _validate_annotation_case(case_path: Path, case_id: str) -> str:
+    """Check approval binding, including the historical receipt SHA field.
+
+    This never re-approves a Case or grants profile/media compatibility.
+    """
+    case = _read_json(case_path)
+    receipt_path = resolve_within(case_path.parent, "approval_receipt.json")
+    receipt = _read_json(receipt_path)
+    lifecycle = case.get("lifecycle") or {}
+    digest = _sha256(case_path)
+    recorded_hashes = [
+        receipt[key] for key in ("case_sha256_after_approval", "case_sha256") if key in receipt
+    ]
+    if not (
+        case.get("case_id") == case_id
+        and lifecycle.get("status") == "approved"
+        and lifecycle.get("approved") is True
+        and not lifecycle.get("retired")
+        and receipt.get("case_id") == case_id
+        and receipt.get("decision") == "approved"
+        and receipt.get("human_gate") is True
+        and recorded_hashes
+        and all(value == digest for value in recorded_hashes)
+    ):
+        raise CanonicalOperationError(
+            "CASE_PROFILE_ANNOTATION_BLOCKED", "案例审批记录校验未通过。", "请检查审批记录后刷新，不要修改已批准案例。"
+        )
+    if case.get("operator_profile_hint"):
+        raise CanonicalOperationError(
+            "CASE_PROFILE_ANNOTATION_BLOCKED", "这个案例已有提交标记。", "请使用原有提交标记，无需历史补充。"
+        )
+    return digest
+
+
+def _case_profile_annotation_projection(settings: Settings, projection: dict[str, Any]) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "profile_annotation": None,
+        "profile_annotation_sha256": None,
+        "approved_case_sha256": None,
+        "can_annotate_profile": False,
+    }
+    # Submission metadata remains primary; annotations never fill that field.
+    if projection["status"] != "approved" or projection.get("operator_profile_hint"):
+        return result
+    case_id = projection["case_id"]
+    case_path, annotation_path = _profile_annotation_paths(settings, case_id)
+    result.update(approved_case_sha256=_sha256(case_path), can_annotate_profile=True)
+    if not annotation_path.exists():
+        return result
+    # A concurrent atomic replacement must not pair old content with a new hash.
+    try:
+        annotation_bytes = annotation_path.read_bytes()
+        annotation = json.loads(annotation_bytes.decode("utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise CanonicalOperationError(
+            "CASE_PROFILE_ANNOTATION_BLOCKED", "历史补充记录无法读取。", "请联系管理员检查补充记录。"
+        ) from exc
+    digest = _validate_annotation_case(case_path, case_id)
+    if not (
+        isinstance(annotation, dict)
+        and annotation.get("schema_version") == "case-profile-annotation-v1.0"
+        and annotation.get("case_id") == case_id
+        and annotation.get("approved_case_sha256") == digest
+        and annotation.get("operator_profile_hint") in CASE_PROFILE_HINTS
+        and annotation.get("authority") == CASE_PROFILE_ANNOTATION_AUTHORITY
+        and type(annotation.get("annotated_by_user_id")) is int
+        and annotation.get("annotated_by_phone")
+        and annotation.get("annotated_at")
+        and isinstance(annotation.get("note"), str)
+    ):
+        raise CanonicalOperationError(
+            "CASE_PROFILE_ANNOTATION_BLOCKED", "历史补充记录与当前案例不一致。", "请联系管理员检查补充记录，不要改写案例。"
+        )
+    result.update(
+        profile_annotation=annotation,
+        profile_annotation_sha256=hashlib.sha256(annotation_bytes).hexdigest(),
+    )
+    return result
+
+
+def annotate_case_profile(
+    settings: Settings,
+    case_id: str,
+    *,
+    operator_profile_hint: str,
+    approved_case_sha256: str,
+    expected_annotation_sha256: str | None,
+    actor_user_id: int,
+    actor_phone: str,
+    note: str,
+) -> dict[str, Any]:
+    """Caller holds the existing case lock; reread everything before writing."""
+    case_path, annotation_path = _profile_annotation_paths(settings, case_id)
+    if operator_profile_hint not in CASE_PROFILE_HINTS or not case_path.is_file():
+        raise CanonicalOperationError(
+            "CASE_PROFILE_ANNOTATION_BLOCKED", "只有已入库历史案例可以补充结构类型。", "请返回案例详情检查状态。"
+        )
+    digest = _validate_annotation_case(case_path, case_id)
+    current = get_case_detail(settings, case_id)
+    if (
+        not current["can_annotate_profile"]
+        or digest != approved_case_sha256
+        or current["profile_annotation_sha256"] != expected_annotation_sha256
+    ):
+        raise CanonicalOperationError(
+            "AUTHORITY_CHANGED_REFRESH_REQUIRED", "案例或补充记录已变化。", "请刷新后重新确认，不会覆盖同事的补充记录。"
+        )
+    annotation = {
+        "schema_version": "case-profile-annotation-v1.0",
+        "case_id": case_id,
+        "approved_case_sha256": digest,
+        "operator_profile_hint": operator_profile_hint,
+        "annotated_by_user_id": actor_user_id,
+        "annotated_by_phone": actor_phone,
+        "annotated_at": datetime.now(timezone.utc).isoformat(),
+        "note": note.strip(),
+        "authority": dict(CASE_PROFILE_ANNOTATION_AUTHORITY),
+    }
+    _write_atomic(annotation_path, annotation)
+    return get_case_detail(settings, case_id)
 
 
 def _governance_policy_path(settings: Settings) -> Path:

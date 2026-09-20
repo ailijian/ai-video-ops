@@ -1,3 +1,5 @@
+import { DOUYIN_PLAYER_VIEWPORTS } from "./case-media-preview.mjs?v=case-media-fit-1";
+
 export const CASE_PROGRESS_STAGES = [
   ["acquire", "获取视频", 12],
   ["transcribe", "提取语音", 32],
@@ -69,12 +71,22 @@ export function progressPanel(task, { compact = false, embedded = false } = {}) 
   </section>`;
 }
 
+function caseProfileMetadata(item) {
+  const labels = { mix: "混剪型", news: "新闻体", hybrid: "混合型", uncertain: "不确定" };
+  const submission = labels[item.operator_profile_hint];
+  const annotation = labels[item.profile_annotation?.operator_profile_hint];
+  const observed = labels[item.observed_source_profile];
+  return [
+    submission ? `提交标记：${submission}` : annotation ? `历史补充：${annotation}` : "",
+    observed ? `系统观察：${observed}` : "",
+  ].filter(Boolean);
+}
+
 export function caseCard(caseItem, statusPill) {
   const duration = caseItem.duration_seconds == null ? "时长未知" : `${Math.round(caseItem.duration_seconds)} 秒`;
   const source = caseItem.platform === "douyin" ? "抖音" : "视频来源";
-  const optionalMeta = caseItem.industry ? `<span>${escapeHtml(caseItem.industry)}</span>` : "";
-  const hintLabels = { mix: "混剪型", news: "新闻体", hybrid: "混合型", uncertain: "不确定" };
-  const profileMeta = caseItem.operator_profile_hint ? `<span>提交标记：${hintLabels[caseItem.operator_profile_hint]}</span>` : "";
+  const optionalMeta = `<span>行业：${escapeHtml(caseItem.industry || "待分类")}</span>`;
+  const profileMeta = caseProfileMetadata(caseItem).map((text) => `<span>${escapeHtml(text)}</span>`).join("");
   return `<a class="case-row" href="/cases/${encodeURIComponent(caseItem.case_id)}" data-route data-case-status="${escapeHtml(caseItem.status)}">
     <span class="case-row-main"><strong>${escapeHtml(caseItem.title)}</strong><span class="case-meta"><span>${source} · ${escapeHtml(duration)}</span>${optionalMeta}${profileMeta}</span></span>
     <span class="case-row-end">${statusPill(caseItem.status)}<span class="case-chevron" aria-hidden="true">›</span></span>
@@ -86,12 +98,9 @@ function paragraphList(values) {
 }
 
 export function caseReviewContent(detail, statusPill) {
-  const hintLabels = { mix: "混剪型", news: "新闻体", hybrid: "混合型", uncertain: "不确定" };
-  const profileLine = detail.operator_profile_hint
-    ? `提交标记：${hintLabels[detail.operator_profile_hint]}`
-    : "历史案例 · 未记录提交类型";
-  const observedLine = detail.observed_source_profile
-    ? ` · 系统观察：${hintLabels[detail.observed_source_profile] || "未分类"}` : "";
+  const profileLine = caseProfileMetadata(detail).join(" · ") || "未记录结构类型";
+  const annotationAction = detail.can_annotate_profile && !detail.operator_profile_hint
+    ? `<button class="btn btn-secondary" type="button" data-profile-annotation>${detail.profile_annotation ? "修改历史补充" : "补充结构类型"}</button>` : "";
   const development = paragraphList(detail.how_it_tells?.development);
   const reviewMedia = detail.review_media || {};
   const sourceUrl = reviewMedia.source_url || detail.source_url || "";
@@ -99,10 +108,12 @@ export function caseReviewContent(detail, statusPill) {
   const sourceWidth = Number(reviewMedia.source_width) || 9;
   const sourceHeight = Number(reviewMedia.source_height) || 16;
   const orientation = sourceWidth > sourceHeight ? "landscape" : "portrait";
+  const isRemotePlayer = !reviewMedia.local_available && Boolean(remoteEmbedUrl);
+  const playerViewport = DOUYIN_PLAYER_VIEWPORTS[orientation];
   const mediaSurface = reviewMedia.local_available
     ? `<video controls playsinline preload="metadata" src="${escapeHtml(reviewMedia.local_url)}"></video>`
     : remoteEmbedUrl
-      ? `<iframe class="douyin-review-player" src="${escapeHtml(remoteEmbedUrl)}" title="抖音原视频审核预览" loading="lazy" scrolling="no" allowfullscreen></iframe>`
+      ? `<iframe class="douyin-review-player" width="${playerViewport.width}" height="${playerViewport.height}" src="${escapeHtml(remoteEmbedUrl)}" title="抖音原视频审核预览" loading="lazy" scrolling="no" allowfullscreen></iframe>`
       : `<div class="review-media-unavailable"><strong>预览暂时不可用</strong><span>请在抖音打开原视频完成审核。</span></div>`;
   const sourceLink = sourceUrl
     ? `<a class="source-video-link" href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">在抖音打开原视频</a>`
@@ -131,10 +142,11 @@ export function caseReviewContent(detail, statusPill) {
       <div class="review-primary">
         <section class="panel media-summary">
           <div class="review-media-shell ${orientation}">
-            <div class="review-media-player ${orientation}">${mediaSurface}</div>
+            <div class="review-media-player ${orientation}${isRemotePlayer ? " remote" : ""}">${mediaSurface}</div>
             <div class="review-media-meta"><h1>${escapeHtml(detail.title)}</h1>
               <p class="media-meta-line">${detail.platform === "douyin" ? "抖音" : "视频来源"} · ${detail.duration_seconds == null ? "时长未知" : `${Math.round(detail.duration_seconds)} 秒`}</p>
-              <p class="media-meta-line">${escapeHtml(profileLine + observedLine)}</p>
+              <p class="media-meta-line">${escapeHtml(profileLine)}</p>
+              ${annotationAction}
               ${detail.description ? `<p class="media-description">${escapeHtml(detail.description)}</p>` : ""}
               ${sourceLink}
               ${reviewSurfaceNote}

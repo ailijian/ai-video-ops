@@ -357,10 +357,19 @@ def test_review_player_uses_compact_orientation_layout_without_source_ratio_geom
     assert ".review-media-shell.portrait { grid-template-columns: minmax(0, 300px) minmax(0, 1fr); }" in css
     assert ".review-media-player.landscape { width: min(100%, 640px); max-height: 52dvh; aspect-ratio: 16 / 9; }" in css
     assert "review-media-shell ${orientation}" in component
-    assert "review-media-player ${orientation}" in component
+    assert 'review-media-player ${orientation}${isRemotePlayer ? " remote" : ""}' in component
     assert "${reviewSurfaceNote}" in component
     assert "当前通过抖音原视频进行审核。" in component
     assert "reviewMedia.remote_embed_url" in component
     assert 'scrolling="no"' in component
     assert "allowfullscreen" in component
     assert "在抖音打开原视频" in component
+
+
+def test_official_player_resizes_the_whole_frame_including_bottom_controls():
+    script = Path(__file__).parent / "js" / "case-media-preview.test.mjs"
+    result = subprocess.run(
+        ["node", str(script)], capture_output=True, text=True,
+        encoding="utf-8", errors="replace", check=False,
+    )
+    assert result.returncode == 0, result.stderr or result.stdout

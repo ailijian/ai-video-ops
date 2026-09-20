@@ -1,7 +1,7 @@
 import { createApiClient } from "./api-client.js?v=productized-stage3-3";
-import { createCaseViews } from "./case-views.js?v=operator-attribution-v1";
+import { createCaseViews } from "./case-views.js?v=case-profile-annotation-1";
 import { createCustomerViews } from "./customer-views.js?v=productized-stage3-3";
-import { progressPanel } from "./case-components.js?v=operator-attribution-v1";
+import { progressPanel } from "./case-components.js?v=case-profile-annotation-1";
 import { startTaskPolling } from "./task-progress.js";
 import { customerProgressPanel } from "./customer-components.js?v=productized-stage2-3";
 import { matchWorkflowRoute } from "./routes.js";
@@ -164,6 +164,7 @@ function openModal({
   reasonLabel = "原因",
   reasonPlaceholder = "请填写原因",
   reasonRequired = false,
+  reasonOptional = false,
   profileHintRequired = false,
 } = {}) {
   return new Promise((resolve) => {
@@ -173,7 +174,7 @@ function openModal({
     backdrop.innerHTML = `<section class="modal" role="dialog" aria-modal="true" aria-labelledby="dialog-title" aria-describedby="dialog-description">
       <div class="modal-header"><h2 id="dialog-title">${escapeHtml(title)}</h2><button class="icon-button modal-close" type="button" data-modal-cancel aria-label="关闭">×</button></div>
       <p id="dialog-description">${escapeHtml(description)}</p>
-      ${reasonRequired ? `<div class="field modal-reason"><label for="modal-reason">${escapeHtml(reasonLabel)}</label><textarea id="modal-reason" placeholder="${escapeHtml(reasonPlaceholder)}" required></textarea><span class="form-error" data-modal-error role="alert">请填写原因后继续。</span></div>` : ""}
+      ${reasonRequired || reasonOptional ? `<div class="field modal-reason"><label for="modal-reason">${escapeHtml(reasonLabel)}</label><textarea id="modal-reason" placeholder="${escapeHtml(reasonPlaceholder)}" ${reasonRequired ? "required" : ""} ${reasonOptional ? 'maxlength="1000"' : ""}></textarea><span class="form-error" data-modal-error role="alert">请填写原因后继续。</span></div>` : ""}
       ${profileHintRequired ? `<div class="field"><label for="modal-profile-hint">这个视频更接近哪种结构？</label><select id="modal-profile-hint" required><option value="">请选择</option><option value="mix">混剪型</option><option value="news">新闻体</option><option value="hybrid">混合型</option><option value="uncertain">不确定</option></select><span class="form-error" data-modal-profile-error role="alert">请选择结构类型。</span></div>` : ""}
       <div class="modal-actions"><button class="btn btn-secondary" type="button" data-modal-cancel>${escapeHtml(cancelLabel)}</button><button class="btn ${danger ? "btn-danger" : "btn-primary"}" type="button" data-modal-confirm>${escapeHtml(confirmLabel)}</button></div>
     </section>`;
@@ -676,7 +677,7 @@ async function renderTaskDetail(taskId) {
 
 async function renderRoute() {
   const path = location.pathname.replace(/\/+$/, "") || "/";
-  caseViews.stopTaskPolling();
+  caseViews.dispose();
   customerViews.stopTaskPolling();
   speakerViews.stopTaskPolling();
   if (!state.user) {

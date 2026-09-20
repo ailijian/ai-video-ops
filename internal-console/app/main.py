@@ -30,6 +30,7 @@ from .canonical_gateway import (
     find_duplicate_case,
     resolve_case_source_duplicate,
     approve_case_candidate,
+    annotate_case_profile,
     case_media_path,
     get_case_detail,
     get_customer_status,
@@ -199,6 +200,13 @@ class CaseReviewRequest(BaseModel):
     decision: Literal["reject", "reanalyze", "approve"]
     reason: str = Field(default="", max_length=1000)
     operator_profile_hint: Literal["mix", "news", "hybrid", "uncertain"] | None = None
+
+
+class CaseProfileAnnotationRequest(BaseModel):
+    operator_profile_hint: Literal["mix", "news", "hybrid", "uncertain"]
+    approved_case_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_annotation_sha256: str | None = Field(..., pattern=r"^[0-9a-f]{64}$")
+    note: str = Field(default="", max_length=1000)
 
 
 class CustomerAnalysisRequest(BaseModel):
@@ -505,6 +513,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             "CASE_APPROVAL_BLOCKED",
             "CASE_SOURCE_GOVERNANCE_BLOCKED",
             "CASE_APPROVAL_RECOVERY_REQUIRED",
+            "CASE_PROFILE_ANNOTATION_BLOCKED",
         } else 503
         return JSONResponse(
             status_code=status_code,
@@ -2157,6 +2166,24 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             media_type="video/mp4",
             headers={"Cache-Control": "private, no-store"},
         )
+
+    @app.post("/api/cases/{case_id}/profile-annotation")
+    def case_profile_annotation(
+        case_id: str,
+        payload: CaseProfileAnnotationRequest,
+        x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(session, x_csrf_token)
+        return {"case": locked_authority_call(
+            "case", case_id, annotate_case_profile, settings, case_id,
+            operator_profile_hint=payload.operator_profile_hint,
+            approved_case_sha256=payload.approved_case_sha256,
+            expected_annotation_sha256=payload.expected_annotation_sha256,
+            actor_user_id=int(session.user["id"]),
+            actor_phone=str(session.user["phone"]),
+            note=payload.note,
+        )}
 
     @app.post("/api/cases/{case_id}/review")
     def review_case(

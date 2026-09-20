@@ -1,4 +1,5 @@
-import { caseCard, caseReviewContent, escapeHtml, progressPanel } from "./case-components.js?v=operator-attribution-v1";
+import { caseCard, caseReviewContent, escapeHtml, progressPanel } from "./case-components.js?v=case-profile-annotation-1";
+import { bindCaseMediaPreview } from "./case-media-preview.mjs?v=case-media-fit-1";
 import { projectCaseSubmitState, resetCaseSubmitState } from "./case-submit-state.mjs?v=productized-stage1-5";
 import { startTaskPolling } from "./task-progress.js";
 
@@ -49,10 +50,12 @@ function duplicateResultHtml(result) {
 
 export function createCaseViews({ app, api, navigate, shell, bindCommonActions, pageHeading, skeletonPage, statusPill, showToast, openModal, renderLoadError }) {
   let stopPolling = null;
+  let stopMediaPreview = null;
   const stopTaskPolling = () => { stopPolling?.(); stopPolling = null; };
+  const dispose = () => { stopTaskPolling(); stopMediaPreview?.(); stopMediaPreview = null; };
 
   async function renderCases() {
-    stopTaskPolling();
+    dispose();
     skeletonPage("案例");
     try {
       const data = await api("/api/cases");
@@ -93,7 +96,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
   }
 
   function renderCaseNew() {
-    stopTaskPolling();
+    dispose();
     const body = `<main class="page page-form add-case-page">${pageHeading("", "添加案例", "粘贴抖音视频链接，分析会在后台继续。")}
       <section class="work-surface add-case-surface">
         <form id="case-url-form" novalidate><div data-case-input-panel><div class="field"><label for="case-url">粘贴抖音视频链接</label>
@@ -260,11 +263,42 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
   }
 
   async function renderCaseDetail(caseId) {
-    stopTaskPolling(); skeletonPage("案例审核");
+    dispose(); skeletonPage("案例审核");
     try {
       const detail = await api(`/api/cases/${encodeURIComponent(caseId)}`);
       app.innerHTML = shell("案例审核", caseReviewContent(detail, statusPill));
+      stopMediaPreview = bindCaseMediaPreview(app);
       bindCommonActions();
+      document.querySelector("[data-profile-annotation]")?.addEventListener("click", async (event) => {
+        const button = event.currentTarget;
+        const decision = await openModal({
+          title: detail.profile_annotation ? "修改历史补充" : "补充结构类型",
+          description: "这是对历史案例的人工标记，不改变已批准案例或创作可用范围。请选择你观察到的结构类型。",
+          confirmLabel: "保存补充",
+          profileHintRequired: true,
+          reasonOptional: true,
+          reasonLabel: "备注（选填）",
+          reasonPlaceholder: "可补充选择这个类型的原因",
+        });
+        if (!decision.confirmed) return;
+        button.disabled = true;
+        try {
+          await api(`/api/cases/${encodeURIComponent(caseId)}/profile-annotation`, {
+            method: "POST",
+            body: JSON.stringify({
+              operator_profile_hint: decision.profileHint,
+              note: decision.reason,
+              approved_case_sha256: detail.approved_case_sha256,
+              expected_annotation_sha256: detail.profile_annotation_sha256,
+            }),
+          });
+          showToast("历史补充已保存");
+          return renderCaseDetail(caseId);
+        } catch (error) {
+          showToast(error.detail?.next_action || error.message);
+          button.disabled = false;
+        }
+      });
       document.querySelectorAll("[data-review-action]").forEach((button) => button.addEventListener("click", async () => {
         const action = button.dataset.reviewAction;
         let reason = "";
@@ -309,7 +343,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
   }
 
   async function renderTaskDetail(taskId) {
-    stopTaskPolling(); skeletonPage("任务进度");
+    dispose(); skeletonPage("任务进度");
     try {
       const payload = await api(`/api/tasks/${encodeURIComponent(taskId)}`);
       app.innerHTML = shell("任务进度", `<main class="page task-detail-page">${pageHeading("任务进度", "案例分析", "进度来自实际分析步骤，离开页面后仍会继续。")}
@@ -318,5 +352,5 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
     } catch (error) { renderLoadError("任务暂时无法读取", error); }
   }
 
-  return { renderCases, renderCaseNew, renderCaseDetail, renderTaskDetail, stopTaskPolling };
+  return { renderCases, renderCaseNew, renderCaseDetail, renderTaskDetail, dispose };
 }
