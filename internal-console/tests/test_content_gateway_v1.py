@@ -304,6 +304,7 @@ def make_source_plan(
     request_id: str,
     *,
     plan_request_id: str | None = None,
+    coverage_status: str = "supported",
 ) -> Path:
     path = (
         root
@@ -339,16 +340,31 @@ def make_source_plan(
                 ),
             },
             "coverage": {
-                "status": "supported",
+                "status": coverage_status,
                 "code": (
                     "research_coverage_"
-                    "supported"
+                    + ("supported" if coverage_status == "supported" else "insufficient")
                 ),
                 "reason": (
-                    "An Approved Pattern and "
-                    "approved Profile-compatible "
-                    "Case pool pass all hard "
-                    "gates."
+                    "An Approved Pattern and approved Profile-compatible Case pool "
+                    "pass all hard gates."
+                    if coverage_status == "supported"
+                    else "No Approved Pattern and Case pool jointly pass all hard gates."
+                ),
+                "humanized_reason": (
+                    "现有创作结构可以支持。"
+                    if coverage_status == "supported"
+                    else "当前有值得做的内容方向，但现有创作结构暂时不能支持。"
+                ),
+                "blocker_type": (
+                    None
+                    if coverage_status == "supported"
+                    else "PERSONA_LACKS_PATTERN_CAPABILITY"
+                ),
+                "blocker_codes": (
+                    []
+                    if coverage_status == "supported"
+                    else ["PERSONA_LACKS_PATTERN_CAPABILITY"]
                 ),
             },
             "selected_patterns": [
@@ -409,7 +425,7 @@ def test_active_request_projection_reports_source_plan_ready(
         active[
             "source_plan_status"
         ]
-        == "source_matching_completed"
+        == "source_matching_supported"
     )
 
     assert (
@@ -507,6 +523,32 @@ def test_active_request_projection_without_plan_is_not_ready(
             "next_action"
         ]
         == "RESOLVE_GENERATION_SOURCES"
+    )
+
+
+def test_source_plan_artifact_with_unsupported_coverage_is_blocked(
+    tmp_path: Path,
+):
+    request = make_request(tmp_path, "gen_fixture_001")
+    make_handoff(request)
+    make_source_plan(
+        tmp_path,
+        "gen_fixture_001",
+        coverage_status="insufficient",
+    )
+
+    active = get_active_generation_request(
+        settings(tmp_path),
+        "fixture_business",
+    )["active_request"]
+
+    assert active["source_plan_artifact_exists"] is True
+    assert active["source_coverage_supported"] is False
+    assert active["source_plan_ready"] is False
+    assert active["coverage_status"] == "insufficient"
+    assert active["next_action"] == "SOURCE_COVERAGE_BLOCKED"
+    assert active["production_feasibility"]["blocker_type"] == (
+        "PERSONA_LACKS_PATTERN_CAPABILITY"
     )
 
 

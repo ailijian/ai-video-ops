@@ -9,6 +9,7 @@ from typing import Any
 
 REQUEST_SCHEMA_VERSION = "generation-request-v1.0"
 RESOLUTION_SCHEMA_VERSION = "generation-request-resolution-v1.0"
+SOURCE_PLAN_SCHEMA_VERSION = "generation-source-plan-v1.0"
 
 DIRECT_TERMINAL_STATUSES = {
     "completed",
@@ -1065,6 +1066,44 @@ def classify_request(
     )
 
     if source_plan_path.is_file():
+        source_plan = read_json(source_plan_path)
+        if (
+            source_plan.get("schema_version") != SOURCE_PLAN_SCHEMA_VERSION
+            or str(source_plan.get("request_id") or "") != request_id
+            or str((source_plan.get("request") or {}).get("request_sha") or "")
+            != result["request_sha256"]
+        ):
+            raise EffectiveLifecycleError(
+                "GENERATION_SOURCE_PLAN_LINEAGE_MISMATCH",
+                "Generation Source Plan does not match the immutable Request lineage.",
+            )
+        coverage = source_plan.get("coverage") or {}
+        coverage_status = str(coverage.get("status") or "")
+        if coverage_status not in {"supported", "insufficient"}:
+            raise EffectiveLifecycleError(
+                "GENERATION_SOURCE_PLAN_COVERAGE_INVALID",
+                "Generation Source Plan coverage status is invalid.",
+            )
+        result["source_coverage_status"] = coverage_status
+        result["source_coverage_code"] = coverage.get("code")
+        result["source_coverage_reason"] = coverage.get("humanized_reason") or coverage.get(
+            "reason"
+        )
+        if coverage_status != "supported":
+            result.update(
+                {
+                    "effective_status": "blocked",
+                    "effective_stage": "SOURCE_COVERAGE_BLOCKED",
+                    "terminal_reason": None,
+                }
+            )
+            result["evidence_refs"].append(
+                evidence_ref(
+                    pipeline_root,
+                    source_plan_path,
+                )
+            )
+            return result
         result[
             "effective_stage"
         ] = "SOURCE_PLAN_READY"

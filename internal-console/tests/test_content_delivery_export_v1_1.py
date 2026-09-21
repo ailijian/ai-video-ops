@@ -217,7 +217,22 @@ def test_excel_without_ledger_closure_is_not_stop_point(
         exist_ok=True,
     )
     paths["source_plan"].write_text(
-        "{}",
+        json.dumps(
+            {
+                "schema_version": "generation-source-plan-v1.0",
+                "request_id": request_id,
+                "request": {
+                    "request_sha": sha256(paths["request"]),
+                },
+                "coverage": {
+                    "status": "supported",
+                    "code": "research_coverage_supported",
+                },
+                "selected_patterns": [{"pattern_id": "fixture_pattern"}],
+                "eligible_case_pool": [{"case_id": "fixture_case"}],
+            },
+            ensure_ascii=False,
+        ),
         encoding="utf-8",
     )
 

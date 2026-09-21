@@ -29,6 +29,37 @@ from content_creation_entry_v1 import (  # noqa: E402
     ContentCreationEntryError,
     build_content_creation_entry,
 )
+import content_creation_entry_v1 as content_entry_subject  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def supported_production_feasibility(monkeypatch):
+    """Keep legacy capacity fixtures focused on semantic capacity.
+
+    Shared matcher parity and unsupported feasibility are covered by the
+    dedicated Creation Feasibility contract suite.
+    """
+
+    monkeypatch.setattr(
+        content_entry_subject,
+        "preview_generation_feasibility",
+        lambda **_: {
+            "status": "supported",
+            "target_profile": "mix",
+            "eligible_pattern_count": 1,
+            "eligible_case_count": 1,
+            "blocker_type": None,
+            "blocker_codes": [],
+            "humanized_reason": "现有创作结构可以支持。",
+            "optional_customer_truth_route": None,
+            "creative_coverage_gap": [],
+            "authority": {
+                "artifact_written": False,
+                "remote_model_called": False,
+                "content_ledger_modified": False,
+            },
+        },
+    )
 
 
 def write_json(

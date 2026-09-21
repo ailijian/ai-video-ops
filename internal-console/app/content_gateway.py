@@ -69,6 +69,8 @@ def _project_generation_source_plan(
     """
 
     empty_projection = {
+        "source_plan_artifact_exists": False,
+        "source_coverage_supported": False,
         "source_plan_ready": False,
         "source_plan_status": None,
         "coverage_status": None,
@@ -181,11 +183,68 @@ def _project_generation_source_plan(
         )
         or {}
     )
+    coverage_supported = coverage.get("status") == "supported"
+    feasibility = plan.get("feasibility") or {}
+    if not feasibility and not coverage_supported and coverage.get("blocker_type"):
+        feasibility = {
+            "status": "unsupported",
+            "blocker_type": coverage.get("blocker_type"),
+            "blocker_codes": coverage.get("blocker_codes") or [
+                coverage.get("blocker_type")
+            ],
+            "humanized_reason": coverage.get("humanized_reason")
+            or coverage.get("reason"),
+            "optional_customer_truth_route": coverage.get(
+                "optional_customer_truth_route"
+            ),
+        }
+    if not feasibility and not coverage_supported:
+        reasons = {
+            str(item.get("reason") or "")
+            for item in (plan.get("excluded_sources") or [])
+            if isinstance(item, dict)
+        }
+        process_gap = "persona_lacks_known_process_material" in reasons
+        feasibility = {
+            "status": "unsupported",
+            "blocker_type": (
+                "PERSONA_LACKS_PATTERN_CAPABILITY"
+                if process_gap
+                else "NO_APPROVED_COMPATIBLE_CASE"
+            ),
+            "blocker_codes": [
+                (
+                    "PERSONA_LACKS_PATTERN_CAPABILITY"
+                    if process_gap
+                    else "NO_APPROVED_COMPATIBLE_CASE"
+                )
+            ],
+            "humanized_reason": (
+                "当前已有值得做的内容方向，但已批准的创作结构主要覆盖服务流程类内容；"
+                "当前客户档案没有已确认的真实流程信息。"
+                if process_gap
+                else "当前没有同时通过结构、案例和兼容性门槛的创作参考。"
+            ),
+            "optional_customer_truth_route": (
+                {
+                    "capability": "process_material",
+                    "label": "补充真实服务流程",
+                    "is_optional": True,
+                    "changes_persona_readiness": False,
+                }
+                if process_gap
+                else None
+            ),
+        }
 
     return {
-        "source_plan_ready": True,
+        "source_plan_artifact_exists": True,
+        "source_coverage_supported": coverage_supported,
+        "source_plan_ready": coverage_supported,
         "source_plan_status": (
-            "source_matching_completed"
+            "source_matching_supported"
+            if coverage_supported
+            else "source_coverage_blocked"
         ),
         "coverage_status": (
             coverage.get(
@@ -198,9 +257,9 @@ def _project_generation_source_plan(
             )
         ),
         "coverage_reason": (
-            coverage.get(
-                "reason"
-            )
+            feasibility.get("humanized_reason")
+            or coverage.get("humanized_reason")
+            or coverage.get("reason")
         ),
         "selected_pattern_count": len(
             plan.get(
@@ -214,6 +273,7 @@ def _project_generation_source_plan(
             )
             or []
         ),
+        "production_feasibility": feasibility,
     }
 
 
@@ -748,10 +808,12 @@ def get_active_generation_request(
             "next_action": (
                 "CREATE_CONTENT_PLAN"
                 if source_plan.get(
-                    "source_plan_ready"
+                    "source_coverage_supported"
                 )
                 else (
-                    "RESOLVE_GENERATION_SOURCES"
+                    "SOURCE_COVERAGE_BLOCKED"
+                    if source_plan.get("source_plan_artifact_exists")
+                    else "RESOLVE_GENERATION_SOURCES"
                 )
             ),
             "authority": {
@@ -1037,6 +1099,11 @@ def confirm_content_creation(
                 str((parsed or {}).get("message") or "")
                 or ("请重新检查内容容量后" "再确认生成。")
             ),
+            details={
+                "preflight": (parsed or {}).get("preflight"),
+            }
+            if isinstance((parsed or {}).get("preflight"), dict)
+            else None,
         )
 
     if (
@@ -1155,3 +1222,82 @@ def resolve_generation_sources(
         )
 
     return parsed
+
+
+def abandon_generation_request(
+    settings: Settings,
+    *,
+    request_id: str,
+    reviewer: str,
+) -> dict[str, Any]:
+    try:
+        request_id = validate_identifier(request_id, field="request_id")
+    except ValueError:
+        raise CanonicalOperationError(
+            "GENERATION_REQUEST_ID_INVALID",
+            "Generation Request ID 不合法。",
+            "请从当前创作流程恢复正确的 Request。",
+        ) from None
+    reviewer = str(reviewer or "").strip()
+    if not reviewer:
+        raise CanonicalOperationError(
+            "GENERATION_REQUEST_RESOLUTION_REVIEWER_REQUIRED",
+            "当前登录账号无法用于结束本次创作。",
+            "请重新登录后再试。",
+        )
+    reason = (
+        "当前 Creative Coverage 不支持该请求；"
+        "结束旧请求后重新检查创作条件。"
+    )
+    command = [
+        settings.pipeline_python_executable or settings.python_executable,
+        str(settings.pipeline_root / "scripts" / "resolve_generation_request_v1.py"),
+        "--pipeline-root",
+        str(settings.pipeline_root),
+        "--request-id",
+        request_id,
+        "--disposition",
+        "abandoned",
+        "--reviewer",
+        reviewer,
+        "--reason",
+        reason,
+        "--human-approved",
+    ]
+    try:
+        process = subprocess.run(
+            command,
+            cwd=settings.repo_root,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=60,
+            check=False,
+            env=pipeline_subprocess_env(needs_deepseek=False),
+        )
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        raise CanonicalOperationError(
+            "GENERATION_REQUEST_RESOLUTION_UNAVAILABLE",
+            "本次创作暂时无法结束。",
+            "请稍后重试；原 Generation Request 没有被修改。",
+        ) from exc
+    parsed = _parse_json_output(process.stdout)
+    if process.returncode != 0 or parsed is None or parsed.get("ok") is not True:
+        raise CanonicalOperationError(
+            str((parsed or {}).get("code") or "GENERATION_REQUEST_RESOLUTION_FAILED"),
+            "本次创作没有结束。",
+            str((parsed or {}).get("message") or "请刷新当前状态后重试。"),
+        )
+    result = parsed.get("result") or {}
+    if (
+        result.get("effective_status") != "abandoned"
+        or result.get("effective_terminal") is not True
+        or result.get("remote_model_called") is not False
+    ):
+        raise CanonicalOperationError(
+            "GENERATION_REQUEST_RESOLUTION_INVALID_OUTPUT",
+            "本次创作结束结果无效。",
+            "请检查 canonical resolution sidecar。",
+        )
+    return result

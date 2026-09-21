@@ -50,6 +50,23 @@ def create_background_task(
 ) -> dict[str, Any]:
     if operation not in BACKGROUND_OPERATIONS:
         raise ValueError("unsupported background operation")
+    if operation == "content_plan":
+        state = get_content_delivery_state(settings, request_id)
+        if state.get("source_coverage_supported") is not True:
+            feasibility = state.get("production_feasibility") or {}
+            raise CanonicalOperationError(
+                "CONTENT_PLAN_SOURCE_COVERAGE_UNSUPPORTED",
+                str(
+                    feasibility.get("humanized_reason")
+                    or state.get("coverage_reason")
+                    or "当前创作结构暂时不能支持这批内容。"
+                ),
+                "请查看原因；可以结束本次创作，或在有真实信息时选择补充资料。",
+                details={
+                    "production_feasibility": feasibility,
+                    "task_created": False,
+                },
+            )
     task_type, stage = BACKGROUND_OPERATIONS[operation]
     return submit_task(
         settings.database_path,

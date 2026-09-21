@@ -44,6 +44,7 @@ export function createContentDeliveryViews({ api, showToast, escapeHtml }) {
   function stepIndex(next) {
     return ({
       CREATE_CONTENT_PLAN: 0,
+      SOURCE_COVERAGE_BLOCKED: 0,
       GENERATE_SCRIPTS: 1,
       HUMAN_REVIEW: 2,
       EXPORT_EXCEL: 3,
@@ -55,6 +56,7 @@ export function createContentDeliveryViews({ api, showToast, escapeHtml }) {
   function workflowHeader(state) {
     const labels = {
       CREATE_CONTENT_PLAN: "生成选题",
+      SOURCE_COVERAGE_BLOCKED: "当前结构暂不支持",
       GENERATE_SCRIPTS: "选题已经准备好",
       HUMAN_REVIEW: "审核文案",
       REVIEW_COMPLETE_NO_EXPORT: "审核已完成",
@@ -121,6 +123,18 @@ export function createContentDeliveryViews({ api, showToast, escapeHtml }) {
     const next = state.next_action || "CREATE_CONTENT_PLAN";
     if (next === "RESOLVE_GENERATION_SOURCES") {
       return CreationState({ tone: "warning", eyebrow: "创作准备", title: "创作依据还没有准备完成", body: "请返回上一步完成创作准备后再继续。" });
+    }
+    if (next === "SOURCE_COVERAGE_BLOCKED") {
+      const feasibility = state.production_feasibility || {};
+      return CreationState({
+        tone: "warning",
+        eyebrow: "创作条件",
+        title: "当前创作结构暂不支持",
+        body: safeCreationMessage(
+          feasibility.humanized_reason || state.coverage_reason,
+          "当前没有同时通过结构、案例和兼容性门槛的创作参考。",
+        ),
+      });
     }
     if (next === "CREATE_CONTENT_PLAN") {
       return CreationState({

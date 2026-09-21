@@ -10,6 +10,7 @@ from typing import Any
 
 from .canonical_gateway import CanonicalOperationError
 from .config import Settings
+from .content_gateway import _project_generation_source_plan
 from .path_safety import resolve_within, validate_identifier
 from .operator_projection import completed_operation_actor, request_actor
 from .subprocess_env import pipeline_subprocess_env
@@ -825,7 +826,7 @@ def get_content_delivery_state(
     request_id = _validate_request_id(
         request_id
     )
-    _request_path, request = (
+    request_path, request = (
         _load_request(
             settings,
             request_id,
@@ -836,9 +837,11 @@ def get_content_delivery_state(
         request_id,
     )
 
-    source_plan_ready = paths[
-        "source_plan"
-    ].is_file()
+    source_plan = _project_generation_source_plan(
+        settings,
+        request_id,
+        request_path,
+    )
     content_plan = _project_content_plan(
         paths["content_plan"]
     )
@@ -888,8 +891,10 @@ def get_content_delivery_state(
         next_action = "HUMAN_REVIEW"
     elif content_plan["ready"]:
         next_action = "GENERATE_SCRIPTS"
-    elif source_plan_ready:
+    elif source_plan.get("source_coverage_supported"):
         next_action = "CREATE_CONTENT_PLAN"
+    elif source_plan.get("source_plan_artifact_exists"):
+        next_action = "SOURCE_COVERAGE_BLOCKED"
     else:
         next_action = (
             "RESOLVE_GENERATION_SOURCES"
@@ -931,9 +936,12 @@ def get_content_delivery_state(
         "confirmed_quantity": int(
             request.get("quantity") or 0
         ),
-        "source_plan_ready": (
-            source_plan_ready
+        "requested_quantity": int(
+            (request.get("confirmation") or {}).get("operator_requested_quantity")
+            or request.get("quantity")
+            or 0
         ),
+        **source_plan,
         "content_plan": content_plan,
         "generation": generation,
         "review": review,

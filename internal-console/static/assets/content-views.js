@@ -43,6 +43,7 @@ export function createContentViews({
   }
 
   function selectionSummary() {
+    const form = document.querySelector("#content-entry-form");
     const business = document.querySelector("#create-business");
     const speaker = document.querySelector("#create-speaker");
     const quantity = document.querySelector("#create-quantity");
@@ -51,7 +52,14 @@ export function createContentViews({
       { label: "客户", value: business?.selectedOptions?.[0]?.textContent?.trim() || "" },
       { label: "出镜人", value: speaker?.selectedOptions?.[0]?.textContent?.trim() || "" },
       { label: "内容类型", value: profile === "news" ? "新闻体" : "素材混剪" },
-      ...(profile === "mix" ? [{ label: "数量", value: `${Number(quantity?.value || 0)} 条` }] : []),
+      ...(profile === "mix" && form?.dataset.confirmedQuantity
+        ? [
+            { label: "计划数量", value: `${Number(form.dataset.requestedQuantity || 0)} 条` },
+            { label: "本次确认", value: `${Number(form.dataset.confirmedQuantity || 0)} 条` },
+          ]
+        : profile === "mix"
+          ? [{ label: "计划数量", value: `${Number(quantity?.value || 0)} 条` }]
+          : []),
     ];
   }
 
@@ -83,6 +91,8 @@ export function createContentViews({
     const form = document.querySelector("#content-entry-form");
     if (!form) return;
     form.classList.remove("completed", "has-capacity-result");
+    delete form.dataset.requestedQuantity;
+    delete form.dataset.confirmedQuantity;
     form.querySelectorAll("input, select, button").forEach((control) => { control.disabled = false; });
     const compact = form.querySelector("[data-creation-entry-locked]");
     if (compact) {
@@ -122,7 +132,7 @@ export function createContentViews({
     if (submit) submit.disabled = !speakers.length;
   }
 
-  function renderPreparation(handoffReady, sourcePlan) {
+  function renderPreparation(handoffReady, sourcePlan, businessId) {
     if (handoffReady === false) {
       return CreationState({
         tone: "running",
@@ -132,20 +142,29 @@ export function createContentViews({
         actions: `<button id="recover-source-handoff" class="btn btn-primary" type="button">继续准备</button>`,
       });
     }
-    if (!sourcePlan || sourcePlan.ready !== true) {
+    if (sourcePlan?.artifactExists === true && sourcePlan.coverageStatus !== "supported") {
+      const feasibility = sourcePlan.productionFeasibility || {};
+      const route = feasibility.optional_customer_truth_route;
+      return CreationState({
+        tone: "warning",
+        eyebrow: "创作准备",
+        title: "本次创作暂时无法继续",
+        body: safeCreationMessage(
+          feasibility.humanized_reason || sourcePlan.coverageReason,
+          "当前创作结构暂时不能支持这批内容。",
+        ),
+        content: `<p class="creation-governance-line">客户档案仍然有效；这是创作结构覆盖不足，不代表客户资料不完整。</p>`,
+        actions: `
+          ${route?.capability === "process_material" ? `<a class="btn btn-secondary" href="/customers/${encodeURIComponent(businessId)}/supplement?gap=process_material" data-route>${escapeHtml(route.label || "补充真实资料")}</a>` : ""}
+          <button type="button" class="btn btn-danger" data-abandon-generation-request>结束本次创作</button>`,
+      });
+    }
+    if (!sourcePlan || sourcePlan.artifactExists !== true) {
       return CreationState({
         eyebrow: "创作准备",
         title: "还需要准备创作内容",
         body: "系统会整理客户信息、历史内容和可用参考。",
         actions: `<button id="resolve-sources" class="btn btn-primary" type="button">准备创作内容</button>`,
-      });
-    }
-    if (sourcePlan.coverageStatus !== "supported") {
-      return CreationState({
-        tone: "warning",
-        eyebrow: "创作准备",
-        title: "现有参考不足，暂时无法继续生成",
-        body: safeCreationMessage(sourcePlan.coverageReason, "现有案例与参考还不足以支持这次创作。"),
       });
     }
     return CreationState({
@@ -160,12 +179,15 @@ export function createContentViews({
     requestId,
     profile,
     confirmedQuantity,
+    requestedQuantity = confirmedQuantity,
+    businessId = "",
     handoffReady,
     sourcePlan = null,
     recovered = false,
   }) {
     const preparationComplete = handoffReady !== false
-      && sourcePlan?.ready === true
+      && sourcePlan?.artifactExists === true
+      && sourcePlan?.coverageSupported === true
       && sourcePlan?.coverageStatus === "supported";
     host.innerHTML = `
       ${preparationComplete ? "" : `
@@ -175,9 +197,36 @@ export function createContentViews({
             title: profile === "news" ? "新闻体创作" : "素材混剪创作",
             description: "选择已经锁定，可以从当前步骤继续。",
           })}
-          ${renderPreparation(handoffReady, sourcePlan)}
+          ${renderPreparation(handoffReady, sourcePlan, businessId)}
         </section>`}
       <div id="content-delivery-host"></div>`;
+    const form = document.querySelector("#content-entry-form");
+    if (form) {
+      form.dataset.requestedQuantity = String(requestedQuantity || 0);
+      form.dataset.confirmedQuantity = String(confirmedQuantity || 0);
+    }
+  }
+
+  function bindAbandonRequest(host, requestId) {
+    const button = host.querySelector("[data-abandon-generation-request]");
+    if (!button) return;
+    button.addEventListener("click", async () => {
+      if (!window.confirm("结束后，这个请求不会重新绑定新的客户档案版本。确定结束本次创作吗？")) return;
+      button.disabled = true;
+      button.textContent = "正在结束…";
+      try {
+        await api(`/api/create/${encodeURIComponent(requestId)}/abandon`, { method: "POST" });
+        showToast("本次创作已结束，可以重新检查创作条件。");
+        unlockEntryForm();
+        await restoreSelectedProfileRequest();
+      } catch (error) {
+        showToast(safeCreationMessage(error.detail?.next_action || error.detail?.message || error.message, "本次创作暂时无法结束。"));
+        if (button.isConnected) {
+          button.disabled = false;
+          button.textContent = "结束本次创作";
+        }
+      }
+    });
   }
 
   function bindResolveSourcesButton(host, requestId) {
@@ -288,14 +337,18 @@ export function createContentViews({
     syncProfileSpecificUi();
     renderRequestEstablished(host, {
       requestId: active.request_id,
+      businessId: active.business_id,
       profile: active.profile,
+      requestedQuantity: active.requested_quantity,
       confirmedQuantity: active.confirmed_quantity,
       handoffReady: active.handoff_ready,
       recovered: true,
       sourcePlan: {
-        ready: active.source_plan_ready === true,
+        artifactExists: active.source_plan_artifact_exists === true,
+        coverageSupported: active.source_coverage_supported === true,
         coverageStatus: active.coverage_status,
         coverageReason: active.coverage_reason,
+        productionFeasibility: active.production_feasibility,
       },
     });
     lockEntryForm("继续上次素材混剪创作");
@@ -329,7 +382,8 @@ export function createContentViews({
     } else {
       bindResolveSourcesButton(host, active.request_id);
     }
-    if (active.source_plan_ready === true) await deliveryViews.restore(active.request_id);
+    bindAbandonRequest(host, active.request_id);
+    if (active.source_coverage_supported === true) await deliveryViews.restore(active.request_id);
     return true;
   }
 
@@ -353,6 +407,7 @@ export function createContentViews({
     const entryForm = document.querySelector("#content-entry-form");
     entryForm?.classList.remove("has-capacity-result");
     const capacity = preview.capacity || {};
+    const feasibility = preview.production_feasibility || {};
     const recommendation = preview.recommendation || {};
     const profile = preview.selection?.profile || "mix";
     confirmationKey = null;
@@ -386,22 +441,47 @@ export function createContentViews({
       return;
     }
 
+    if (feasibility.status !== "supported") {
+      const route = feasibility.optional_customer_truth_route;
+      host.innerHTML = CreationState({
+        tone: "warning",
+        eyebrow: "创作条件",
+        title: `当前有 ${available} 个值得做的内容方向`,
+        body: safeCreationMessage(
+          feasibility.humanized_reason,
+          "但现有创作结构暂时不能支持这批内容。",
+        ),
+        content: `
+          ${CreationMetricRow([
+            { label: "计划数量", value: requested },
+            { label: "内容方向", value: available },
+            { label: "可生产", value: 0 },
+          ])}
+          <p class="creation-governance-line">Content Capacity 与创作结构覆盖分别判断；客户档案仍然有效。</p>`,
+        actions: `
+          ${route?.capability === "process_material" ? `<a class="btn btn-secondary" href="/customers/${encodeURIComponent(preview.business.business_id)}/supplement?gap=process_material" data-route>${escapeHtml(route.label || "补充真实资料")}</a>` : ""}
+          <button class="btn btn-secondary" type="button" data-adjust-quantity>返回调整</button>`,
+      });
+      bindAdjustQuantity(host);
+      return;
+    }
+
     const limited = recommendation.status === "capacity_limited";
     entryForm?.classList.toggle("has-capacity-result", Boolean(recommendation.can_continue));
     confirmationKey = newConfirmationKey();
     const gaps = capacity.content_gap_summary || [];
     host.innerHTML = CreationState({
       tone: limited ? "warning" : "success",
-      eyebrow: "可创作数量",
-      title: limited ? `本次最多建议做 ${recommended} 条` : `本次建议做 ${recommended} 条`,
+      eyebrow: "内容方向",
+      title: `当前有 ${available} 个值得做的内容方向`,
       body: limited
-        ? `你计划做 ${requested} 条，当前还有 ${available} 条值得继续做的新内容。系统不会为了凑够数量重复已经做过的内容。`
-        : `你计划做 ${requested} 条，当前可以支持。`,
+        ? `你计划做 ${requested} 条，本次确认 ${recommended} 条；现有创作结构可以支持。系统不会为了凑够数量重复已经做过的内容。`
+        : `你计划做 ${requested} 条，本次确认 ${recommended} 条；现有创作结构可以支持。`,
       content: `
         ${CreationMetricRow([
           { label: "计划数量", value: requested },
-          { label: "当前可用", value: available },
-          { label: "建议本次", value: recommended },
+          { label: "内容方向", value: available },
+          { label: "本次确认", value: recommended },
         ])}
         ${gaps.length ? `
           <details class="creation-evidence">
@@ -435,7 +515,9 @@ export function createContentViews({
         const result = response.result;
         renderRequestEstablished(host, {
           requestId: result.request_id,
+          businessId: preview.business.business_id,
           profile,
+          requestedQuantity: requested,
           confirmedQuantity: result.confirmed_quantity,
           handoffReady: true,
           recovered: Boolean(result.recovered),
@@ -444,6 +526,11 @@ export function createContentViews({
         bindResolveSourcesButton(host, result.request_id);
         showToast(result.recovered ? "已恢复上次创作。" : "本次创作已创建。");
       } catch (error) {
+        if (error.detail?.preflight) {
+          renderResult(error.detail.preflight);
+          showToast("创作条件已经变化，已显示最新检查结果。");
+          return;
+        }
         showToast(safeCreationMessage(error.detail?.next_action || error.detail?.message || error.message, "本次创作暂时无法创建，请稍后重试。"));
         if (next.isConnected) {
           next.disabled = false;

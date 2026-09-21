@@ -830,12 +830,20 @@ export function createCustomerViews({
       const detail = await api(
         `/api/customers/${encodeURIComponent(businessId)}`,
       );
-      if (detail.status !== "needs_more_info") {
+      const requestedGap = new URLSearchParams(location.search).get("gap");
+      const productionSupplement = requestedGap === "process_material";
+      if (detail.status !== "needs_more_info" && !(productionSupplement && detail.status === "approved")) {
         return navigate(`/customers/${encodeURIComponent(businessId)}`, true);
       }
-      const gaps = detail.readiness_gaps || [];
+      const gaps = productionSupplement
+        ? [{
+            gap_id: "process_material",
+            label: "真实服务流程",
+            question: "这项服务从开始到结束通常如何完成？请只填写已经确认的真实步骤，以及出镜人本人实际参与的部分。",
+          }]
+        : detail.readiness_gaps || [];
       app.innerHTML = shell(
-        "补充缺失信息",
+        productionSupplement ? "补充真实服务流程" : "补充缺失信息",
         `
           <main class="page page-form profile-mutation-page customer-gap-page">
             <div class="case-review-heading">
@@ -843,9 +851,11 @@ export function createCustomerViews({
               ${customerStatusPill(detail.status)}
             </div>
             ${pageHeading(
-              "客户已创建",
-              "补充缺失信息",
-              `还差 ${gaps.length} 类信息，就可以确认“${detail.display_name}”的客户档案。`,
+              productionSupplement ? "可选的创作解锁路径" : "客户已创建",
+              productionSupplement ? "补充真实服务流程" : "补充缺失信息",
+              productionSupplement
+                ? `这不会改变当前客户档案的完整性判断；补充内容仍需人工审核，并形成“${detail.display_name}”的新档案版本。`
+                : `还差 ${gaps.length} 类信息，就可以确认“${detail.display_name}”的客户档案。`,
             )}
             <section class="work-surface profile-form-surface">
               <form id="customer-gap-form" novalidate>
@@ -860,7 +870,9 @@ export function createCustomerViews({
                 <div id="customer-gap-error" class="form-error" role="alert"></div>
                 <div class="profile-form-actions">
                   <button class="btn btn-primary btn-wide" type="submit">补充并继续</button>
-                  <a class="btn btn-secondary" href="/customers/${encodeURIComponent(businessId)}/speakers/new" data-route>先添加出镜人资料</a>
+                  ${productionSupplement
+                    ? `<a class="btn btn-secondary" href="/create?business_id=${encodeURIComponent(businessId)}" data-route>返回创作</a>`
+                    : `<a class="btn btn-secondary" href="/customers/${encodeURIComponent(businessId)}/speakers/new" data-route>先添加出镜人资料</a>`}
                 </div>
                 <div class="secondary-link-row">
                   <a href="/customers/${encodeURIComponent(businessId)}/edit" data-route>编辑完整资料</a>

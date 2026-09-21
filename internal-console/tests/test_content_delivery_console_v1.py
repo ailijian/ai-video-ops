@@ -7,8 +7,10 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import main as main_module
+from app import background_task_service
 from app.auth_service import provision_user
 from app.config import Settings
+from app.task_service import list_tasks
 
 
 @pytest.fixture()
@@ -48,6 +50,8 @@ def fake_state(request_id: str = "gen_fixture_001") -> dict:
         "profile": "mix",
         "confirmed_quantity": 2,
         "source_plan_ready": True,
+        "source_plan_artifact_exists": True,
+        "source_coverage_supported": True,
         "content_plan": {"ready": True, "selected_quantity": 2},
         "generation": {
             "ready": True,
@@ -118,7 +122,15 @@ def test_resolve_content_plan_requires_csrf(
         assert response.json()["detail"]["code"] == "CSRF_CHECK_FAILED"
 
 
-def test_resolve_content_plan_route_returns_durable_task(delivery_settings: Settings):
+def test_resolve_content_plan_route_returns_durable_task(
+    delivery_settings: Settings,
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        background_task_service,
+        "get_content_delivery_state",
+        lambda settings, request_id: fake_state(request_id),
+    )
     with TestClient(main_module.build_app(delivery_settings)) as client:
         provision_user(delivery_settings.database_path, "13800000000")
         csrf = login(client)
@@ -133,6 +145,54 @@ def test_resolve_content_plan_route_returns_durable_task(delivery_settings: Sett
         assert task["subject_ref"] == "gen_fixture_001"
         assert task["payload"]["operation"] == "content_plan"
         assert task["created_by"]["phone"] == "13800000000"
+
+
+def test_blocked_source_coverage_direct_post_creates_no_task(
+    delivery_settings: Settings,
+    monkeypatch,
+):
+    blocked = fake_state("gen_blocked")
+    blocked.update(
+        {
+            "source_plan_ready": False,
+            "source_plan_artifact_exists": True,
+            "source_coverage_supported": False,
+            "coverage_reason": "当前创作结构暂时不能支持。",
+            "production_feasibility": {
+                "status": "unsupported",
+                "blocker_type": "PERSONA_LACKS_PATTERN_CAPABILITY",
+                "humanized_reason": "当前创作结构暂时不能支持。",
+            },
+            "next_action": "SOURCE_COVERAGE_BLOCKED",
+        }
+    )
+    monkeypatch.setattr(
+        background_task_service,
+        "get_content_delivery_state",
+        lambda settings, request_id: blocked,
+    )
+
+    with TestClient(main_module.build_app(delivery_settings)) as client:
+        provision_user(delivery_settings.database_path, "13800000000")
+        csrf = login(client)
+        before = list_tasks(delivery_settings.database_path, limit=500)
+
+        first = client.post(
+            "/api/create/gen_blocked/resolve-content-plan",
+            headers={"X-CSRF-Token": csrf},
+        )
+        second = client.post(
+            "/api/create/gen_blocked/resolve-content-plan",
+            headers={"X-CSRF-Token": csrf},
+        )
+
+        assert first.status_code == 409
+        assert second.status_code == 409
+        assert first.json()["detail"]["code"] == (
+            "CONTENT_PLAN_SOURCE_COVERAGE_UNSUPPORTED"
+        )
+        assert first.json()["detail"]["task_created"] is False
+        assert len(list_tasks(delivery_settings.database_path, limit=500)) == len(before)
 
 
 def test_generate_scripts_route_returns_durable_task(delivery_settings: Settings):

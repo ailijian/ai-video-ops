@@ -371,7 +371,7 @@ def test_task_progress_and_heartbeat_writes_are_throttled(hardening_db: Path):
 
 
 def test_fake_background_operation_completes_without_model_call(
-    settings: Settings, tmp_path: Path
+    settings: Settings, tmp_path: Path, monkeypatch
 ):
     with TestClient(main_module.build_app(settings)):
         provision_user(settings.database_path, "13800000000")
@@ -385,6 +385,15 @@ def test_fake_background_operation_completes_without_model_call(
         def fake_handler(_settings: Settings, request_id: str) -> dict:
             marker.write_text(json.dumps({"request_id": request_id}), encoding="utf-8")
             return {"state": {"content_plan": {"ready": True}}}
+
+        monkeypatch.setattr(
+            "app.background_task_service.get_content_delivery_state",
+            lambda _settings, request_id: {
+                "request_id": request_id,
+                "source_plan_artifact_exists": True,
+                "source_coverage_supported": True,
+            },
+        )
 
         task = create_background_task(
             settings,

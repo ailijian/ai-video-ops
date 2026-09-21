@@ -9,6 +9,9 @@ from typing import Any
 from customer_intake_v1 import (
     build_initial_content_capacity_handoff,
 )
+from generation_feasibility_v1 import (
+    preview_generation_feasibility,
+)
 from production_profile_v1 import (
     validate_registry,
 )
@@ -484,6 +487,32 @@ def build_content_creation_entry(
 
     selected_profile = profiles[profile]
 
+    try:
+        production_feasibility = preview_generation_feasibility(
+            pipeline_root=pipeline_root,
+            business_persona_path=business["path"],
+            speaker_persona_path=speaker["path"],
+            profile_registry_path=registry_path,
+            target_profile=profile,
+            quantity=max(1, min(requested_quantity, max(available_capacity, 1))),
+            reuse_intent="novel_content",
+            content_intent="mixed",
+            platform="douyin",
+            constraints={
+                "no_padding": True,
+                "case_facts_must_not_transfer": True,
+                "unknown_persona_facts_must_not_be_filled": True,
+                "speaker_first_person_authority_required": True,
+                "profile_switch_does_not_reset_novelty": True,
+                "script_generation_does_not_establish_media_rights": True,
+            },
+        )
+    except Exception as exc:
+        raise ContentCreationEntryError(
+            "SOURCE_AUTHORITY_INVALID",
+            f"Creative Production Feasibility cannot be resolved safely: {exc}",
+        ) from exc
+
     if not selected_profile["available"]:
         status = "profile_unavailable"
 
@@ -505,6 +534,23 @@ def build_content_creation_entry(
         can_continue = False
 
         blocker = "NO_HIGH_QUALITY_" "NOVEL_CAPACITY"
+
+    elif production_feasibility.get("status") != "supported":
+        status = "creative_coverage_unsupported"
+
+        recommended_quantity = min(
+            requested_quantity,
+            available_capacity,
+        )
+
+        next_action = "REVIEW_CREATIVE_COVERAGE_GAP"
+
+        can_continue = False
+
+        blocker = str(
+            production_feasibility.get("blocker_type")
+            or "NO_APPROVED_COMPATIBLE_CASE"
+        )
 
     elif requested_quantity > available_capacity:
         status = "capacity_limited"
@@ -576,6 +622,13 @@ def build_content_creation_entry(
             "content_gap_summary": (capacity.get("content_gap_summary") or []),
             "padding_allowed": False,
         },
+        "content_opportunity": {
+            "requested_quantity": requested_quantity,
+            "available_quantity": available_capacity,
+            "suggested_quantity": recommended_quantity,
+            "scope": "business_wide_semantic_novelty",
+        },
+        "production_feasibility": production_feasibility,
         "recommendation": {
             "status": status,
             "requested_quantity": (requested_quantity),
@@ -595,6 +648,9 @@ def build_content_creation_entry(
             "content_ledger_is_business_wide": (True),
             "padding_allowed": False,
             "generation_request_created": (False),
+            "generation_feasibility_preview_performed": (True),
+            "generation_feasibility_preview_is_authority": (False),
+            "source_plan_written": (False),
             "script_generation_performed": (False),
             "generation_batch_created": (False),
             "content_ledger_written": (False),

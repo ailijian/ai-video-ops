@@ -102,6 +102,7 @@ from .speaker_task_service import (
 from .content_operations_gateway import get_content_operations_view
 
 from .content_gateway import (
+    abandon_generation_request,
     confirm_content_creation,
     get_active_generation_request,
     list_creation_options,
@@ -750,10 +751,18 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             "CASE_APPROVAL_RECOVERY_REQUIRED",
             "CASE_PROFILE_ANNOTATION_BLOCKED",
             "CASE_INDUSTRY_ANNOTATION_BLOCKED",
+            "CONTENT_PLAN_SOURCE_COVERAGE_UNSUPPORTED",
+            "PERSONA_LACKS_PATTERN_CAPABILITY",
+            "NO_APPROVED_PATTERN_FOR_PROFILE",
+            "NO_PATTERN_SUPPORTED_CASE",
+            "CASE_PROFILE_COMPATIBILITY_NOT_APPROVED",
+            "NO_APPROVED_COMPATIBLE_CASE",
         } else 503
+        detail = error_detail(exc.code, exc.message, exc.next_action)
+        detail.update(exc.details)
         return JSONResponse(
             status_code=status_code,
-            content={"detail": error_detail(exc.code, exc.message, exc.next_action)},
+            content={"detail": detail},
         )
 
     @app.exception_handler(TaskSubmissionError)
@@ -1466,6 +1475,23 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         return {
             "result": result,
         }
+
+    @app.post("/api/create/{request_id}/abandon")
+    def abandon_generation_request_route(
+        request_id: str,
+        x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(session, x_csrf_token)
+        result = locked_authority_call(
+            "request",
+            request_id,
+            abandon_generation_request,
+            settings,
+            request_id=request_id,
+            reviewer=str(session.user["phone"]),
+        )
+        return {"result": result}
 
     @app.get("/api/create/{request_id}/delivery")
     def content_delivery_state(

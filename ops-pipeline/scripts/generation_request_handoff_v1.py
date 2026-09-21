@@ -44,9 +44,12 @@ class GenerationRequestError(RuntimeError):
         self,
         code: str,
         message: str,
+        *,
+        preflight: dict[str, Any] | None = None,
     ):
         super().__init__(message)
         self.code = code
+        self.preflight = preflight
 
 
 def now_iso() -> str:
@@ -533,6 +536,9 @@ def confirmation_snapshot(
             "capacity_status": (capacity.get("capacity_status")),
             "padding_allowed": (capacity.get("padding_allowed")),
         },
+        "production_feasibility": (
+            preview.get("production_feasibility") or {}
+        ),
         "recommendation": {
             "status": (recommendation.get("status")),
             "recommended_quantity": (recommendation.get("recommended_quantity")),
@@ -842,7 +848,11 @@ def create_generation_request_handoff(
     if recommendation.get("can_continue") is not True:
         raise GenerationRequestError(
             str(recommendation.get("blocker") or ("GENERATION_REQUEST_" "NOT_ALLOWED")),
-            ("Current Capacity Preview " "does not allow a " "Generation Request."),
+            (
+                "Current Content Creation Preflight does not allow an immutable "
+                "Generation Request."
+            ),
+            preflight=preview,
         )
 
     recommended_quantity = int(recommendation.get("recommended_quantity") or 0)
@@ -1119,6 +1129,7 @@ def main() -> None:
                     "ok": False,
                     "code": exc.code,
                     "message": str(exc),
+                    "preflight": exc.preflight,
                 },
                 ensure_ascii=False,
             )

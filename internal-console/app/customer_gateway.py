@@ -62,6 +62,16 @@ GAP_QUESTIONS = {
     },
 }
 
+OPTIONAL_PRODUCTION_GAP_QUESTIONS = {
+    "process_material": {
+        "label": "真实服务流程",
+        "question": (
+            "这项服务从开始到结束通常如何完成？请只填写已经确认的真实步骤，"
+            "以及出镜人本人实际参与的部分。"
+        ),
+    },
+}
+
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -911,15 +921,31 @@ def prepare_customer_gap_supplement_request(
             "请返回客户列表重新选择。",
         )
     detail = get_customer_detail(settings, business_id)
-    if detail["status"] != "needs_more_info":
+    requested_gap_ids = {
+        str(item.get("target_gap") or "").strip()
+        for item in answers
+        if str(item.get("target_gap") or "").strip()
+    }
+    readiness_supplement = detail["status"] == "needs_more_info"
+    optional_production_supplement = (
+        detail["status"] == "approved"
+        and bool(requested_gap_ids)
+        and requested_gap_ids.issubset(OPTIONAL_PRODUCTION_GAP_QUESTIONS)
+    )
+    if not readiness_supplement and not optional_production_supplement:
         raise CanonicalOperationError(
             "CUSTOMER_GAP_SUPPLEMENT_NOT_REQUIRED",
-            "当前客户不需要补充缺失信息。",
+            "当前客户不需要补充这些信息。",
             "请刷新客户详情并按当前状态继续。",
         )
-    available = {
-        str(item["gap_id"]): item for item in detail.get("readiness_gaps") or []
-    }
+    available = (
+        {
+            str(item["gap_id"]): item
+            for item in detail.get("readiness_gaps") or []
+        }
+        if readiness_supplement
+        else OPTIONAL_PRODUCTION_GAP_QUESTIONS
+    )
     normalized: list[dict[str, str]] = []
     seen: set[str] = set()
     for item in answers:
@@ -994,6 +1020,11 @@ def prepare_customer_gap_supplement_request(
         "customer_name": detail["display_name"],
         "industry": detail["industry"],
         "target_gaps": [item["target_gap"] for item in normalized],
+        "supplement_purpose": (
+            "persona_readiness"
+            if readiness_supplement
+            else "optional_production_capability"
+        ),
         "gap_answers": normalized,
         "input_actor": "operator",
         "created_by": {
@@ -1013,6 +1044,7 @@ def prepare_customer_gap_supplement_request(
             "full_materials_reanalysis_allowed": False,
             "previous_intakes_preserved": True,
             "human_review_required": True,
+            "business_persona_approved_status_preserved_until_new_revision": True,
         },
     }
     _write_json_atomic(request_path, request)

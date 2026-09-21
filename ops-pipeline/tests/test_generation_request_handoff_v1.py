@@ -170,6 +170,24 @@ def fake_preview(
             "content_gap_summary": [],
             "padding_allowed": False,
         },
+        "content_opportunity": {
+            "requested_quantity": quantity,
+            "available_quantity": recommended,
+            "suggested_quantity": recommended,
+            "scope": "business_wide_semantic_novelty",
+        },
+        "production_feasibility": {
+            "status": "supported" if can_continue else "unsupported",
+            "eligible_pattern_count": 1 if can_continue else 0,
+            "eligible_case_count": 1 if can_continue else 0,
+            "blocker_type": None if can_continue else "TEST_BLOCKER",
+            "blocker_codes": [] if can_continue else ["TEST_BLOCKER"],
+            "humanized_reason": (
+                "现有创作结构可以支持。"
+                if can_continue
+                else "当前创作结构暂不支持。"
+            ),
+        },
         "recommendation": {
             "status": status,
             "requested_quantity": (quantity),
@@ -434,6 +452,115 @@ def test_unavailable_profile_cannot_create_request(
         )
 
     assert exc.value.code == ("PROFILE_NOT_" "PRODUCTION_READY")
+
+
+def test_capacity_positive_but_coverage_unsupported_creates_no_request(
+    tmp_path: Path,
+    monkeypatch,
+):
+    preview = fake_preview(
+        quantity=4,
+        recommended=2,
+        can_continue=False,
+        status="creative_coverage_unsupported",
+    )
+    preview["recommendation"]["blocker"] = "PERSONA_LACKS_PATTERN_CAPABILITY"
+    preview["production_feasibility"].update(
+        {
+            "blocker_type": "PERSONA_LACKS_PATTERN_CAPABILITY",
+            "blocker_codes": ["PERSONA_LACKS_PATTERN_CAPABILITY"],
+        }
+    )
+    patch_authority(tmp_path, monkeypatch, preview=preview)
+
+    with pytest.raises(subject.GenerationRequestError) as exc:
+        create_request(tmp_path, requested=4, confirmed=2)
+
+    assert exc.value.code == "PERSONA_LACKS_PATTERN_CAPABILITY"
+    assert exc.value.preflight == preview
+    assert not list((tmp_path / "data" / "generation_requests").rglob(
+        "generation_request_v1.json"
+    ))
+
+
+def test_capacity_zero_creates_no_request(tmp_path: Path, monkeypatch) -> None:
+    preview = fake_preview(
+        quantity=4,
+        recommended=0,
+        can_continue=False,
+        status="capacity_exhausted",
+    )
+    preview["recommendation"]["blocker"] = "NO_HIGH_QUALITY_NOVEL_CAPACITY"
+    patch_authority(tmp_path, monkeypatch, preview=preview)
+
+    with pytest.raises(subject.GenerationRequestError) as exc:
+        create_request(tmp_path, requested=4, confirmed=1)
+
+    assert exc.value.code == "NO_HIGH_QUALITY_NOVEL_CAPACITY"
+    assert not list((tmp_path / "data" / "generation_requests").rglob(
+        "generation_request_v1.json"
+    ))
+
+
+def test_confirm_recalculates_and_stale_supported_preview_cannot_create_request(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    # A UI may previously have shown a supported projection. The handoff does
+    # not accept that projection; it recomputes current Authority under the
+    # business lock and receives this now-unsupported result.
+    current = fake_preview(
+        quantity=4,
+        recommended=2,
+        can_continue=False,
+        status="creative_coverage_unsupported",
+    )
+    current["recommendation"]["blocker"] = "NO_APPROVED_COMPATIBLE_CASE"
+    current["production_feasibility"].update(
+        {
+            "blocker_type": "NO_APPROVED_COMPATIBLE_CASE",
+            "blocker_codes": ["NO_APPROVED_COMPATIBLE_CASE"],
+        }
+    )
+    calls = []
+    patch_authority(tmp_path, monkeypatch, preview=current)
+    monkeypatch.setattr(
+        subject,
+        "build_content_creation_entry",
+        lambda **kwargs: calls.append(kwargs) or current,
+    )
+
+    with pytest.raises(subject.GenerationRequestError) as exc:
+        create_request(tmp_path, requested=4, confirmed=2)
+
+    assert len(calls) == 1
+    assert exc.value.preflight["production_feasibility"]["status"] == "unsupported"
+    assert not list((tmp_path / "data" / "generation_requests").rglob(
+        "generation_request_v1.json"
+    ))
+
+
+def test_requested_four_confirmed_two_are_both_preserved(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    patch_authority(
+        tmp_path,
+        monkeypatch,
+        preview=fake_preview(quantity=4, recommended=2),
+    )
+
+    result = create_request(tmp_path, requested=4, confirmed=2)
+    request = json.loads(Path(result["request_path"]).read_text(encoding="utf-8"))
+    confirmation = request["confirmation"]
+    snapshot = confirmation["capacity_snapshot"]
+
+    assert request["quantity"] == 2
+    assert confirmation["operator_requested_quantity"] == 4
+    assert confirmation["confirmed_quantity"] == 2
+    assert snapshot["requested_quantity"] == 4
+    assert snapshot["confirmed_quantity"] == 2
+    assert snapshot["production_feasibility"]["status"] == "supported"
 
 
 def test_same_idempotency_key_cannot_change_confirmation(

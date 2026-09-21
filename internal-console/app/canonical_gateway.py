@@ -37,11 +37,19 @@ INDUSTRY_LABELS = {
 
 
 class CanonicalOperationError(RuntimeError):
-    def __init__(self, code: str, message: str, next_action: str):
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        next_action: str,
+        *,
+        details: dict[str, Any] | None = None,
+    ):
         super().__init__(message)
         self.code = code
         self.message = message
         self.next_action = next_action
+        self.details = details or {}
 
 
 @dataclass(frozen=True)

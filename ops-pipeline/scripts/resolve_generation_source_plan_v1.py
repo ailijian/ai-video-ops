@@ -337,6 +337,31 @@ def resolve_authority_inputs(
     )
 
     authority_roots = handoff.get("authority_roots") or {}
+    universe = resolve_matching_universe(
+        pipeline_root,
+        authority_roots=authority_roots,
+    )
+    return {
+        "persona_path": persona_path,
+        "speaker_persona_path": speaker_path,
+        "profile_registry_path": registry_path,
+        **universe,
+    }
+
+
+def resolve_matching_universe(
+    pipeline_root: Path,
+    *,
+    authority_roots: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Resolve the current canonical Pattern / Case matching universe.
+
+    The function is read-only and request-independent so both feasibility
+    preview and formal Source Plan resolution consume identical authorities.
+    """
+
+    pipeline_root = pipeline_root.expanduser().resolve()
+    authority_roots = authority_roots or {}
     pattern_root = pipeline_root / str(
         authority_roots.get("approved_pattern_root") or DEFAULT_PATTERN_ROOT
     )
@@ -418,9 +443,6 @@ def resolve_authority_inputs(
     )
 
     return {
-        "persona_path": persona_path,
-        "speaker_persona_path": speaker_path,
-        "profile_registry_path": registry_path,
         "pattern_paths": pattern_paths,
         "case_paths": case_paths,
         "fingerprint_paths": fingerprint_paths,
@@ -482,6 +504,7 @@ def resolve_generation_source_plan(
         ) from exc
 
     coverage = plan.get("coverage") or {}
+    feasibility = plan.get("feasibility") or {}
 
     return {
         "ok": True,
@@ -492,6 +515,12 @@ def resolve_generation_source_plan(
         "coverage_code": coverage.get("code"),
         "selected_pattern_count": len(plan.get("selected_patterns") or []),
         "eligible_case_count": len(plan.get("eligible_case_pool") or []),
+        "blocker_type": feasibility.get("blocker_type"),
+        "blocker_codes": feasibility.get("blocker_codes") or [],
+        "humanized_reason": feasibility.get("humanized_reason"),
+        "optional_customer_truth_route": feasibility.get(
+            "optional_customer_truth_route"
+        ),
         "remote_model_called": False,
         "script_generation_performed": False,
         "generation_batch_created": False,

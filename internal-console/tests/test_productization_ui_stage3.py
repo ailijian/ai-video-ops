@@ -58,8 +58,9 @@ def test_create_entry_is_business_language_and_progressively_collapses():
 def test_capacity_ready_limited_and_zero_states_are_productized():
     create = read_asset("content-views.js")
 
-    assert "本次建议做 ${recommended} 条" in create
-    assert "本次最多建议做 ${recommended} 条" in create
+    assert "当前有 ${available} 个值得做的内容方向" in create
+    assert "你计划做 ${requested} 条，本次确认 ${recommended} 条" in create
+    assert "现有创作结构可以支持" in create
     assert "按 ${recommended} 条继续" in create
     assert "调整数量" in create
     assert "暂时没有值得继续做的新内容" in create
@@ -77,13 +78,13 @@ def test_creation_recovery_and_preparation_states_are_humanized():
         "还需要准备创作内容",
         "准备完成",
         "正在准备…",
-        "现有参考不足，暂时无法继续生成",
+        "当前创作结构暂时不能支持这批内容",
         "这次创作暂时无法继续",
     ):
         assert label in create
 
     assert "sourcePlan?.coverageStatus === \"supported\"" in create
-    assert "safeCreationMessage(sourcePlan.coverageReason" in create
+    assert "feasibility.humanized_reason || sourcePlan.coverageReason" in create
 
 
 def test_mix_lifecycle_and_review_contract_are_complete():

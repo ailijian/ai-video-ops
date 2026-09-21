@@ -362,6 +362,48 @@ def test_review_required_batch_remains_resumable(
     )
 
 
+def test_source_plan_exists_but_unsupported_is_blocked_not_resumable(
+    tmp_path: Path,
+):
+    pipeline = tmp_path / "pipeline"
+    request_path = request_fixture(
+        pipeline,
+        request_id="gen_coverage_blocked",
+    )
+    source_plan_path = (
+        pipeline
+        / "data"
+        / "production_plans"
+        / "gen_coverage_blocked"
+        / "generation_source_plan_v1.json"
+    )
+    write_json(
+        source_plan_path,
+        {
+            "schema_version": "generation-source-plan-v1.0",
+            "request_id": "gen_coverage_blocked",
+            "request": {"request_sha": subject.sha256_file(request_path)},
+            "coverage": {
+                "status": "insufficient",
+                "code": "research_coverage_insufficient",
+                "humanized_reason": "当前创作结构暂不支持。",
+            },
+        },
+    )
+
+    result = subject.classify_request(
+        pipeline_root=pipeline,
+        request_path=request_path,
+    )
+
+    assert result["effective_terminal"] is False
+    assert result["effective_status"] == "blocked"
+    assert result["effective_stage"] == "SOURCE_COVERAGE_BLOCKED"
+    assert result["effective_status"] != "resumable"
+    assert result["source_coverage_status"] == "insufficient"
+    assert result["source_coverage_reason"] == "当前创作结构暂不支持。"
+
+
 def test_business_audit_reports_only_unclosed_request_active(
     tmp_path: Path,
 ):

@@ -40,6 +40,15 @@ PATTERN_POLICIES = {
 NEWS_PRICE_PATTERN_ID = "pcv1_news_price_offer_led_micro_information"
 NEWS_SCENE_PATTERN_ID = "pcv1_news_scene_contrast"
 
+FEASIBILITY_BLOCKERS = {
+    "NO_APPROVED_PATTERN_FOR_PROFILE",
+    "PERSONA_LACKS_PATTERN_CAPABILITY",
+    "NO_PATTERN_SUPPORTED_CASE",
+    "CASE_PROFILE_COMPATIBILITY_NOT_APPROVED",
+    "NO_APPROVED_COMPATIBLE_CASE",
+    "SOURCE_AUTHORITY_INVALID",
+}
+
 
 def read_json(path: Path) -> dict[str, Any]:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -134,6 +143,166 @@ def load_request(
     request.setdefault("profile", target_profile)
     request["reuse_intent"] = reuse_intent
     return request, sha256_file(path)
+
+
+def normalize_matching_context(
+    context: dict[str, Any],
+    persona: dict[str, Any],
+    speaker_persona: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Validate an in-memory, read-only matching context.
+
+    This is deliberately not a Generation Request. It has no request ID,
+    lifecycle, persistence contract, or artifact path. The returned fields are
+    only the inputs consumed by deterministic Pattern / Case selection.
+    """
+
+    target_profile = str(
+        context.get("target_profile") or context.get("profile") or ""
+    ).strip()
+    if target_profile not in PROFILES:
+        raise RuntimeError("Matching context target_profile must be news or mix.")
+    reuse_intent = str(context.get("reuse_intent") or "novel_content")
+    if reuse_intent not in {"novel_content", "cross_profile_repurpose"}:
+        raise RuntimeError("Matching context reuse_intent is invalid.")
+    content_intent = str(context.get("content_intent") or "mixed")
+    if content_intent not in CONTENT_INTENTS:
+        raise RuntimeError("Matching context content_intent is invalid.")
+    quantity = int(context.get("quantity") or 0)
+    if quantity <= 0:
+        raise RuntimeError("Matching context quantity must be positive.")
+    platform = str(context.get("platform") or "").strip()
+    if not platform:
+        raise RuntimeError("Matching context platform is required.")
+    speaker_id = context.get("speaker_persona")
+    if speaker_id:
+        if speaker_persona is None:
+            raise RuntimeError("Matching context requires an Approved Speaker Persona.")
+        if speaker_id != speaker_persona.get("persona_id"):
+            raise RuntimeError("Matching context Speaker Persona ID mismatch.")
+        if int(context.get("speaker_persona_revision") or 0) != int(
+            speaker_persona.get("revision") or 0
+        ):
+            raise RuntimeError("Matching context Speaker Persona revision mismatch.")
+    elif speaker_persona is not None:
+        raise RuntimeError("Speaker Persona supplied but not selected by matching context.")
+
+    return {
+        "profile": target_profile,
+        "target_profile": target_profile,
+        "reuse_intent": reuse_intent,
+        "content_intent": content_intent,
+        "quantity": quantity,
+        "platform": platform,
+        "cta_intent": str(context.get("cta_intent") or "none"),
+        "constraints": dict(context.get("constraints") or {}),
+        "speaker_persona": speaker_id,
+        "speaker_persona_revision": context.get("speaker_persona_revision"),
+        "persona_id": persona.get("persona_id"),
+        "persona_revision": persona.get("revision"),
+    }
+
+
+def project_generation_feasibility(plan: dict[str, Any]) -> dict[str, Any]:
+    """Presentation-only feasibility projection from one canonical match.
+
+    Pattern and Case eligibility are never recomputed here. The projection
+    classifies the reasons emitted by the shared deterministic matcher.
+    """
+
+    coverage = plan.get("coverage") or {}
+    selected_patterns = plan.get("selected_patterns") or []
+    eligible_cases = plan.get("eligible_case_pool") or []
+    excluded = plan.get("excluded_sources") or []
+    reasons = {
+        str(item.get("reason") or "")
+        for item in excluded
+        if isinstance(item, dict)
+    }
+
+    if coverage.get("status") == "supported":
+        return {
+            "status": "supported",
+            "target_profile": (plan.get("request") or {}).get("target_profile"),
+            "eligible_pattern_count": len(selected_patterns),
+            "eligible_case_count": len(eligible_cases),
+            "blocker_type": None,
+            "blocker_codes": [],
+            "humanized_reason": "现有创作结构可以支持。",
+            "optional_customer_truth_route": None,
+            "creative_coverage_gap": coverage.get("missing_creative_coverage") or [],
+            "authority": {
+                "preview_is_authority": False,
+                "artifact_written": False,
+                "remote_model_called": False,
+                "content_ledger_modified": False,
+            },
+        }
+
+    blocker_codes: list[str] = []
+    optional_route = None
+    if any(reason.startswith("persona_lacks_known_") for reason in reasons):
+        blocker_codes.append("PERSONA_LACKS_PATTERN_CAPABILITY")
+        if "persona_lacks_known_process_material" in reasons:
+            optional_route = {
+                "capability": "process_material",
+                "label": "补充真实服务流程",
+                "is_optional": True,
+                "changes_persona_readiness": False,
+            }
+    if any(
+        "profile_" in reason
+        or "no_canonical_profile_compatibility" in reason
+        or "human_approved_for_target_profile" in reason
+        for reason in reasons
+    ) and not selected_patterns:
+        blocker_codes.append("NO_APPROVED_PATTERN_FOR_PROFILE")
+    if selected_patterns and any(
+        "profile_compatibility_not_approved" in str(item.get("status") or "")
+        for item in excluded
+        if isinstance(item, dict)
+    ):
+        blocker_codes.append("CASE_PROFILE_COMPATIBILITY_NOT_APPROVED")
+    if selected_patterns and not eligible_cases:
+        if any("outside the selected Pattern support lineage" in reason for reason in reasons):
+            blocker_codes.append("NO_PATTERN_SUPPORTED_CASE")
+        blocker_codes.append("NO_APPROVED_COMPATIBLE_CASE")
+    if not selected_patterns and not blocker_codes:
+        blocker_codes.append("NO_APPROVED_PATTERN_FOR_PROFILE")
+
+    blocker_codes = list(dict.fromkeys(blocker_codes))
+    blocker_type = blocker_codes[0]
+    if blocker_type == "PERSONA_LACKS_PATTERN_CAPABILITY":
+        humanized = (
+            "当前已有值得做的内容方向，但已批准的创作结构主要覆盖服务流程类内容；"
+            "当前客户档案没有已确认的真实流程信息。"
+        )
+    elif blocker_type == "NO_APPROVED_PATTERN_FOR_PROFILE":
+        humanized = "当前没有适用于所选内容类型的已批准创作结构。"
+    elif blocker_type == "CASE_PROFILE_COMPATIBILITY_NOT_APPROVED":
+        humanized = "已有案例尚未获得所选内容类型的兼容性批准。"
+    elif blocker_type == "NO_PATTERN_SUPPORTED_CASE":
+        humanized = "已批准创作结构尚未绑定可用的批准案例。"
+    else:
+        humanized = "当前没有同时通过结构、案例和兼容性门槛的创作参考。"
+
+    return {
+        "status": "unsupported",
+        "target_profile": (plan.get("request") or {}).get("target_profile"),
+        "eligible_pattern_count": len(selected_patterns),
+        "eligible_case_count": len(eligible_cases),
+        "blocker_type": blocker_type,
+        "blocker_codes": blocker_codes,
+        "humanized_reason": humanized,
+        "optional_customer_truth_route": optional_route,
+        "creative_coverage_gap": coverage.get("missing_creative_coverage") or [],
+        "authority": {
+            "preview_is_authority": False,
+            "artifact_written": False,
+            "remote_model_called": False,
+            "content_ledger_modified": False,
+        },
+    }
 
 
 def load_profile_registry(path: Path | None) -> tuple[dict[str, Any] | None, str | None]:
@@ -628,7 +797,7 @@ def excluded_candidate_sources(paths: list[Path]) -> list[dict[str, Any]]:
 
 def build_source_plan(
     persona_path: Path,
-    request_path: Path,
+    request_path: Path | None,
     pattern_paths: list[Path],
     case_paths: list[Path],
     fingerprint_paths: list[Path],
@@ -637,9 +806,9 @@ def build_source_plan(
     profile_registry_path: Path | None = None,
     creative_coverage_report_path: Path | None = None,
     profile_compatibility_approval_path: Path | None = None,
+    request_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     persona_path = persona_path.expanduser().resolve()
-    request_path = request_path.expanduser().resolve()
     persona, persona_sha = load_approved_persona(persona_path, "business")
     speaker_persona: dict[str, Any] | None = None
     speaker_sha: str | None = None
@@ -656,7 +825,28 @@ def build_source_plan(
             or reference.get("sha256") != persona_sha
         ):
             raise RuntimeError("Speaker Persona Business Persona lineage mismatch.")
-    request, request_sha = load_request(request_path, persona, speaker_persona)
+    if request_path is not None:
+        request_path = request_path.expanduser().resolve()
+        request, request_sha = load_request(request_path, persona, speaker_persona)
+        request_has_explicit_target = bool(read_json(request_path).get("target_profile"))
+    else:
+        if request_context is None:
+            raise RuntimeError(
+                "Either an immutable Generation Request path or a read-only "
+                "matching context is required."
+            )
+        request = normalize_matching_context(
+            request_context,
+            persona,
+            speaker_persona,
+        )
+        request_sha = canonical_sha256(
+            {
+                "kind": "read_only_generation_feasibility_context",
+                "matching_context": request,
+            }
+        )
+        request_has_explicit_target = True
     registry, registry_sha = load_profile_registry(profile_registry_path)
     compatibility_report, compatibility_report_sha = load_compatibility_report(
         creative_coverage_report_path,
@@ -755,6 +945,17 @@ def build_source_plan(
             or target_profile
             not in (human_pattern_approval.get("compatible_profiles") or [])
         ):
+            excluded.append(
+                {
+                    "source_id": pattern.get("pattern_id"),
+                    "source_type": "approved_pattern",
+                    "status": "pattern_profile_compatibility_not_approved",
+                    "sha256": selected_pattern["sha256"],
+                    "reason": (
+                        "Approved Pattern is not human_approved_for_target_profile."
+                    ),
+                }
+            )
             eligible_patterns = []
             selected_pattern = None
             pattern = None
@@ -915,7 +1116,7 @@ def build_source_plan(
     review_fields = persona.get("fact_authority", {}).get(
         "requires_review_fields", []
     )
-    return {
+    plan = {
         "schema_version": PLAN_VERSION,
         "matcher_version": MATCHER_VERSION,
         "request_id": request.get("request_id"),
@@ -956,8 +1157,7 @@ def build_source_plan(
             "target_profile": target_profile,
             "profile_resolution": (
                 "explicit_target_profile"
-                if request.get("target_profile")
-                and read_json(request_path).get("target_profile")
+                if request_has_explicit_target
                 else "legacy_profile_field_resolved"
             ),
             "reuse_intent": request.get("reuse_intent"),
@@ -1106,6 +1306,15 @@ def build_source_plan(
             "remote_model_call_performed": False,
         },
     }
+    feasibility = project_generation_feasibility(plan)
+    plan["feasibility"] = feasibility
+    plan["coverage"]["blocker_type"] = feasibility["blocker_type"]
+    plan["coverage"]["blocker_codes"] = feasibility["blocker_codes"]
+    plan["coverage"]["humanized_reason"] = feasibility["humanized_reason"]
+    plan["coverage"]["optional_customer_truth_route"] = feasibility[
+        "optional_customer_truth_route"
+    ]
+    return plan
 
 
 def write_source_plan(plan: dict[str, Any], output_root: Path) -> tuple[Path, str]:
