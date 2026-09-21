@@ -11,7 +11,11 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from approve_persona_v1 import approve_persona
-from build_persona_v1 import build_persona, sha256_file
+from build_persona_v1 import (
+    assess_business_persona_capabilities,
+    build_persona,
+    sha256_file,
+)
 from content_quality_v1 import (
     DEFAULT_EDITORIAL_V1_1_WEIGHTS,
     audience_need_lineage_v1_1_1,
@@ -370,6 +374,54 @@ def _known_candidate_fields(
     }
 
 
+def _known_business_candidate_facts(
+    candidate_artifact: dict[str, Any],
+) -> dict[str, dict[str, Any]]:
+    grouped: dict[str, list[Any]] = {}
+    for item in candidate_artifact.get("fact_candidates") or []:
+        if (
+            item.get("persona_scope") != "business"
+            or item.get("candidate_state") != "known_candidate"
+        ):
+            continue
+        field = str(item.get("target_field") or "")
+        value = item.get("normalized_value")
+        if field and value is not None:
+            grouped.setdefault(field, []).append(copy.deepcopy(value))
+    facts: dict[str, dict[str, Any]] = {}
+    for field, values in grouped.items():
+        facts[field] = {
+            "state": "known",
+            "value": values[0] if len(values) == 1 else values,
+        }
+    return facts
+
+
+def critical_readiness_constraints(intake: dict[str, Any]) -> list[dict[str, Any]]:
+    constraints = [
+        copy.deepcopy(item)
+        for item in intake.get("conflicts") or []
+        if isinstance(item, dict)
+        and item.get("severity") == "critical"
+        and item.get("resolved") is not True
+    ]
+    constraints.extend(
+        {
+            **copy.deepcopy(item),
+            "constraint_type": "critical_unknown",
+        }
+        for item in intake.get("open_questions") or []
+        if isinstance(item, dict)
+        and item.get("answer_status") not in {"answered", "resolved"}
+        and (
+            item.get("severity") == "critical"
+            or item.get("production_blocked") is True
+            or item.get("blocks_truthful_production") is True
+        )
+    )
+    return constraints
+
+
 def assess_persona_onboarding_readiness(
     intake: dict[str, Any],
     candidate_artifact: dict[str, Any],
@@ -378,73 +430,24 @@ def assess_persona_onboarding_readiness(
     speaker_persona: dict[str, Any] | None = None,
     created_at: str | None = None,
 ) -> dict[str, Any]:
-    business_fields = _known_candidate_fields(candidate_artifact, "business")
+    business_facts = _known_business_candidate_facts(candidate_artifact)
     speaker_fields = _known_candidate_fields(candidate_artifact, "speaker")
     if business_persona:
-        business_fields |= set(
-            business_persona.get("fact_authority", {}).get("known_fields") or []
-        )
+        for field, fact in (business_persona.get("facts") or {}).items():
+            if isinstance(fact, dict) and fact.get("state") == "known":
+                business_facts[field] = copy.deepcopy(fact)
     if speaker_persona:
         speaker_fields |= set(
             speaker_persona.get("fact_authority", {}).get("known_fields") or []
         )
     speaker_type = intake.get("speaker_selection", {}).get("speaker_type")
+    critical_constraints = critical_readiness_constraints(intake)
+    business_readiness = assess_business_persona_capabilities(
+        business_facts,
+        critical_constraints=critical_constraints,
+    )
     capability_groups = {
-        "business_identity": {
-            "required": True,
-            "satisfied": bool(
-                business_fields & {"public_display_name", "company_short_name"}
-            )
-            and "industry" in business_fields
-            and "primary_products_or_services" in business_fields,
-            "evidence_fields": sorted(
-                business_fields
-                & {
-                    "public_display_name",
-                    "company_short_name",
-                    "industry",
-                    "primary_products_or_services",
-                }
-            ),
-        },
-        "customer_use_context": {
-            "required": True,
-            "satisfied": "core_audience" in business_fields
-            and bool(business_fields & {"customer_use_cases", "customer_pains"}),
-            "evidence_fields": sorted(
-                business_fields
-                & {"core_audience", "customer_use_cases", "customer_pains"}
-            ),
-        },
-        "production_bearing_facts": {
-            "required": True,
-            "satisfied": bool(
-                business_fields
-                & {
-                    "product_or_service_facts",
-                    "pricing_facts",
-                    "included_service_facts",
-                    "process_facts",
-                    "service_process",
-                    "service_time_facts",
-                    "customer_use_cases",
-                    "differentiators",
-                }
-            ),
-            "evidence_fields": sorted(
-                business_fields
-                & {
-                    "product_or_service_facts",
-                    "pricing_facts",
-                    "included_service_facts",
-                    "process_facts",
-                    "service_process",
-                    "service_time_facts",
-                    "customer_use_cases",
-                    "differentiators",
-                }
-            ),
-        },
+        **business_readiness["capability_groups"],
         "speaker_authority": {
             "required": speaker_type != "generic",
             "satisfied": speaker_type == "generic"
@@ -472,8 +475,13 @@ def assess_persona_onboarding_readiness(
     )
     critical_conflicts = [
         item
-        for item in intake.get("conflicts") or []
-        if item.get("severity") == "critical" and item.get("resolved") is not True
+        for item in critical_constraints
+        if item.get("constraint_type") != "critical_unknown"
+    ]
+    critical_unknowns = [
+        item
+        for item in critical_constraints
+        if item.get("constraint_type") == "critical_unknown"
     ]
     missing = [
         name
@@ -513,6 +521,7 @@ def assess_persona_onboarding_readiness(
         "capability_groups": capability_groups,
         "critical_missing_truth": missing,
         "critical_conflicts": copy.deepcopy(critical_conflicts),
+        "critical_unknowns": copy.deepcopy(critical_unknowns),
         "candidate_revision_blockers": copy.deepcopy(critical_conflicts),
         "approval_state": {
             "business_persona_approved": business_approved,
@@ -558,6 +567,8 @@ def plan_follow_up(
     }
     questions: list[dict[str, Any]] = []
     for gap in readiness.get("critical_missing_truth") or []:
+        if gap == "critical_constraints":
+            continue
         text, target = FOLLOW_UP_BY_GAP[gap]
         if target in answered_topics or target in existing_targets:
             continue
@@ -581,6 +592,22 @@ def plan_follow_up(
                     "capability_gap": "critical_constraints",
                     "target_topic": target,
                     "question_text": str(conflict.get("resolution_question") or "请确认冲突事实。"),
+                    "answer_status": "unanswered",
+                }
+            )
+    for unknown in readiness.get("critical_unknowns") or []:
+        target = str(unknown.get("target_topic") or "critical_unknown")
+        if target not in existing_targets:
+            questions.append(
+                {
+                    "question_id": f"FOLLOWUP-{len(questions) + 1:02d}",
+                    "reason": "critical_unknown",
+                    "capability_gap": "critical_constraints",
+                    "target_topic": target,
+                    "question_text": str(
+                        unknown.get("question_text")
+                        or "请补充会影响真实内容生产的关键信息。"
+                    ),
                     "answer_status": "unanswered",
                 }
             )

@@ -54,6 +54,7 @@ from .customer_gateway import (
     list_customers,
     prepare_customer_onboarding_request,
     prepare_customer_reanalysis_request,
+    recheck_customer_readiness,
     review_customer_facts,
 )
 from .customer_task_service import (
@@ -2084,6 +2085,22 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         return {
             "customer": detail,
         }
+
+    @app.post("/api/customers/{business_id}/readiness/recheck")
+    def recheck_customer_existing_information(
+        business_id: str,
+        x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(session, x_csrf_token)
+        result = locked_authority_call(
+            "business",
+            business_id,
+            recheck_customer_readiness,
+            settings,
+            business_id=business_id,
+        )
+        return {"review": result}
 
     @app.get("/api/cases")
     def cases(

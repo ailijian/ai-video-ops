@@ -162,6 +162,75 @@ def test_new_customer_creates_recoverable_task_without_raw_materials_in_sqlite(
     assert projected[0]["submitted_by"]["phone"] == "13800000000"
 
 
+def test_insufficient_readiness_customer_remains_in_list_for_later_completion(
+    customer_client: TestClient,
+    customer_settings: Settings,
+):
+    csrf = login(customer_client)
+    created = customer_client.post(
+        "/api/customers/analyze",
+        headers={"X-CSRF-Token": csrf},
+        json={
+            "customer_name": "资料待补客户",
+            "industry": "本地生活",
+            "materials": "目前只确认了客户名称和行业。",
+        },
+    ).json()
+    request_path = Path(created["task"]["payload"]["request_path"])
+    assert request_path.is_file(), "initial Customer / Intake must persist before readiness"
+    review_path = request_path.parent / "customer_fact_review_v1.json"
+    review_path.write_text(
+        json.dumps(
+            {
+                "status": "completed_persona_blocked",
+                "business_persona_blockers": [
+                    "business_identity",
+                    "customer_use_context",
+                    "production_bearing_facts",
+                ],
+            },
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+    update_task(
+        customer_settings.database_path,
+        created["task"]["task_id"],
+        status="completed",
+        progress=100,
+        stage="客户信息需要补充",
+    )
+    customers = customer_client.get("/api/customers").json()["customers"]
+    projected = next(
+        item for item in customers if item["business_id"] == created["business_id"]
+    )
+    assert projected["status"] == "needs_more_info"
+    detail = customer_client.get(
+        f"/api/customers/{created['business_id']}"
+    ).json()
+    assert detail["status"] == "needs_more_info"
+    assert detail["fact_review"]["business_persona_blockers"] == [
+        "business_identity",
+        "customer_use_context",
+        "production_bearing_facts",
+    ]
+    supplemented = customer_client.post(
+        f"/api/customers/{created['business_id']}/reanalyze",
+        headers={"X-CSRF-Token": csrf},
+        json={
+            "customer_name": "资料待补客户",
+            "industry": "本地生活",
+            "materials": (
+                "客户提供上门保洁；附近家庭会在搬家后预约；"
+                "服务前先确认面积并报价。"
+            ),
+        },
+    )
+    assert supplemented.status_code == 200, supplemented.json()
+    assert supplemented.json()["new_intake"] is True
+    assert supplemented.json()["intake_id"] == "intake_0002"
+
+
 def test_duplicate_customer_does_not_create_second_task(
     customer_client: TestClient,
 ):

@@ -55,17 +55,48 @@ FACT_FIELDS = (
     "prohibited_topics",
     "information_requiring_human_review",
 )
-REQUIRED_KNOWN_FIELDS = (
-    "industry",
-    "primary_products_or_services",
-    "core_audience",
-    "customer_pains",
-    "differentiators",
-)
 REQUIRED_IDENTITY_ALTERNATIVES = (
     "company_short_name",
     "public_display_name",
 )
+BUSINESS_OFFERING_FIELDS = (
+    "primary_products_or_services",
+    "product_or_service_facts",
+)
+CUSTOMER_USE_CONTEXT_FIELDS = (
+    "core_audience",
+    "customer_use_cases",
+    "customer_pains",
+)
+PRODUCTION_BEARING_FIELDS = (
+    "product_or_service_facts",
+    "pricing_facts",
+    "included_service_facts",
+    "process_facts",
+    "service_process",
+    "service_time_facts",
+    "business_volume_fact",
+    "time_efficiency_fact",
+    "authorized_customer_cases_or_feedback",
+    "differentiators",
+    "selection_reasons",
+    "customer_use_cases",
+    "business_principles",
+)
+GENERIC_PRODUCTION_CLAIMS = {
+    "很好",
+    "我们很好",
+    "非常好",
+    "产品很好",
+    "服务很好",
+    "品质很好",
+    "我们很专业",
+    "专业",
+    "优质",
+    "高品质",
+    "值得信赖",
+    "客户至上",
+}
 SPEAKER_REQUIRED_KNOWN_FIELDS = (
     "public_display_name",
     "public_role",
@@ -152,6 +183,92 @@ def fact_is_known(persona: dict[str, Any], field: str) -> bool:
     return fact.get("state") == "known" and has_value(fact.get("value"))
 
 
+def _atomic_values(value: Any) -> list[Any]:
+    if isinstance(value, (list, tuple, set)):
+        return [item for value_item in value for item in _atomic_values(value_item)]
+    if isinstance(value, dict):
+        return [item for value_item in value.values() for item in _atomic_values(value_item)]
+    return [value]
+
+
+def _specific_production_value(value: Any) -> bool:
+    for item in _atomic_values(value):
+        if not has_value(item):
+            continue
+        if not isinstance(item, str):
+            return True
+        normalized = "".join(
+            character for character in item.strip().casefold() if character.isalnum()
+        )
+        if normalized and normalized not in GENERIC_PRODUCTION_CLAIMS:
+            return True
+    return False
+
+
+def assess_business_persona_capabilities(
+    facts: dict[str, Any],
+    *,
+    critical_constraints: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Derive minimum viable Business Persona readiness from KNOWN authority.
+
+    This is deliberately capability based. UNKNOWN and REQUIRES_REVIEW facts
+    remain outside the evidence set and no field-completion percentage is used.
+    """
+
+    known = {
+        field: fact.get("value")
+        for field, fact in facts.items()
+        if isinstance(fact, dict)
+        and fact.get("state") == "known"
+        and has_value(fact.get("value"))
+    }
+    constraints = copy.deepcopy(critical_constraints or [])
+    identity_evidence = sorted(set(known) & set(REQUIRED_IDENTITY_ALTERNATIVES))
+    offering_evidence = sorted(set(known) & set(BUSINESS_OFFERING_FIELDS))
+    context_evidence = sorted(set(known) & set(CUSTOMER_USE_CONTEXT_FIELDS))
+    production_evidence = sorted(
+        field
+        for field in set(known) & set(PRODUCTION_BEARING_FIELDS)
+        if _specific_production_value(known[field])
+    )
+    groups = {
+        "business_identity": {
+            "required": True,
+            "satisfied": bool(identity_evidence and offering_evidence),
+            "evidence_fields": identity_evidence + offering_evidence,
+        },
+        "customer_use_context": {
+            "required": True,
+            "satisfied": bool(context_evidence),
+            "evidence_fields": context_evidence,
+        },
+        "production_bearing_facts": {
+            "required": True,
+            "satisfied": bool(production_evidence),
+            "evidence_fields": production_evidence,
+        },
+        "critical_constraints": {
+            "required": True,
+            "satisfied": not constraints,
+            "evidence_fields": [],
+            "blocking_items": constraints,
+        },
+    }
+    blockers = [
+        name
+        for name, group in groups.items()
+        if group["required"] and not group["satisfied"]
+    ]
+    return {
+        "ready": not blockers,
+        "capability_groups": groups,
+        "blockers": blockers,
+        "known_fields": sorted(known),
+        "field_completion_percentage_used": False,
+    }
+
+
 def validate_required_fact_authority(persona: dict[str, Any]) -> list[str]:
     if persona.get("persona_scope", "business") == "speaker":
         errors = [
@@ -162,16 +279,11 @@ def validate_required_fact_authority(persona: dict[str, Any]) -> list[str]:
         if not isinstance(persona.get("business_persona_ref"), dict):
             errors.append("Speaker Persona requires an Approved Business Persona reference.")
         return errors
-    errors = [
-        f"{field} must be KNOWN before approval."
-        for field in REQUIRED_KNOWN_FIELDS
-        if not fact_is_known(persona, field)
+    readiness = assess_business_persona_capabilities(persona.get("facts") or {})
+    return [
+        f"{group} capability must be satisfied before approval."
+        for group in readiness["blockers"]
     ]
-    if not any(fact_is_known(persona, field) for field in REQUIRED_IDENTITY_ALTERNATIVES):
-        errors.append(
-            "company_short_name or public_display_name must be KNOWN before approval."
-        )
-    return errors
 
 
 def persona_content_hash(persona: dict[str, Any]) -> str:

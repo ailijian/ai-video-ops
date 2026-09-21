@@ -231,6 +231,8 @@ export function NeedsInfoState({
   items = [],
   primaryHref,
   primaryLabel,
+  actionButton,
+  actionLabel,
   secondaryHref,
   secondaryLabel = "稍后处理",
 } = {}) {
@@ -251,6 +253,11 @@ export function NeedsInfoState({
           ${
             primaryHref
               ? `<a class="btn btn-primary" href="${escapeHtml(primaryHref)}" data-route>${escapeHtml(primaryLabel)}</a>`
+              : ""
+          }
+          ${
+            actionButton
+              ? `<button class="btn btn-secondary" type="button" data-needs-info-action="${escapeHtml(actionButton)}">${escapeHtml(actionLabel)}</button>`
               : ""
           }
           ${

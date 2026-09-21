@@ -2,6 +2,7 @@ import {
   customerCard,
   customerFieldLabel,
   customerProgressPanel,
+  customerReadinessGaps,
   customerStatusPill,
   editableFactValue,
   parseEditedFactValue,
@@ -989,8 +990,9 @@ export function createCustomerViews({
   }
 
   function renderNeedsMoreInfo(detail) {
-    const blockers =
-      detail.fact_review?.business_persona_blockers || [];
+    const blockers = customerReadinessGaps(
+      detail.fact_review?.business_persona_blockers || [],
+    );
 
     app.innerHTML = shell(
       "客户信息待补充",
@@ -1014,12 +1016,37 @@ export function createCustomerViews({
             items: blockers.map((field) => customerFieldLabel(field)),
             primaryHref: `/customers/${encodeURIComponent(detail.business_id)}/edit`,
             primaryLabel: "补充客户资料",
+            actionButton: "recheck-readiness",
+            actionLabel: "重新检查现有资料",
             secondaryHref: "/customers",
           })}
         </main>`,
     );
 
     bindCommonActions();
+    document
+      .querySelector('[data-needs-info-action="recheck-readiness"]')
+      ?.addEventListener("click", async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        button.textContent = "正在检查…";
+        try {
+          const result = await api(
+            `/api/customers/${encodeURIComponent(detail.business_id)}/readiness/recheck`,
+            { method: "POST" },
+          );
+          if (result.review.status === "completed_persona_review_required") {
+            showToast("现有资料已满足要求，请确认客户档案。");
+          } else {
+            showToast("现有资料仍不足，请按提示补充。");
+          }
+          renderCustomerDetail(detail.business_id);
+        } catch (error) {
+          showToast(error.detail?.next_action || error.message);
+          button.disabled = false;
+          button.textContent = "重新检查现有资料";
+        }
+      });
   }
 
   async function renderCustomerDetail(businessId) {

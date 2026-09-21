@@ -53,6 +53,20 @@ def test_customer_list_and_detail_are_product_management_surfaces():
     assert "添加出镜人" in customer
 
 
+def test_customer_needs_info_uses_capability_gap_language():
+    customer_components = read_asset("customer-components.js")
+    customer = read_asset("customer-views.js")
+
+    assert 'customer_use_context: "还缺少顾客或使用场景信息"' in customer_components
+    assert (
+        'production_bearing_facts: "还缺少可用于内容创作的真实业务信息"'
+        in customer_components
+    )
+    assert 'critical_constraints: "还有关键冲突或边界需要确认"' in customer_components
+    assert 'actionLabel: "重新检查现有资料"' in customer
+    assert "/readiness/recheck" in customer
+
+
 def test_customer_and_speaker_reviews_are_compact_and_complete_before_submit():
     shared = read_asset("profile-components.js")
     customer = read_asset("customer-views.js")

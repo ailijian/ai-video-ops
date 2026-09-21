@@ -39,10 +39,29 @@ const FIELD_LABELS = {
   business_principles: "经营原则",
   beliefs: "经营观点",
   tone_preferences: "表达偏好",
+  business_identity: "还缺少客户名称或明确的产品 / 服务信息",
+  customer_use_context: "还缺少顾客或使用场景信息",
+  production_bearing_facts: "还缺少可用于内容创作的真实业务信息",
+  critical_constraints: "还有关键冲突或边界需要确认",
+};
+
+const LEGACY_BLOCKER_CAPABILITY = {
+  public_display_name: "business_identity",
+  company_short_name: "business_identity",
+  industry: "business_identity",
+  primary_products_or_services: "business_identity",
+  core_audience: "customer_use_context",
+  customer_use_cases: "customer_use_context",
+  customer_pains: "customer_use_context",
+  differentiators: "production_bearing_facts",
 };
 
 export function customerFieldLabel(field) {
   return FIELD_LABELS[field] || field;
+}
+
+export function customerReadinessGaps(blockers = []) {
+  return [...new Set(blockers.map((field) => LEGACY_BLOCKER_CAPABILITY[field] || field))];
 }
 
 export function customerStatusPill(status) {

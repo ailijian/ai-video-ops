@@ -10,14 +10,14 @@ from pathlib import Path
 from typing import Any
 
 from build_persona_v1 import (
-    REQUIRED_IDENTITY_ALTERNATIVES,
-    REQUIRED_KNOWN_FIELDS,
+    assess_business_persona_capabilities,
     build_persona,
     sha256_file,
 )
 from customer_intake_v1 import (
     SCALAR_PERSONA_FIELDS,
     build_fact_candidate_artifact,
+    critical_readiness_constraints,
 )
 
 SCHEMA_VERSION = "customer-fact-review-v1.0"
@@ -502,22 +502,17 @@ def build_business_persona_input(
 
 def required_business_blockers(
     persona_input: dict[str, Any],
+    *,
+    intake: dict[str, Any] | None = None,
 ) -> list[str]:
     facts = persona_input.get("facts") or {}
-
-    blockers = [
-        field
-        for field in REQUIRED_KNOWN_FIELDS
-        if (field not in facts or not has_value(facts[field].get("value")))
-    ]
-
-    if not any(
-        field in facts and has_value(facts[field].get("value"))
-        for field in (REQUIRED_IDENTITY_ALTERNATIVES)
-    ):
-        blockers.append("business_identity")
-
-    return blockers
+    readiness = assess_business_persona_capabilities(
+        facts,
+        critical_constraints=(
+            critical_readiness_constraints(intake) if intake is not None else []
+        ),
+    )
+    return list(readiness["blockers"])
 
 
 def ensure_or_build_business_persona(
@@ -630,7 +625,7 @@ def review_customer_facts(
                 ("This intake already has " "a different Human Fact Review."),
             )
 
-        if str(existing_review.get("status") or "").startswith("completed_"):
+        if existing_review.get("status") == "completed_persona_review_required":
             return existing_review
 
         timestamp = str(existing_review.get("reviewed_at") or "")
@@ -701,7 +696,7 @@ def review_customer_facts(
         reviewed_artifact_path=(reviewed_path),
     )
 
-    blockers = required_business_blockers(persona_input)
+    blockers = required_business_blockers(persona_input, intake=intake)
 
     if blockers:
         completed = {

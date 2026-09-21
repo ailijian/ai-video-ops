@@ -219,7 +219,7 @@ def test_incomplete_review_fails_closed(
         raise AssertionError(("Incomplete Human Review " "must fail closed."))
 
 
-def test_rejecting_required_fact_blocks_persona_creation(
+def test_rejecting_all_customer_context_blocks_persona_creation(
     tmp_path: Path,
 ):
     summary = prepare_analysis(tmp_path)
@@ -230,14 +230,13 @@ def test_rejecting_required_fact_blocks_persona_creation(
         Path(summary["artifacts"]["fact_candidates_v1"]).read_text(encoding="utf-8")
     )
 
-    differentiator = next(
-        item
-        for item in candidates["fact_candidates"]
-        if item["target_field"] == "differentiators"
-    )
-
     for decision in request["decisions"]:
-        if decision["candidate_id"] == differentiator["fact_candidate_id"]:
+        candidate = next(
+            item
+            for item in candidates["fact_candidates"]
+            if item["fact_candidate_id"] == decision["candidate_id"]
+        )
+        if candidate["target_field"] in {"core_audience", "customer_pains"}:
             decision["decision"] = "reject"
 
     result = review.review_customer_facts(
@@ -248,7 +247,7 @@ def test_rejecting_required_fact_blocks_persona_creation(
 
     assert result["status"] == ("completed_" "persona_blocked")
 
-    assert "differentiators" in result["business_persona_blockers"]
+    assert result["business_persona_blockers"] == ["customer_use_context"]
 
     assert result["authority"]["business_persona_created"] is False
 
@@ -326,6 +325,58 @@ def test_review_retry_is_idempotent(
     assert first["reviewed_at"] == second["reviewed_at"]
 
     assert first["artifacts"] == second["artifacts"]
+
+
+def test_legacy_fixed_field_block_can_be_rechecked_without_new_decisions(
+    tmp_path: Path,
+):
+    summary = prepare_analysis(tmp_path)
+    request = build_review_request(summary)
+    intake_root = Path(summary["artifacts"]["customer_intake_v1"]).parent
+    candidates_path = Path(summary["artifacts"]["fact_candidates_v1"])
+    reviewed_at = "2026-09-17T01:00:00+00:00"
+    fingerprint = review.canonical_sha256(
+        {
+            "business_id": request["business_id"],
+            "intake_id": request["intake_id"],
+            "reviewer": request["reviewer"],
+            "note": request["note"],
+            "candidate_sha256": review.sha256_file(candidates_path),
+            "decisions": request["decisions"],
+        }
+    )
+    (intake_root / "customer_fact_review_v1.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "customer-fact-review-v1.0",
+                "operation_version": "customer_fact_review_v1.py@1.0",
+                "business_id": request["business_id"],
+                "intake_id": request["intake_id"],
+                "status": "completed_persona_blocked",
+                "review_fingerprint": fingerprint,
+                "reviewer": request["reviewer"],
+                "reviewed_at": reviewed_at,
+                "note": request["note"],
+                "decisions": request["decisions"],
+                "business_persona_blockers": ["core_audience", "customer_pains"],
+                "authority": {
+                    "human_gate": True,
+                    "review_decision_immutable": True,
+                    "persona_approved": False,
+                },
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    result = review.review_customer_facts(
+        request=request,
+        pipeline_root=tmp_path,
+    )
+    assert result["status"] == "completed_persona_review_required"
+    assert result["review_fingerprint"] == fingerprint
+    assert Path(result["artifacts"]["business_persona_v1"]).is_file()
 
 
 def test_different_review_cannot_silently_replace_human_decision(

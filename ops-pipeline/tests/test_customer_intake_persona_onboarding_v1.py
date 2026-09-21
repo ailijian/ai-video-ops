@@ -211,7 +211,13 @@ class CustomerIntakePersonaOnboardingTests(unittest.TestCase):
         self.assertFalse(readiness["authority"]["field_completion_percentage_used"])
         self.assertEqual(
             set(readiness["capability_groups"]),
-            {"business_identity", "customer_use_context", "production_bearing_facts", "speaker_authority"},
+            {
+                "business_identity",
+                "customer_use_context",
+                "production_bearing_facts",
+                "critical_constraints",
+                "speaker_authority",
+            },
         )
 
     def test_08_stage_a_uses_existing_persona_approval_lifecycle(self) -> None:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import hashlib
 import json
 import os
@@ -704,6 +705,7 @@ def prepare_customer_reanalysis_request(
     if projection["status"] not in {
         "analysis_pending",
         "draft",
+        "needs_more_info",
     }:
         raise CanonicalOperationError(
             "CUSTOMER_REANALYSIS_NOT_ALLOWED",
@@ -1091,6 +1093,43 @@ def review_customer_facts(
     finally:
         if temporary_path and temporary_path.exists():
             temporary_path.unlink(missing_ok=True)
+
+
+def recheck_customer_readiness(
+    settings: Settings,
+    *,
+    business_id: str,
+) -> dict[str, Any]:
+    """Re-evaluate a legacy blocked review without changing Human decisions."""
+
+    intake_dir = _latest_intake_dir(settings, business_id)
+    if intake_dir is None:
+        raise CanonicalOperationError(
+            "CUSTOMER_INTAKE_NOT_FOUND",
+            "没有找到这个客户的首次录入。",
+            "请先完成客户信息分析。",
+        )
+    review_path = intake_dir / "customer_fact_review_v1.json"
+    if not review_path.is_file():
+        raise CanonicalOperationError(
+            "CUSTOMER_FACT_REVIEW_NOT_FOUND",
+            "还没有可重新检查的客户信息。",
+            "请先完成客户信息确认。",
+        )
+    review = _read_json(review_path)
+    if review.get("status") != "completed_persona_blocked":
+        raise CanonicalOperationError(
+            "CUSTOMER_READINESS_RECHECK_NOT_REQUIRED",
+            "当前客户不需要重新检查已有资料。",
+            "请刷新客户详情并按当前状态继续。",
+        )
+    return review_customer_facts(
+        settings,
+        business_id=business_id,
+        decisions=copy.deepcopy(review.get("decisions") or []),
+        reviewer=str(review.get("reviewer") or ""),
+        note=str(review.get("note") or ""),
+    )
 
 
 def approve_business_persona(
