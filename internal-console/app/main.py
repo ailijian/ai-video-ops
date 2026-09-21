@@ -49,6 +49,7 @@ from .canonical_gateway import (
 )
 from .customer_gateway import (
     approve_business_persona,
+    confirm_speaker_discovery,
     get_customer_detail,
     get_customer_input,
     list_customers,
@@ -84,6 +85,7 @@ from .speaker_gateway import (
     list_speakers,
     prepare_speaker_draft_analysis,
     prepare_speaker_onboarding_request,
+    record_speaker_auto_handoff_status,
     review_speaker_facts,
     speaker_attention_count,
 )
@@ -151,7 +153,7 @@ class SpeakerAnalysisRequest(BaseModel):
         max_length=50000,
     )
 
-    forbidden_claims: list[str]
+    forbidden_claims: list[str] = Field(default_factory=list, max_length=50)
 
 
 class SpeakerFactDecision(BaseModel):
@@ -297,8 +299,25 @@ class CustomerFactDecision(BaseModel):
     )
 
 
+class SpeakerDiscoveryConfirmation(BaseModel):
+    candidate_id: str = Field(min_length=1, max_length=128)
+    selected: bool = False
+    speaker_name: str | None = Field(default=None, max_length=200)
+    public_role: str | None = Field(default=None, max_length=200)
+    speaker_type: Literal[
+        "owner_founder",
+        "frontline_expert",
+        "brand",
+        "generic",
+    ] | None = None
+
+
 class CustomerFactReviewRequest(BaseModel):
     decisions: list[CustomerFactDecision]
+    speaker_confirmations: list[SpeakerDiscoveryConfirmation] = Field(
+        default_factory=list,
+        max_length=5,
+    )
     note: str = Field(
         default="",
         max_length=2000,
@@ -570,6 +589,91 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     customer_task_runner = CustomerTaskRunner(settings)
     speaker_task_runner = SpeakerTaskRunner(settings)
     background_task_runner = BackgroundTaskRunner(settings)
+
+    def auto_handoff_confirmed_speaker_drafts(
+        business_id: str,
+        *,
+        created_by_user_id: int,
+    ) -> dict[str, Any]:
+        outcome: dict[str, Any] = {
+            "started": [],
+            "existing": [],
+            "failed": [],
+        }
+        for speaker in list_speakers(settings, business_id):
+            if not speaker.get("human_confirmed_discovery"):
+                continue
+            if speaker.get("status") != "analysis_pending":
+                continue
+            speaker_id = str(speaker["speaker_id"])
+            active = find_active_speaker_task(
+                settings.database_path,
+                speaker_id,
+            )
+            if active is not None:
+                outcome["existing"].append(active)
+                try:
+                    record_speaker_auto_handoff_status(
+                        settings,
+                        business_id=business_id,
+                        speaker_id=speaker_id,
+                        status="analysis_pending",
+                        task_id=active["task_id"],
+                    )
+                except Exception:
+                    pass
+                continue
+            try:
+                prepared = locked_authority_call(
+                    "persona",
+                    speaker_id,
+                    prepare_speaker_draft_analysis,
+                    settings,
+                    business_id=business_id,
+                    speaker_id=speaker_id,
+                )
+                task = create_speaker_task(
+                    settings.database_path,
+                    business_id=business_id,
+                    speaker_id=speaker_id,
+                    intake_id=prepared["intake_id"],
+                    request_path=prepared["request_path"],
+                    speaker_name=prepared["speaker_name"],
+                    public_role=prepared["public_role"],
+                    created_by_user_id=created_by_user_id,
+                    queue_max=settings.task_queue_max,
+                )
+                try:
+                    record_speaker_auto_handoff_status(
+                        settings,
+                        business_id=business_id,
+                        speaker_id=speaker_id,
+                        status="analysis_pending",
+                        task_id=task["task_id"],
+                    )
+                except Exception:
+                    pass
+                speaker_task_runner.schedule(task["task_id"])
+                outcome["started"].append(task)
+            except Exception as exc:
+                code = str(getattr(exc, "code", "SPEAKER_AUTO_HANDOFF_FAILED"))
+                try:
+                    record_speaker_auto_handoff_status(
+                        settings,
+                        business_id=business_id,
+                        speaker_id=speaker_id,
+                        status="retry_required",
+                        error_code=code,
+                    )
+                except Exception:
+                    pass
+                outcome["failed"].append(
+                    {"speaker_id": speaker_id, "error_code": code}
+                )
+        outcome["task_count"] = len(outcome["started"]) + len(
+            outcome["existing"]
+        )
+        return outcome
 
     @asynccontextmanager
     async def lifespan(_: FastAPI):
@@ -2098,6 +2202,29 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             business_id,
         )
 
+        tasks_by_speaker: dict[str, dict[str, Any]] = {}
+        for task in list_tasks(settings.database_path, limit=100):
+            if (
+                task["task_type"] == "speaker_analysis"
+                and (task.get("payload") or {}).get("business_id")
+                == business_id
+            ):
+                # list_tasks is newest-first; keep the current task when
+                # historical attempts exist for the same Speaker.
+                tasks_by_speaker.setdefault(task["subject_ref"], task)
+        for speaker in speakers:
+            task = tasks_by_speaker.get(speaker["speaker_id"])
+            if task is None:
+                continue
+            speaker["task"] = task
+            if task["status"] in {"queued", "running"}:
+                speaker["status"] = "analyzing"
+            elif (
+                task["status"] == "failed"
+                and speaker["status"] == "analysis_pending"
+            ):
+                speaker["status"] = "failed"
+
         detail["speakers"] = speakers
 
         detail["creation_entry_ready"] = business_persona_approved and any(
@@ -2136,6 +2263,30 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             note=payload.note,
         )
 
+        try:
+            speaker_confirmation = locked_authority_call(
+                "speaker-discovery",
+                business_id,
+                confirm_speaker_discovery,
+                settings,
+                business_id=business_id,
+                decisions=[
+                    item.model_dump(exclude_none=True)
+                    for item in payload.speaker_confirmations
+                ],
+                confirmed_by_user_id=int(session.user["id"]),
+                confirmed_by_phone=str(session.user["phone"]),
+            )
+        except CanonicalOperationError as exc:
+            # Speaker Discovery is a parallel convenience flow. Customer
+            # Fact Review remains successful even when Draft creation needs
+            # a later retry.
+            speaker_confirmation = {
+                "status": "failed",
+                "error_code": exc.code,
+                "drafts": [],
+            }
+
         mark_customer_task_reviewed(
             settings.database_path,
             business_id,
@@ -2143,6 +2294,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
         return {
             "review": result,
+            "speaker_confirmation": speaker_confirmation,
         }
 
     @app.post("/api/customers/{business_id}/persona/approve")
@@ -2170,8 +2322,14 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             note=payload.note,
         )
 
+        speaker_handoff = auto_handoff_confirmed_speaker_drafts(
+            business_id,
+            created_by_user_id=int(session.user["id"]),
+        )
+
         return {
             "customer": detail,
+            "speaker_handoff": speaker_handoff,
         }
 
     @app.post("/api/customers/{business_id}/readiness/recheck")

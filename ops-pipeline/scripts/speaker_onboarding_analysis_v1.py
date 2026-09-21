@@ -169,16 +169,6 @@ def split_forbidden_claims(
             if item.strip()
         ]
 
-    if not result:
-        raise SpeakerOnboardingError(
-            "SPEAKER_FORBIDDEN_CLAIMS_REQUIRED",
-            (
-                "Speaker onboarding requires "
-                "at least one explicit first-person "
-                "forbidden claim."
-            ),
-        )
-
     return result
 
 
@@ -212,6 +202,11 @@ def validate_request(
     materials = str(request.get("materials") or "").strip()
 
     forbidden_claims = split_forbidden_claims(request.get("forbidden_claims"))
+    source_type = str(
+        request.get("source_type") or "internal_console_speaker_materials"
+    ).strip()
+    source_lineage = request.get("source_lineage") or {}
+    human_confirmed_identity = request.get("human_confirmed_identity") or {}
 
     if not ID_RE.fullmatch(business_id):
         raise SpeakerOnboardingError(
@@ -253,6 +248,23 @@ def validate_request(
             ("Speaker materials exceed " "the V1 input limit."),
         )
 
+    if source_type not in {
+        "internal_console_speaker_materials",
+        "customer_intake_speaker_discovery",
+    }:
+        raise SpeakerOnboardingError(
+            "SPEAKER_SOURCE_TYPE_INVALID",
+            "Speaker source type is invalid.",
+        )
+
+    if not isinstance(source_lineage, dict) or not isinstance(
+        human_confirmed_identity, dict
+    ):
+        raise SpeakerOnboardingError(
+            "SPEAKER_SOURCE_LINEAGE_INVALID",
+            "Speaker source lineage is invalid.",
+        )
+
     speaker_id = str(
         request.get("speaker_id")
         or machine_speaker_id(
@@ -285,6 +297,9 @@ def validate_request(
         "speaker_type": speaker_type,
         "materials": materials,
         "forbidden_claims": (forbidden_claims),
+        "source_type": source_type,
+        "source_lineage": source_lineage,
+        "human_confirmed_identity": human_confirmed_identity,
     }
 
 
@@ -336,16 +351,27 @@ def build_raw_answers(
         f"{request['intake_id']}"
     )
 
-    return [
+    discovered = request["source_type"] == "customer_intake_speaker_discovery"
+    identity_source_type = (
+        "human_confirmed_customer_intake_speaker_identity"
+        if discovered
+        else "operator_entered_speaker_identity"
+    )
+    identity_basis = (
+        "human_confirmed_discovery_identity"
+        if discovered
+        else "operator_explicit_input"
+    )
+    answers = [
         {
             "answer_id": (f"{request['intake_id']}" "_speaker_name"),
             "topic": "speaker_name",
             "answer_text": (request["speaker_name"]),
             "normalized_value": (request["speaker_name"]),
             "input_actor": "operator",
-            "source_type": ("operator_entered_" "speaker_identity"),
+            "source_type": identity_source_type,
             "source_ref": (f"{base}:speaker_name"),
-            "confirmation_basis": ("operator_explicit_input"),
+            "confirmation_basis": identity_basis,
         },
         {
             "answer_id": (f"{request['intake_id']}" "_speaker_role"),
@@ -353,30 +379,43 @@ def build_raw_answers(
             "answer_text": (request["public_role"]),
             "normalized_value": (request["public_role"]),
             "input_actor": "operator",
-            "source_type": ("operator_entered_" "speaker_identity"),
+            "source_type": identity_source_type,
             "source_ref": (f"{base}:speaker_role"),
-            "confirmation_basis": ("operator_explicit_input"),
-        },
-        {
-            "answer_id": (f"{request['intake_id']}" "_speaker_forbidden"),
-            "topic": ("speaker_forbidden_claims"),
-            "answer_text": "\n".join(request["forbidden_claims"]),
-            "normalized_value": list(request["forbidden_claims"]),
-            "input_actor": "operator",
-            "source_type": ("operator_entered_" "speaker_authority_boundary"),
-            "source_ref": (f"{base}:" "speaker_forbidden_claims"),
-            "confirmation_basis": ("operator_explicit_input"),
+            "confirmation_basis": identity_basis,
         },
         {
             "answer_id": (f"{request['intake_id']}" "_speaker_materials"),
             "topic": ("freeform_speaker_materials"),
             "answer_text": (request["materials"]),
             "input_actor": "operator",
-            "source_type": ("operator_entered_" "speaker_materials"),
+            "source_type": request["source_type"],
             "source_ref": (f"{base}:materials"),
-            "confirmation_basis": ("raw_speaker_materials"),
+            "confirmation_basis": (
+                "human_confirmed_customer_intake_evidence"
+                if discovered
+                else "raw_speaker_materials"
+            ),
         },
     ]
+    if request["forbidden_claims"]:
+        answers.insert(
+            2,
+            {
+                "answer_id": (f"{request['intake_id']}" "_speaker_forbidden"),
+                "topic": ("speaker_forbidden_claims"),
+                "answer_text": "\n".join(request["forbidden_claims"]),
+                "normalized_value": list(request["forbidden_claims"]),
+                "input_actor": "operator",
+                "source_type": (
+                    "customer_intake_explicit_speaker_boundary"
+                    if discovered
+                    else "operator_entered_speaker_authority_boundary"
+                ),
+                "source_ref": (f"{base}:" "speaker_forbidden_claims"),
+                "confirmation_basis": identity_basis,
+            },
+        )
+    return answers
 
 
 def build_privacy_projection(
@@ -813,8 +852,11 @@ def analyze_speaker_onboarding(
             input_actor="operator",
             input_sources=[
                 {
-                    "source_type": ("internal_console_" "speaker_materials"),
-                    "source_ref": (request["speaker_id"]),
+                    "source_type": request["source_type"],
+                    "source_ref": (
+                        request["source_lineage"].get("candidate_ref")
+                        or request["speaker_id"]
+                    ),
                 }
             ],
             raw_answers=raw_answers,
@@ -825,6 +867,7 @@ def analyze_speaker_onboarding(
                     "revision": 1,
                 },
             },
+            source_lineage=(request["source_lineage"] or None),
             created_at=timestamp,
         )
 
@@ -943,6 +986,9 @@ def analyze_speaker_onboarding(
         "speaker_name": (request["speaker_name"]),
         "public_role": (request["public_role"]),
         "speaker_type": (request["speaker_type"]),
+        "source_type": request["source_type"],
+        "source_lineage": request["source_lineage"],
+        "human_confirmed_identity": request["human_confirmed_identity"],
         "status": ("awaiting_speaker_fact_review"),
         "created_at": timestamp,
         "business_persona_ref": {
@@ -975,6 +1021,7 @@ def analyze_speaker_onboarding(
             "speaker_persona_approved": (False),
             "media_rights_established": (False),
             "business_facts_copied_into_speaker": (False),
+            "universal_first_person_guardrail_active": True,
             "human_review_required": (True),
         },
         "next_action": ("REVIEW_SPEAKER_FACTS"),

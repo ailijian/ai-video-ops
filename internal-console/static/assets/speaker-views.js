@@ -246,11 +246,10 @@ export function createSpeakerViews({
                       id="speaker-forbidden"
                       rows="5"
                       placeholder="每行一条。例如：&#10;不得声称自己具备未提供的专业资质&#10;不得把未经确认的数据说成自己的经营结果"
-                      required
                     ></textarea>
 
                     <span class="field-hint">
-                      这里写明确不能让这个人以第一人称表达的内容。
+                      如资料中有明确的表达限制，可以在这里补充；没有可留空。
                     </span>
                   </div>
 
@@ -304,13 +303,6 @@ export function createSpeakerViews({
                 .split(/\r?\n/)
                 .map((item) => item.trim())
                 .filter(Boolean);
-
-            if (!forbiddenClaims.length) {
-              errorBox.textContent =
-                "请至少填写一条第一人称禁止表达边界。";
-              errorBox.classList.add("visible");
-              return;
-            }
 
             button.disabled = true;
             button.textContent = "正在提交…";

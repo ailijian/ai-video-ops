@@ -276,8 +276,13 @@ class CustomerTaskRunner:
             ),
             (
                 ("persona_fact_" "candidates_v1.json"),
-                75,
+                68,
                 "提取事实候选",
+            ),
+            (
+                "speaker_discovery_candidates_v1.json",
+                82,
+                "识别可能的出镜人",
             ),
             (
                 ("persona_onboarding_" "readiness_v1.json"),

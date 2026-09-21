@@ -17,6 +17,7 @@ from .persona_authority import (
     resolve_persona_authority,
     validate_speaker_business_binding,
 )
+from .speaker_gateway import prepare_discovered_speaker_draft
 from .subprocess_env import pipeline_subprocess_env
 
 BUSINESS_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_]{1,127}$")
@@ -675,6 +676,49 @@ def _candidate_projection(
     }
 
 
+def _speaker_discovery_projection(
+    intake_dir: Path | None,
+) -> tuple[str | None, list[dict[str, Any]]]:
+    if intake_dir is None:
+        return None, []
+    path = intake_dir / "speaker_discovery_candidates_v1.json"
+    if not path.is_file():
+        return None, []
+    artifact = _read_json(path)
+    confirmation_path = intake_dir / "speaker_discovery_confirmation_v1.json"
+    confirmed_ids: set[str] = set()
+    if confirmation_path.is_file():
+        confirmation = _read_json(confirmation_path)
+        confirmed_ids = {
+            str(item.get("candidate_id") or "")
+            for item in confirmation.get("decisions") or []
+            if isinstance(item, dict)
+            and item.get("outcome") in {"draft_created", "existing_speaker"}
+        }
+    candidates = []
+    for item in artifact.get("speaker_candidates") or []:
+        if not isinstance(item, dict) or not item.get("evidence_quotes"):
+            continue
+        candidate_id = str(item.get("candidate_id") or "")
+        candidates.append(
+            {
+                "candidate_id": candidate_id,
+                "name": item.get("name"),
+                "public_role": item.get("public_role"),
+                "speaker_type_hint": item.get("speaker_type_hint"),
+                "candidate_status": item.get("candidate_status"),
+                "evidence_quotes": list(item.get("evidence_quotes") or []),
+                "personal_material_quotes": list(
+                    item.get("personal_material_quotes") or []
+                ),
+                "default_selected": item.get("candidate_status")
+                == "explicit_speaker",
+                "confirmed": candidate_id in confirmed_ids,
+            }
+        )
+    return str(artifact.get("speaker_discovery_status") or ""), candidates
+
+
 def get_customer_detail(
     settings: Settings,
     business_id: str,
@@ -733,6 +777,10 @@ def get_customer_detail(
         if review_path.is_file():
             fact_review = _read_json(review_path)
 
+    speaker_discovery_status, speaker_candidates = (
+        _speaker_discovery_projection(intake_dir)
+    )
+
     for directory in _intake_dirs(settings, business_id):
         reviewed_path = directory / ("reviewed_persona_" "fact_candidates_v1.json")
         if not reviewed_path.is_file():
@@ -763,6 +811,8 @@ def get_customer_detail(
         "fact_candidates": (candidates),
         "reviewed_fact_candidates": (reviewed_candidates),
         "fact_review": fact_review,
+        "speaker_discovery_status": speaker_discovery_status,
+        "speaker_candidates": speaker_candidates,
         "readiness_gaps": _readiness_gap_projection(
             settings,
             business_id,
@@ -1352,6 +1402,151 @@ def _run_json_command(
         )
 
     return parsed
+
+
+def confirm_speaker_discovery(
+    settings: Settings,
+    *,
+    business_id: str,
+    decisions: list[dict[str, Any]],
+    confirmed_by_user_id: int,
+    confirmed_by_phone: str,
+) -> dict[str, Any]:
+    intake_dir = _latest_intake_dir(settings, business_id)
+    if intake_dir is None:
+        raise CanonicalOperationError(
+            "CUSTOMER_INTAKE_NOT_FOUND",
+            "没有找到客户录入资料。",
+            "客户信息已保留，请刷新后重试。",
+        )
+    discovery_path = intake_dir / "speaker_discovery_candidates_v1.json"
+    confirmation_path = intake_dir / "speaker_discovery_confirmation_v1.json"
+    if confirmation_path.is_file():
+        return _read_json(confirmation_path)
+    if not discovery_path.is_file():
+        return {
+            "schema_version": "speaker-discovery-confirmation-v1.0",
+            "business_id": business_id,
+            "intake_id": intake_dir.name,
+            "status": "not_available",
+            "decisions": [],
+            "drafts": [],
+        }
+
+    artifact = _read_json(discovery_path)
+    candidates = {
+        str(item.get("candidate_id") or ""): item
+        for item in artifact.get("speaker_candidates") or []
+        if isinstance(item, dict) and item.get("candidate_id")
+    }
+    requested = {
+        str(item.get("candidate_id") or ""): item
+        for item in decisions
+        if isinstance(item, dict) and item.get("candidate_id")
+    }
+    timestamp = now_iso()
+    normalized_decisions: list[dict[str, Any]] = []
+    drafts: list[dict[str, Any]] = []
+    allowed_types = {
+        "owner_founder",
+        "frontline_expert",
+        "brand",
+        "generic",
+    }
+
+    for candidate_id, candidate in candidates.items():
+        decision = requested.get(candidate_id) or {}
+        selected = decision.get("selected") is True
+        speaker_name = str(
+            decision.get("speaker_name") or candidate.get("name") or ""
+        ).strip()
+        public_role = str(
+            decision.get("public_role") or candidate.get("public_role") or ""
+        ).strip()
+        speaker_type = str(
+            decision.get("speaker_type")
+            or candidate.get("speaker_type_hint")
+            or "generic"
+        ).strip()
+        outcome = "not_selected"
+        draft_ref = None
+
+        if selected and (
+            not speaker_name
+            or not public_role
+            or len(speaker_name) > 200
+            or len(public_role) > 200
+            or speaker_type not in allowed_types
+        ):
+            outcome = "identity_required"
+        elif selected:
+            try:
+                prepared = prepare_discovered_speaker_draft(
+                    settings,
+                    business_id=business_id,
+                    customer_intake_id=intake_dir.name,
+                    candidate=candidate,
+                    speaker_name=speaker_name,
+                    public_role=public_role,
+                    speaker_type=speaker_type,
+                    confirmed_by_user_id=confirmed_by_user_id,
+                    confirmed_by_phone=confirmed_by_phone,
+                    confirmed_at=timestamp,
+                )
+                outcome = "existing_speaker" if prepared.get("duplicate") else "draft_created"
+                draft_ref = prepared.get("speaker_id")
+                drafts.append(
+                    {
+                        "candidate_id": candidate_id,
+                        "speaker_id": prepared.get("speaker_id"),
+                        "outcome": outcome,
+                    }
+                )
+            except CanonicalOperationError as exc:
+                outcome = "draft_creation_failed"
+                drafts.append(
+                    {
+                        "candidate_id": candidate_id,
+                        "speaker_id": None,
+                        "outcome": outcome,
+                        "error_code": exc.code,
+                    }
+                )
+
+        normalized_decisions.append(
+            {
+                "candidate_id": candidate_id,
+                "selected": selected,
+                "speaker_name": speaker_name or None,
+                "public_role": public_role or None,
+                "speaker_type": speaker_type,
+                "outcome": outcome,
+                "speaker_id": draft_ref,
+            }
+        )
+
+    confirmation = {
+        "schema_version": "speaker-discovery-confirmation-v1.0",
+        "business_id": business_id,
+        "intake_id": intake_dir.name,
+        "status": "completed",
+        "confirmed_by_user_id": int(confirmed_by_user_id),
+        "confirmed_by_phone": str(confirmed_by_phone),
+        "confirmed_at": timestamp,
+        "decisions": normalized_decisions,
+        "drafts": drafts,
+        "source": {
+            "speaker_discovery_candidates_ref": str(discovery_path.resolve()),
+        },
+        "authority": {
+            "human_confirmation_required": True,
+            "discovery_is_speaker_truth": False,
+            "speaker_draft_is_speaker_persona": False,
+            "production_consumption_allowed": False,
+        },
+    }
+    _write_json_atomic(confirmation_path, confirmation)
+    return confirmation
 
 
 def review_customer_facts(

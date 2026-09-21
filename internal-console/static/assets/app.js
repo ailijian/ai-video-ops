@@ -414,7 +414,7 @@ async function renderWorkbench() {
     const attention = data.attention || {};
     const attentionItems = [
       [Number(attention.case_reviews || 0), "个案例待审核", "/cases", "去审核"],
-      [Number(attention.persona_reviews || 0), "个客户信息待确认", "/customers", "去确认"],
+      [Number(attention.persona_reviews || 0), "个客户或出镜人信息待确认", "/customers", "去确认"],
       [Number(attention.content_reviews || 0), "个内容批次待审核", "/tasks", "去审核"],
       [Number(attention.running_tasks || 0), "个任务正在运行", "/tasks", "查看"],
     ].filter(([number]) => number > 0);

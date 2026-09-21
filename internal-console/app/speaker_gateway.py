@@ -292,6 +292,11 @@ def _speaker_projection(
     )
 
     request = _speaker_request(intake_dir)
+    handoff: dict[str, Any] = {}
+    if intake_dir is not None:
+        handoff_path = intake_dir / "speaker_auto_handoff_v1.json"
+        if handoff_path.is_file():
+            handoff = _read_json(handoff_path)
 
     business_authority = resolve_persona_authority(
         settings,
@@ -403,6 +408,14 @@ def _speaker_projection(
         "speaker_type": str(speaker_type),
         "status": status,
         "latest_intake_id": (request.get("intake_id")),
+        "source_type": request.get("source_type")
+        or "internal_console_speaker_materials",
+        "human_confirmed_discovery": bool(
+            request.get("human_confirmed_identity")
+            and request.get("source_type")
+            == "customer_intake_speaker_discovery"
+        ),
+        "auto_handoff_status": handoff.get("status"),
         "speaker_persona": (
             _project_persona(
                 persona_path,
@@ -492,6 +505,7 @@ def speaker_attention_count(
                 "fact_review_required",
                 "persona_review_required",
             }
+            or item.get("auto_handoff_status") == "retry_required"
             for item in speakers
         )
 
@@ -615,6 +629,9 @@ def prepare_speaker_onboarding_request(
     speaker_type: str,
     materials: str,
     forbidden_claims: list[str],
+    source_type: str = "internal_console_speaker_materials",
+    source_lineage: dict[str, Any] | None = None,
+    human_confirmed_identity: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     business_entry = resolve_persona_authority(
         settings,
@@ -632,6 +649,9 @@ def prepare_speaker_onboarding_request(
     forbidden_claims = [
         str(item).strip() for item in (forbidden_claims or []) if str(item).strip()
     ]
+    source_type = str(source_type or "").strip()
+    source_lineage = dict(source_lineage or {})
+    human_confirmed_identity = dict(human_confirmed_identity or {})
 
     if not speaker_name:
         raise CanonicalOperationError(
@@ -668,11 +688,14 @@ def prepare_speaker_onboarding_request(
             "请将资料精简到 50000 字以内。",
         )
 
-    if not forbidden_claims:
+    if source_type not in {
+        "internal_console_speaker_materials",
+        "customer_intake_speaker_discovery",
+    }:
         raise CanonicalOperationError(
-            "SPEAKER_FORBIDDEN_CLAIMS_REQUIRED",
-            "请至少明确一条这个出镜人不能以第一人称表达的内容。",
-            "填写第一人称表达边界后重新提交。",
+            "SPEAKER_SOURCE_TYPE_INVALID",
+            "出镜人资料来源无效。",
+            "请返回客户详情后重新操作。",
         )
 
     for existing in list_speakers(
@@ -704,6 +727,10 @@ def prepare_speaker_onboarding_request(
                     and request.get("speaker_type") == speaker_type
                     and request.get("materials") == materials
                     and request.get("forbidden_claims") == forbidden_claims
+                    and request.get(
+                        "source_type", "internal_console_speaker_materials"
+                    )
+                    == source_type
                 )
 
                 result["input_differs"] = not same
@@ -753,6 +780,10 @@ def prepare_speaker_onboarding_request(
             and existing.get("speaker_type") == speaker_type
             and existing.get("materials") == materials
             and existing.get("forbidden_claims") == forbidden_claims
+            and existing.get(
+                "source_type", "internal_console_speaker_materials"
+            )
+            == source_type
         )
 
         if not same:
@@ -787,6 +818,9 @@ def prepare_speaker_onboarding_request(
         "speaker_type": (speaker_type),
         "materials": (materials),
         "forbidden_claims": (forbidden_claims),
+        "source_type": source_type,
+        "source_lineage": source_lineage,
+        "human_confirmed_identity": human_confirmed_identity,
         "created_at": (now_iso()),
         "draft_status": (
             "ready_for_analysis"
@@ -824,6 +858,122 @@ def prepare_speaker_onboarding_request(
         "public_role": (public_role),
         "request_path": str(request_path.resolve()),
     }
+
+
+def prepare_discovered_speaker_draft(
+    settings: Settings,
+    *,
+    business_id: str,
+    customer_intake_id: str,
+    candidate: dict[str, Any],
+    speaker_name: str,
+    public_role: str,
+    speaker_type: str,
+    confirmed_by_user_id: int,
+    confirmed_by_phone: str,
+    confirmed_at: str,
+) -> dict[str, Any]:
+    intake_root = (
+        settings.pipeline_root
+        / "data"
+        / "customer_intakes"
+        / business_id
+        / customer_intake_id
+    )
+    raw_request_path = intake_root / "customer_onboarding_request_v1.json"
+    customer_intake_path = intake_root / "customer_intake_v1.json"
+    privacy_path = intake_root / "customer_intake_privacy_projection_v1.json"
+    discovery_path = intake_root / "speaker_discovery_candidates_v1.json"
+    for path in (
+        raw_request_path,
+        customer_intake_path,
+        privacy_path,
+        discovery_path,
+    ):
+        if not path.is_file():
+            raise CanonicalOperationError(
+                "SPEAKER_DISCOVERY_LINEAGE_MISSING",
+                "出镜人候选来源资料不完整。",
+                "客户信息已保留，请稍后重试出镜人确认。",
+            )
+
+    quotes: list[str] = []
+    for field in ("personal_material_quotes", "evidence_quotes"):
+        for item in candidate.get(field) or []:
+            value = str(item or "").strip()
+            if value and value not in quotes:
+                quotes.append(value)
+    if not quotes:
+        raise CanonicalOperationError(
+            "SPEAKER_DISCOVERY_EVIDENCE_REQUIRED",
+            "这位出镜人没有可追溯的来源依据。",
+            "请暂不创建，或从客户详情手工添加出镜人。",
+        )
+
+    candidate_id = str(candidate.get("candidate_id") or "")
+    source_lineage = {
+        "customer_intake_ref": str(customer_intake_path.resolve()),
+        "customer_raw_material_ref": str(raw_request_path.resolve()),
+        "privacy_projection_ref": str(privacy_path.resolve()),
+        "candidate_ref": f"{discovery_path.resolve()}#{candidate_id}",
+        "evidence_quotes": list(candidate.get("evidence_quotes") or []),
+        "personal_material_quotes": list(
+            candidate.get("personal_material_quotes") or []
+        ),
+        "business_fact_promoted_to_speaker_fact": False,
+    }
+    confirmation = {
+        "candidate_id": candidate_id,
+        "speaker_name": speaker_name.strip(),
+        "public_role": public_role.strip(),
+        "confirmed_by_user_id": int(confirmed_by_user_id),
+        "confirmed_by_phone": str(confirmed_by_phone),
+        "confirmed_at": confirmed_at,
+    }
+    return prepare_speaker_onboarding_request(
+        settings,
+        business_id=business_id,
+        speaker_name=speaker_name,
+        public_role=public_role,
+        speaker_type=speaker_type,
+        materials="\n\n".join(quotes),
+        forbidden_claims=list(candidate.get("explicit_forbidden_claims") or []),
+        source_type="customer_intake_speaker_discovery",
+        source_lineage=source_lineage,
+        human_confirmed_identity=confirmation,
+    )
+
+
+def record_speaker_auto_handoff_status(
+    settings: Settings,
+    *,
+    business_id: str,
+    speaker_id: str,
+    status: str,
+    task_id: str | None = None,
+    error_code: str | None = None,
+) -> None:
+    if status not in {"analysis_pending", "retry_required"}:
+        raise ValueError("Unsupported Speaker auto-handoff status.")
+    intake_dir = _latest_intake_dir(settings, business_id, speaker_id)
+    if intake_dir is None:
+        return
+    _write_atomic_json(
+        intake_dir / "speaker_auto_handoff_v1.json",
+        {
+            "schema_version": "speaker-auto-handoff-v1.0",
+            "business_id": business_id,
+            "speaker_id": speaker_id,
+            "status": status,
+            "task_id": task_id,
+            "error_code": error_code,
+            "updated_at": now_iso(),
+            "authority": {
+                "handoff_is_speaker_persona_approval": False,
+                "production_consumption_allowed": False,
+            },
+        },
+    )
 
 
 def prepare_speaker_draft_analysis(

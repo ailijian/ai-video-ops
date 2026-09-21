@@ -27,6 +27,12 @@ from privacy_projection_v1 import (
     project_safe_semantic,
     sha256_json,
 )
+from speaker_discovery_v1 import (
+    SpeakerDiscoveryError,
+    build_candidate_artifact as build_speaker_discovery_artifact,
+    build_failed_artifact as build_failed_speaker_discovery_artifact,
+    build_prompt as build_speaker_discovery_prompt,
+)
 
 SCHEMA_VERSION = "customer-onboarding-analysis-v1.0"
 OPERATION_VERSION = "customer_onboarding_analysis_v1.py@1.0"
@@ -608,6 +614,44 @@ def extract_remote_facts(
     }
 
 
+def extract_remote_speaker_candidates(
+    safe_payload: dict[str, Any],
+) -> dict[str, Any]:
+    prompt = build_speaker_discovery_prompt(safe_payload)
+    assert_safe_for_external_model(prompt)
+
+    api_key, model = load_deepseek_runtime_config()
+    client = get_client(api_key)
+    response = client.chat.completions.create(
+        model=model,
+        messages=[{"role": "user", "content": prompt}],
+        response_format={"type": "json_object"},
+        temperature=0.0,
+        max_tokens=4000,
+        extra_body={"thinking": {"type": "disabled"}},
+    )
+    content = response.choices[0].message.content or ""
+    try:
+        payload = json.loads(content)
+    except json.JSONDecodeError as exc:
+        raise SpeakerDiscoveryError(
+            "SPEAKER_DISCOVERY_INVALID_JSON",
+            "Speaker Discovery returned invalid JSON.",
+        ) from exc
+    if not isinstance(payload, dict):
+        raise SpeakerDiscoveryError(
+            "SPEAKER_DISCOVERY_RESULT_INVALID",
+            "Speaker Discovery result must be an object.",
+        )
+    payload["model"] = model
+    payload["usage"] = {
+        "prompt_tokens": getattr(response.usage, "prompt_tokens", None),
+        "completion_tokens": getattr(response.usage, "completion_tokens", None),
+        "total_tokens": getattr(response.usage, "total_tokens", None),
+    }
+    return payload
+
+
 def validate_model_fact(
     fact: dict[str, Any],
 ) -> tuple[str, Any, str] | None:
@@ -756,6 +800,9 @@ def analyze_customer_onboarding(
         ]
         | None
     ) = None,
+    speaker_discovery_extractor: (
+        Callable[[dict[str, Any]], dict[str, Any]] | None
+    ) = None,
     created_at: str | None = None,
 ) -> dict[str, Any]:
     request = validate_request(request)
@@ -771,6 +818,7 @@ def analyze_customer_onboarding(
     intake_path = root / "customer_intake_v1.json"
     privacy_path = root / "customer_intake_privacy_projection_v1.json"
     candidates_path = root / "persona_fact_candidates_v1.json"
+    speaker_discovery_path = root / "speaker_discovery_candidates_v1.json"
     readiness_path = root / "persona_onboarding_readiness_v1.json"
     audit_path = root / "egress_audit_v1.json"
     summary_path = root / "customer_onboarding_analysis_v1.json"
@@ -996,6 +1044,61 @@ def analyze_customer_onboarding(
         )
 
     # ---------------------------------------------------------
+    # Stage 3b — Speaker Discovery Candidates
+    #
+    # This is an independent, fail-soft remote extraction. It never
+    # promotes Business Facts into Speaker Truth and can never make the
+    # Customer analysis fail. An existing artifact is always reused.
+    # ---------------------------------------------------------
+
+    if speaker_discovery_path.is_file():
+        speaker_discovery = read_json(speaker_discovery_path)
+        if (
+            speaker_discovery.get("business_id") != request["business_id"]
+            or speaker_discovery.get("intake_id") != request["intake_id"]
+        ):
+            raise CustomerOnboardingError(
+                "ONBOARDING_ARTIFACT_CONFLICT",
+                "Existing Speaker Discovery artifact has different identity.",
+            )
+    else:
+        try:
+            if speaker_discovery_extractor is not None:
+                speaker_extracted = speaker_discovery_extractor(privacy)
+            elif extractor is None:
+                speaker_extracted = extract_remote_speaker_candidates(privacy)
+            else:
+                # Existing unit callers inject only the Business extractor.
+                # Keep them network-free; focused discovery tests inject the
+                # independent extractor explicitly.
+                speaker_extracted = {
+                    "speaker_candidates": [],
+                    "model": "test-discovery-not-provided",
+                    "usage": {},
+                }
+            speaker_discovery = build_speaker_discovery_artifact(
+                business_id=request["business_id"],
+                intake_id=request["intake_id"],
+                created_at=timestamp,
+                extracted=speaker_extracted,
+                privacy_projection=privacy,
+                customer_intake_path=intake_path,
+                privacy_projection_path=privacy_path,
+            )
+        except Exception as exc:
+            speaker_discovery = build_failed_speaker_discovery_artifact(
+                business_id=request["business_id"],
+                intake_id=request["intake_id"],
+                created_at=timestamp,
+                failure_code=str(
+                    getattr(exc, "code", "SPEAKER_DISCOVERY_FAILED")
+                ),
+                customer_intake_path=intake_path,
+                privacy_projection_path=privacy_path,
+            )
+        write_new_or_same(speaker_discovery_path, speaker_discovery)
+
+    # ---------------------------------------------------------
     # Stage 4 — Readiness
     # ---------------------------------------------------------
 
@@ -1078,10 +1181,19 @@ def analyze_customer_onboarding(
             "customer_intake_v1": str(intake_path.resolve()),
             "privacy_projection_v1": str(privacy_path.resolve()),
             "fact_candidates_v1": str(candidates_path.resolve()),
+            "speaker_discovery_candidates_v1": str(
+                speaker_discovery_path.resolve()
+            ),
             "readiness_v1": str(readiness_path.resolve()),
             "egress_audit_v1": str(audit_path.resolve()),
         },
         "candidate_summary": (candidates["summary"]),
+        "speaker_discovery": {
+            "status": speaker_discovery.get("speaker_discovery_status"),
+            "candidate_count": len(
+                speaker_discovery.get("speaker_candidates") or []
+            ),
+        },
         "readiness": {
             "status": readiness.get("status"),
             "critical_missing_truth": (
@@ -1094,6 +1206,7 @@ def analyze_customer_onboarding(
         "authority": {
             "raw_input_is_customer_truth": (False),
             "fact_candidates_are_customer_truth": (False),
+            "speaker_discovery_is_speaker_truth": False,
             "persona_created": False,
             "persona_approved": False,
             "human_review_required": True,

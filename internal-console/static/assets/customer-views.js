@@ -74,6 +74,62 @@ const CUSTOMER_PROFILE_GROUPS = [
   },
 ];
 
+const SPEAKER_TYPE_OPTIONS = [
+  ["owner_founder", "创始人 / 老板"],
+  ["frontline_expert", "一线专业人员"],
+  ["brand", "品牌代表"],
+  ["generic", "其他出镜人"],
+];
+
+function speakerDiscoverySection(candidates = []) {
+  if (!candidates.length) return "";
+  return `
+    <section class="work-surface speaker-discovery-surface">
+      <div class="review-surface-heading">
+        <h2>识别到的出镜人</h2>
+        <p>只会为你明确选择的人保存资料，之后仍需单独确认人物档案。</p>
+      </div>
+      <div class="speaker-discovery-list">
+        ${candidates.map((candidate) => {
+          const candidateId = escapeHtml(candidate.candidate_id);
+          const explicit = candidate.candidate_status === "explicit_speaker";
+          const selected = explicit && !candidate.confirmed;
+          const speakerType = candidate.speaker_type_hint || "generic";
+          return `
+            <article class="speaker-discovery-card" data-speaker-candidate="${candidateId}">
+              <label class="speaker-discovery-toggle">
+                <input type="checkbox" data-speaker-select ${selected ? "checked" : ""}>
+                <span>
+                  <strong>同时建立出镜人资料</strong>
+                  <small>${explicit ? "资料明确提到会出镜" : "可能代表客户出镜"}</small>
+                </span>
+              </label>
+              <div class="speaker-discovery-fields">
+                <div class="field">
+                  <label>姓名</label>
+                  <input data-speaker-name maxlength="200" value="${escapeHtml(candidate.name || "")}" placeholder="请补充姓名">
+                </div>
+                <div class="field">
+                  <label>公开身份</label>
+                  <input data-speaker-role maxlength="200" value="${escapeHtml(candidate.public_role || "")}" placeholder="请补充公开身份">
+                </div>
+                <div class="field">
+                  <label>出镜人类型</label>
+                  <select data-speaker-type>
+                    ${SPEAKER_TYPE_OPTIONS.map(([value, label]) => `<option value="${value}" ${value === speakerType ? "selected" : ""}>${label}</option>`).join("")}
+                  </select>
+                </div>
+              </div>
+              <details class="speaker-discovery-evidence">
+                <summary>查看来源依据</summary>
+                <ul>${(candidate.evidence_quotes || []).map((quote) => `<li>${escapeHtml(quote)}</li>`).join("")}</ul>
+              </details>
+            </article>`;
+        }).join("")}
+      </div>
+    </section>`;
+}
+
 function customerProfileSections(facts = []) {
   const values = new Map(
     facts
@@ -265,6 +321,7 @@ export function createCustomerViews({
                   ></textarea>
                   <span class="field-hint">
                     门店介绍、采访记录、服务流程、价格和顾客问题都可以直接粘贴。
+                    如果已经确定谁会出镜，也可以直接把他的姓名、身份、本人经历和职责一起写进资料里，系统会自动整理。
                   </span>
                 </div>
 
@@ -417,6 +474,8 @@ export function createCustomerViews({
             })}
           </section>
 
+          ${speakerDiscoverySection(detail.speaker_candidates || [])}
+
           <div class="sticky-action review-submit-bar">
             <span data-review-progress>已确认 0 / ${needsReview.length}</span>
             <button
@@ -470,6 +529,28 @@ export function createCustomerViews({
           decisions.push(value);
         }
 
+        const speakerConfirmations = (detail.speaker_candidates || []).map(
+          (candidate) => {
+            const row = document.querySelector(
+              `[data-speaker-candidate="${CSS.escape(candidate.candidate_id)}"]`,
+            );
+            return {
+              candidate_id: candidate.candidate_id,
+              selected: row?.querySelector("[data-speaker-select]")?.checked === true,
+              speaker_name: row?.querySelector("[data-speaker-name]")?.value.trim() || null,
+              public_role: row?.querySelector("[data-speaker-role]")?.value.trim() || null,
+              speaker_type: row?.querySelector("[data-speaker-type]")?.value || "generic",
+            };
+          },
+        );
+        const incompleteSpeaker = speakerConfirmations.find(
+          (item) => item.selected && (!item.speaker_name || !item.public_role),
+        );
+        if (incompleteSpeaker) {
+          showToast("请先补充已选择出镜人的姓名和公开身份，或取消选择。");
+          return;
+        }
+
         const button = document.querySelector("#submit-fact-review");
         button.disabled = true;
         button.textContent = "正在保存…";
@@ -483,6 +564,7 @@ export function createCustomerViews({
               method: "POST",
               body: JSON.stringify({
                 decisions,
+                speaker_confirmations: speakerConfirmations,
                 note: "Internal Console customer information review completed.",
               }),
             },
@@ -494,6 +576,10 @@ export function createCustomerViews({
             showToast("已保存，仍需补充一些关键信息。");
           } else {
             showToast("客户信息已确认，接下来请确认完整档案。");
+          }
+
+          if ((result.speaker_confirmation?.drafts || []).length) {
+            showToast("客户信息已确认，出镜人资料也已保存。");
           }
 
           renderCustomerDetail(detail.business_id);
@@ -565,7 +651,7 @@ export function createCustomerViews({
         button.textContent = "正在批准…";
 
         try {
-          await api(
+          const result = await api(
             `/api/customers/${encodeURIComponent(
               detail.business_id,
             )}/persona/approve`,
@@ -577,7 +663,13 @@ export function createCustomerViews({
             },
           );
 
-          showToast("客户档案已确认");
+          if (result.speaker_handoff?.task_count > 0) {
+            showToast(`客户档案已确认，已识别 ${result.speaker_handoff.task_count} 位出镜人，正在整理出镜人信息。`);
+          } else if ((result.speaker_handoff?.failed || []).length) {
+            showToast("客户档案已确认，出镜人信息需要继续处理。");
+          } else {
+            showToast("客户档案已确认");
+          }
           renderCustomerDetail(detail.business_id);
         } catch (error) {
           showToast(error.detail?.next_action || error.message);
@@ -972,6 +1064,12 @@ export function createCustomerViews({
     const pendingSpeaker = speakers.find(
       (speaker) => speaker.status !== "approved",
     );
+    const analyzingSpeakers = speakers.filter(
+      (speaker) => speaker.status === "analyzing",
+    );
+    const retrySpeaker = speakers.find(
+      (speaker) => speaker.auto_handoff_status === "retry_required",
+    );
     const tabs = [
       { id: "overview", label: "概览" },
       { id: "profile", label: "客户资料" },
@@ -986,6 +1084,10 @@ export function createCustomerViews({
       ? `<a class="btn btn-primary" href="/create?business_id=${encodeURIComponent(detail.business_id)}" data-route>开始创作</a>`
       : !speakers.length
         ? `<a class="btn btn-primary" href="/customers/${encodeURIComponent(detail.business_id)}/speakers/new" data-route>添加出镜人</a>`
+        : analyzingSpeakers.length === 1
+          ? `<a class="btn btn-primary" href="/customers/${encodeURIComponent(detail.business_id)}/speakers/${encodeURIComponent(analyzingSpeakers[0].speaker_id)}" data-route>查看出镜人进度</a>`
+        : analyzingSpeakers.length > 1
+          ? `<a class="btn btn-primary" href="#speakers" data-customer-tab="speakers">查看出镜人</a>`
         : pendingSpeaker
           ? `<a class="btn btn-primary" href="/customers/${encodeURIComponent(detail.business_id)}/speakers/${encodeURIComponent(pendingSpeaker.speaker_id)}" data-route>确认出镜人信息</a>`
           : `<a class="btn btn-primary" href="/customers/${encodeURIComponent(detail.business_id)}/speakers/new" data-route>添加出镜人</a>`;
@@ -1029,11 +1131,15 @@ export function createCustomerViews({
             <h2>${
               detail.creation_entry_ready
                 ? "开始准备视频内容"
+                : analyzingSpeakers.length
+                  ? `正在整理 ${analyzingSpeakers.length} 位出镜人信息`
+                  : retrySpeaker
+                    ? "继续处理出镜人信息"
                 : !speakers.length
                   ? "添加第一位出镜人"
                   : "完成出镜人信息确认"
             }</h2>
-            <p>系统只会在客户和出镜人信息满足条件后开放创作。</p>
+            <p>${retrySpeaker ? "客户档案已确认，出镜人信息需要继续处理。" : "系统只会在客户和出镜人信息满足条件后开放创作。"}</p>
           </div>
         </section>`,
       profile: `<div class="work-surface profile-document">${customerProfileSections(facts)}</div>`,
