@@ -186,8 +186,8 @@ def _approved_business_persona(
 
     raise CanonicalOperationError(
         "APPROVED_BUSINESS_PERSONA_REQUIRED",
-        "必须先批准客户档案，才能添加出镜人。",
-        "请先完成 Business Persona 审核。",
+        "必须先确认客户档案，才能分析出镜人资料。",
+        "已保存的出镜人资料会保留，请先完成客户档案确认。",
     )
 
 
@@ -389,7 +389,11 @@ def _speaker_projection(
             status = "approved"
 
     elif request and status == "draft":
-        status = "analysis_pending"
+        status = (
+            "analysis_pending"
+            if business_authority is not None
+            else "pending_customer_profile"
+        )
 
     return {
         "business_id": business_id,
@@ -418,11 +422,6 @@ def list_speakers(
     settings: Settings,
     business_id: str,
 ) -> list[dict[str, Any]]:
-    _approved_business_persona(
-        settings,
-        business_id,
-    )
-
     speaker_ids: set[str] = set()
 
     intake_root = settings.pipeline_root / "data" / "speaker_intakes" / business_id
@@ -617,10 +616,13 @@ def prepare_speaker_onboarding_request(
     materials: str,
     forbidden_claims: list[str],
 ) -> dict[str, Any]:
-    business_path, business = _approved_business_persona(
+    business_entry = resolve_persona_authority(
         settings,
         business_id,
-    )
+        "business",
+    ).current
+    business_path = business_entry["path"] if business_entry is not None else None
+    business = business_entry["artifact"] if business_entry is not None else None
 
     speaker_name = speaker_name.strip()
     public_role = public_role.strip()
@@ -775,7 +777,7 @@ def prepare_speaker_onboarding_request(
             ),
         }
 
-    request = {
+    request: dict[str, Any] = {
         "schema_version": (REQUEST_SCHEMA_VERSION),
         "business_id": (business_id),
         "speaker_id": (speaker_id),
@@ -786,18 +788,26 @@ def prepare_speaker_onboarding_request(
         "materials": (materials),
         "forbidden_claims": (forbidden_claims),
         "created_at": (now_iso()),
-        "business_persona_ref": {
-            "persona_id": (business.get("persona_id")),
-            "revision": (business.get("revision")),
-            "path": str(business_path.resolve()),
-        },
+        "draft_status": (
+            "ready_for_analysis"
+            if business is not None
+            else "pending_business_persona_approval"
+        ),
         "authority": {
             "raw_input_is_speaker_persona": (False),
             "speaker_persona_requires_human_review": (True),
             "business_facts_must_not_be_copied": (True),
             "media_rights_established": (False),
+            "speaker_analysis_allowed": business is not None,
+            "production_consumption_allowed": False,
         },
     }
+    if business is not None and business_path is not None:
+        request["business_persona_ref"] = {
+            "persona_id": (business.get("persona_id")),
+            "revision": (business.get("revision")),
+            "path": str(business_path.resolve()),
+        }
 
     _write_atomic_json(
         request_path,
@@ -806,12 +816,47 @@ def prepare_speaker_onboarding_request(
 
     return {
         "duplicate": False,
+        "draft_saved": business is None,
         "business_id": (business_id),
         "speaker_id": (speaker_id),
         "intake_id": (intake_id),
         "speaker_name": (speaker_name),
         "public_role": (public_role),
         "request_path": str(request_path.resolve()),
+    }
+
+
+def prepare_speaker_draft_analysis(
+    settings: Settings,
+    *,
+    business_id: str,
+    speaker_id: str,
+) -> dict[str, Any]:
+    _approved_business_persona(settings, business_id)
+    detail = get_speaker_detail(settings, business_id, speaker_id)
+    if detail["status"] != "analysis_pending":
+        raise CanonicalOperationError(
+            "SPEAKER_DRAFT_NOT_READY",
+            "当前出镜人资料不处于待分析状态。",
+            "请刷新页面后按当前状态继续。",
+        )
+    intake_dir = _latest_intake_dir(settings, business_id, speaker_id)
+    request = _speaker_request(intake_dir)
+    if intake_dir is None or not request:
+        raise CanonicalOperationError(
+            "SPEAKER_INTAKE_NOT_FOUND",
+            "没有找到已保存的出镜人资料。",
+            "请返回客户详情后重新选择。",
+        )
+    return {
+        "business_id": business_id,
+        "speaker_id": speaker_id,
+        "intake_id": str(request.get("intake_id") or intake_dir.name),
+        "request_path": str(
+            (intake_dir / "speaker_onboarding_request_v1.json").resolve()
+        ),
+        "speaker_name": detail["display_name"],
+        "public_role": detail["public_role"],
     }
 
 

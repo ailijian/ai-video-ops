@@ -302,3 +302,89 @@ def test_partial_real_retry_reuses_existing_candidates_without_remote_recall(
     audit = json.loads((root / "egress_audit_v1.json").read_text(encoding="utf-8"))
 
     assert audit["recovered_from_existing_candidates"] is True
+
+
+def test_gap_supplement_only_sends_new_answer_and_context_is_not_reextracted(
+    tmp_path: Path,
+):
+    captured: dict = {}
+
+    def supplement_extractor(payload: dict):
+        captured.update(payload)
+        return {
+            "facts": [
+                {
+                    "topic": "customer_use_case",
+                    "value": ["搬家后预约上门服务"],
+                    "evidence_quote": "搬家后会预约上门服务",
+                },
+                {
+                    "topic": "primary_service",
+                    "value": ["旧资料中的宠物洗护"],
+                    "evidence_quote": "旧资料中的宠物洗护",
+                },
+            ],
+            "model": "fixture-model",
+            "usage": {},
+        }
+
+    request = {
+        "schema_version": "customer-gap-supplement-request-v1.0",
+        "intake_type": "gap_supplement",
+        "business_id": "fixture_pet_store",
+        "intake_id": "intake_0002",
+        "customer_name": "小爪宠物店",
+        "industry": "宠物服务",
+        "gap_answers": [
+            {
+                "target_gap": "customer_use_context",
+                "raw_answer": "附近家庭通常在搬家后会预约上门服务。",
+            }
+        ],
+        "reviewed_context": {
+            "primary_products_or_services": ["旧资料中的宠物洗护"],
+        },
+        "created_by": {"user_id": 7, "phone": "13800000000"},
+        "source_lineage": {
+            "previous_intake_ids": ["intake_0001"],
+            "old_human_decisions_preserved": True,
+        },
+    }
+    summary = module.analyze_customer_onboarding(
+        request=request,
+        pipeline_root=tmp_path,
+        extractor=supplement_extractor,
+        created_at="2026-09-21T02:00:00+00:00",
+    )
+    assert summary["intake_type"] == "gap_supplement"
+    projection = captured["projection"]
+    assert "搬家后会预约上门服务" in projection["materials_safe_semantic"]
+    assert "旧资料中的宠物洗护" not in projection["materials_safe_semantic"]
+    assert (
+        "旧资料中的宠物洗护"
+        in projection["reviewed_context_safe_semantic"][
+            "primary_products_or_services"
+        ]
+    )
+    intake = json.loads(
+        Path(summary["artifacts"]["customer_intake_v1"]).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert intake["intake_type"] == "gap_supplement"
+    assert intake["created_by"]["user_id"] == 7
+    assert intake["source_lineage"]["old_human_decisions_preserved"] is True
+    assert [item["topic"] for item in intake["raw_answers"]] == ["gap_supplement"]
+    candidates = json.loads(
+        Path(summary["artifacts"]["fact_candidates_v1"]).read_text(
+            encoding="utf-8"
+        )
+    )
+    extracted_fields = [
+        item["target_field"] for item in candidates["fact_candidates"]
+    ]
+    assert extracted_fields == ["customer_use_cases"]
+    assert all(
+        item["classification"] == "ai_extracted_gap_supplement"
+        for item in candidates["fact_candidates"]
+    )

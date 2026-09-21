@@ -52,6 +52,7 @@ from .customer_gateway import (
     get_customer_detail,
     get_customer_input,
     list_customers,
+    prepare_customer_gap_supplement_request,
     prepare_customer_onboarding_request,
     prepare_customer_reanalysis_request,
     recheck_customer_readiness,
@@ -81,6 +82,7 @@ from .speaker_gateway import (
     approve_speaker_persona,
     get_speaker_detail,
     list_speakers,
+    prepare_speaker_draft_analysis,
     prepare_speaker_onboarding_request,
     review_speaker_facts,
     speaker_attention_count,
@@ -267,6 +269,15 @@ class CustomerAnalysisRequest(BaseModel):
         min_length=1,
         max_length=50000,
     )
+
+
+class CustomerGapAnswer(BaseModel):
+    target_gap: str = Field(min_length=1, max_length=256)
+    raw_answer: str = Field(min_length=1, max_length=12000)
+
+
+class CustomerGapSupplementRequest(BaseModel):
+    answers: list[CustomerGapAnswer] = Field(min_length=1, max_length=8)
 
 
 class CustomerFactDecision(BaseModel):
@@ -858,13 +869,6 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
         business_persona_approved = business_persona.get("approved") is True
 
-        if not business_persona_approved:
-            return {
-                "speakers": [],
-                "can_add_speaker": False,
-                "blocker": "BUSINESS_PERSONA_NOT_APPROVED",
-            }
-
         speakers = list_speakers(
             settings,
             business_id,
@@ -903,7 +907,12 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         return {
             "speakers": speakers,
             "can_add_speaker": True,
-            "blocker": None,
+            "analysis_allowed": business_persona_approved,
+            "blocker": (
+                None
+                if business_persona_approved
+                else "BUSINESS_PERSONA_NOT_APPROVED_FOR_ANALYSIS"
+            ),
         }
 
     @app.post("/api/customers/{business_id}/speakers/analyze")
@@ -935,6 +944,16 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         )
 
         speaker_id = prepared["speaker_id"]
+
+        if prepared.get("draft_saved"):
+            return {
+                "duplicate": False,
+                "draft_saved": True,
+                "business_id": business_id,
+                "speaker_id": speaker_id,
+                "state": "pending_customer_profile",
+                "next_action": "客户档案确认后，可以继续确认这位出镜人的资料。",
+            }
 
         active = find_active_speaker_task(
             settings.database_path,
@@ -1023,6 +1042,41 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             "task": task,
             "next_action": ("出镜人信息正在后台分析，" "可以离开页面后再回来继续。"),
         }
+
+    @app.post(
+        "/api/customers/{business_id}/speakers/{speaker_id}/analyze"
+    )
+    def analyze_saved_speaker_draft(
+        business_id: str,
+        speaker_id: str,
+        x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(session, x_csrf_token)
+        active = find_active_speaker_task(settings.database_path, speaker_id)
+        if active is not None:
+            return {"started": False, "existing_task": active}
+        prepared = locked_authority_call(
+            "persona",
+            speaker_id,
+            prepare_speaker_draft_analysis,
+            settings,
+            business_id=business_id,
+            speaker_id=speaker_id,
+        )
+        task = create_speaker_task(
+            settings.database_path,
+            business_id=business_id,
+            speaker_id=speaker_id,
+            intake_id=prepared["intake_id"],
+            request_path=prepared["request_path"],
+            speaker_name=prepared["speaker_name"],
+            public_role=prepared["public_role"],
+            created_by_user_id=int(session.user["id"]),
+            queue_max=settings.task_queue_max,
+        )
+        speaker_task_runner.schedule(task["task_id"])
+        return {"started": True, "task": task}
 
     @app.get("/api/customers/{business_id}/speakers/{speaker_id}")
     def speaker_detail(
@@ -1808,6 +1862,49 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             "next_action": ("客户信息正在后台分析，" "可以离开页面后再回来继续。"),
         }
 
+    @app.post("/api/customers/{business_id}/gaps/supplement")
+    def supplement_customer_gaps(
+        business_id: str,
+        payload: CustomerGapSupplementRequest,
+        x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(session, x_csrf_token)
+        active = find_active_customer_task(settings.database_path, business_id)
+        if active is not None:
+            return {
+                "supplemented": False,
+                "existing_task": active,
+            }
+        prepared = locked_authority_call(
+            "business",
+            business_id,
+            prepare_customer_gap_supplement_request,
+            settings,
+            business_id=business_id,
+            answers=[item.model_dump() for item in payload.answers],
+            created_by_user_id=int(session.user["id"]),
+            created_by_phone=str(session.user["phone"]),
+        )
+        task = create_customer_task(
+            settings.database_path,
+            business_id=business_id,
+            intake_id=prepared["intake_id"],
+            request_path=prepared["request_path"],
+            customer_name=prepared["customer_name"],
+            industry=prepared["industry"],
+            created_by_user_id=int(session.user["id"]),
+            queue_max=settings.task_queue_max,
+        )
+        customer_task_runner.schedule(task["task_id"])
+        return {
+            "supplemented": True,
+            "business_id": business_id,
+            "intake_id": prepared["intake_id"],
+            "target_gaps": prepared["target_gaps"],
+            "task": task,
+        }
+
     @app.post("/api/customers/{business_id}/reanalyze")
     def reanalyze_customer(
         business_id: str,
@@ -1990,25 +2087,16 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             ):
                 detail["status"] = "failed"
 
-        # Speaker listing is only meaningful after the Business Persona
-        # itself has been explicitly Human Approved.
-        #
-        # Customer Detail, however, must remain readable during:
-        # - analysis
-        # - failure / retry
-        # - Fact Review
-        # - Business Persona Review
+        # Raw Speaker Intake may be collected in parallel. Analysis and
+        # Production authority remain gated by the approved Business Persona.
         business_persona = detail.get("business_persona") or {}
 
         business_persona_approved = business_persona.get("approved") is True
 
-        if business_persona_approved:
-            speakers = list_speakers(
-                settings,
-                business_id,
-            )
-        else:
-            speakers = []
+        speakers = list_speakers(
+            settings,
+            business_id,
+        )
 
         detail["speakers"] = speakers
 

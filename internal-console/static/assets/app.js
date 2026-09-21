@@ -754,6 +754,11 @@ if (path === "/customers/new") return customerViews.renderCustomerNew();
       workflowRoute.value,
     );
   }
+  if (workflowRoute?.name === "customer-supplement") {
+    return customerViews.renderCustomerSupplement(
+      workflowRoute.value,
+    );
+  }
   if (
     workflowRoute?.name ===
     "customer-content-operations"

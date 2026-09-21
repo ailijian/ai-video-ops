@@ -442,3 +442,176 @@ def test_persona_requires_second_explicit_human_approval(
     assert receipt["human_gate"] is True
 
     assert receipt_path.is_file()
+
+
+def test_gap_supplement_merges_reviewed_facts_without_changing_old_decisions(
+    tmp_path: Path,
+):
+    initial_request = build_request()
+
+    def initial_extractor(_: dict):
+        return {
+            "facts": [
+                {
+                    "topic": "primary_service",
+                    "value": ["宠物洗护"],
+                    "evidence_quote": "提供宠物洗护",
+                },
+            ],
+            "model": "fixture-model",
+            "usage": {},
+        }
+
+    initial = analysis.analyze_customer_onboarding(
+        request=initial_request,
+        pipeline_root=tmp_path,
+        extractor=initial_extractor,
+        created_at="2026-09-21T00:00:00+00:00",
+    )
+    initial_review_request = build_review_request(initial)
+    initial_result = review.review_customer_facts(
+        request=initial_review_request,
+        pipeline_root=tmp_path,
+        reviewed_at="2026-09-21T00:10:00+00:00",
+    )
+    assert initial_result["status"] == "completed_persona_blocked"
+    assert initial_result["business_persona_blockers"] == [
+        "customer_use_context",
+        "production_bearing_facts",
+    ]
+    initial_reviewed_path = Path(
+        initial_result["artifacts"]["reviewed_candidates_v1"]
+    )
+    initial_review_path = initial_reviewed_path.parent / "customer_fact_review_v1.json"
+    old_reviewed_bytes = initial_reviewed_path.read_bytes()
+    old_review_bytes = initial_review_path.read_bytes()
+
+    supplement_request = {
+        "intake_type": "gap_supplement",
+        "business_id": "fixture_pet_store",
+        "intake_id": "intake_0002",
+        "customer_name": "小爪宠物店",
+        "industry": "宠物服务",
+        "gap_answers": [
+            {
+                "target_gap": "customer_use_context",
+                "raw_answer": "主要顾客是附近养宠家庭。",
+            }
+        ],
+        "reviewed_context": {
+            "public_display_name": "小爪宠物店",
+            "industry": "宠物服务",
+            "primary_products_or_services": ["宠物洗护"],
+        },
+        "created_by": {"user_id": 7, "phone": "13800000000"},
+        "source_lineage": {
+            "previous_intake_ids": ["intake_0001"],
+            "old_human_decisions_preserved": True,
+        },
+    }
+
+    def supplement_extractor(_: dict):
+        return {
+            "facts": [
+                {
+                    "topic": "core_audience",
+                    "value": ["附近养宠家庭"],
+                    "evidence_quote": "附近养宠家庭",
+                }
+            ],
+            "model": "fixture-model",
+            "usage": {},
+        }
+
+    supplement = analysis.analyze_customer_onboarding(
+        request=supplement_request,
+        pipeline_root=tmp_path,
+        extractor=supplement_extractor,
+        created_at="2026-09-21T01:00:00+00:00",
+    )
+    partial_result = review.review_customer_facts(
+        request={
+            "business_id": supplement["business_id"],
+            "intake_id": supplement["intake_id"],
+            "reviewer": "李健",
+            "note": "只确认本轮补充的信息。",
+            "decisions": approval_decisions(supplement),
+        },
+        pipeline_root=tmp_path,
+        reviewed_at="2026-09-21T01:10:00+00:00",
+    )
+    assert partial_result["status"] == "completed_persona_blocked"
+    assert partial_result["business_persona_blockers"] == [
+        "production_bearing_facts"
+    ]
+    assert initial_reviewed_path.read_bytes() == old_reviewed_bytes
+    assert initial_review_path.read_bytes() == old_review_bytes
+
+    production_supplement_request = {
+        **supplement_request,
+        "intake_id": "intake_0003",
+        "gap_answers": [
+            {
+                "target_gap": "production_bearing_facts",
+                "raw_answer": "洗护前会先查看宠物皮肤和毛发状态。",
+            }
+        ],
+        "source_lineage": {
+            "previous_intake_ids": ["intake_0001", "intake_0002"],
+            "old_human_decisions_preserved": True,
+        },
+    }
+
+    def production_supplement_extractor(_: dict):
+        return {
+            "facts": [
+                {
+                    "topic": "service_process",
+                    "value": ["洗护前查看宠物皮肤和毛发状态"],
+                    "evidence_quote": "洗护前会先查看宠物皮肤和毛发状态",
+                }
+            ],
+            "model": "fixture-model",
+            "usage": {},
+        }
+
+    production_supplement = analysis.analyze_customer_onboarding(
+        request=production_supplement_request,
+        pipeline_root=tmp_path,
+        extractor=production_supplement_extractor,
+        created_at="2026-09-21T02:00:00+00:00",
+    )
+    supplement_result = review.review_customer_facts(
+        request={
+            "business_id": production_supplement["business_id"],
+            "intake_id": production_supplement["intake_id"],
+            "reviewer": "李健",
+            "note": "确认剩余缺口的新增信息。",
+            "decisions": approval_decisions(production_supplement),
+        },
+        pipeline_root=tmp_path,
+        reviewed_at="2026-09-21T02:10:00+00:00",
+    )
+    assert supplement_result["status"] == "completed_persona_review_required"
+    persona = json.loads(
+        Path(supplement_result["artifacts"]["business_persona_v1"]).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert persona["facts"]["primary_products_or_services"]["value"] == [
+        "宠物洗护"
+    ]
+    assert persona["facts"]["core_audience"]["value"] == [
+        "附近养宠家庭"
+    ]
+    assert persona["facts"]["process_facts"]["value"] == [
+        "洗护前查看宠物皮肤和毛发状态"
+    ]
+    assert initial_reviewed_path.read_bytes() == old_reviewed_bytes
+    assert initial_review_path.read_bytes() == old_review_bytes
+    source_refs = persona["facts"]["primary_products_or_services"]["source_refs"]
+    assert any("intake_0001" in item for item in source_refs)
+    audience_refs = persona["facts"]["core_audience"]["source_refs"]
+    assert any("intake_0002" in item for item in audience_refs)
+    process_refs = persona["facts"]["process_facts"]["source_refs"]
+    assert any("intake_0003" in item for item in process_refs)

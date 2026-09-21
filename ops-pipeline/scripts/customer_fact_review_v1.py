@@ -435,15 +435,22 @@ def build_business_persona_input(
     intake_id: str,
     reviewed_artifact: dict[str, Any],
     reviewed_artifact_path: Path,
+    reviewed_sources: list[tuple[str, dict[str, Any], Path]] | None = None,
 ) -> dict[str, Any]:
-    business_candidates = [
-        item
-        for item in (reviewed_artifact.get("fact_candidates") or [])
-        if (
-            item.get("persona_scope") == "business"
-            and item.get("candidate_state") == "known_candidate"
-        )
+    sources = reviewed_sources or [
+        (intake_id, reviewed_artifact, reviewed_artifact_path)
     ]
+    business_candidates: list[dict[str, Any]] = []
+    for source_intake_id, artifact, _path in sources:
+        for source in artifact.get("fact_candidates") or []:
+            if (
+                source.get("persona_scope") != "business"
+                or source.get("candidate_state") != "known_candidate"
+            ):
+                continue
+            candidate = copy.deepcopy(source)
+            candidate["_source_intake_id"] = source_intake_id
+            business_candidates.append(candidate)
 
     fields = sorted(
         {
@@ -475,7 +482,11 @@ def build_business_persona_input(
         )
 
         source_refs = [
-            ("customer_intake:" f"{intake_id}#" f"{item['fact_candidate_id']}")
+            (
+                "customer_intake:"
+                f"{item['_source_intake_id']}#"
+                f"{item['fact_candidate_id']}"
+            )
             for item in selected
         ]
 
@@ -493,9 +504,18 @@ def build_business_persona_input(
         "revision": 1,
         "persona_scope": "business",
         "fixture_only": False,
-        "source_type": ("customer_intake_human_fact_review"),
+        "source_type": (
+            "customer_intake_human_fact_review"
+            if len(sources) == 1
+            else "customer_intake_human_fact_review_combined"
+        ),
         "source_file": str(reviewed_artifact_path.resolve()),
-        "source_ref": (f"customer_intake:{intake_id}"),
+        "source_ref": (
+            f"customer_intake:{intake_id}"
+            if len(sources) == 1
+            else "customer_intakes:" + ",".join(item[0] for item in sources)
+        ),
+        "source_files": [str(item[2].resolve()) for item in sources],
         "facts": facts,
     }
 
@@ -504,15 +524,78 @@ def required_business_blockers(
     persona_input: dict[str, Any],
     *,
     intake: dict[str, Any] | None = None,
+    critical_constraints: list[dict[str, Any]] | None = None,
 ) -> list[str]:
     facts = persona_input.get("facts") or {}
     readiness = assess_business_persona_capabilities(
         facts,
         critical_constraints=(
-            critical_readiness_constraints(intake) if intake is not None else []
+            critical_constraints
+            if critical_constraints is not None
+            else critical_readiness_constraints(intake)
+            if intake is not None
+            else []
         ),
     )
     return list(readiness["blockers"])
+
+
+def reviewed_business_sources(
+    pipeline_root: Path,
+    business_id: str,
+) -> list[tuple[str, dict[str, Any], Path]]:
+    root = pipeline_root / "data" / "customer_intakes" / business_id
+    result: list[tuple[str, dict[str, Any], Path]] = []
+    if not root.exists():
+        return result
+    for directory in sorted(path for path in root.iterdir() if path.is_dir()):
+        path = directory / "reviewed_persona_fact_candidates_v1.json"
+        if path.is_file():
+            result.append((directory.name, read_json(path), path))
+    return result
+
+
+def combined_critical_constraints(
+    pipeline_root: Path,
+    business_id: str,
+) -> list[dict[str, Any]]:
+    root = pipeline_root / "data" / "customer_intakes" / business_id
+    if not root.exists():
+        return []
+    addressed: set[str] = set()
+    constraints: list[tuple[str, dict[str, Any]]] = []
+    for directory in sorted(path for path in root.iterdir() if path.is_dir()):
+        intake_path = directory / "customer_intake_v1.json"
+        reviewed_path = directory / "reviewed_persona_fact_candidates_v1.json"
+        if not intake_path.is_file():
+            continue
+        intake = read_json(intake_path)
+        if reviewed_path.is_file():
+            reviewed = read_json(reviewed_path)
+            has_confirmed_fact = any(
+                item.get("candidate_state") == "known_candidate"
+                and item.get("human_review", {}).get("decision") in {"approve", "edit"}
+                for item in reviewed.get("fact_candidates") or []
+            )
+            if has_confirmed_fact:
+                addressed.update(
+                    str(item.get("target_gap") or "")
+                    for item in intake.get("target_gaps") or []
+                )
+        for item in critical_readiness_constraints(intake):
+            constraint_id = str(
+                item.get("constraint_id")
+                or item.get("conflict_id")
+                or item.get("question_id")
+                or canonical_sha256(item)[:16]
+            )
+            constraints.append((constraint_id, item))
+    return [
+        item
+        for constraint_id, item in constraints
+        if "critical_constraints" not in addressed
+        and f"critical_constraints:{constraint_id}" not in addressed
+    ]
 
 
 def ensure_or_build_business_persona(
@@ -689,14 +772,26 @@ def review_customer_facts(
         reviewed,
     )
 
+    reviewed_sources = reviewed_business_sources(
+        pipeline_root,
+        business_id,
+    )
+
     persona_input = build_business_persona_input(
         business_id=business_id,
         intake_id=intake_id,
         reviewed_artifact=reviewed,
         reviewed_artifact_path=(reviewed_path),
+        reviewed_sources=reviewed_sources,
     )
 
-    blockers = required_business_blockers(persona_input, intake=intake)
+    blockers = required_business_blockers(
+        persona_input,
+        critical_constraints=combined_critical_constraints(
+            pipeline_root,
+            business_id,
+        ),
+    )
 
     if blockers:
         completed = {

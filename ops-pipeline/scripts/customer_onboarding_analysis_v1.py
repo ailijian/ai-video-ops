@@ -119,7 +119,48 @@ def validate_request(request: dict[str, Any]) -> dict[str, Any]:
     intake_id = str(request.get("intake_id") or "").strip()
     customer_name = str(request.get("customer_name") or "").strip()
     industry = str(request.get("industry") or "").strip()
-    materials = str(request.get("materials") or "").strip()
+    intake_type = str(request.get("intake_type") or "initial_onboarding").strip()
+    gap_answers = request.get("gap_answers") or []
+    reviewed_context = request.get("reviewed_context") or {}
+    created_by = request.get("created_by") or {}
+    source_lineage = request.get("source_lineage") or {}
+
+    if intake_type == "gap_supplement":
+        if not isinstance(gap_answers, list) or not gap_answers:
+            raise CustomerOnboardingError(
+                "GAP_ANSWERS_REQUIRED",
+                "At least one gap supplement answer is required.",
+            )
+        normalized_gap_answers: list[dict[str, str]] = []
+        for item in gap_answers:
+            if not isinstance(item, dict):
+                raise CustomerOnboardingError(
+                    "GAP_ANSWER_INVALID",
+                    "Every gap supplement answer must be an object.",
+                )
+            target_gap = str(item.get("target_gap") or "").strip()
+            raw_answer = str(item.get("raw_answer") or "").strip()
+            if not target_gap or not raw_answer:
+                raise CustomerOnboardingError(
+                    "GAP_ANSWER_INVALID",
+                    "Every gap supplement requires target_gap and raw_answer.",
+                )
+            normalized_gap_answers.append(
+                {"target_gap": target_gap, "raw_answer": raw_answer}
+            )
+        gap_answers = normalized_gap_answers
+        materials = "\n\n".join(item["raw_answer"] for item in gap_answers)
+    elif intake_type == "initial_onboarding":
+        materials = str(request.get("materials") or "").strip()
+        gap_answers = []
+        reviewed_context = {}
+        created_by = {}
+        source_lineage = {}
+    else:
+        raise CustomerOnboardingError(
+            "INTAKE_TYPE_INVALID",
+            "Unsupported Customer Intake type.",
+        )
 
     if not ID_RE.fullmatch(business_id):
         raise CustomerOnboardingError(
@@ -160,9 +201,14 @@ def validate_request(request: dict[str, Any]) -> dict[str, Any]:
     return {
         "business_id": business_id,
         "intake_id": intake_id,
+        "intake_type": intake_type,
         "customer_name": customer_name,
         "industry": industry,
         "materials": materials,
+        "gap_answers": gap_answers,
+        "reviewed_context": reviewed_context if isinstance(reviewed_context, dict) else {},
+        "created_by": created_by if isinstance(created_by, dict) else {},
+        "source_lineage": source_lineage if isinstance(source_lineage, dict) else {},
     }
 
 
@@ -177,6 +223,23 @@ def build_raw_answers(
 
     business_id = request["business_id"]
     intake_id = request["intake_id"]
+
+    if request["intake_type"] == "gap_supplement":
+        return [
+            {
+                "answer_id": f"{intake_id}_gap_{index:02d}",
+                "topic": "gap_supplement",
+                "target_gap": item["target_gap"],
+                "answer_text": item["raw_answer"],
+                "input_actor": "operator",
+                "source_type": "operator_entered_gap_supplement",
+                "source_ref": (
+                    f"{business_id}:{intake_id}:gap:{item['target_gap']}"
+                ),
+                "confirmation_basis": "operator_explicit_input",
+            }
+            for index, item in enumerate(request["gap_answers"], start=1)
+        ]
 
     return [
         {
@@ -221,9 +284,18 @@ def build_privacy_projection(
 
     annotations = detect_sensitive_spans(raw_materials)
 
+    safe_context = {
+        str(field): project_safe_semantic(
+            json.dumps(value, ensure_ascii=False)
+            if not isinstance(value, str)
+            else value
+        )
+        for field, value in request.get("reviewed_context", {}).items()
+    }
     rendered_probe = (
         f"客户名称：{project_safe_semantic(request['customer_name'])}\n"
         f"行业：{project_safe_semantic(request['industry'])}\n"
+        f"已确认信息：{json.dumps(safe_context, ensure_ascii=False)}\n"
         f"资料：{safe_materials}"
     )
 
@@ -235,6 +307,10 @@ def build_privacy_projection(
         "privacy_policy_version": PRIVACY_POLICY_VERSION,
         "business_id": request["business_id"],
         "intake_id": request["intake_id"],
+        "intake_type": request["intake_type"],
+        "target_gaps": [
+            item["target_gap"] for item in request.get("gap_answers", [])
+        ],
         "created_at": created_at,
         "source": {
             "raw_materials_sha256": sha256_text(raw_materials),
@@ -245,6 +321,7 @@ def build_privacy_projection(
             ),
             "industry_safe_semantic": project_safe_semantic(request["industry"]),
             "materials_safe_semantic": safe_materials,
+            "reviewed_context_safe_semantic": safe_context,
         },
         "annotations": annotations,
         "validation": {
@@ -259,6 +336,62 @@ def build_prompt(
     privacy_projection: dict[str, Any],
 ) -> str:
     projection = privacy_projection["projection"]
+
+    if privacy_projection.get("intake_type") == "gap_supplement":
+        return f"""
+你是 Customer Truth 补充信息提取器。
+
+你的唯一任务：从“本次补充回答”中提取明确存在的新业务事实候选。
+
+严格规则：
+
+1. 只能提取本次补充回答明确支持的信息。
+2. 已确认信息只用于理解上下文，不得从中重复生成候选。
+3. evidence_quote 必须逐字来自本次补充回答。
+4. 不得补全常识、推测画像或创造价格、流程、痛点。
+5. 这里只生成 Fact Candidate，仍需 Human Review。
+6. 不提取 Speaker 第一人称事实。
+
+只允许以下 topic：
+
+- primary_service
+- core_audience
+- customer_use_case
+- customer_pain
+- differentiator
+- service_process
+- service_time
+- founder_story
+- business_decision
+
+输出严格 JSON：
+
+{{
+  "facts": [
+    {{
+      "topic": "customer_use_case",
+      "value": ["明确事实"],
+      "evidence_quote": "本次回答中的原文片段"
+    }}
+  ]
+}}
+
+如果本次补充回答没有任何可安全提取的信息：
+
+{{"facts": []}}
+
+客户名称：
+{projection["customer_name_safe_semantic"]}
+
+行业：
+{projection["industry_safe_semantic"]}
+
+已确认信息（只作上下文，不得重复输出）：
+{json.dumps(projection.get("reviewed_context_safe_semantic", {}), ensure_ascii=False)}
+
+本次补充回答：
+{projection["materials_safe_semantic"]}
+""".strip()
 
     return f"""
 你是 Customer Truth Fact Extraction Engine。
@@ -516,11 +649,18 @@ def build_ai_candidates(
 ) -> dict[str, Any]:
     candidates = list(deterministic_candidates.get("fact_candidates") or [])
 
-    materials_answer = next(
+    supplement = intake.get("intake_type") == "gap_supplement"
+    source_answers = [
         item
         for item in intake["raw_answers"]
-        if item["topic"] == "freeform_customer_materials"
-    )
+        if item["topic"]
+        in {"freeform_customer_materials", "gap_supplement"}
+    ]
+    if not source_answers:
+        raise CustomerOnboardingError(
+            "CUSTOMER_MATERIALS_REQUIRED",
+            "Customer materials are required for Fact Candidate extraction.",
+        )
 
     existing_fields = {str(item.get("target_field") or "") for item in candidates}
 
@@ -538,6 +678,21 @@ def build_ai_candidates(
         if target_field in existing_fields:
             continue
 
+        matching_answer = next(
+            (
+                item
+                for item in source_answers
+                if safe_quote and safe_quote in str(item.get("answer_text") or "")
+            ),
+            None,
+        )
+        if supplement and (
+            not safe_quote
+            or safe_quote not in safe_materials
+            or matching_answer is None
+        ):
+            continue
+        materials_answer = matching_answer or source_answers[0]
         if safe_quote and safe_quote in safe_materials and safe_quote in raw_materials:
             source_excerpt = safe_quote
         else:
@@ -566,7 +721,11 @@ def build_ai_candidates(
                 "speaker_authority_assessment": ("business_candidate_only"),
                 "time_metadata": None,
                 "delta_type": "new_fact",
-                "classification": "ai_extracted_initial_onboarding",
+                "classification": (
+                    "ai_extracted_gap_supplement"
+                    if supplement
+                    else "ai_extracted_initial_onboarding"
+                ),
                 "authorization": None,
                 "review_note": (
                     "AI 从客户原始资料中提取；"
@@ -667,13 +826,21 @@ def analyze_customer_onboarding(
 
         intake = build_customer_intake(
             intake_id=request["intake_id"],
-            intake_type="initial_onboarding",
+            intake_type=request["intake_type"],
             provisional_business_id=(request["business_id"]),
             business_ref=None,
-            input_actor=("authorized_business_representative"),
+            input_actor=(
+                "operator"
+                if request["intake_type"] == "gap_supplement"
+                else "authorized_business_representative"
+            ),
             input_sources=[
                 {
-                    "source_type": ("internal_console_" "customer_materials"),
+                    "source_type": (
+                        "internal_console_customer_gap_supplement"
+                        if request["intake_type"] == "gap_supplement"
+                        else "internal_console_customer_materials"
+                    ),
                     "source_ref": (
                         f"{request['business_id']}:" f"{request['intake_id']}"
                     ),
@@ -684,6 +851,16 @@ def analyze_customer_onboarding(
                 "speaker_type": "generic",
                 "selection_status": "deferred",
             },
+            target_gaps=(
+                [
+                    {"target_gap": item["target_gap"]}
+                    for item in request["gap_answers"]
+                ]
+                if request["intake_type"] == "gap_supplement"
+                else None
+            ),
+            created_by=(request.get("created_by") or None),
+            source_lineage=(request.get("source_lineage") or None),
             created_at=timestamp,
         )
 
@@ -825,9 +1002,21 @@ def analyze_customer_onboarding(
     if readiness_path.is_file():
         readiness = read_json(readiness_path)
     else:
+        reviewed_context = request.get("reviewed_context") or {}
+        context_persona = (
+            {
+                "facts": {
+                    str(field): {"state": "known", "value": value}
+                    for field, value in reviewed_context.items()
+                }
+            }
+            if reviewed_context
+            else None
+        )
         readiness = assess_persona_onboarding_readiness(
             intake,
             candidates,
+            business_persona=context_persona,
             created_at=timestamp,
         )
 
@@ -879,6 +1068,10 @@ def analyze_customer_onboarding(
         "operation_version": (OPERATION_VERSION),
         "business_id": (request["business_id"]),
         "intake_id": (request["intake_id"]),
+        "intake_type": request["intake_type"],
+        "target_gaps": [
+            item["target_gap"] for item in request.get("gap_answers", [])
+        ],
         "status": ("awaiting_fact_review"),
         "created_at": timestamp,
         "artifacts": {

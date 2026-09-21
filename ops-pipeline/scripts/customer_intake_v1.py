@@ -37,7 +37,7 @@ READINESS_SCHEMA_VERSION = "persona-onboarding-readiness-v1.0"
 DELTA_SCHEMA_VERSION = "persona-revision-candidate-delta-v1.0"
 IMPLEMENTATION_VERSION = "customer_intake_v1.py@1.1"
 
-INTAKE_TYPES = {"initial_onboarding", "replenishment"}
+INTAKE_TYPES = {"initial_onboarding", "gap_supplement", "replenishment"}
 INPUT_ACTORS = {
     "customer",
     "operator",
@@ -179,6 +179,9 @@ def build_customer_intake(
     attachments: list[dict[str, Any]] | None = None,
     open_questions: list[dict[str, Any]] | None = None,
     conflicts: list[dict[str, Any]] | None = None,
+    target_gaps: list[dict[str, Any]] | None = None,
+    created_by: dict[str, Any] | None = None,
+    source_lineage: dict[str, Any] | None = None,
     created_at: str | None = None,
 ) -> dict[str, Any]:
     if intake_type not in INTAKE_TYPES:
@@ -191,7 +194,7 @@ def build_customer_intake(
     _validate_raw_answers(raw_answers)
     timestamp = created_at or now_iso()
     immutable_answers = copy.deepcopy(raw_answers)
-    return {
+    intake = {
         "schema_version": INTAKE_SCHEMA_VERSION,
         "implementation_version": IMPLEMENTATION_VERSION,
         "intake_id": intake_id,
@@ -225,6 +228,13 @@ def build_customer_intake(
             "remote_model_call_performed": False,
         },
     }
+    if target_gaps is not None:
+        intake["target_gaps"] = copy.deepcopy(target_gaps)
+    if created_by is not None:
+        intake["created_by"] = copy.deepcopy(created_by)
+    if source_lineage is not None:
+        intake["source_lineage"] = copy.deepcopy(source_lineage)
+    return intake
 
 
 def _candidate(

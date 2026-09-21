@@ -2,7 +2,6 @@ import {
   customerCard,
   customerFieldLabel,
   customerProgressPanel,
-  customerReadinessGaps,
   customerStatusPill,
   editableFactValue,
   parseEditedFactValue,
@@ -14,7 +13,6 @@ import {
 import { escapeHtml } from "./case-components.js";
 import {
   bindDecisionControls,
-  NeedsInfoState,
   ProfileRow,
   ProfileSection,
   ProfileSummary,
@@ -358,6 +356,8 @@ export function createCustomerViews({
   }
 
   function renderFactReview(detail) {
+    const supplement = detail.latest_intake_type === "gap_supplement";
+    const reviewTitle = supplement ? "确认刚补充的信息" : "确认客户信息";
     const candidates = detail.fact_candidates || [];
     const known = candidates.filter(
       (item) => item.state === "known_candidate",
@@ -384,7 +384,7 @@ export function createCustomerViews({
       : "";
 
     app.innerHTML = shell(
-      "确认客户信息",
+      reviewTitle,
       `
         <main class="page page-form customer-review-page profile-review-page">
           <div class="case-review-heading">
@@ -396,8 +396,10 @@ export function createCustomerViews({
 
           ${pageHeading(
             "",
-            "确认客户信息",
-            `请检查“${detail.display_name}”的待确认信息。确认后的信息将用于后续视频内容。`,
+            reviewTitle,
+            supplement
+              ? "只检查本轮新增事实；之前已经确认的信息会继续保留。"
+              : `请检查“${detail.display_name}”的待确认信息。确认后的信息将用于后续视频内容。`,
           )}
 
           ${knownHtml}
@@ -729,6 +731,107 @@ export function createCustomerViews({
     }
     }
 
+  async function renderCustomerSupplement(businessId) {
+    stopTaskPolling();
+    skeletonPage("补充缺失信息");
+    try {
+      const detail = await api(
+        `/api/customers/${encodeURIComponent(businessId)}`,
+      );
+      if (detail.status !== "needs_more_info") {
+        return navigate(`/customers/${encodeURIComponent(businessId)}`, true);
+      }
+      const gaps = detail.readiness_gaps || [];
+      app.innerHTML = shell(
+        "补充缺失信息",
+        `
+          <main class="page page-form profile-mutation-page customer-gap-page">
+            <div class="case-review-heading">
+              <a class="back-link" href="/customers/${encodeURIComponent(businessId)}" data-route>← 返回客户详情</a>
+              ${customerStatusPill(detail.status)}
+            </div>
+            ${pageHeading(
+              "客户已创建",
+              "补充缺失信息",
+              `还差 ${gaps.length} 类信息，就可以确认“${detail.display_name}”的客户档案。`,
+            )}
+            <section class="work-surface profile-form-surface">
+              <form id="customer-gap-form" novalidate>
+                <div class="gap-question-list">
+                  ${gaps.map((gap, index) => `
+                    <div class="field gap-question" data-gap-id="${escapeHtml(gap.gap_id)}">
+                      <label for="customer-gap-${index}">${escapeHtml(gap.label)}</label>
+                      <p class="field-prompt">${escapeHtml(gap.question)}</p>
+                      <textarea id="customer-gap-${index}" rows="5" maxlength="12000" placeholder="填写你已经确认的真实信息"></textarea>
+                    </div>`).join("")}
+                </div>
+                <div id="customer-gap-error" class="form-error" role="alert"></div>
+                <div class="profile-form-actions">
+                  <button class="btn btn-primary btn-wide" type="submit">补充并继续</button>
+                  <a class="btn btn-secondary" href="/customers/${encodeURIComponent(businessId)}/speakers/new" data-route>先添加出镜人资料</a>
+                </div>
+                <div class="secondary-link-row">
+                  <a href="/customers/${encodeURIComponent(businessId)}/edit" data-route>编辑完整资料</a>
+                  <a href="/customers" data-route>稍后处理</a>
+                </div>
+              </form>
+            </section>
+          </main>`,
+      );
+      bindCommonActions();
+      document.querySelector("#customer-gap-form").addEventListener(
+        "submit",
+        async (event) => {
+          event.preventDefault();
+          const form = event.currentTarget;
+          const answers = [...form.querySelectorAll("[data-gap-id]")]
+            .map((field) => ({
+              target_gap: field.dataset.gapId,
+              raw_answer: field.querySelector("textarea").value.trim(),
+            }))
+            .filter((item) => item.raw_answer);
+          const errorBox = document.querySelector("#customer-gap-error");
+          if (!answers.length) {
+            errorBox.textContent = "请至少补充一项真实信息。";
+            errorBox.classList.add("visible");
+            return;
+          }
+          errorBox.classList.remove("visible");
+          const button = form.querySelector('button[type="submit"]');
+          button.disabled = true;
+          button.textContent = "正在提交…";
+          try {
+            const result = await api(
+              `/api/customers/${encodeURIComponent(businessId)}/gaps/supplement`,
+              {
+                method: "POST",
+                body: JSON.stringify({ answers }),
+              },
+            );
+            const task = result.task || result.existing_task;
+            app.innerHTML = shell(
+              "客户信息分析",
+              `<main class="page">${pageHeading(
+                "客户",
+                detail.display_name,
+                "正在整理本次补充的信息，之前确认的内容不会重新审核。",
+              )}<div data-customer-progress></div></main>`,
+            );
+            bindCommonActions();
+            bindCustomerProgress(task, businessId);
+          } catch (error) {
+            errorBox.textContent = error.detail?.next_action || error.message;
+            errorBox.classList.add("visible");
+            button.disabled = false;
+            button.textContent = "补充并继续";
+          }
+        },
+      );
+    } catch (error) {
+      renderLoadError("缺失信息暂时无法读取", error);
+    }
+  }
+
   function renderFailedCustomer(detail) {
     app.innerHTML = shell(
         "客户信息分析失败",
@@ -908,7 +1011,9 @@ export function createCustomerViews({
           {
             label: "出镜人",
             value: `${speakers.length} 位`,
-            note: `${approvedSpeakers.length} 位已确认`,
+            note: pendingSpeaker
+              ? `${speakers.length - approvedSpeakers.length} 位资料待确认`
+              : `${approvedSpeakers.length} 位已确认`,
           },
           {
             label: "创作状态",
@@ -990,14 +1095,16 @@ export function createCustomerViews({
   }
 
   function renderNeedsMoreInfo(detail) {
-    const blockers = customerReadinessGaps(
-      detail.fact_review?.business_persona_blockers || [],
+    const gaps = detail.readiness_gaps || [];
+    const speakers = detail.speakers || [];
+    const confirmed = (detail.reviewed_fact_candidates || []).filter(
+      (item) => item.state === "known_candidate" && item.value != null,
     );
 
     app.innerHTML = shell(
       "客户信息待补充",
       `
-        <main class="page">
+        <main class="page customer-needs-info-page">
           <div class="case-review-heading">
             <a class="back-link" href="/customers" data-route>
               ← 返回客户列表
@@ -1006,20 +1113,58 @@ export function createCustomerViews({
           </div>
 
           ${pageHeading(
-            "",
-            "还缺少一些关键信息",
-            `“${detail.display_name}”需要补充资料后才能继续。`,
+            "客户已创建",
+            detail.display_name,
+            `${detail.industry} · 资料待补充`,
           )}
-
-          ${NeedsInfoState({
-            description: "系统不会自动补写未知信息，请补充真实资料后重新分析。",
-            items: blockers.map((field) => customerFieldLabel(field)),
-            primaryHref: `/customers/${encodeURIComponent(detail.business_id)}/edit`,
-            primaryLabel: "补充客户资料",
-            actionButton: "recheck-readiness",
-            actionLabel: "重新检查现有资料",
-            secondaryHref: "/customers",
-          })}
+          ${ProfileSummary([
+            {
+              label: "当前状态",
+              value: "资料待补充",
+              note: "客户记录已经保存",
+            },
+            {
+              label: "还缺少",
+              value: `${gaps.length} 类`,
+              note: "补充后继续确认档案",
+            },
+            {
+              label: "已收集信息",
+              value: `${confirmed.length} 项`,
+              note: "已有确认不会重新审核",
+            },
+            {
+              label: "出镜人资料",
+              value: `${speakers.length} 位`,
+              note: speakers.length ? "已保存，待客户档案确认" : "可以先并行添加",
+            },
+          ])}
+          <section class="panel needs-info-state">
+            <span class="state-icon state-icon-warning" aria-hidden="true">!</span>
+            <div>
+              <h2>还缺少一些关键信息</h2>
+              <p>缺什么，只补什么；之前已经确认的信息会继续保留。</p>
+              <p class="muted-copy">完成客户档案确认，并确认至少一位出镜人后即可开始创作。</p>
+              <div class="needs-info-list">
+                <span>缺少：</span>
+                <ul>${gaps.map((gap) => `<li>${escapeHtml(gap.label)}</li>`).join("")}</ul>
+              </div>
+              <div class="needs-info-actions">
+                <a class="btn btn-primary" href="/customers/${encodeURIComponent(detail.business_id)}/supplement" data-route>补充缺失信息</a>
+                <a class="btn btn-secondary" href="/customers/${encodeURIComponent(detail.business_id)}/speakers/new" data-route>添加出镜人资料</a>
+                ${detail.legacy_readiness_recheck_available ? '<button class="btn btn-secondary" type="button" data-needs-info-action="recheck-readiness">重新检查现有资料</button>' : ""}
+              </div>
+              <div class="secondary-link-row">
+                <a href="/customers/${encodeURIComponent(detail.business_id)}/edit" data-route>编辑完整资料</a>
+                <a href="/customers" data-route>稍后处理</a>
+              </div>
+            </div>
+          </section>
+          ${speakers.length ? `
+            <section class="profile-tab-section">
+              <div class="section-head"><div><h2>已保存的出镜人资料</h2><p>客户档案确认后，可以直接继续确认出镜人。</p></div></div>
+              <div class="speaker-list">${speakers.map((speaker) => speakerCard(speaker, detail.business_id)).join("")}</div>
+            </section>` : ""}
         </main>`,
     );
 
@@ -1149,6 +1294,7 @@ export function createCustomerViews({
     renderCustomers,
     renderCustomerNew,
     renderCustomerEdit,
+    renderCustomerSupplement,
     renderCustomerDetail,
     renderCustomerTaskDetail,
     stopTaskPolling,

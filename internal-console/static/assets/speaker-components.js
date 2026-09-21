@@ -40,6 +40,7 @@ export function speakerStatusPill(status) {
     persona_review_required: ["档案待确认", "pill-review"],
     analyzing: ["分析中", "pill-review"],
     analysis_pending: ["待分析", "pill-review"],
+    pending_customer_profile: ["待客户档案确认", "pill-review"],
     needs_more_info: ["需补充", "pill-review"],
     failed: ["分析失败", "pill-failed"],
     draft: ["未完成", "pill-archived"],

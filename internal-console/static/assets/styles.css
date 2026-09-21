@@ -640,6 +640,15 @@ a { color: inherit; text-decoration: none; }
 .needs-info-list ul { margin: var(--space-2) 0 0; padding-left: 20px; color: var(--ink); }
 .needs-info-list li + li { margin-top: var(--space-1); }
 .needs-info-actions { margin-top: var(--space-6); display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.customer-needs-info-page .profile-summary { margin-bottom: var(--space-6); }
+.customer-needs-info-page .profile-tab-section { margin-top: var(--space-6); }
+.gap-question-list { display: grid; gap: var(--space-5); }
+.gap-question { margin: 0; padding-bottom: var(--space-5); border-bottom: 1px solid var(--line); }
+.gap-question:last-child { padding-bottom: 0; border-bottom: 0; }
+.field-prompt { margin: 0 0 var(--space-3); color: var(--ink-soft); line-height: 1.65; }
+.profile-form-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.secondary-link-row { margin-top: var(--space-4); display: flex; flex-wrap: wrap; gap: var(--space-5); }
+.secondary-link-row a { color: var(--forest); font-size: 13px; font-weight: 700; }
 
 @media (max-width: 767px) {
   .customer-row,
@@ -664,6 +673,8 @@ a { color: inherit; text-decoration: none; }
   .review-submit-bar .btn,
   .profile-approval-bar .btn { width: 100%; }
   .needs-info-state { padding: var(--space-6) var(--space-4); }
+  .customer-gap-page .profile-form-actions { align-items: stretch; flex-direction: column; }
+  .customer-gap-page .profile-form-actions .btn { width: 100%; }
 }
 
 @media (min-width: 768px) {

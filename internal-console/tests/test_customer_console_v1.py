@@ -215,20 +215,35 @@ def test_insufficient_readiness_customer_remains_in_list_for_later_completion(
         "production_bearing_facts",
     ]
     supplemented = customer_client.post(
-        f"/api/customers/{created['business_id']}/reanalyze",
+        f"/api/customers/{created['business_id']}/gaps/supplement",
         headers={"X-CSRF-Token": csrf},
         json={
-            "customer_name": "资料待补客户",
-            "industry": "本地生活",
-            "materials": (
-                "客户提供上门保洁；附近家庭会在搬家后预约；"
-                "服务前先确认面积并报价。"
-            ),
+            "answers": [
+                {
+                    "target_gap": "customer_use_context",
+                    "raw_answer": "附近家庭通常会在搬家后预约上门保洁。",
+                },
+                {
+                    "target_gap": "production_bearing_facts",
+                    "raw_answer": "服务前会先确认面积并报价。",
+                },
+            ]
         },
     )
     assert supplemented.status_code == 200, supplemented.json()
-    assert supplemented.json()["new_intake"] is True
+    assert supplemented.json()["supplemented"] is True
     assert supplemented.json()["intake_id"] == "intake_0002"
+    request = json.loads(
+        Path(supplemented.json()["task"]["payload"]["request_path"]).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert request["intake_type"] == "gap_supplement"
+    assert request["source_lineage"]["old_human_decisions_preserved"] is True
+    assert "目前只确认了客户名称和行业" not in json.dumps(
+        request, ensure_ascii=False
+    )
+    assert request["created_by"]["phone"] == "13800000000"
 
 
 def test_duplicate_customer_does_not_create_second_task(

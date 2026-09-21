@@ -57,6 +57,17 @@ export function matchWorkflowRoute(path) {
     };
   }
 
+  const customerSupplementMatch = path.match(
+    /^\/customers\/([a-z0-9][a-z0-9_]{1,127})\/supplement$/,
+  );
+
+  if (customerSupplementMatch) {
+    return {
+      name: "customer-supplement",
+      value: customerSupplementMatch[1],
+    };
+  }
+
   const customerMatch = path.match(
     /^\/customers\/([a-z0-9][a-z0-9_]{1,127})$/,
   );

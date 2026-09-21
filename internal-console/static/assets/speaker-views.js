@@ -163,19 +163,8 @@ export function createSpeakerViews({
         `/api/customers/${encodeURIComponent(businessId)}`,
       );
 
-      if (
-        customer.business_persona?.approved !== true
-      ) {
-        return renderLoadError(
-          "暂时不能添加出镜人",
-          {
-            message: "客户档案还没有批准。",
-            detail: {
-              next_action: "请先完成客户档案确认。",
-            },
-          },
-        );
-      }
+      const customerProfileApproved =
+        customer.business_persona?.approved === true;
 
       app.innerHTML = shell(
         "添加出镜人",
@@ -194,7 +183,9 @@ export function createSpeakerViews({
             ${pageHeading(
               "",
               "添加出镜人",
-              `为“${customer.display_name}”整理一位出镜人的真实经历、职责和表达边界。`,
+              customerProfileApproved
+                ? `为“${customer.display_name}”整理一位出镜人的真实经历、职责和表达边界。`
+                : `先保存“${customer.display_name}”的出镜人资料；客户档案确认后再继续分析。`,
             )}
 
               <section class="work-surface profile-form-surface" data-speaker-new-surface>
@@ -274,7 +265,7 @@ export function createSpeakerViews({
                       class="btn btn-primary btn-wide"
                       type="submit"
                     >
-                      分析出镜人信息
+                      ${customerProfileApproved ? "分析出镜人信息" : "保存出镜人资料"}
                     </button>
                   </div>
                   <p class="governance-copy">确认出镜人档案，不会自动获得照片、视频或肖像素材使用权。</p>
@@ -354,6 +345,13 @@ export function createSpeakerViews({
                 },
               );
 
+              if (result.draft_saved) {
+                showToast("出镜人资料已保存，客户档案确认后可以继续。");
+                return navigate(
+                  `/customers/${encodeURIComponent(businessId)}`,
+                );
+              }
+
               if (result.duplicate) {
                 if (
                   result.existing_task &&
@@ -399,7 +397,9 @@ export function createSpeakerViews({
             } finally {
               button.disabled = false;
               button.textContent =
-                "分析出镜人信息";
+                customerProfileApproved
+                  ? "分析出镜人信息"
+                  : "保存出镜人资料";
             }
           },
         );
@@ -878,6 +878,70 @@ export function createSpeakerViews({
     bindCommonActions();
   }
 
+  function renderSavedSpeakerDraft(detail, businessId) {
+    const ready = detail.status === "analysis_pending";
+    app.innerHTML = shell(
+      "出镜人详情",
+      `
+        <main class="page">
+          <div class="case-review-heading">
+            <a class="back-link" href="/customers/${encodeURIComponent(businessId)}#speakers" data-route>← 返回客户详情</a>
+            ${speakerStatusPill(detail.status)}
+          </div>
+          ${pageHeading(
+            "出镜人资料已保存",
+            detail.display_name,
+            `${detail.public_role} · ${ready ? "可以继续确认" : "待客户档案确认"}`,
+          )}
+          <section class="panel needs-info-state">
+            <span class="state-icon" aria-hidden="true">✓</span>
+            <div>
+              <h2>${ready ? "继续确认出镜人" : "待客户档案确认"}</h2>
+              <p>${
+                ready
+                  ? "客户档案已经确认，现在可以用已保存的资料继续分析，不需要重新填写。"
+                  : "姓名、身份、已有资料和表达边界已经保存。客户档案确认后才能分析和批准出镜人档案。"
+              }</p>
+              <div class="needs-info-actions">
+                ${ready ? '<button id="analyze-saved-speaker" class="btn btn-primary" type="button">继续确认出镜人</button>' : `<a class="btn btn-primary" href="/customers/${encodeURIComponent(businessId)}" data-route>继续客户档案</a>`}
+                <a class="btn btn-secondary" href="/customers" data-route>稍后处理</a>
+              </div>
+            </div>
+          </section>
+        </main>`,
+    );
+    bindCommonActions();
+    document.querySelector("#analyze-saved-speaker")?.addEventListener(
+      "click",
+      async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        button.textContent = "正在开始…";
+        try {
+          const result = await api(
+            `/api/customers/${encodeURIComponent(businessId)}/speakers/${encodeURIComponent(detail.speaker_id)}/analyze`,
+            { method: "POST" },
+          );
+          const task = result.task || result.existing_task;
+          app.innerHTML = shell(
+            "出镜人信息分析",
+            `<main class="page">${pageHeading(
+              "出镜人",
+              detail.display_name,
+              "正在用已保存的资料整理待确认信息。",
+            )}<div data-speaker-progress></div></main>`,
+          );
+          bindCommonActions();
+          bindSpeakerProgress(task, businessId, detail.speaker_id);
+        } catch (error) {
+          showToast(error.detail?.next_action || error.message);
+          button.disabled = false;
+          button.textContent = "继续确认出镜人";
+        }
+      },
+    );
+  }
+
   async function renderSpeakerDetail(
     businessId,
     speakerId,
@@ -962,6 +1026,10 @@ export function createSpeakerViews({
           detail,
           businessId,
         );
+      }
+
+      if (["pending_customer_profile", "analysis_pending"].includes(detail.status)) {
+        return renderSavedSpeakerDraft(detail, businessId);
       }
 
       app.innerHTML = shell(

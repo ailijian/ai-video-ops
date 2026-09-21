@@ -305,3 +305,102 @@ def test_speaker_task_type_is_supported_by_database_migration(
     assert response.status_code == 200
 
     assert response.json()["task"]["task_type"] == "speaker_analysis"
+
+
+def test_unapproved_customer_can_save_speaker_draft_then_start_after_approval(
+    speaker_client: TestClient,
+    speaker_settings: Settings,
+):
+    persona_path = (
+        speaker_settings.pipeline_root
+        / "data"
+        / "personas"
+        / "fixture_pet_store"
+        / "revision_0001"
+        / "persona_v1.json"
+    )
+    receipt_path = persona_path.parent / "approval_receipt.json"
+    persona = json.loads(persona_path.read_text(encoding="utf-8"))
+    persona["lifecycle"].update({"status": "review_required", "approved": False})
+    persona_path.write_text(
+        json.dumps(persona, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    receipt_path.unlink()
+    csrf = login(speaker_client)
+    created = speaker_client.post(
+        "/api/customers/fixture_pet_store/speakers/analyze",
+        headers={"X-CSRF-Token": csrf},
+        json=speaker_payload(),
+    )
+    assert created.status_code == 200, created.json()
+    body = created.json()
+    assert body["draft_saved"] is True
+    assert body["state"] == "pending_customer_profile"
+    assert speaker_client.get("/api/tasks").json()["tasks"] == []
+    listed = speaker_client.get(
+        "/api/customers/fixture_pet_store/speakers"
+    ).json()
+    assert listed["can_add_speaker"] is True
+    assert listed["analysis_allowed"] is False
+    assert listed["speakers"][0]["status"] == "pending_customer_profile"
+    speaker_id = body["speaker_id"]
+    detail = speaker_client.get(
+        f"/api/customers/fixture_pet_store/speakers/{speaker_id}"
+    ).json()
+    request_path = (
+        speaker_settings.pipeline_root
+        / "data"
+        / "speaker_intakes"
+        / "fixture_pet_store"
+        / speaker_id
+        / "intake_0001"
+        / "speaker_onboarding_request_v1.json"
+    )
+    request_bytes = request_path.read_bytes()
+    request = json.loads(request_bytes)
+    assert detail["status"] == "pending_customer_profile"
+    assert "business_persona_ref" not in request
+    assert request["authority"]["production_consumption_allowed"] is False
+    assert all(
+        option.get("speaker_id") != speaker_id
+        for option in speaker_client.get("/api/create/options").json().get(
+            "options", []
+        )
+    )
+
+    persona["lifecycle"].update({"status": "approved", "approved": True})
+    persona_path.write_text(
+        json.dumps(persona, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
+    persona_sha256 = hashlib.sha256(persona_path.read_bytes()).hexdigest()
+    receipt_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "persona-approval-receipt-v1.0",
+                "persona_id": "fixture_pet_store",
+                "revision": 1,
+                "decision": "approved",
+                "human_gate": True,
+                "persona_sha256_after_approval": persona_sha256,
+                "content_sha256": "fixture",
+                "previous_approved_revision": None,
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    ready = speaker_client.get(
+        f"/api/customers/fixture_pet_store/speakers/{speaker_id}"
+    ).json()
+    assert ready["status"] == "analysis_pending"
+    started = speaker_client.post(
+        f"/api/customers/fixture_pet_store/speakers/{speaker_id}/analyze",
+        headers={"X-CSRF-Token": csrf},
+    )
+    assert started.status_code == 200, started.json()
+    assert started.json()["started"] is True
+    assert started.json()["task"]["task_type"] == "speaker_analysis"
+    assert request_path.read_bytes() == request_bytes

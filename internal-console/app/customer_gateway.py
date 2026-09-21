@@ -22,6 +22,44 @@ from .subprocess_env import pipeline_subprocess_env
 BUSINESS_ID_RE = re.compile(r"^[a-z0-9][a-z0-9_]{1,127}$")
 
 REQUEST_SCHEMA_VERSION = "customer-onboarding-request-v1.0"
+GAP_SUPPLEMENT_SCHEMA_VERSION = "customer-gap-supplement-request-v1.0"
+
+READINESS_CAPABILITY_GAPS = {
+    "business_identity",
+    "customer_use_context",
+    "production_bearing_facts",
+    "critical_constraints",
+}
+
+LEGACY_BLOCKER_CAPABILITY = {
+    "public_display_name": "business_identity",
+    "company_short_name": "business_identity",
+    "industry": "business_identity",
+    "primary_products_or_services": "business_identity",
+    "core_audience": "customer_use_context",
+    "customer_use_cases": "customer_use_context",
+    "customer_pains": "customer_use_context",
+    "differentiators": "production_bearing_facts",
+}
+
+GAP_QUESTIONS = {
+    "business_identity": {
+        "label": "主要产品或服务",
+        "question": "还有哪些主要产品或服务？",
+    },
+    "customer_use_context": {
+        "label": "顾客和使用场景",
+        "question": (
+            "什么样的顾客通常会来？他们一般在什么情况下会使用你们的服务？"
+        ),
+    },
+    "production_bearing_facts": {
+        "label": "具体业务信息",
+        "question": (
+            "再告诉我们一些具体业务信息，例如价格、流程、服务内容、营业规则或真实案例。"
+        ),
+    },
+}
 
 
 def now_iso() -> str:
@@ -154,6 +192,154 @@ def _latest_intake_dir(
     return directories[0] if directories else None
 
 
+def _intake_dirs(
+    settings: Settings,
+    business_id: str,
+) -> list[Path]:
+    root = settings.pipeline_root / "data" / "customer_intakes" / business_id
+    if not root.exists():
+        return []
+    return sorted(path for path in root.iterdir() if path.is_dir())
+
+
+def _latest_full_intake_dir(
+    settings: Settings,
+    business_id: str,
+) -> Path | None:
+    for directory in reversed(_intake_dirs(settings, business_id)):
+        request_path = directory / "customer_onboarding_request_v1.json"
+        if not request_path.is_file():
+            continue
+        request = _read_json(request_path)
+        if request.get("intake_type") != "gap_supplement" and request.get(
+            "materials"
+        ) is not None:
+            return directory
+    return None
+
+
+def _reviewed_business_context(
+    settings: Settings,
+    business_id: str,
+) -> dict[str, Any]:
+    grouped: dict[str, list[Any]] = {}
+    for directory in _intake_dirs(settings, business_id):
+        path = directory / "reviewed_persona_fact_candidates_v1.json"
+        if not path.is_file():
+            continue
+        artifact = _read_json(path)
+        for item in artifact.get("fact_candidates") or []:
+            if not isinstance(item, dict) or (
+                item.get("persona_scope") != "business"
+                or item.get("candidate_state") != "known_candidate"
+            ):
+                continue
+            field = str(item.get("target_field") or "")
+            value = item.get("normalized_value")
+            if field and value not in (None, "", []):
+                grouped.setdefault(field, []).append(copy.deepcopy(value))
+    context: dict[str, Any] = {}
+    for field, values in grouped.items():
+        unique: list[Any] = []
+        seen: set[str] = set()
+        for value in values:
+            fingerprint = canonical_sha256(value)
+            if fingerprint not in seen:
+                seen.add(fingerprint)
+                unique.append(value)
+        context[field] = unique[0] if len(unique) == 1 else unique
+    return context
+
+
+def _normalized_readiness_blockers(
+    blockers: list[Any],
+) -> list[str]:
+    normalized: list[str] = []
+    for blocker in blockers:
+        value = LEGACY_BLOCKER_CAPABILITY.get(str(blocker), str(blocker))
+        if value in READINESS_CAPABILITY_GAPS and value not in normalized:
+            normalized.append(value)
+    return normalized
+
+
+def _critical_gap_details(
+    settings: Settings,
+    business_id: str,
+) -> list[dict[str, str]]:
+    values: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for directory in _intake_dirs(settings, business_id):
+        intake_path = directory / "customer_intake_v1.json"
+        if not intake_path.is_file():
+            continue
+        intake = _read_json(intake_path)
+        items = list(intake.get("conflicts") or []) + list(
+            intake.get("open_questions") or []
+        )
+        for item in items:
+            if not isinstance(item, dict) or item.get("resolved") is True:
+                continue
+            if not (
+                item.get("severity") == "critical"
+                or item.get("production_blocked") is True
+                or item.get("blocks_truthful_production") is True
+            ):
+                continue
+            constraint_id = str(
+                item.get("constraint_id")
+                or item.get("conflict_id")
+                or item.get("question_id")
+                or canonical_sha256(item)[:16]
+            )
+            if constraint_id in seen:
+                continue
+            seen.add(constraint_id)
+            context = str(
+                item.get("question")
+                or item.get("message")
+                or item.get("description")
+                or item.get("note")
+                or "请说明这项关键信息的真实情况。"
+            )
+            values.append(
+                {
+                    "gap_id": f"critical_constraints:{constraint_id}",
+                    "label": "关键冲突确认",
+                    "question": context,
+                }
+            )
+    return values
+
+
+def _readiness_gap_projection(
+    settings: Settings,
+    business_id: str,
+    fact_review: dict[str, Any] | None,
+) -> list[dict[str, str]]:
+    blockers = _normalized_readiness_blockers(
+        list((fact_review or {}).get("business_persona_blockers") or [])
+    )
+    result: list[dict[str, str]] = []
+    for blocker in blockers:
+        if blocker == "critical_constraints":
+            details = _critical_gap_details(settings, business_id)
+            result.extend(
+                details
+                or [
+                    {
+                        "gap_id": "critical_constraints",
+                        "label": "关键冲突确认",
+                        "question": "请说明当前冲突信息中哪一项准确，以及真实情况是什么。",
+                    }
+                ]
+            )
+            continue
+        question = GAP_QUESTIONS.get(blocker)
+        if question:
+            result.append({"gap_id": blocker, **question})
+    return result
+
+
 def _intake_identity(
     intake_dir: Path | None,
 ) -> dict[str, Any]:
@@ -169,6 +355,7 @@ def _intake_identity(
             "customer_name": (request.get("customer_name")),
             "industry": (request.get("industry")),
             "intake_id": (request.get("intake_id")),
+            "intake_type": (request.get("intake_type") or "initial_onboarding"),
         }
 
     intake_path = intake_dir / "customer_intake_v1.json"
@@ -397,6 +584,9 @@ def _customer_projection(
             )
         ),
         "latest_intake_id": (intake_identity.get("intake_id")),
+        "latest_intake_type": (
+            intake_identity.get("intake_type") or "initial_onboarding"
+        ),
         "business_persona": (
             _project_persona(
                 persona_path,
@@ -538,24 +728,21 @@ def get_customer_detail(
                 )
             ]
 
-        reviewed_path = intake_dir / ("reviewed_persona_" "fact_candidates_v1.json")
-
-        if reviewed_path.is_file():
-            artifact = _read_json(reviewed_path)
-
-            reviewed_candidates = [
-                _candidate_projection(item)
-                for item in (artifact.get("fact_candidates") or [])
-                if isinstance(
-                    item,
-                    dict,
-                )
-            ]
-
         review_path = intake_dir / ("customer_fact_" "review_v1.json")
 
         if review_path.is_file():
             fact_review = _read_json(review_path)
+
+    for directory in _intake_dirs(settings, business_id):
+        reviewed_path = directory / ("reviewed_persona_" "fact_candidates_v1.json")
+        if not reviewed_path.is_file():
+            continue
+        artifact = _read_json(reviewed_path)
+        reviewed_candidates.extend(
+            _candidate_projection(item)
+            for item in (artifact.get("fact_candidates") or [])
+            if isinstance(item, dict)
+        )
 
     status = projection["status"]
 
@@ -570,11 +757,20 @@ def get_customer_detail(
         "NONE",
     )
 
+    raw_blockers = list((fact_review or {}).get("business_persona_blockers") or [])
     return {
         **projection,
         "fact_candidates": (candidates),
         "reviewed_fact_candidates": (reviewed_candidates),
         "fact_review": fact_review,
+        "readiness_gaps": _readiness_gap_projection(
+            settings,
+            business_id,
+            fact_review,
+        ),
+        "legacy_readiness_recheck_available": any(
+            str(item) not in READINESS_CAPABILITY_GAPS for item in raw_blockers
+        ),
         "next_action": next_action,
         "authority": {
             "raw_input_is_persona": False,
@@ -617,7 +813,7 @@ def get_customer_input(
             "请返回客户列表重新选择。",
         )
 
-    intake_dir = _latest_intake_dir(
+    intake_dir = _latest_full_intake_dir(
         settings,
         business_id,
     )
@@ -647,6 +843,136 @@ def get_customer_input(
         "industry": request.get("industry"),
         "materials": request.get("materials"),
         "request_path": str(request_path.resolve()),
+    }
+
+
+def prepare_customer_gap_supplement_request(
+    settings: Settings,
+    *,
+    business_id: str,
+    answers: list[dict[str, Any]],
+    created_by_user_id: int,
+    created_by_phone: str,
+) -> dict[str, Any]:
+    if not BUSINESS_ID_RE.fullmatch(business_id):
+        raise CanonicalOperationError(
+            "INVALID_BUSINESS_ID",
+            "客户引用格式无效。",
+            "请返回客户列表重新选择。",
+        )
+    detail = get_customer_detail(settings, business_id)
+    if detail["status"] != "needs_more_info":
+        raise CanonicalOperationError(
+            "CUSTOMER_GAP_SUPPLEMENT_NOT_REQUIRED",
+            "当前客户不需要补充缺失信息。",
+            "请刷新客户详情并按当前状态继续。",
+        )
+    available = {
+        str(item["gap_id"]): item for item in detail.get("readiness_gaps") or []
+    }
+    normalized: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for item in answers:
+        target_gap = str(item.get("target_gap") or "").strip()
+        raw_answer = str(item.get("raw_answer") or "").strip()
+        if target_gap not in available:
+            raise CanonicalOperationError(
+                "CUSTOMER_GAP_INVALID",
+                "补充问题已经变化。",
+                "请刷新页面后按当前缺失信息重新填写。",
+            )
+        if not raw_answer:
+            continue
+        if len(raw_answer) > 12000:
+            raise CanonicalOperationError(
+                "CUSTOMER_GAP_ANSWER_TOO_LONG",
+                "单项补充内容过长。",
+                "请将这项回答精简到 12000 字以内。",
+            )
+        if target_gap in seen:
+            raise CanonicalOperationError(
+                "CUSTOMER_GAP_DUPLICATE",
+                "同一项缺失信息只能提交一次回答。",
+                "请合并回答后重新提交。",
+            )
+        seen.add(target_gap)
+        normalized.append(
+            {
+                "target_gap": target_gap,
+                "raw_answer": raw_answer,
+            }
+        )
+    if not normalized:
+        raise CanonicalOperationError(
+            "CUSTOMER_GAP_ANSWER_REQUIRED",
+            "请至少补充一项缺失信息。",
+            "填写真实信息后再继续。",
+        )
+
+    directories = _intake_dirs(settings, business_id)
+    numbers = []
+    for directory in directories:
+        match = re.fullmatch(r"intake_(\d{4})", directory.name)
+        if match:
+            numbers.append(int(match.group(1)))
+    intake_id = f"intake_{max(numbers, default=0) + 1:04d}"
+    root = (
+        settings.pipeline_root
+        / "data"
+        / "customer_intakes"
+        / business_id
+        / intake_id
+    )
+    request_path = root / "customer_onboarding_request_v1.json"
+    reviewed_sources: list[dict[str, Any]] = []
+    for directory in directories:
+        path = directory / "reviewed_persona_fact_candidates_v1.json"
+        if path.is_file():
+            reviewed_sources.append(
+                {
+                    "intake_id": directory.name,
+                    "path": str(path.resolve()),
+                    "sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+                }
+            )
+    created_at = now_iso()
+    request = {
+        "schema_version": GAP_SUPPLEMENT_SCHEMA_VERSION,
+        "intake_type": "gap_supplement",
+        "business_id": business_id,
+        "intake_id": intake_id,
+        "customer_name": detail["display_name"],
+        "industry": detail["industry"],
+        "target_gaps": [item["target_gap"] for item in normalized],
+        "gap_answers": normalized,
+        "input_actor": "operator",
+        "created_by": {
+            "user_id": created_by_user_id,
+            "phone": created_by_phone,
+        },
+        "created_at": created_at,
+        "reviewed_context": _reviewed_business_context(settings, business_id),
+        "source_lineage": {
+            "previous_intake_ids": [path.name for path in directories],
+            "reviewed_fact_artifacts": reviewed_sources,
+            "old_human_decisions_preserved": True,
+        },
+        "authority": {
+            "ui_request_is_customer_truth": False,
+            "supplement_only": True,
+            "full_materials_reanalysis_allowed": False,
+            "previous_intakes_preserved": True,
+            "human_review_required": True,
+        },
+    }
+    _write_json_atomic(request_path, request)
+    return {
+        "business_id": business_id,
+        "intake_id": intake_id,
+        "customer_name": detail["display_name"],
+        "industry": detail["industry"],
+        "request_path": str(request_path.resolve()),
+        "target_gaps": request["target_gaps"],
     }
 
 

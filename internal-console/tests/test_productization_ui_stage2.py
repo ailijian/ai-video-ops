@@ -63,8 +63,32 @@ def test_customer_needs_info_uses_capability_gap_language():
         in customer_components
     )
     assert 'critical_constraints: "还有关键冲突或边界需要确认"' in customer_components
-    assert 'actionLabel: "重新检查现有资料"' in customer
+    assert "补充缺失信息" in customer
+    assert "/gaps/supplement" in customer
+    assert "/edit\" data-route>编辑完整资料" in customer
+    assert "customer-name" not in customer[
+        customer.index("async function renderCustomerSupplement") : customer.index(
+            "function renderFailedCustomer"
+        )
+    ]
+    assert "customer-materials" not in customer[
+        customer.index("async function renderCustomerSupplement") : customer.index(
+            "function renderFailedCustomer"
+        )
+    ]
+    assert "legacy_readiness_recheck_available" in customer
     assert "/readiness/recheck" in customer
+
+
+def test_speaker_raw_intake_can_be_saved_before_customer_profile_approval():
+    speaker = read_asset("speaker-views.js")
+    component = read_asset("speaker-components.js")
+    assert "暂时不能添加出镜人" not in speaker
+    assert "保存出镜人资料" in speaker
+    assert "result.draft_saved" in speaker
+    assert "pending_customer_profile" in speaker
+    assert "继续确认出镜人" in speaker
+    assert "待客户档案确认" in component
 
 
 def test_customer_and_speaker_reviews_are_compact_and_complete_before_submit():
