@@ -14,7 +14,6 @@ import {
 
 import {
   bindDecisionControls,
-  NeedsInfoState,
   ProfileRow,
   ProfileSection,
   ReviewList,
@@ -33,7 +32,11 @@ const SPEAKER_PROFILE_GROUPS = [
   },
   {
     title: "明确不能表达",
-    fields: ["first_person_forbidden_claims", "role_scope_constraints"],
+    fields: ["first_person_forbidden_claims"],
+  },
+  {
+    title: "角色边界",
+    fields: ["role_scope_constraints"],
   },
   {
     title: "暂未确认",
@@ -76,6 +79,23 @@ function speakerProfileSections(facts = []) {
         ),
       }),
     );
+  }
+  if (!values.has("first_person_forbidden_claims")) {
+    sections.push(`
+      <section class="profile-section">
+        <div class="profile-section-heading">
+          <h2>明确不能表达</h2>
+        </div>
+        <dl class="profile-rows">
+          <div class="profile-row">
+            <dt>额外明确限制</dt>
+            <dd>
+              <p class="profile-value-text">未记录额外明确限制</p>
+              <p class="field-hint">仍然受通用第一人称边界约束：只有已经确认属于这个人的经历、职责和允许主题，才能以第一人称表达。</p>
+            </dd>
+          </div>
+        </dl>
+      </section>`);
   }
   return sections.filter(Boolean).join("");
 }
@@ -239,7 +259,7 @@ export function createSpeakerViews({
 
                   <div class="field">
                     <label for="speaker-forbidden">
-                      不能以第一人称表达
+                      额外明确限制（选填）
                     </label>
 
                     <textarea
@@ -499,8 +519,14 @@ export function createSpeakerViews({
         </details>`
       : "";
 
+    const isSupplement =
+      detail.latest_intake_type === "gap_supplement";
+    const reviewTitle = isSupplement
+      ? "确认刚补充的信息"
+      : "确认出镜人信息";
+
     app.innerHTML = shell(
-      "确认出镜人信息",
+      reviewTitle,
       `
         <main class="page page-form customer-review-page profile-review-page">
           <div class="case-review-heading">
@@ -519,8 +545,10 @@ export function createSpeakerViews({
 
           ${pageHeading(
             "",
-            "确认出镜人信息",
-            `请检查“${detail.display_name}”本人可以承担的职责、经历和表达范围。`,
+            reviewTitle,
+            isSupplement
+              ? "这里只审核本轮新增事实，之前已经确认的信息不会要求再次审核。"
+              : `请检查“${detail.display_name}”本人可以承担的职责、经历和表达范围。`,
           )}
 
           ${knownHtml}
@@ -780,9 +808,15 @@ export function createSpeakerViews({
     detail,
     businessId,
   ) {
-    const blockers =
-      detail.fact_review
-        ?.speaker_persona_blockers || [];
+    const gaps = detail.readiness_gaps || [];
+    const blockers = gaps.map((item) => item.title);
+    const primary = detail.can_recheck_existing
+      ? `<button id="recheck-speaker-readiness" class="btn btn-primary" type="button">重新检查现有资料</button>`
+      : `<a class="btn btn-primary" href="/customers/${encodeURIComponent(
+          businessId,
+        )}/speakers/${encodeURIComponent(
+          detail.speaker_id,
+        )}/supplement" data-route>补充出镜人资料</a>`;
 
     app.innerHTML = shell(
       "出镜人信息待补充",
@@ -808,14 +842,20 @@ export function createSpeakerViews({
             `“${detail.display_name}”需要补充真实资料后才能继续。`,
           )}
 
-          ${NeedsInfoState({
-            description: "系统不会自动补写未知信息。请先核对资料，再重新建立或补充出镜人。",
-            items: blockers.map((field) => speakerFieldLabel(field)),
-            primaryHref: `/customers/${encodeURIComponent(businessId)}#speakers`,
-            primaryLabel: "返回出镜人",
-            secondaryHref: `/customers/${encodeURIComponent(businessId)}`,
-            secondaryLabel: "稍后处理",
-          })}
+          <section class="panel needs-info-state">
+            <span class="state-icon" aria-hidden="true">!</span>
+            <div>
+              <h2>还缺少一些关键信息</h2>
+              <p>${detail.can_recheck_existing
+                ? "现有人工确认资料可以按新规则直接重新检查，不会调用模型。"
+                : "系统不会自动补写未知信息，只需补充当前缺失的内容。"}</p>
+              ${blockers.length ? `<ul>${blockers.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>` : ""}
+              <div class="needs-info-actions">
+                ${primary}
+                <a class="btn btn-secondary" href="/customers/${encodeURIComponent(businessId)}" data-route>稍后处理</a>
+              </div>
+            </div>
+          </section>
         </main>`,
     );
 
@@ -868,6 +908,125 @@ export function createSpeakerViews({
     );
 
     bindCommonActions();
+
+    document
+      .querySelector("#recheck-speaker-readiness")
+      ?.addEventListener("click", async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        button.textContent = "正在检查…";
+        try {
+          const result = await api(
+            `/api/customers/${encodeURIComponent(businessId)}/speakers/${encodeURIComponent(detail.speaker_id)}/readiness/recheck`,
+            { method: "POST" },
+          );
+          if (
+            result.recheck.status ===
+            "completed_persona_review_required"
+          ) {
+            showToast("现有资料已满足要求，请确认出镜人档案。");
+          } else {
+            showToast("已重新检查，请继续补充仍缺少的信息。");
+          }
+          renderSpeakerDetail(businessId, detail.speaker_id);
+        } catch (error) {
+          showToast(error.detail?.next_action || error.message);
+          button.disabled = false;
+          button.textContent = "重新检查现有资料";
+        }
+      });
+  }
+
+  async function renderSpeakerSupplement(
+    businessId,
+    speakerId,
+  ) {
+    stopTaskPolling();
+    skeletonPage("补充出镜人资料");
+    try {
+      const detail = await api(
+        `/api/customers/${encodeURIComponent(businessId)}/speakers/${encodeURIComponent(speakerId)}`,
+      );
+      const gaps = detail.readiness_gaps || [];
+      app.innerHTML = shell(
+        "补充出镜人资料",
+        `
+          <main class="page page-form profile-mutation-page">
+            <div class="case-review-heading">
+              <a class="back-link" href="/customers/${encodeURIComponent(businessId)}/speakers/${encodeURIComponent(speakerId)}" data-route>← 返回出镜人</a>
+              ${speakerStatusPill(detail.status)}
+            </div>
+            ${pageHeading(
+              "",
+              "补充出镜人资料",
+              "只补当前缺少的信息；之前已经确认的事实和人工决定会完整保留。",
+            )}
+            <section class="work-surface profile-form-surface">
+              <form id="speaker-supplement-form" novalidate>
+                ${gaps
+                  .map(
+                    (gap) => `
+                      <div class="field">
+                        <label for="speaker-gap-${escapeHtml(gap.field)}">${escapeHtml(gap.title)}</label>
+                        <textarea id="speaker-gap-${escapeHtml(gap.field)}" data-gap-field="${escapeHtml(gap.field)}" rows="5" maxlength="12000" required></textarea>
+                        <span class="field-hint">${escapeHtml(gap.question)}</span>
+                      </div>`,
+                  )
+                  .join("")}
+                <div id="speaker-supplement-error" class="form-error" role="alert"></div>
+                <div class="profile-form-actions">
+                  <button class="btn btn-primary btn-wide" type="submit">提交补充资料</button>
+                  <a class="btn btn-secondary" href="/customers/${encodeURIComponent(businessId)}" data-route>稍后处理</a>
+                </div>
+              </form>
+            </section>
+          </main>`,
+      );
+      bindCommonActions();
+      document
+        .querySelector("#speaker-supplement-form")
+        .addEventListener("submit", async (event) => {
+          event.preventDefault();
+          const button = event.currentTarget.querySelector("button[type=submit]");
+          const answers = Object.fromEntries(
+            [...event.currentTarget.querySelectorAll("[data-gap-field]")].map(
+              (input) => [input.dataset.gapField, input.value.trim()],
+            ),
+          );
+          if (Object.values(answers).some((value) => !value)) {
+            showToast("请完成当前列出的补充项。");
+            return;
+          }
+          button.disabled = true;
+          button.textContent = "正在提交…";
+          try {
+            const result = await api(
+              `/api/customers/${encodeURIComponent(businessId)}/speakers/${encodeURIComponent(speakerId)}/gaps/supplement`,
+              {
+                method: "POST",
+                body: JSON.stringify({ answers }),
+              },
+            );
+            const task = result.task || result.existing_task;
+            app.innerHTML = shell(
+              "出镜人信息分析",
+              `<main class="page">${pageHeading(
+                "出镜人",
+                detail.display_name,
+                "正在整理本轮新增资料，旧资料不会重新分析。",
+              )}<div data-speaker-progress></div></main>`,
+            );
+            bindCommonActions();
+            bindSpeakerProgress(task, businessId, speakerId);
+          } catch (error) {
+            showToast(error.detail?.next_action || error.message);
+            button.disabled = false;
+            button.textContent = "提交补充资料";
+          }
+        });
+    } catch (error) {
+      renderLoadError("补充资料暂时无法打开", error);
+    }
   }
 
   function renderSavedSpeakerDraft(detail, businessId) {
@@ -1090,6 +1249,7 @@ export function createSpeakerViews({
 
   return {
     renderSpeakerNew,
+    renderSpeakerSupplement,
     renderSpeakerDetail,
     renderSpeakerTaskDetail,
     stopTaskPolling,

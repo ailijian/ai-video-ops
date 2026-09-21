@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import sys
+import copy
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -310,6 +311,210 @@ def test_human_review_builds_review_required_speaker_persona(
     assert persona["business_persona_ref"]["persona_id"] == "fixture_pet_store"
 
     assert persona["validation"]["required_fact_approval_blockers"] == []
+
+
+def test_forbidden_absent_is_optional_and_universal_guardrail_remains(
+    tmp_path: Path,
+):
+    create_approved_business(tmp_path)
+    request = copy.deepcopy(speaker_request())
+    request["forbidden_claims"] = []
+    summary = analysis.analyze_speaker_onboarding(
+        request=request,
+        pipeline_root=tmp_path,
+        extractor=fixture_extractor,
+    )
+    result = review.review_speaker_facts(
+        request=review_request(summary),
+        pipeline_root=tmp_path,
+    )
+    assert result["status"] == "completed_persona_review_required"
+    persona = json.loads(
+        Path(result["artifacts"]["speaker_persona_v1"]).read_text(encoding="utf-8")
+    )
+    forbidden = persona["facts"]["first_person_forbidden_claims"]
+    assert forbidden == {
+        "state": "unknown",
+        "value": None,
+        "source_refs": [],
+        "review_note": None,
+    }
+    assert (
+        persona["speaker_authority"][
+            "first_person_claims_require_speaker_known_fact_or_allowed_topic"
+        ]
+        is True
+    )
+    assert persona["speaker_authority"]["business_facts_copied"] is False
+
+
+def test_historical_forbidden_only_blocker_rechecks_without_model_call(
+    tmp_path: Path,
+):
+    create_approved_business(tmp_path)
+    request = copy.deepcopy(speaker_request())
+    request["forbidden_claims"] = []
+    summary = analysis.analyze_speaker_onboarding(
+        request=request,
+        pipeline_root=tmp_path,
+        extractor=fixture_extractor,
+    )
+    root = Path(summary["artifacts"]["speaker_intake_v1"]).parent
+    intake = json.loads((root / "speaker_intake_v1.json").read_text(encoding="utf-8"))
+    candidates = json.loads(
+        (root / "speaker_fact_candidates_v1.json").read_text(encoding="utf-8")
+    )
+    req = review_request(summary)
+    reviewed = review.apply_decisions(
+        intake=intake,
+        candidate_artifact=candidates,
+        decisions=req["decisions"],
+        reviewer="李健",
+        reviewed_at="2026-09-18T00:00:00+00:00",
+    )
+    reviewed_path = root / "reviewed_speaker_fact_candidates_v1.json"
+    reviewed_path.write_text(
+        json.dumps(reviewed, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    decisions_before = reviewed_path.read_bytes()
+    (root / "speaker_fact_review_v1.json").write_text(
+        json.dumps(
+            {
+                "status": "completed_persona_blocked",
+                "speaker_persona_blockers": ["first_person_forbidden_claims"],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    result = review.recheck_speaker_readiness(
+        request={
+            "business_id": summary["business_id"],
+            "speaker_id": summary["speaker_id"],
+            "reviewer": "李健",
+        },
+        pipeline_root=tmp_path,
+    )
+    assert result["status"] == "completed_persona_review_required"
+    assert result["model_call_performed"] is False
+    assert result["previous_human_decisions_preserved"] is True
+    assert reviewed_path.read_bytes() == decisions_before
+    repeated = review.recheck_speaker_readiness(
+        request={
+            "business_id": summary["business_id"],
+            "speaker_id": summary["speaker_id"],
+            "reviewer": "李健",
+        },
+        pipeline_root=tmp_path,
+    )
+    assert repeated == result
+    assert reviewed_path.read_bytes() == decisions_before
+
+
+def test_gap_supplement_reviews_only_new_fact_and_preserves_old_decisions(
+    tmp_path: Path,
+):
+    create_approved_business(tmp_path)
+    request = copy.deepcopy(speaker_request())
+    request["forbidden_claims"] = []
+
+    def role_only(_: dict):
+        return {"facts": [fixture_extractor({})["facts"][0]], "model": "fixture", "usage": {}}
+
+    first = analysis.analyze_speaker_onboarding(
+        request=request,
+        pipeline_root=tmp_path,
+        extractor=role_only,
+    )
+    first_result = review.review_speaker_facts(
+        request=review_request(first),
+        pipeline_root=tmp_path,
+    )
+    assert first_result["status"] == "completed_persona_blocked"
+    assert first_result["speaker_persona_blockers"] == [
+        "first_person_allowed_topics"
+    ]
+    first_reviewed = Path(first_result["artifacts"]["reviewed_candidates_v1"])
+    first_bytes = first_reviewed.read_bytes()
+    supplement = {
+        "business_id": first["business_id"],
+        "speaker_id": first["speaker_id"],
+        "intake_id": "intake_0002",
+        "intake_type": "gap_supplement",
+        "speaker_name": "王琳",
+        "public_role": "店主",
+        "speaker_type": "owner_founder",
+        "materials": "可以本人讲的内容：门店接待和本人实际完成的洗护判断",
+        "forbidden_claims": [],
+        "target_gaps": ["first_person_allowed_topics"],
+        "raw_answers": {
+            "first_person_allowed_topics": "门店接待和本人实际完成的洗护判断"
+        },
+        "source_type": "internal_console_speaker_gap_supplement",
+        "source_lineage": {"previous_reviewed_fact_refs": [str(first_reviewed)]},
+        "previous_reviewed_fact_refs": [str(first_reviewed)],
+        "created_by": {"user_id": 1, "phone": "13800000000"},
+    }
+
+    def must_not_call_model(_: dict):
+        raise AssertionError("gap supplement must not re-run model analysis")
+
+    second = analysis.analyze_speaker_onboarding(
+        request=supplement,
+        pipeline_root=tmp_path,
+        extractor=must_not_call_model,
+    )
+    second_candidates = json.loads(
+        Path(second["artifacts"]["speaker_fact_candidates_v1"]).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert second["authority"]["remote_model_call_performed"] is False
+    assert {item["target_field"] for item in second_candidates["fact_candidates"]} == {
+        "first_person_allowed_topics"
+    }
+    second_root = Path(second["artifacts"]["speaker_intake_v1"]).parent
+    second_intake = json.loads(
+        (second_root / "speaker_intake_v1.json").read_text(encoding="utf-8")
+    )
+    rejected = review.apply_decisions(
+        intake=second_intake,
+        candidate_artifact=second_candidates,
+        decisions=[
+            {
+                "candidate_id": second_candidates["fact_candidates"][0][
+                    "fact_candidate_id"
+                ],
+                "decision": "reject",
+                "note": "仍需补充",
+            }
+        ],
+        reviewer="李健",
+        reviewed_at="2026-09-18T01:00:00+00:00",
+    )
+    old_reviewed = json.loads(first_reviewed.read_text(encoding="utf-8"))
+    rejected_input = review.build_speaker_persona_input(
+        business_id=first["business_id"],
+        speaker_id=first["speaker_id"],
+        speaker_type="owner_founder",
+        intake_id="intake_0002",
+        reviewed=rejected,
+        reviewed_path=second_root / "reviewed_speaker_fact_candidates_v1.json",
+        reviewed_sources=[
+            (first_reviewed, old_reviewed),
+            (second_root / "reviewed_speaker_fact_candidates_v1.json", rejected),
+        ],
+    )
+    assert review.speaker_blockers(rejected_input) == [
+        "first_person_allowed_topics"
+    ]
+    second_result = review.review_speaker_facts(
+        request=review_request(second),
+        pipeline_root=tmp_path,
+    )
+    assert second_result["status"] == "completed_persona_review_required"
+    assert first_reviewed.read_bytes() == first_bytes
 
 
 def test_rejecting_required_speaker_fact_blocks_persona(

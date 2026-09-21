@@ -83,10 +83,12 @@ from .speaker_gateway import (
     approve_speaker_persona,
     get_speaker_detail,
     list_speakers,
+    prepare_speaker_gap_supplement_request,
     prepare_speaker_draft_analysis,
     prepare_speaker_onboarding_request,
     record_speaker_auto_handoff_status,
     review_speaker_facts,
+    recheck_speaker_readiness,
     speaker_attention_count,
 )
 
@@ -271,6 +273,10 @@ class CustomerAnalysisRequest(BaseModel):
         min_length=1,
         max_length=50000,
     )
+
+
+class SpeakerGapSupplementRequest(BaseModel):
+    answers: dict[str, str]
 
 
 class CustomerGapAnswer(BaseModel):
@@ -1268,6 +1274,66 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         return {
             "review": result,
         }
+
+    @app.post(
+        "/api/customers/{business_id}/speakers/{speaker_id}/gaps/supplement"
+    )
+    def supplement_speaker_gaps(
+        business_id: str,
+        speaker_id: str,
+        payload: SpeakerGapSupplementRequest,
+        x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(session, x_csrf_token)
+        active = find_active_speaker_task(settings.database_path, speaker_id)
+        if active is not None:
+            return {"started": False, "existing_task": active}
+        prepared = locked_authority_call(
+            "persona",
+            f"{business_id}:{speaker_id}",
+            prepare_speaker_gap_supplement_request,
+            settings,
+            business_id=business_id,
+            speaker_id=speaker_id,
+            answers=payload.answers,
+            created_by_user_id=int(session.user["id"]),
+            created_by_phone=str(session.user["phone"]),
+        )
+        task = create_speaker_task(
+            settings.database_path,
+            business_id=business_id,
+            speaker_id=speaker_id,
+            intake_id=prepared["intake_id"],
+            request_path=prepared["request_path"],
+            speaker_name=prepared["speaker_name"],
+            public_role=prepared["public_role"],
+            created_by_user_id=int(session.user["id"]),
+            queue_max=settings.task_queue_max,
+        )
+        speaker_task_runner.schedule(task["task_id"])
+        return {"started": True, "task": task}
+
+    @app.post(
+        "/api/customers/{business_id}/speakers/{speaker_id}/readiness/recheck"
+    )
+    def recheck_existing_speaker_facts(
+        business_id: str,
+        speaker_id: str,
+        x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(session, x_csrf_token)
+        result = locked_authority_call(
+            "persona",
+            f"{business_id}:{speaker_id}",
+            recheck_speaker_readiness,
+            settings,
+            business_id=business_id,
+            speaker_id=speaker_id,
+            reviewer=str(session.user["phone"]),
+        )
+        return {"recheck": result}
 
     @app.post("/api/customers/{business_id}/speakers/{speaker_id}/persona/approve")
     def approve_customer_speaker_persona(

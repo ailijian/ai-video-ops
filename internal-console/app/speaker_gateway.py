@@ -29,6 +29,25 @@ SPEAKER_TYPES = {
 
 REQUEST_SCHEMA_VERSION = "speaker-onboarding-request-v1.0"
 
+SPEAKER_GAP_QUESTIONS = {
+    "public_display_name": {
+        "title": "出镜人姓名",
+        "question": "这个出镜人应该如何称呼？",
+    },
+    "public_role": {
+        "title": "公开身份",
+        "question": "这个人对外是什么身份？",
+    },
+    "speaker_role_facts": {
+        "title": "本人职责与经历",
+        "question": "他/她平时具体负责什么？有哪些事情是本人亲自做的或真实经历过的？",
+    },
+    "first_person_allowed_topics": {
+        "title": "可以本人讲的内容",
+        "question": "哪些内容适合由他/她本人用第一人称来讲？可以写职责、亲自做过的事情或真实经历。",
+    },
+}
+
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -408,6 +427,7 @@ def _speaker_projection(
         "speaker_type": str(speaker_type),
         "status": status,
         "latest_intake_id": (request.get("intake_id")),
+        "latest_intake_type": request.get("intake_type") or "initial_onboarding",
         "source_type": request.get("source_type")
         or "internal_console_speaker_materials",
         "human_confirmed_discovery": bool(
@@ -593,6 +613,16 @@ def get_speaker_detail(
         if review_path.is_file():
             review = _read_json(review_path)
 
+    raw_blockers = list((review or {}).get("speaker_persona_blockers") or [])
+    can_recheck_existing = detail["status"] == "needs_more_info" and bool(
+        raw_blockers
+    ) and set(raw_blockers) == {"first_person_forbidden_claims"}
+    readiness_gaps = [
+        {"field": field, **SPEAKER_GAP_QUESTIONS[field]}
+        for field in raw_blockers
+        if field in SPEAKER_GAP_QUESTIONS
+    ]
+
     next_action = {
         "analysis_pending": ("WAIT_FOR_SPEAKER_ANALYSIS"),
         "fact_review_required": ("REVIEW_SPEAKER_FACTS"),
@@ -609,6 +639,8 @@ def get_speaker_detail(
         "fact_candidates": (candidates),
         "reviewed_fact_candidates": (reviewed),
         "fact_review": review,
+        "readiness_gaps": readiness_gaps,
+        "can_recheck_existing": can_recheck_existing,
         "next_action": (next_action),
         "authority": {
             "raw_input_is_speaker_persona": (False),
@@ -836,6 +868,7 @@ def prepare_speaker_onboarding_request(
             "production_consumption_allowed": False,
         },
     }
+
     if business is not None and business_path is not None:
         request["business_persona_ref"] = {
             "persona_id": (business.get("persona_id")),
@@ -857,6 +890,115 @@ def prepare_speaker_onboarding_request(
         "speaker_name": (speaker_name),
         "public_role": (public_role),
         "request_path": str(request_path.resolve()),
+    }
+
+
+def _next_speaker_intake_id(
+    settings: Settings,
+    business_id: str,
+    speaker_id: str,
+) -> str:
+    root = settings.pipeline_root / "data" / "speaker_intakes" / business_id / speaker_id
+    numbers: list[int] = []
+    if root.exists():
+        for path in root.glob("intake_*"):
+            match = re.fullmatch(r"intake_(\d+)", path.name)
+            if match and path.is_dir():
+                numbers.append(int(match.group(1)))
+    return f"intake_{max(numbers, default=0) + 1:04d}"
+
+
+def prepare_speaker_gap_supplement_request(
+    settings: Settings,
+    *,
+    business_id: str,
+    speaker_id: str,
+    answers: dict[str, str],
+    created_by_user_id: int,
+    created_by_phone: str,
+) -> dict[str, Any]:
+    _approved_business_persona(settings, business_id)
+    detail = get_speaker_detail(settings, business_id, speaker_id)
+    if detail["status"] != "needs_more_info":
+        raise CanonicalOperationError(
+            "SPEAKER_GAP_SUPPLEMENT_NOT_REQUIRED",
+            "当前出镜人不处于待补充状态。",
+            "请刷新页面后按当前状态继续。",
+        )
+    required = [item["field"] for item in detail["readiness_gaps"]]
+    normalized = {
+        str(field): str(value or "").strip() for field, value in (answers or {}).items()
+    }
+    if not required or set(normalized) != set(required) or any(
+        not normalized[field] for field in required
+    ):
+        raise CanonicalOperationError(
+            "SPEAKER_GAP_ANSWERS_INCOMPLETE",
+            "请完成当前缺失的出镜人信息。",
+            "只需补充页面列出的内容。",
+        )
+    intake_root = (
+        settings.pipeline_root
+        / "data"
+        / "speaker_intakes"
+        / business_id
+        / speaker_id
+    )
+    previous_refs = [
+        str(path.resolve())
+        for path in sorted(
+            intake_root.glob("intake_*/reviewed_speaker_fact_candidates_v1.json")
+        )
+    ]
+    intake_id = _next_speaker_intake_id(settings, business_id, speaker_id)
+    root = intake_root / intake_id
+    request_path = root / "speaker_onboarding_request_v1.json"
+    created_at = now_iso()
+    request = {
+        "schema_version": REQUEST_SCHEMA_VERSION,
+        "business_id": business_id,
+        "speaker_id": speaker_id,
+        "intake_id": intake_id,
+        "intake_type": "gap_supplement",
+        "speaker_name": detail["display_name"],
+        "public_role": detail["public_role"],
+        "speaker_type": detail["speaker_type"],
+        "materials": "\n\n".join(
+            f"{SPEAKER_GAP_QUESTIONS[field]['title']}：{normalized[field]}"
+            for field in required
+        ),
+        "forbidden_claims": [],
+        "target_gaps": required,
+        "raw_answers": normalized,
+        "source_type": "internal_console_speaker_gap_supplement",
+        "source_lineage": {
+            "previous_reviewed_fact_refs": previous_refs,
+            "previous_human_decisions_preserved": True,
+        },
+        "previous_reviewed_fact_refs": previous_refs,
+        "created_by": {
+            "user_id": int(created_by_user_id),
+            "phone": str(created_by_phone),
+        },
+        "human_confirmed_identity": {},
+        "created_at": created_at,
+        "draft_status": "ready_for_analysis",
+        "authority": {
+            "supplement_is_speaker_truth": False,
+            "human_review_required": True,
+            "previous_speaker_facts_preserved": True,
+            "business_facts_must_not_be_copied": True,
+            "production_consumption_allowed": False,
+        },
+    }
+    _write_atomic_json(request_path, request)
+    return {
+        "business_id": business_id,
+        "speaker_id": speaker_id,
+        "intake_id": intake_id,
+        "request_path": str(request_path.resolve()),
+        "speaker_name": detail["display_name"],
+        "public_role": detail["public_role"],
     }
 
 
@@ -1144,6 +1286,42 @@ def review_speaker_facts(
             command,
         )
 
+    finally:
+        if temporary and temporary.exists():
+            temporary.unlink(missing_ok=True)
+
+
+def recheck_speaker_readiness(
+    settings: Settings,
+    *,
+    business_id: str,
+    speaker_id: str,
+    reviewer: str,
+) -> dict[str, Any]:
+    request = {
+        "business_id": business_id,
+        "speaker_id": speaker_id,
+        "reviewer": reviewer,
+    }
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            suffix=".json",
+            delete=False,
+        ) as handle:
+            json.dump(request, handle, ensure_ascii=False, indent=2)
+            temporary = Path(handle.name)
+        command = [
+            _pipeline_python(settings),
+            str(settings.pipeline_root / "scripts" / "speaker_fact_review_v1.py"),
+            "--recheck",
+            str(temporary.resolve()),
+            "--pipeline-root",
+            str(settings.pipeline_root),
+        ]
+        return _run_json_command(settings, command)
     finally:
         if temporary and temporary.exists():
             temporary.unlink(missing_ok=True)

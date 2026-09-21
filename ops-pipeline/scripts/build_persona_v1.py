@@ -102,8 +102,13 @@ SPEAKER_REQUIRED_KNOWN_FIELDS = (
     "public_role",
     "speaker_role_facts",
     "first_person_allowed_topics",
-    "first_person_forbidden_claims",
 )
+
+SPEAKER_UNIVERSAL_GUARDRAIL = {
+    "business_facts_copied": False,
+    "first_person_claims_require_speaker_known_fact_or_allowed_topic": True,
+    "business_facts_require_business_persona_lineage": True,
+}
 
 
 def now_iso() -> str:
@@ -269,13 +274,102 @@ def assess_business_persona_capabilities(
     }
 
 
+def assess_speaker_persona_capabilities(
+    facts: dict[str, Any],
+    *,
+    speaker_authority: dict[str, Any] | None = None,
+    critical_constraints: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    """Derive the minimum truthful Speaker Persona readiness contract.
+
+    Custom explicit forbidden claims are optional. The universal first-person
+    boundary is a control rule and is validated separately from content facts.
+    """
+
+    known_fields = {
+        field
+        for field, fact in facts.items()
+        if isinstance(fact, dict)
+        and fact.get("state") == "known"
+        and has_value(fact.get("value"))
+    }
+    authority = speaker_authority or {}
+    constraints = copy.deepcopy(critical_constraints or [])
+    groups = {
+        "identity": {
+            "required": True,
+            "satisfied": {
+                "public_display_name",
+                "public_role",
+            }.issubset(known_fields),
+            "evidence_fields": sorted(
+                known_fields & {"public_display_name", "public_role"}
+            ),
+        },
+        "role_personal_evidence": {
+            "required": True,
+            "satisfied": "speaker_role_facts" in known_fields,
+            "evidence_fields": sorted(known_fields & {"speaker_role_facts"}),
+        },
+        "first_person_allowed_scope": {
+            "required": True,
+            "satisfied": "first_person_allowed_topics" in known_fields,
+            "evidence_fields": sorted(
+                known_fields & {"first_person_allowed_topics"}
+            ),
+        },
+        "universal_first_person_guardrail": {
+            "required": True,
+            "satisfied": (
+                authority.get(
+                    "first_person_claims_require_speaker_known_fact_or_allowed_topic"
+                )
+                is True
+                and authority.get("business_facts_copied") is False
+            ),
+            "evidence_fields": [],
+        },
+        "critical_conflicts": {
+            "required": True,
+            "satisfied": not constraints,
+            "evidence_fields": [],
+            "blocking_items": constraints,
+        },
+    }
+    blockers = [
+        name
+        for name, group in groups.items()
+        if group["required"] and not group["satisfied"]
+    ]
+    missing_fields = [
+        field for field in SPEAKER_REQUIRED_KNOWN_FIELDS if field not in known_fields
+    ]
+    return {
+        "ready": not blockers,
+        "capability_groups": groups,
+        "blockers": blockers,
+        "missing_fields": missing_fields,
+        "known_fields": sorted(known_fields),
+        "custom_forbidden_claims_required": False,
+        "field_completion_percentage_used": False,
+    }
+
+
 def validate_required_fact_authority(persona: dict[str, Any]) -> list[str]:
     if persona.get("persona_scope", "business") == "speaker":
+        readiness = assess_speaker_persona_capabilities(
+            persona.get("facts") or {},
+            speaker_authority=persona.get("speaker_authority"),
+            critical_constraints=persona.get("critical_constraints") or [],
+        )
         errors = [
             f"{field} must be KNOWN before Speaker Persona approval."
-            for field in SPEAKER_REQUIRED_KNOWN_FIELDS
-            if not fact_is_known(persona, field)
+            for field in readiness["missing_fields"]
         ]
+        if "universal_first_person_guardrail" in readiness["blockers"]:
+            errors.append("Speaker Persona universal first-person guardrail is invalid.")
+        if "critical_conflicts" in readiness["blockers"]:
+            errors.append("Speaker Persona has unresolved critical authority conflicts.")
         if not isinstance(persona.get("business_persona_ref"), dict):
             errors.append("Speaker Persona requires an Approved Business Persona reference.")
         return errors
@@ -300,6 +394,8 @@ def persona_content_hash(persona: dict[str, Any]) -> str:
     # Personas so their already-approved content hashes remain byte-for-byte valid.
     if "persona_control_layer" in persona:
         content["persona_control_layer"] = persona["persona_control_layer"]
+    if "critical_constraints" in persona:
+        content["critical_constraints"] = persona["critical_constraints"]
     return canonical_sha256(content)
 
 
@@ -381,13 +477,24 @@ def render_persona_review_pack(persona: dict[str, Any]) -> str:
             )
             lines.append("```")
         lines.extend(["", "## Speaker cannot say", ""])
-        lines.append(
-            json.dumps(
-                persona.get("facts", {}).get("first_person_forbidden_claims", {}).get("value"),
-                ensure_ascii=False,
-                indent=2,
-            )
+        forbidden = persona.get("facts", {}).get(
+            "first_person_forbidden_claims", {}
         )
+        if forbidden.get("state") == "known" and has_value(forbidden.get("value")):
+            lines.append(
+                json.dumps(
+                    forbidden.get("value"),
+                    ensure_ascii=False,
+                    indent=2,
+                )
+            )
+        else:
+            lines.append("No additional explicit restriction was recorded.")
+            lines.append(
+                "The universal first-person guardrail remains active: only "
+                "Human-confirmed Speaker facts or allowed topics may be expressed "
+                "in the first person."
+            )
     lines.extend(["", "Human approval is required before Production Matching.", ""])
     return "\n".join(lines)
 
@@ -504,11 +611,7 @@ def build_persona(
         "speaker_type": speaker_type if persona_scope == "speaker" else None,
         "business_persona_ref": business_ref,
         "speaker_authority": (
-            {
-                "business_facts_copied": False,
-                "first_person_claims_require_speaker_known_fact_or_allowed_topic": True,
-                "business_facts_require_business_persona_lineage": True,
-            }
+            copy.deepcopy(SPEAKER_UNIVERSAL_GUARDRAIL)
             if persona_scope == "speaker"
             else None
         ),
@@ -566,6 +669,13 @@ def build_persona(
     }
     if persona_control_layer is not None:
         persona["persona_control_layer"] = copy.deepcopy(persona_control_layer)
+    critical_constraints = source.get("critical_constraints") or []
+    if critical_constraints:
+        if persona_scope != "speaker" or not isinstance(critical_constraints, list):
+            raise RuntimeError(
+                "critical_constraints is an optional Speaker Persona authority extension."
+            )
+        persona["critical_constraints"] = copy.deepcopy(critical_constraints)
     persona["validation"]["required_fact_approval_blockers"] = (
         validate_required_fact_authority(persona)
     )

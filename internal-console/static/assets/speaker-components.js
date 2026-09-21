@@ -13,7 +13,7 @@ const FIELD_LABELS = {
   public_role: "公开身份",
   speaker_role_facts: "本人职责 / 实践",
   first_person_allowed_topics: "可以第一人称讲",
-  first_person_forbidden_claims: "不能第一人称讲",
+  first_person_forbidden_claims: "额外明确限制",
   role_scope_constraints: "角色边界",
   unknown_facts: "暂时未知",
 };

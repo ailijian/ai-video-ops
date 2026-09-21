@@ -459,14 +459,12 @@ def assess_persona_onboarding_readiness(
     capability_groups = {
         **business_readiness["capability_groups"],
         "speaker_authority": {
-            "required": speaker_type != "generic",
-            "satisfied": speaker_type == "generic"
-            or {
+            "required": True,
+            "satisfied": {
                 "public_display_name",
                 "public_role",
                 "speaker_role_facts",
                 "first_person_allowed_topics",
-                "first_person_forbidden_claims",
             }.issubset(speaker_fields),
             "evidence_fields": sorted(
                 speaker_fields
@@ -475,7 +473,6 @@ def assess_persona_onboarding_readiness(
                     "public_role",
                     "speaker_role_facts",
                     "first_person_allowed_topics",
-                    "first_person_forbidden_claims",
                 }
             ),
         },
@@ -503,7 +500,7 @@ def assess_persona_onboarding_readiness(
         and business_persona.get("lifecycle", {}).get("status") == "approved"
         and business_persona.get("lifecycle", {}).get("approved") is True
     )
-    speaker_approved = speaker_type == "generic" or bool(
+    speaker_approved = bool(
         speaker_persona
         and speaker_persona.get("lifecycle", {}).get("status") == "approved"
         and speaker_persona.get("lifecycle", {}).get("approved") is True

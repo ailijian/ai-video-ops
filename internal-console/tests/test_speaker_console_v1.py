@@ -172,6 +172,64 @@ def speaker_payload():
     }
 
 
+def write_blocked_speaker(
+    settings: Settings,
+    *,
+    speaker_id: str = "speaker_gap_fixture",
+    blockers: list[str] | None = None,
+) -> Path:
+    root = (
+        settings.pipeline_root
+        / "data"
+        / "speaker_intakes"
+        / "fixture_pet_store"
+        / speaker_id
+        / "intake_0001"
+    )
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "speaker_onboarding_request_v1.json").write_text(
+        json.dumps(
+            {
+                "business_id": "fixture_pet_store",
+                "speaker_id": speaker_id,
+                "intake_id": "intake_0001",
+                "speaker_name": "王琳",
+                "public_role": "店主",
+                "speaker_type": "owner_founder",
+                "materials": "王琳本人负责门店接待。",
+                "forbidden_claims": [],
+                "source_type": "internal_console_speaker_materials",
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    (root / "speaker_fact_review_v1.json").write_text(
+        json.dumps(
+            {
+                "status": "completed_persona_blocked",
+                "speaker_persona_blockers": blockers or ["speaker_role_facts"],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    (root / "reviewed_speaker_fact_candidates_v1.json").write_text(
+        json.dumps(
+            {
+                "review": {"status": "completed"},
+                "fact_candidates": [],
+            },
+            ensure_ascii=False,
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    return root
+
+
 def test_create_speaker_analysis_task_without_raw_materials_in_sqlite(
     speaker_client: TestClient,
 ):
@@ -404,3 +462,75 @@ def test_unapproved_customer_can_save_speaker_draft_then_start_after_approval(
     assert started.json()["started"] is True
     assert started.json()["task"]["task_type"] == "speaker_analysis"
     assert request_path.read_bytes() == request_bytes
+
+
+def test_needs_more_info_has_targeted_gap_supplement_and_preserves_lineage(
+    speaker_client: TestClient,
+    speaker_settings: Settings,
+):
+    csrf = login(speaker_client)
+    first_root = write_blocked_speaker(speaker_settings)
+    detail = speaker_client.get(
+        "/api/customers/fixture_pet_store/speakers/speaker_gap_fixture"
+    )
+    assert detail.status_code == 200
+    body = detail.json()
+    assert body["status"] == "needs_more_info"
+    assert body["readiness_gaps"] == [
+        {
+            "field": "speaker_role_facts",
+            "title": "本人职责与经历",
+            "question": "他/她平时具体负责什么？有哪些事情是本人亲自做的或真实经历过的？",
+        }
+    ]
+    response = speaker_client.post(
+        "/api/customers/fixture_pet_store/speakers/speaker_gap_fixture/gaps/supplement",
+        headers={"X-CSRF-Token": csrf},
+        json={"answers": {"speaker_role_facts": "本人每天亲自接待并检查洗护状态。"}},
+    )
+    assert response.status_code == 200, response.json()
+    task = response.json()["task"]
+    request = json.loads(Path(task["payload"]["request_path"]).read_text(encoding="utf-8"))
+    assert request["intake_type"] == "gap_supplement"
+    assert request["target_gaps"] == ["speaker_role_facts"]
+    assert request["raw_answers"] == {
+        "speaker_role_facts": "本人每天亲自接待并检查洗护状态。"
+    }
+    assert request["authority"]["supplement_is_speaker_truth"] is False
+    assert request["authority"]["previous_speaker_facts_preserved"] is True
+    assert request["previous_reviewed_fact_refs"] == [
+        str((first_root / "reviewed_speaker_fact_candidates_v1.json").resolve())
+    ]
+
+
+def test_forbidden_only_legacy_blocker_offers_deterministic_recheck(
+    speaker_client: TestClient,
+    speaker_settings: Settings,
+):
+    login(speaker_client)
+    write_blocked_speaker(
+        speaker_settings,
+        speaker_id="speaker_recheck_fixture",
+        blockers=["first_person_forbidden_claims"],
+    )
+    body = speaker_client.get(
+        "/api/customers/fixture_pet_store/speakers/speaker_recheck_fixture"
+    ).json()
+    assert body["status"] == "needs_more_info"
+    assert body["can_recheck_existing"] is True
+    assert body["readiness_gaps"] == []
+
+
+def test_speaker_ui_exposes_optional_forbidden_and_no_dead_end_loop():
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "static"
+        / "assets"
+        / "speaker-views.js"
+    ).read_text(encoding="utf-8")
+    assert "额外明确限制（选填）" in source
+    assert "补充出镜人资料" in source
+    assert "确认刚补充的信息" in source
+    assert "重新检查现有资料" in source
+    assert "未记录额外明确限制" in source
+    assert 'primaryLabel: "返回出镜人"' not in source

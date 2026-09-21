@@ -21,6 +21,18 @@ export function matchWorkflowRoute(path) {
     };
   }
 
+  const speakerSupplementMatch = path.match(
+    /^\/customers\/([a-z0-9][a-z0-9_]{1,127})\/speakers\/([a-z0-9][a-z0-9_-]{1,127})\/supplement$/,
+  );
+
+  if (speakerSupplementMatch) {
+    return {
+      name: "speaker-supplement",
+      businessId: speakerSupplementMatch[1],
+      speakerId: speakerSupplementMatch[2],
+    };
+  }
+
   const speakerDetailMatch = path.match(
     /^\/customers\/([a-z0-9][a-z0-9_]{1,127})\/speakers\/([a-z0-9][a-z0-9_-]{1,127})$/,
   );

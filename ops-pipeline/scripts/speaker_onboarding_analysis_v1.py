@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import os
@@ -46,6 +47,13 @@ AI_SPEAKER_TOPICS = {
     "speaker_practice",
     "speaker_allowed_topics",
     "speaker_scope",
+}
+
+SPEAKER_GAP_FIELDS = {
+    "public_display_name": "speaker_name",
+    "public_role": "speaker_role",
+    "speaker_role_facts": "speaker_practice",
+    "first_person_allowed_topics": "speaker_allowed_topics",
 }
 
 
@@ -207,6 +215,13 @@ def validate_request(
     ).strip()
     source_lineage = request.get("source_lineage") or {}
     human_confirmed_identity = request.get("human_confirmed_identity") or {}
+    intake_type = str(request.get("intake_type") or "initial_onboarding").strip()
+    target_gaps = [
+        str(item).strip() for item in (request.get("target_gaps") or []) if str(item).strip()
+    ]
+    raw_answers = request.get("raw_answers") or {}
+    previous_reviewed_fact_refs = request.get("previous_reviewed_fact_refs") or []
+    created_by = request.get("created_by") or {}
 
     if not ID_RE.fullmatch(business_id):
         raise SpeakerOnboardingError(
@@ -251,6 +266,7 @@ def validate_request(
     if source_type not in {
         "internal_console_speaker_materials",
         "customer_intake_speaker_discovery",
+        "internal_console_speaker_gap_supplement",
     }:
         raise SpeakerOnboardingError(
             "SPEAKER_SOURCE_TYPE_INVALID",
@@ -264,6 +280,30 @@ def validate_request(
             "SPEAKER_SOURCE_LINEAGE_INVALID",
             "Speaker source lineage is invalid.",
         )
+    if intake_type not in {"initial_onboarding", "gap_supplement"}:
+        raise SpeakerOnboardingError(
+            "SPEAKER_INTAKE_TYPE_INVALID",
+            "Speaker intake type is invalid.",
+        )
+    if intake_type == "gap_supplement":
+        if (
+            not target_gaps
+            or set(target_gaps) - set(SPEAKER_GAP_FIELDS)
+            or not isinstance(raw_answers, dict)
+            or set(raw_answers) != set(target_gaps)
+            or any(not str(raw_answers.get(field) or "").strip() for field in target_gaps)
+        ):
+            raise SpeakerOnboardingError(
+                "SPEAKER_GAP_SUPPLEMENT_INVALID",
+                "Speaker gap supplement must answer every declared target gap.",
+            )
+        if not isinstance(previous_reviewed_fact_refs, list) or not isinstance(
+            created_by, dict
+        ):
+            raise SpeakerOnboardingError(
+                "SPEAKER_GAP_LINEAGE_INVALID",
+                "Speaker gap supplement lineage is invalid.",
+            )
 
     speaker_id = str(
         request.get("speaker_id")
@@ -300,6 +340,15 @@ def validate_request(
         "source_type": source_type,
         "source_lineage": source_lineage,
         "human_confirmed_identity": human_confirmed_identity,
+        "intake_type": intake_type,
+        "target_gaps": target_gaps,
+        "raw_answers": {
+            field: str(raw_answers[field]).strip() for field in target_gaps
+        },
+        "previous_reviewed_fact_refs": [
+            str(item) for item in previous_reviewed_fact_refs
+        ],
+        "created_by": created_by,
     }
 
 
@@ -350,6 +399,21 @@ def build_raw_answers(
         f"{request['speaker_id']}:"
         f"{request['intake_id']}"
     )
+
+    if request.get("intake_type") == "gap_supplement":
+        return [
+            {
+                "answer_id": f"{request['intake_id']}_gap_{index:02d}",
+                "topic": SPEAKER_GAP_FIELDS[field],
+                "answer_text": request["raw_answers"][field],
+                "normalized_value": request["raw_answers"][field],
+                "input_actor": "operator",
+                "source_type": "internal_console_speaker_gap_supplement",
+                "source_ref": f"{base}:gap:{field}",
+                "confirmation_basis": "operator_gap_supplement_pending_review",
+            }
+            for index, field in enumerate(request["target_gaps"], start=1)
+        ]
 
     discovered = request["source_type"] == "customer_intake_speaker_discovery"
     identity_source_type = (
@@ -837,7 +901,7 @@ def analyze_speaker_onboarding(
 
         intake = build_customer_intake(
             intake_id=(request["intake_id"]),
-            intake_type=("initial_onboarding"),
+            intake_type=request["intake_type"],
             provisional_business_id=None,
             business_ref={
                 "persona_id": (business_persona["persona_id"]),
@@ -870,6 +934,23 @@ def analyze_speaker_onboarding(
             source_lineage=(request["source_lineage"] or None),
             created_at=timestamp,
         )
+
+        if request["intake_type"] == "gap_supplement":
+            intake["gap_supplement"] = {
+                "target_gaps": copy.deepcopy(request["target_gaps"]),
+                "raw_answers": copy.deepcopy(request["raw_answers"]),
+                "created_by": copy.deepcopy(request["created_by"]),
+                "source_lineage": copy.deepcopy(request["source_lineage"]),
+                "previous_reviewed_fact_refs": copy.deepcopy(
+                    request["previous_reviewed_fact_refs"]
+                ),
+                "created_at": timestamp,
+                "authority": {
+                    "supplement_is_speaker_truth": False,
+                    "human_review_required": True,
+                    "previous_speaker_facts_preserved": True,
+                },
+            }
 
         write_new_or_same(
             intake_path,
@@ -912,27 +993,45 @@ def analyze_speaker_onboarding(
         candidates = read_json(candidates_path)
 
     else:
-        if extractor is None:
+        if request["intake_type"] == "gap_supplement":
+            candidate_items = []
+            for item in deterministic.get("fact_candidates") or []:
+                value = dict(item)
+                value["candidate_state"] = "requires_review"
+                value["confirmation_basis"] = "gap_supplement_pending_human_review"
+                value["classification"] = "speaker_gap_supplement"
+                value["review_note"] = (
+                    "本轮补充回答仅形成 Speaker Fact Candidate，必须人工确认。"
+                )
+                candidate_items.append(value)
+            candidates = build_fact_candidate_artifact(
+                intake,
+                candidate_items,
+                created_at=timestamp,
+            )
+        elif extractor is None:
             extracted = extract_remote_facts(privacy)
+            candidates = build_ai_candidates(
+                intake=intake,
+                deterministic=(deterministic),
+                extracted=extracted,
+                raw_materials=(request["materials"]),
+                safe_materials=(privacy["projection"]["materials_safe_semantic"]),
+            )
         else:
             extracted = extractor(privacy)
-
-        if not isinstance(
-            extracted,
-            dict,
-        ):
-            raise SpeakerOnboardingError(
-                "SPEAKER_EXTRACTOR_INVALID",
-                ("Speaker extractor must " "return an object."),
+            if not isinstance(extracted, dict):
+                raise SpeakerOnboardingError(
+                    "SPEAKER_EXTRACTOR_INVALID",
+                    ("Speaker extractor must " "return an object."),
+                )
+            candidates = build_ai_candidates(
+                intake=intake,
+                deterministic=(deterministic),
+                extracted=extracted,
+                raw_materials=(request["materials"]),
+                safe_materials=(privacy["projection"]["materials_safe_semantic"]),
             )
-
-        candidates = build_ai_candidates(
-            intake=intake,
-            deterministic=(deterministic),
-            extracted=extracted,
-            raw_materials=(request["materials"]),
-            safe_materials=(privacy["projection"]["materials_safe_semantic"]),
-        )
 
         write_new_or_same(
             candidates_path,
@@ -970,6 +1069,8 @@ def analyze_speaker_onboarding(
                 privacy_context={"privacy_projection_sha256": (sha256_json(privacy))},
             ),
             "recovered_from_existing_candidates": (candidates_preexisting),
+            "remote_model_call_performed": request["intake_type"] != "gap_supplement",
+            "new_supplement_only": request["intake_type"] == "gap_supplement",
         }
 
         write_new_or_same(
@@ -989,6 +1090,8 @@ def analyze_speaker_onboarding(
         "source_type": request["source_type"],
         "source_lineage": request["source_lineage"],
         "human_confirmed_identity": request["human_confirmed_identity"],
+        "intake_type": request["intake_type"],
+        "target_gaps": request["target_gaps"],
         "status": ("awaiting_speaker_fact_review"),
         "created_at": timestamp,
         "business_persona_ref": {
@@ -1023,6 +1126,10 @@ def analyze_speaker_onboarding(
             "business_facts_copied_into_speaker": (False),
             "universal_first_person_guardrail_active": True,
             "human_review_required": (True),
+            "previous_speaker_facts_preserved": request["intake_type"]
+            == "gap_supplement",
+            "remote_model_call_performed": request["intake_type"]
+            != "gap_supplement",
         },
         "next_action": ("REVIEW_SPEAKER_FACTS"),
     }

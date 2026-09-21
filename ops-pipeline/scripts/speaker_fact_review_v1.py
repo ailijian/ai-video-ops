@@ -6,11 +6,13 @@ import hashlib
 import json
 import os
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from build_persona_v1 import (
-    SPEAKER_REQUIRED_KNOWN_FIELDS,
+    SPEAKER_UNIVERSAL_GUARDRAIL,
+    assess_speaker_persona_capabilities,
     build_persona,
     sha256_file,
 )
@@ -429,10 +431,13 @@ def build_speaker_persona_input(
     intake_id: str,
     reviewed: dict[str, Any],
     reviewed_path: Path,
+    reviewed_sources: list[tuple[Path, dict[str, Any]]] | None = None,
 ) -> dict[str, Any]:
+    sources = reviewed_sources or [(reviewed_path, reviewed)]
     candidates = [
         item
-        for item in (reviewed.get("fact_candidates") or [])
+        for _, artifact in sources
+        for item in (artifact.get("fact_candidates") or [])
         if (
             item.get("persona_scope") == "speaker"
             and item.get("candidate_state") == "known_candidate"
@@ -471,7 +476,10 @@ def build_speaker_persona_input(
                 scalar=(field in SCALAR_PERSONA_FIELDS),
             ),
             "source_refs": [
-                (f"speaker_intake:" f"{intake_id}#" f"{item['fact_candidate_id']}")
+                (
+                    str(item.get("source_ref") or "")
+                    or f"speaker_intake:{intake_id}#{item['fact_candidate_id']}"
+                )
                 for item in selected
             ],
             "review_note": (
@@ -489,6 +497,18 @@ def build_speaker_persona_input(
         "source_type": ("speaker_intake_" "human_fact_review"),
         "source_file": str(reviewed_path.resolve()),
         "source_ref": (f"speaker_intake:" f"{intake_id}"),
+        "speaker_authority": copy.deepcopy(SPEAKER_UNIVERSAL_GUARDRAIL),
+        "critical_constraints": [
+            copy.deepcopy(item)
+            for _, artifact in sources
+            for item in (artifact.get("derived_authority_constraints") or [])
+            if isinstance(item, dict)
+            and item.get("resolved") is not True
+            and (
+                item.get("severity") == "critical"
+                or item.get("authority_conflict") is True
+            )
+        ],
         "facts": facts,
     }
 
@@ -499,13 +519,32 @@ def speaker_blockers(
         Any,
     ],
 ) -> list[str]:
-    facts = persona_input.get("facts") or {}
+    readiness = assess_speaker_persona_capabilities(
+        persona_input.get("facts") or {},
+        speaker_authority=persona_input.get("speaker_authority"),
+        critical_constraints=persona_input.get("critical_constraints") or [],
+    )
+    blockers = list(readiness["missing_fields"])
+    blockers.extend(
+        item
+        for item in readiness["blockers"]
+        if item in {"universal_first_person_guardrail", "critical_conflicts"}
+    )
+    return blockers
 
-    return [
-        field
-        for field in (SPEAKER_REQUIRED_KNOWN_FIELDS)
-        if (field not in facts or not has_value(facts[field].get("value")))
-    ]
+
+def reviewed_speaker_sources(
+    pipeline_root: Path,
+    business_id: str,
+    speaker_id: str,
+) -> list[tuple[Path, dict[str, Any]]]:
+    root = pipeline_root / "data" / "speaker_intakes" / business_id / speaker_id
+    sources: list[tuple[Path, dict[str, Any]]] = []
+    for path in sorted(root.glob("intake_*/reviewed_speaker_fact_candidates_v1.json")):
+        artifact = read_json(path)
+        if artifact.get("review", {}).get("status") == "completed":
+            sources.append((path, artifact))
+    return sources
 
 
 def ensure_or_build_persona(
@@ -641,11 +680,6 @@ def review_speaker_facts(
         timestamp = str(existing.get("reviewed_at") or "")
 
     else:
-        from datetime import (
-            datetime,
-            timezone,
-        )
-
         timestamp = reviewed_at or datetime.now(timezone.utc).isoformat()
 
         existing = {
@@ -695,6 +729,12 @@ def review_speaker_facts(
         or ""
     )
 
+    reviewed_sources = reviewed_speaker_sources(
+        pipeline_root,
+        request["business_id"],
+        request["speaker_id"],
+    )
+
     persona_input = build_speaker_persona_input(
         business_id=request["business_id"],
         speaker_id=request["speaker_id"],
@@ -702,6 +742,7 @@ def review_speaker_facts(
         intake_id=request["intake_id"],
         reviewed=reviewed,
         reviewed_path=(reviewed_path),
+        reviewed_sources=reviewed_sources,
     )
 
     blockers = speaker_blockers(persona_input)
@@ -791,6 +832,102 @@ def review_speaker_facts(
     return completed
 
 
+def recheck_speaker_readiness(
+    *,
+    request: dict[str, Any],
+    pipeline_root: Path,
+    checked_at: str | None = None,
+) -> dict[str, Any]:
+    """Rebuild readiness from immutable Human-reviewed Speaker facts only."""
+
+    business_id = str(request.get("business_id") or "").strip()
+    speaker_id = str(request.get("speaker_id") or "").strip()
+    reviewer = str(request.get("reviewer") or "").strip()
+    if not business_id or not speaker_id or not reviewer:
+        raise SpeakerFactReviewError(
+            "SPEAKER_RECHECK_INVALID",
+            "business_id, speaker_id and reviewer are required.",
+        )
+    business_path, _ = load_approved_business_persona(pipeline_root, business_id)
+    sources = reviewed_speaker_sources(pipeline_root, business_id, speaker_id)
+    if not sources:
+        raise SpeakerFactReviewError(
+            "SPEAKER_REVIEWED_FACTS_NOT_FOUND",
+            "No Human-reviewed Speaker facts are available for deterministic recheck.",
+        )
+    latest_path, latest_reviewed = sources[-1]
+    root = latest_path.parent
+    recheck_path = root / "speaker_readiness_recheck_v1.json"
+    if recheck_path.is_file():
+        return read_json(recheck_path)
+    intake = read_json(root / "speaker_intake_v1.json")
+    speaker_type = str(
+        intake.get("speaker_selection", {}).get("speaker_type") or ""
+    )
+    persona_input = build_speaker_persona_input(
+        business_id=business_id,
+        speaker_id=speaker_id,
+        speaker_type=speaker_type,
+        intake_id=root.name,
+        reviewed=latest_reviewed,
+        reviewed_path=latest_path,
+        reviewed_sources=sources,
+    )
+    blockers = speaker_blockers(persona_input)
+    timestamp = checked_at or datetime.now(timezone.utc).isoformat()
+    result: dict[str, Any] = {
+        "schema_version": "speaker-readiness-recheck-v1.0",
+        "business_id": business_id,
+        "speaker_id": speaker_id,
+        "checked_at": timestamp,
+        "checked_by": reviewer,
+        "model_call_performed": False,
+        "previous_human_decisions_preserved": True,
+        "speaker_persona_blockers": blockers,
+        "authority": {
+            "recheck_is_speaker_truth": False,
+            "human_reviewed_facts_reused": True,
+            "business_facts_copied": False,
+            "universal_first_person_guardrail_active": True,
+        },
+    }
+    if blockers:
+        result.update(
+            {
+                "status": "completed_persona_blocked",
+                "next_action": "COLLECT_MORE_SPEAKER_TRUTH",
+            }
+        )
+    else:
+        input_path = root / "speaker_persona_input_v1.json"
+        write_new_or_same(input_path, persona_input)
+        persona_path, persona = ensure_or_build_persona(
+            pipeline_root=pipeline_root,
+            input_path=input_path,
+            business_persona_path=business_path,
+            speaker_id=speaker_id,
+            created_at=timestamp,
+        )
+        result.update(
+            {
+                "status": "completed_persona_review_required",
+                "next_action": "REVIEW_SPEAKER_PERSONA",
+                "artifacts": {
+                    "speaker_persona_input_v1": str(input_path.resolve()),
+                    "speaker_persona_v1": str(persona_path.resolve()),
+                },
+                "speaker_persona": {
+                    "persona_id": persona.get("persona_id"),
+                    "revision": persona.get("revision"),
+                    "status": persona.get("lifecycle", {}).get("status"),
+                    "approved": persona.get("lifecycle", {}).get("approved") is True,
+                },
+            }
+        )
+    write_new_or_same(recheck_path, result)
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
@@ -801,10 +938,9 @@ def main() -> None:
         )
     )
 
-    parser.add_argument(
-        "--review",
-        required=True,
-    )
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("--review")
+    source.add_argument("--recheck")
 
     parser.add_argument(
         "--pipeline-root",
@@ -819,12 +955,16 @@ def main() -> None:
         else Path(__file__).resolve().parents[1]
     )
 
-    request = read_json(Path(args.review).expanduser().resolve())
+    request = read_json(Path(args.review or args.recheck).expanduser().resolve())
 
     try:
-        result = review_speaker_facts(
-            request=request,
-            pipeline_root=(pipeline_root),
+        result = (
+            review_speaker_facts(request=request, pipeline_root=pipeline_root)
+            if args.review
+            else recheck_speaker_readiness(
+                request=request,
+                pipeline_root=pipeline_root,
+            )
         )
 
     except SpeakerFactReviewError as exc:

@@ -739,6 +739,16 @@ if (path === "/customers/new") return customerViews.renderCustomerNew();
 
   if (
     workflowRoute?.name ===
+    "speaker-supplement"
+  ) {
+    return speakerViews.renderSpeakerSupplement(
+      workflowRoute.businessId,
+      workflowRoute.speakerId,
+    );
+  }
+
+  if (
+    workflowRoute?.name ===
     "speaker-detail"
   ) {
     return speakerViews.renderSpeakerDetail(
