@@ -36,7 +36,7 @@ def find_active_customer_task(
     connection = connect(database_path)
 
     try:
-        row = connection.execute(
+        rows = connection.execute(
             """
             SELECT task_id
             FROM tasks
@@ -46,22 +46,57 @@ def find_active_customer_task(
                   'queued',
                   'running',
                   'awaiting_review'
-              )
+            )
             ORDER BY updated_at DESC
-            LIMIT 1
             """,
             (business_id,),
-        ).fetchone()
+        ).fetchall()
     finally:
         connection.close()
 
-    if row is None:
-        return None
+    for row in rows:
+        task = get_task(
+            database_path,
+            row["task_id"],
+        )
+        if task is None:
+            continue
+        if task["status"] == "awaiting_review" and (
+            _customer_task_artifact_status(task) == "completed"
+        ):
+            update_task(
+                database_path,
+                task["task_id"],
+                status="completed",
+                progress=100,
+                stage="客户事实审核完成",
+                error_code=None,
+                error_message=None,
+            )
+            continue
+        return task
 
-    return get_task(
-        database_path,
-        row["task_id"],
-    )
+    return None
+
+
+def _customer_task_artifact_status(
+    task: dict[str, Any],
+) -> str | None:
+    request_path = Path(str((task.get("payload") or {}).get("request_path") or ""))
+    root = request_path.parent
+    review_path = root / "customer_fact_review_v1.json"
+    if review_path.is_file():
+        try:
+            review = json.loads(review_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            review = None
+        if isinstance(review, dict) and review.get("status") in {
+            "completed_persona_blocked",
+            "completed_persona_review_required",
+        }:
+            return "completed"
+    summary = root / "customer_onboarding_analysis_v1.json"
+    return "awaiting_review" if summary.is_file() else None
 
 
 def create_customer_task(
@@ -180,9 +215,7 @@ class CustomerTaskRunner:
         task = get_task(self.settings.database_path, task_id)
         if task is None:
             return None
-        request_path = Path(str((task.get("payload") or {}).get("request_path") or ""))
-        summary = request_path.parent / "customer_onboarding_analysis_v1.json"
-        return "awaiting_review" if summary.is_file() else None
+        return _customer_task_artifact_status(task)
 
     def start(self) -> None:
         if not (self.settings.customer_analysis_worker_enabled):
@@ -378,12 +411,23 @@ class CustomerTaskRunner:
 
                 return
 
+            artifact_status = _customer_task_artifact_status(task)
             update_task(
                 self.settings.database_path,
                 task_id,
-                status="awaiting_review",
+                status=(
+                    "completed"
+                    if artifact_status == "completed"
+                    else "awaiting_review"
+                ),
                 progress=100,
-                stage="等待客户事实审核",
+                stage=(
+                    "客户事实审核完成"
+                    if artifact_status == "completed"
+                    else "等待客户事实审核"
+                ),
+                error_code=None,
+                error_message=None,
             )
 
         except Exception:

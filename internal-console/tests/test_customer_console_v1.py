@@ -196,9 +196,9 @@ def test_insufficient_readiness_customer_remains_in_list_for_later_completion(
     update_task(
         customer_settings.database_path,
         created["task"]["task_id"],
-        status="completed",
+        status="awaiting_review",
         progress=100,
-        stage="客户信息需要补充",
+        stage="等待客户事实审核",
     )
     customers = customer_client.get("/api/customers").json()["customers"]
     projected = next(
@@ -233,6 +233,13 @@ def test_insufficient_readiness_customer_remains_in_list_for_later_completion(
     assert supplemented.status_code == 200, supplemented.json()
     assert supplemented.json()["supplemented"] is True
     assert supplemented.json()["intake_id"] == "intake_0002"
+    old_task = next(
+        item
+        for item in customer_client.get("/api/tasks").json()["tasks"]
+        if item["task_id"] == created["task"]["task_id"]
+    )
+    assert old_task["status"] == "completed"
+    assert old_task["stage"] == "客户事实审核完成"
     request = json.loads(
         Path(supplemented.json()["task"]["payload"]["request_path"]).read_text(
             encoding="utf-8"
