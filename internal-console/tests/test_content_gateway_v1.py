@@ -12,6 +12,8 @@ from app.canonical_gateway import (
     CanonicalOperationError,
 )
 from app.content_gateway import (
+    _parse_json_output,
+    abandon_generation_request,
     get_active_generation_request,
 )
 
@@ -465,6 +467,59 @@ def test_active_request_projection_reports_source_plan_ready(
         ]
         == "CREATE_CONTENT_PLAN"
     )
+
+
+def test_parse_json_output_accepts_pretty_multiline_cli_payload():
+    payload = {
+        "ok": True,
+        "result": {
+            "effective_status": "abandoned",
+            "effective_terminal": True,
+            "remote_model_called": False,
+        },
+    }
+
+    assert _parse_json_output(
+        json.dumps(payload, ensure_ascii=False, indent=2)
+    ) == payload
+
+
+def test_abandon_generation_request_accepts_pretty_multiline_success(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    payload = {
+        "ok": True,
+        "result": {
+            "request_id": "gen_fixture_001",
+            "effective_status": "abandoned",
+            "effective_terminal": True,
+            "terminal_reason": "human_resolution_sidecar",
+            "remote_model_called": False,
+        },
+    }
+
+    monkeypatch.setattr(
+        "app.content_gateway.subprocess.run",
+        lambda *args, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps(payload, ensure_ascii=False, indent=2),
+            stderr="",
+        ),
+    )
+
+    result = abandon_generation_request(
+        SimpleNamespace(
+            pipeline_root=tmp_path,
+            pipeline_python_executable=sys.executable,
+            python_executable=sys.executable,
+            repo_root=tmp_path,
+        ),
+        request_id="gen_fixture_001",
+        reviewer="13800000000",
+    )
+
+    assert result == payload["result"]
 
 
 def test_active_request_projection_without_plan_is_not_ready(

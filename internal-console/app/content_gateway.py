@@ -917,6 +917,16 @@ def list_creation_options(
 def _parse_json_output(
     stdout: str,
 ) -> dict[str, Any] | None:
+    payload = stdout.strip()
+    if payload:
+        try:
+            value = json.loads(payload)
+        except json.JSONDecodeError:
+            pass
+        else:
+            if isinstance(value, dict):
+                return value
+
     for line in reversed(stdout.splitlines()):
         try:
             value = json.loads(line)
