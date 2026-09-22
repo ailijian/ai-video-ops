@@ -199,4 +199,17 @@ if ($secureCookies -ne "1") {
 Write-Output "INFO: Console DB=$consoleDb"
 Write-Output "INFO: Pipeline Python=$configuredPipelinePython"
 Write-Output "PASS: AIVO_SECURE_COOKIES=1"
+$creativeAuthorityTool = Join-Path $resolvedRepo "deploy\creative-authority\verify_release.py"
+$creativeAuthorityReceipt = "E:\AI-Video-Ops-Config\creative-authority-installation.json"
+if (-not (Test-Path -LiteralPath $creativeAuthorityTool -PathType Leaf)) {
+    throw "Creative Authority preflight tool is missing."
+}
+$creativeAuthorityResult = Invoke-CapturedNative $pipelinePython @(
+    $creativeAuthorityTool,
+    "preflight",
+    "--pipeline-root", (Join-Path $resolvedRepo "ops-pipeline"),
+    "--repo-root", $resolvedRepo,
+    "--receipt", $creativeAuthorityReceipt
+) "Creative Authority preflight failed"
+Write-Output "PASS: Shared Creative Authority graph and installation receipt validated."
 Write-Output "PASS: runtime preflight completed without exposing secrets or calling a model."

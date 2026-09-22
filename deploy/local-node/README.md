@@ -36,13 +36,13 @@ After cloning and creating a protected production env file from
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -File .\deploy\local-node\powershell\bootstrap-runtime.ps1 `
-  -RepoRoot E:\AI-Video-Ops `
+  -RepoRoot E:\projects\ai-video-ops `
   -EnvironmentFile E:\AI-Video-Ops-Config\local-node.production.env `
   -IncludeTestDependencies
 
 powershell.exe -NoProfile -ExecutionPolicy Bypass `
   -File .\deploy\local-node\powershell\runtime-preflight.ps1 `
-  -RepoRoot E:\AI-Video-Ops `
+  -RepoRoot E:\projects\ai-video-ops `
   -EnvironmentFile E:\AI-Video-Ops-Config\local-node.production.env
 ```
 
@@ -52,8 +52,12 @@ installs only repository-declared dependencies, and runs `pip check`. Omit
 dependencies are wanted. It does not migrate Production data or change the
 host configuration.
 
-A fresh Production node does not require legacy Customer, Persona, Case, or
-Ledger data. Leave `AIVO_DEFAULT_BUSINESS_ID` unset at genesis. If configured
+A fresh Production node does not require legacy Customer, Persona, or Ledger
+data. Creative production does require a separately verified Shared Creative
+Authority release (approved Cases/Fingerprints/Patterns, Registry, Coverage,
+and Compatibility Approval) before `runtime-preflight.ps1` will pass. See
+[`deploy/creative-authority/README.md`](../creative-authority/README.md).
+Leave `AIVO_DEFAULT_BUSINESS_ID` unset at genesis. If configured
 later, it is only a Workbench convenience selection and must name an existing
 customer; it does not create or change business Authority.
 

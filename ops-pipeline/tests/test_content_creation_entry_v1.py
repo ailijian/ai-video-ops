@@ -278,6 +278,43 @@ def prepare(
     create_approved_personas(root)
 
 
+def test_approved_personas_without_global_profile_registry_fail_closed(
+    tmp_path: Path,
+) -> None:
+    """A customer and speaker may exist before shared creation assets arrive.
+
+    This synthetic deployment shape reproduces the observed 4090 error without
+    copying real customer facts. Restoring only a valid fixture Registry in the
+    isolated test root makes the same read-only Mix preview possible.
+    """
+    create_approved_personas(tmp_path)
+
+    with pytest.raises(ContentCreationEntryError) as failure:
+        build_content_creation_entry(
+            pipeline_root=tmp_path,
+            business_id="fixture_pet_store",
+            speaker_id="fixture_pet_store_owner",
+            profile="mix",
+            requested_quantity=4,
+        )
+
+    assert failure.value.code == "PRODUCTION_PROFILE_REGISTRY_NOT_FOUND"
+    assert not (tmp_path / "data" / "generation_requests").exists()
+
+    create_registry(tmp_path)
+    entry = build_content_creation_entry(
+        pipeline_root=tmp_path,
+        business_id="fixture_pet_store",
+        speaker_id="fixture_pet_store_owner",
+        profile="mix",
+        requested_quantity=4,
+    )
+
+    assert entry["recommendation"]["status"] == "capacity_limited"
+    assert entry["authority"]["generation_request_created"] is False
+    assert entry["model_calls"] == {"remote": 0, "local": 0}
+
+
 def test_new_customer_mix_capacity_preview_is_read_only(
     tmp_path: Path,
 ):

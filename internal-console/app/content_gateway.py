@@ -32,6 +32,37 @@ TERMINAL_REQUEST_STATUSES = {
     "abandoned",
 }
 
+PREVIEW_FAILURE_PROJECTIONS = {
+    "PRODUCTION_PROFILE_REGISTRY_NOT_FOUND": (
+        "创作基础资料尚未就绪。",
+        "请联系维护人员核对已批准的创作类型资料；本次没有创建任务。",
+    ),
+    "PRODUCTION_PROFILE_REGISTRY_INVALID": (
+        "创作基础资料需要核对。",
+        "请联系维护人员检查创作类型资料的完整性；本次没有创建任务。",
+    ),
+    "CONTENT_HISTORY_WITHOUT_LEDGER": (
+        "历史内容记录需要核对。",
+        "请联系维护人员核对已交付内容与历史记录；不要重新提交相同内容。",
+    ),
+    "APPROVED_BATCH_NOT_FOUND": (
+        "历史创作资料需要核对。",
+        "请联系维护人员检查已批准的创作记录；本次没有创建任务。",
+    ),
+    "EXPORTED_MIX_BATCH_NOT_FOUND": (
+        "历史交付记录需要核对。",
+        "请联系维护人员检查已交付内容的记录；本次没有创建任务。",
+    ),
+    "CAPACITY_LINEAGE_MISMATCH": (
+        "历史内容记录暂时无法确认。",
+        "请联系维护人员核对客户与出镜人的历史创作资料；本次没有创建任务。",
+    ),
+    "SOURCE_AUTHORITY_INVALID": (
+        "现有创作结构资料需要核对。",
+        "请联系维护人员检查已批准的结构与案例资料；本次没有创建任务。",
+    ),
+}
+
 
 def _sha256_file(
     path: Path,
@@ -998,13 +1029,18 @@ def preview_content_creation(
     parsed = _parse_json_output(result.stdout)
 
     if result.returncode != 0:
-        raise CanonicalOperationError(
-            str((parsed or {}).get("code") or ("CONTENT_CAPACITY_" "PREVIEW_FAILED")),
-            "内容容量检查没有完成。",
+        code = str((parsed or {}).get("code") or "CONTENT_CAPACITY_PREVIEW_FAILED")
+        message, next_action = PREVIEW_FAILURE_PROJECTIONS.get(
+            code,
             (
-                str((parsed or {}).get("message") or "")
-                or ("请检查客户、出镜人和" "当前内容 Authority。")
+                "创作条件暂时无法核对。",
+                "请联系维护人员检查当前创作资料；本次没有创建任务。",
             ),
+        )
+        raise CanonicalOperationError(
+            code,
+            message,
+            next_action,
         )
 
     if (

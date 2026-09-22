@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import replace
+import json
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 from fastapi.testclient import (
@@ -9,6 +11,7 @@ from fastapi.testclient import (
 )
 
 from app import main as main_module
+from app import content_gateway as content_gateway_module
 from app.auth_service import (
     provision_user,
 )
@@ -136,10 +139,17 @@ def test_capacity_preview_requires_csrf(
         assert response.json()["detail"]["code"] == "CSRF_CHECK_FAILED"
 
 
+@pytest.mark.parametrize("rollout", ["off", "validation", "on"])
 def test_capacity_preview_projects_canonical_result(
     content_settings: Settings,
     monkeypatch,
+    rollout: str,
 ):
+    content_settings = replace(
+        content_settings,
+        novel_news_rollout=rollout,
+        novel_news_validation_phones=("13900000000",),
+    )
     calls = {}
 
     def fake_preview(
@@ -455,6 +465,59 @@ def test_resolve_sources_requires_csrf(
         assert response.status_code == 403
 
         assert response.json()["detail"]["code"] == "CSRF_CHECK_FAILED"
+
+
+@pytest.mark.parametrize(
+    ("failure_code", "expected_message"),
+    [
+        ("PRODUCTION_PROFILE_REGISTRY_NOT_FOUND", "创作基础资料尚未就绪。"),
+        ("CONTENT_HISTORY_WITHOUT_LEDGER", "历史内容记录需要核对。"),
+        ("SOURCE_AUTHORITY_INVALID", "现有创作结构资料需要核对。"),
+    ],
+)
+def test_mix_preview_fail_closed_error_is_safe_and_does_not_create_request(
+    content_settings: Settings,
+    monkeypatch,
+    failure_code: str,
+    expected_message: str,
+):
+    """Known authority/history gaps retain codes but not technical details."""
+    with TestClient(main_module.build_app(content_settings)) as client:
+        provision_user(content_settings.database_path, "13800000000")
+        csrf = login(client)
+        requests_root = content_settings.pipeline_root / "data" / "generation_requests"
+        before_requests = sorted(requests_root.rglob("generation_request_v1.json"))
+        monkeypatch.setattr(
+            content_gateway_module.subprocess,
+            "run",
+            lambda *args, **kwargs: SimpleNamespace(
+                returncode=2,
+                stdout=json.dumps({
+                    "ok": False,
+                    "code": failure_code,
+                    "message": "Sensitive technical artifact path: C:\\fixture\\secret.json",
+                }),
+                stderr="",
+            ),
+        )
+        response = client.post(
+            "/api/create/capacity-preview",
+            headers={"X-CSRF-Token": csrf},
+            json={
+                "business_id": "fixture_pet_store",
+                "speaker_id": "speaker_fixture",
+                "profile": "mix",
+                "quantity": 4,
+            },
+        )
+
+    assert response.status_code == 503
+    detail = response.json()["detail"]
+    assert detail["code"] == failure_code
+    assert detail["message"] == expected_message
+    assert "维护人员" in detail["next_action"]
+    assert "C:\\fixture" not in str(detail)
+    assert sorted(requests_root.rglob("generation_request_v1.json")) == before_requests
 
 
 def test_resolve_sources_projects_canonical_result(
