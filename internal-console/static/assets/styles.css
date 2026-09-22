@@ -1562,6 +1562,18 @@ a { color: inherit; text-decoration: none; }
   font-size: 16px;
 }
 
+.create-entry-page .creation-verification-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: #fff3dc;
+  color: #78511c;
+  font-size: 11px;
+  font-weight: 700;
+  vertical-align: middle;
+}
+
 .quantity-control {
   width: min(100%, 220px);
   display: grid;
@@ -1817,6 +1829,10 @@ a { color: inherit; text-decoration: none; }
 .news-delivery-progress,
 .creation-workflow-header .creation-stepper:has(.creation-step:nth-child(3):last-child) {
   grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.creation-workflow-header .creation-stepper:has(.creation-step:nth-child(5):last-child) {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
 .topic-list,

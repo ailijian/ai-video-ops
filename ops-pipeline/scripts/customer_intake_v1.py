@@ -690,6 +690,7 @@ def build_initial_content_capacity_handoff(
     speaker_persona_path: Path | None,
     requested_quantity: int,
     created_at: str | None = None,
+    historical_ledger: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     business = read_json(business_persona_path)
     speaker = read_json(speaker_persona_path) if speaker_persona_path else None
@@ -773,7 +774,7 @@ def build_initial_content_capacity_handoff(
         speaker_type=str(speaker.get("speaker_type")) if speaker else None,
         allowed_fact_refs=known_business,
         allowed_speaker_fact_refs=known_speaker,
-        ledger={"entries": []},
+        ledger=historical_ledger if historical_ledger is not None else {"entries": []},
         raw_candidates=available,
         case_rotation=[],
         pattern_id="not_assigned_capacity_planning_only",

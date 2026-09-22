@@ -200,6 +200,8 @@ def normalize_matching_context(
         "speaker_persona_revision": context.get("speaker_persona_revision"),
         "persona_id": persona.get("persona_id"),
         "persona_revision": persona.get("revision"),
+        "selected_content": context.get("selected_content"),
+        "controlled_scene_validation": context.get("controlled_scene_validation") is True,
     }
 
 
@@ -390,9 +392,48 @@ def load_patterns(paths: list[Path]) -> list[dict[str, Any]]:
                 "path": str(path),
                 "sha256": sha256_file(path),
                 "artifact": pattern,
+                "profile_approval": _approved_pattern_receipt(path, pattern),
             }
         )
     return sorted(patterns, key=lambda item: item["artifact"]["pattern_id"])
+
+
+def _approved_pattern_receipt(path: Path, pattern: dict[str, Any]) -> dict[str, Any] | None:
+    """Read a later human approval without rewriting the frozen profile registry."""
+    receipt_path = path.with_name("approval_receipt.json")
+    if not receipt_path.is_file():
+        return None
+    receipt = read_json(receipt_path)
+    if (
+        receipt.get("schema_version") != "pattern-approval-receipt-v1.0"
+        or receipt.get("pattern_id") != pattern.get("pattern_id")
+        or receipt.get("human_gate") is not True
+        or (receipt.get("approved_pattern") or {}).get("sha256") != sha256_file(path)
+        or sorted(receipt.get("compatible_profiles") or [])
+        != sorted(pattern.get("compatible_profiles") or [])
+        or (pattern.get("profile_compatibility") or {}).get("status") != "human_approved"
+    ):
+        return None
+    return {"sha256": sha256_file(receipt_path), "compatible_profiles": receipt["compatible_profiles"]}
+
+
+def _approved_case_sidecar(source: dict[str, Any], target_profile: str) -> dict[str, Any] | None:
+    case = source["case"]
+    fingerprint = source["fingerprint"]
+    path = Path(case["path"]).with_name("case_profile_compatibility_approval_v1.json")
+    if not path.is_file():
+        return None
+    approval = read_json(path)
+    if (
+        approval.get("schema_version") != "case-profile-compatibility-approval-v1.0"
+        or approval.get("status") != "approved"
+        or approval.get("case_id") != case["artifact"].get("case_id")
+        or target_profile not in (approval.get("approved_compatible_generation_profiles") or [])
+        or (approval.get("source_approved_case_ref") or {}).get("sha256") != case["sha256"]
+        or (approval.get("fingerprint_ref") or {}).get("sha256") != fingerprint["sha256"]
+    ):
+        return None
+    return {"sha256": sha256_file(path), "compatible_profiles": approval["approved_compatible_generation_profiles"]}
 
 
 def load_cases_and_fingerprints(
@@ -432,12 +473,28 @@ def load_cases_and_fingerprints(
         if case_id not in cases or case_id in fingerprints:
             raise RuntimeError("Fingerprint must map one-to-one to an Approved Case.")
         source_case = fingerprint.get("source_case", {})
-        if source_case.get("status") != "approved" or source_case.get("approved") is not True:
-            raise RuntimeError(f"Fingerprint {case_id} is not bound to an Approved Case.")
-        if str(source_case.get("sha256") or "").lower() != cases[case_id]["sha256"]:
-            raise RuntimeError(f"Fingerprint {case_id} source Case SHA-256 mismatch.")
-        if fingerprint.get("pattern_mining_contract", {}).get("this_artifact_is_not_a_pattern") is not True:
-            raise RuntimeError(f"Fingerprint {case_id} violates source authority.")
+        if source_case:
+            if source_case.get("status") != "approved" or source_case.get("approved") is not True:
+                raise RuntimeError(f"Fingerprint {case_id} is not bound to an Approved Case.")
+            if str(source_case.get("sha256") or "").lower() != cases[case_id]["sha256"]:
+                raise RuntimeError(f"Fingerprint {case_id} source Case SHA-256 mismatch.")
+            if fingerprint.get("pattern_mining_contract", {}).get("this_artifact_is_not_a_pattern") is not True:
+                raise RuntimeError(f"Fingerprint {case_id} violates source authority.")
+        else:
+            sidecar_path = Path(cases[case_id]["path"]).with_name(
+                "case_profile_compatibility_approval_v1.json"
+            )
+            sidecar = read_json(sidecar_path) if sidecar_path.is_file() else {}
+            if (
+                sidecar.get("status") != "approved"
+                or sidecar.get("case_id") != case_id
+                or (sidecar.get("source_approved_case_ref") or {}).get("sha256") != cases[case_id]["sha256"]
+                or (sidecar.get("fingerprint_ref") or {}).get("sha256") != sha256_file(path)
+                or fingerprint.get("source_case_sha256") != cases[case_id]["sha256"]
+                or fingerprint.get("fingerprint_scope") != "case_structural_evidence_only"
+                or (fingerprint.get("authority") or {}).get("case_specific_facts_transferred") is not False
+            ):
+                raise RuntimeError(f"Fingerprint {case_id} has no valid approved binding.")
         fingerprints[case_id] = {
             "path": str(path),
             "sha256": sha256_file(path),
@@ -482,6 +539,7 @@ def pattern_eligibility(
     capabilities: dict[str, bool],
     registry: dict[str, Any] | None = None,
     pattern_sha256: str | None = None,
+    profile_approval: dict[str, Any] | None = None,
 ) -> tuple[bool, str]:
     pattern_id = pattern.get("pattern_id")
     target_profile = request.get("target_profile") or request.get("profile")
@@ -491,9 +549,10 @@ def pattern_eligibility(
             str(pattern_id),
             str(pattern_sha256 or ""),
         )
-        if record is None:
+        if record is None and profile_approval is None:
             return False, "approved_pattern_has_no_canonical_profile_compatibility"
-        if target_profile not in record.get("compatible_profiles", []):
+        approved_profiles = (record or profile_approval or {}).get("compatible_profiles", [])
+        if target_profile not in approved_profiles:
             return False, f"profile_{target_profile}_outside_approved_pattern_compatibility"
     else:
         policy = PATTERN_POLICIES.get(str(pattern_id))
@@ -502,11 +561,11 @@ def pattern_eligibility(
         if target_profile not in policy["profiles"]:
             return False, f"profile_{target_profile}_outside_approved_pattern_scope"
     policy = PATTERN_POLICIES.get(str(pattern_id))
-    if policy is None:
+    if policy is None and pattern_id not in {NEWS_PRICE_PATTERN_ID, NEWS_SCENE_PATTERN_ID}:
         return False, "approved_pattern_has_no_v1_capability_policy"
-    if policy["requires_process_material"] and not capabilities["process_material_available"]:
+    if policy and policy["requires_process_material"] and not capabilities["process_material_available"]:
         return False, "persona_lacks_known_process_material"
-    if policy["requires_story_or_operator_context"] and not capabilities["story_or_operator_context_available"]:
+    if policy and policy["requires_story_or_operator_context"] and not capabilities["story_or_operator_context_available"]:
         return False, "persona_lacks_known_story_or_operator_context"
     if registry is not None:
         return True, (
@@ -624,12 +683,14 @@ def selected_content_pattern_compatibility(
             str(value)
             for value in selected_content.get("approved_state_correspondence_refs") or []
         ]
-        if not correspondence_refs:
+        state_a_refs = {str(value) for value in selected_content.get("state_a_fact_atom_refs") or []}
+        state_b_refs = {str(value) for value in selected_content.get("state_b_fact_atom_refs") or []}
+        if not correspondence_refs or not state_a_refs or not state_b_refs or state_a_refs & state_b_refs:
             return base | {
                 "compatible": False,
                 "reason_code": "no_approved_customer_state_a_b_correspondence",
                 "reason": (
-                    "The customer Authority contains no explicit recoverable State A/State B "
+                    "The customer Authority contains no distinct, explicit recoverable State A/State B "
                     "correspondence for this content opportunity; the Pattern cannot invent it."
                 ),
             }
@@ -869,6 +930,7 @@ def build_source_plan(
     case_sources = load_cases_and_fingerprints(case_paths, fingerprint_paths)
     capabilities = persona_capabilities(persona, speaker_persona)
     excluded = excluded_candidate_sources(candidate_source_paths or [])
+    selected_content = request.get("selected_content")
 
     eligible_patterns: list[dict[str, Any]] = []
     for item in patterns:
@@ -878,9 +940,33 @@ def build_source_plan(
             capabilities,
             registry,
             item["sha256"],
+            item["profile_approval"],
         )
         if eligible:
-            eligible_patterns.append(item | {"eligibility_reason": reason})
+            if isinstance(selected_content, dict):
+                content_match = selected_content_pattern_compatibility(
+                    selected_content, item["artifact"], target_profile
+                )
+                if not content_match["compatible"]:
+                    eligible = False
+                    reason = content_match["reason_code"]
+                elif (
+                    target_profile == "news"
+                    and item["artifact"].get("pattern_id") == NEWS_SCENE_PATTERN_ID
+                    and not request.get("controlled_scene_validation")
+                ):
+                    eligible = False
+                    reason = "scene_contrast_requires_controlled_real_validation"
+            if eligible:
+                eligible_patterns.append(item | {"eligibility_reason": reason})
+            else:
+                excluded.append({
+                    "source_id": item["artifact"].get("pattern_id"),
+                    "source_type": "approved_pattern",
+                    "status": "approved_but_not_eligible_for_selected_content",
+                    "sha256": item["sha256"],
+                    "reason": reason,
+                })
         else:
             excluded.append(
                 {
@@ -940,7 +1026,11 @@ def build_source_plan(
             )
             or {}
         )
-        if compatibility_approval is not None and (
+        aggregate_applies = (
+            compatibility_approval is not None
+            and human_pattern_approval.get("pattern_id") == pattern.get("pattern_id")
+        )
+        if aggregate_applies and (
             human_pattern_approval.get("pattern_id") != pattern.get("pattern_id")
             or target_profile
             not in (human_pattern_approval.get("compatible_profiles") or [])
@@ -968,7 +1058,7 @@ def build_source_plan(
                     "approved_pattern_sha": selected_pattern["sha256"],
                     "eligibility_reason": selected_pattern["eligibility_reason"],
                     "compatible_profiles": (
-                        selected_pattern_profile_record.get("compatible_profiles", [])
+                        (selected_pattern_profile_record or selected_pattern["profile_approval"] or {}).get("compatible_profiles", [])
                         if registry is not None
                         else sorted(
                             PATTERN_POLICIES[str(pattern.get("pattern_id"))]["profiles"]
@@ -976,7 +1066,7 @@ def build_source_plan(
                     ),
                     "profile_compatibility_status": (
                         "human_approved_compatibility"
-                        if compatibility_approval is not None
+                        if aggregate_applies or selected_pattern["profile_approval"] is not None
                         else (
                             "approved_canonical_backfill"
                             if registry is not None
@@ -984,8 +1074,8 @@ def build_source_plan(
                         )
                     ),
                     "profile_compatibility_approval_sha256": (
-                        compatibility_approval_sha
-                        if compatibility_approval is not None
+                        (compatibility_approval_sha if aggregate_applies else (selected_pattern["profile_approval"] or {}).get("sha256"))
+                        if aggregate_applies or selected_pattern["profile_approval"] is not None
                         else None
                     ),
                     "effectiveness_status": pattern.get("effectiveness", {}).get(
@@ -1013,7 +1103,8 @@ def build_source_plan(
             approved_case_profile_compatibility = False
             if compatibility_report is not None:
                 assessment = assessment_by_case.get(case_id)
-                if not assessment:
+                sidecar = _approved_case_sidecar(source, target_profile)
+                if not assessment and not sidecar:
                     excluded.append(
                         {
                             "source_id": case_id,
@@ -1027,12 +1118,16 @@ def build_source_plan(
                     case_approval.get("approved_compatible_generation_profiles") or []
                 )
                 legacy_profiles = set(
-                    (assessment.get("legacy_current_truth") or {}).get(
+                    ((assessment or {}).get("legacy_current_truth") or {}).get(
                         "compatible_profiles", []
                     )
                 )
                 if target_profile in approved_profiles:
                     compatibility_basis = "approved_profile_compatibility"
+                    compatibility_review_status = "approved"
+                    approved_case_profile_compatibility = True
+                elif sidecar:
+                    compatibility_basis = "approved_case_profile_sidecar"
                     compatibility_review_status = "approved"
                     approved_case_profile_compatibility = True
                 elif legacy_bridge_permitted and target_profile in legacy_profiles:
@@ -1071,7 +1166,9 @@ def build_source_plan(
                 "profile_compatibility_review_status": compatibility_review_status,
                 "approved_case_profile_compatibility": approved_case_profile_compatibility,
                 "profile_compatibility_approval_sha256": (
-                    compatibility_approval_sha
+                    ((sidecar if compatibility_basis == "approved_case_profile_sidecar" else None) or {}).get("sha256")
+                    if compatibility_basis == "approved_case_profile_sidecar"
+                    else compatibility_approval_sha
                     if approved_case_profile_compatibility
                     else None
                 ),

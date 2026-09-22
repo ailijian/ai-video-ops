@@ -239,6 +239,47 @@ def patch_authority(
     )
 
 
+def test_novel_news_request_rechecks_selected_opportunity_under_business_lock(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    patch_authority(tmp_path, monkeypatch)
+    import novel_news_opportunity_v1 as opportunity
+
+    selected = {
+        "concept_id": "news-price-fixture", "novelty_status": "novel",
+        "production_feasibility": {"status": "supported", "eligible_pattern_count": 1, "eligible_case_count": 1},
+        "primary_fact_refs": ["pricing_facts"], "central_claim": "已确认价格",
+    }
+    monkeypatch.setattr(
+        opportunity, "project_novel_news_opportunities",
+        lambda **kwargs: {"opportunities": [selected], "available_novel_count": 1},
+    )
+    result = subject.create_generation_request_handoff(
+        pipeline_root=tmp_path, business_id="fixture_pet_store",
+        speaker_id="fixture_pet_store_owner", profile="news",
+        requested_quantity=1, confirmed_quantity=1,
+        idempotency_key="news_select_0001", selected_opportunity_id="news-price-fixture",
+    )
+    request = json.loads(Path(result["request_path"]).read_text(encoding="utf-8"))
+    assert request["target_profile"] == "news"
+    assert request["reuse_intent"] == "novel_content"
+    assert request["quantity"] == 1
+    assert request["selected_content"]["concept_id"] == "news-price-fixture"
+    original = Path(result["request_path"]).read_bytes()
+    selected["production_feasibility"] = {"status": "unsupported"}
+    blocked_root = tmp_path / "blocked"
+    patch_authority(blocked_root, monkeypatch)
+    with pytest.raises(subject.GenerationRequestError):
+        subject.create_generation_request_handoff(
+            pipeline_root=blocked_root, business_id="fixture_pet_store",
+            speaker_id="fixture_pet_store_owner", profile="news",
+            requested_quantity=1, confirmed_quantity=1,
+            idempotency_key="news_select_0002", selected_opportunity_id="news-price-fixture",
+        )
+    assert Path(result["request_path"]).read_bytes() == original
+    assert not list((blocked_root / "data/generation_requests").glob("*/generation_request_v1.json"))
+
+
 def create_request(
     tmp_path: Path,
     *,
@@ -417,26 +458,11 @@ def test_stale_capacity_confirmation_fails_before_write(
     )
 
 
-def test_unavailable_profile_cannot_create_request(
+def test_news_without_selected_opportunity_cannot_create_request(
     tmp_path: Path,
     monkeypatch,
 ):
-    preview = fake_preview(
-        quantity=2,
-        recommended=0,
-        can_continue=False,
-        status="profile_unavailable",
-    )
-
-    preview["selection"]["profile"] = "news"
-
-    preview["recommendation"]["blocker"] = "PROFILE_NOT_" "PRODUCTION_READY"
-
-    patch_authority(
-        tmp_path,
-        monkeypatch,
-        preview=preview,
-    )
+    patch_authority(tmp_path, monkeypatch)
 
     with pytest.raises(subject.GenerationRequestError) as exc:
         (
@@ -451,7 +477,7 @@ def test_unavailable_profile_cannot_create_request(
             )
         )
 
-    assert exc.value.code == ("PROFILE_NOT_" "PRODUCTION_READY")
+    assert exc.value.code == "NEWS_NOVEL_OPPORTUNITY_REQUIRED"
 
 
 def test_capacity_positive_but_coverage_unsupported_creates_no_request(

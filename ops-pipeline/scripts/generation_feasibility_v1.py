@@ -19,6 +19,7 @@ def preview_generation_feasibility(
     content_intent: str = "mixed",
     platform: str = "douyin",
     constraints: dict[str, Any] | None = None,
+    selected_content: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return a read-only production-feasibility projection.
 
@@ -39,6 +40,7 @@ def preview_generation_feasibility(
         "platform": platform,
         "cta_intent": "none",
         "constraints": dict(constraints or {}),
+        "selected_content": selected_content,
     }
 
     # Speaker identity is part of the read-only matching context. It is read

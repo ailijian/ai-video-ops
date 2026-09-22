@@ -181,6 +181,8 @@ def operator_activity(
         "mix_export": "导出 Mix",
         "news_plan": "生成 News 选题",
         "news_export": "导出 News",
+        "novel_news_generate": "生成新闻体新内容",
+        "novel_news_export": "导出新闻体新内容",
     }
     for row in rows:
         try:
@@ -216,8 +218,15 @@ def operator_activity(
         for path in (data / folder).glob(f"*/{filename}"):
             record = _read_json(path)
             if record:
+                request_kind = (
+                    "创建新闻体新内容"
+                    if folder == "generation_requests"
+                    and record.get("target_profile") == "news"
+                    and record.get("reuse_intent") == "novel_content"
+                    else kind
+                )
                 add(
-                    kind,
+                    request_kind,
                     str(record.get("request_id") or path.parent.name),
                     record.get("created_at"),
                     request_actor(record),
@@ -258,12 +267,17 @@ def operator_activity(
             "审核 News 内容",
             "reviewed_at",
         ),
+        (
+            "generation_batches/*/novel_news_human_review_v1.json",
+            "审核新闻体新内容",
+            "reviewed_at",
+        ),
     ):
         for path in data.glob(pattern):
             receipt = _read_json(path)
             if not receipt:
                 continue
-            phone = receipt.get("reviewer")
+            phone = receipt.get("reviewer") or receipt.get("reviewed_by")
             actor = (
                 {"user_id": phones.get(str(phone)), "phone": phone} if phone else None
             )

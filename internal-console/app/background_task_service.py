@@ -19,6 +19,8 @@ from .news_delivery_gateway import (
     get_news_delivery_state,
     resolve_news_plan,
 )
+from .novel_news_gateway import export_novel_news, generate_novel_news, novel_news_state
+from .novel_news_rollout import require_novel_news_task
 from .operation_lock import authority_operation_lock
 from .task_service import (
     LeaseRecoveryMaintenance,
@@ -38,6 +40,8 @@ BACKGROUND_OPERATIONS: dict[str, tuple[str, str]] = {
     "mix_export": ("excel_export", "导出 Mix Excel 并闭合 Ledger"),
     "news_plan": ("content_generation", "生成 News Plan"),
     "news_export": ("excel_export", "导出 News Excel"),
+    "novel_news_generate": ("content_generation", "生成新闻体新内容"),
+    "novel_news_export": ("excel_export", "导出新闻体新内容"),
 }
 
 
@@ -50,6 +54,8 @@ def create_background_task(
 ) -> dict[str, Any]:
     if operation not in BACKGROUND_OPERATIONS:
         raise ValueError("unsupported background operation")
+    if operation in {"novel_news_generate", "novel_news_export"}:
+        require_novel_news_task(settings, created_by_user_id)
     if operation == "content_plan":
         state = get_content_delivery_state(settings, request_id)
         if state.get("source_coverage_supported") is not True:
@@ -66,6 +72,14 @@ def create_background_task(
                     "production_feasibility": feasibility,
                     "task_created": False,
                 },
+            )
+    if operation in {"novel_news_generate", "novel_news_export"}:
+        state = novel_news_state(settings, request_id)
+        expected = "generation" if operation == "novel_news_generate" else "export"
+        if state.get("stage") != expected:
+            raise CanonicalOperationError(
+                "NEWS_NOVEL_STAGE_INVALID", "当前新闻体阶段不允许此操作。",
+                "请刷新创作进度，不会建立重复后台任务。",
             )
     task_type, stage = BACKGROUND_OPERATIONS[operation]
     return submit_task(
@@ -97,6 +111,8 @@ class BackgroundTaskRunner:
             "mix_export": export_mix_excel,
             "news_plan": resolve_news_plan,
             "news_export": export_news_excel,
+            "novel_news_generate": generate_novel_news,
+            "novel_news_export": export_novel_news,
         }
         self.executor = ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="standard-background"
@@ -134,6 +150,12 @@ class BackgroundTaskRunner:
                     state.get("next_action") != "RESOLVE_NEWS_PLAN"
                     if operation == "news_plan"
                     else bool(state.get("stop_point_reached"))
+                )
+            elif operation in {"novel_news_generate", "novel_news_export"}:
+                state = novel_news_state(self.settings, request_id)
+                done = state.get("stage") in (
+                    {"review", "export", "completed"}
+                    if operation == "novel_news_generate" else {"completed"}
                 )
             else:
                 return "failed"
@@ -206,6 +228,8 @@ class BackgroundTaskRunner:
                 return
 
             def execute() -> dict[str, Any]:
+                if operation in {"novel_news_generate", "novel_news_export"}:
+                    require_novel_news_task(self.settings, (task.get("created_by") or {}).get("user_id"))
                 lock_scope = "request"
                 lock_identity = request_id
                 if operation == "mix_export":
@@ -214,6 +238,10 @@ class BackgroundTaskRunner:
                     lock_identity = str(state.get("business_id") or "")
                 elif operation == "news_export":
                     state = get_news_delivery_state(self.settings, request_id)
+                    lock_scope = "business"
+                    lock_identity = str(state.get("business_id") or "")
+                elif operation == "novel_news_export":
+                    state = novel_news_state(self.settings, request_id)
                     lock_scope = "business"
                     lock_identity = str(state.get("business_id") or "")
                 with authority_operation_lock(

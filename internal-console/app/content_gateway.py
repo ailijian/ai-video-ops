@@ -768,6 +768,9 @@ def get_active_generation_request(
                     "profile"
                 )
             ),
+            "selected_opportunity_id": (
+                (request.get("selected_content") or {}).get("concept_id")
+            ),
             "requested_quantity": (
                 confirmation.get(
                     "operator_requested_quantity"
@@ -1047,6 +1050,7 @@ def confirm_content_creation(
     idempotency_key: str,
     created_by_user_id: int | None = None,
     created_by_phone: str | None = None,
+    selected_opportunity_id: str | None = None,
 ) -> dict[str, Any]:
     executable = settings.pipeline_python_executable or settings.python_executable
 
@@ -1073,6 +1077,8 @@ def confirm_content_creation(
     if created_by_user_id is not None:
         command.extend(["--created-by-user-id", str(created_by_user_id)])
         command.extend(["--created-by-phone", str(created_by_phone or "")])
+    if selected_opportunity_id is not None:
+        command.extend(["--selected-opportunity-id", selected_opportunity_id])
 
     env = pipeline_subprocess_env(needs_deepseek=False)
 

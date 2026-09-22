@@ -359,6 +359,13 @@ def load_export_receipts(pipeline_root: Path) -> list[tuple[Path, dict[str, Any]
             ):
                 receipts.append((path, value))
 
+    batch_root = pipeline_root / "data" / "generation_batches"
+    if batch_root.exists():
+        for path in batch_root.glob("*/novel_news_export_receipt_v1.json"):
+            value = read_json(path)
+            if value.get("schema_version") == "novel-news-excel-export-receipt-v1.0" and value.get("validation_passed") is True:
+                receipts.append((path, value))
+
     return receipts
 
 
@@ -594,6 +601,7 @@ def resolve_batches(
             in {
                 "news-excel-export-receipt-v1.0",
                 "news-dynamic-excel-export-receipt-v1.0",
+                "novel-news-excel-export-receipt-v1.0",
             }
             and value.get("request_id") == entry.get("request_id")
             and value.get("output_sha256") == sha256_file(news_output_path)
@@ -654,6 +662,21 @@ def resolve_batches(
                     "Latest dynamic News Presentation History Closure is invalid.",
                 )
 
+            news_paths.append(closure_path)
+        elif news_receipt.get("schema_version") == "novel-news-excel-export-receipt-v1.0":
+            closure_path = news_receipt_path.with_name("novel_news_export_closure_v1.json")
+            closure = read_json(closure_path) if closure_path.is_file() else {}
+            if (
+                news_receipt.get("reuse_intent") != "novel_content"
+                or (news_receipt.get("approved_ref") or {}).get("sha256") != sha256_file(approval_path)
+                or closure.get("schema_version") != "novel-news-export-closure-v1.0"
+                or closure.get("request_id") != entry.get("request_id")
+                or closure.get("semantic_entry_count_delta") != 1
+                or (closure.get("validation") or {}).get("passed") is not True
+            ):
+                raise AuthorityResolutionError(
+                    "CURRENT_AUTHORITY_INVALID", "Latest Novel News export lineage is invalid."
+                )
             news_paths.append(closure_path)
 
         latest_news = {
@@ -1053,6 +1076,64 @@ def _resolve_current_console_capacity(
     }
 
 
+def _validated_novel_news_entries_after_mix(
+    pipeline_root: Path, business_id: str, ledger: dict[str, Any], mix_request_id: str
+) -> bool:
+    """Allow capacity reprojection only for SHA-bound Novel News semantic appends."""
+    entries = ledger.get("entries") or []
+    mix_positions = [
+        index for index, item in enumerate(entries)
+        if isinstance(item, dict) and item.get("batch_ref") == mix_request_id
+    ]
+    if not mix_positions:
+        return False
+    trailing = entries[mix_positions[-1] + 1:]
+    if not trailing:
+        return False
+    for item in trailing:
+        if not isinstance(item, dict):
+            return False
+        request_id = str(item.get("batch_ref") or "")
+        if (
+            item.get("business_id") != business_id
+            or item.get("production_profile") != "news"
+            or item.get("reuse_intent") != "novel_content"
+            or item.get("status") not in {"exported", "published"}
+            or item.get("content_id") != f"{request_id}-N001"
+        ):
+            return False
+        try:
+            request_path = validate_file_ref(pipeline_root, item.get("source_request_ref") or {})
+            approval_path = validate_file_ref(pipeline_root, item.get("approved_review_ref") or {})
+            receipt_path = validate_file_ref(pipeline_root, item.get("export_receipt_ref") or {})
+            request = read_json(request_path)
+            approval = read_json(approval_path)
+            receipt = read_json(receipt_path)
+            closure_path = receipt_path.with_name("novel_news_export_closure_v1.json")
+            closure = read_json(closure_path)
+            output_path = validate_file_ref(
+                pipeline_root, {"path": receipt.get("output_path"), "sha256": receipt.get("output_sha256")}
+            )
+        except (AuthorityResolutionError, OSError, ValueError):
+            return False
+        if not (
+            request.get("request_id") == request_id
+            and request.get("persona_id") == business_id
+            and request.get("target_profile") == "news"
+            and request.get("reuse_intent") == "novel_content"
+            and approval.get("request_id") == request_id
+            and approval.get("human_gate") is True
+            and receipt.get("request_id") == request_id
+            and (receipt.get("approved_ref") or {}).get("sha256") == sha256_file(approval_path)
+            and closure.get("request_id") == request_id
+            and closure.get("semantic_entry_count_delta") == 1
+            and (closure.get("validation") or {}).get("passed") is True
+            and output_path.is_file()
+        ):
+            return False
+    return True
+
+
 def resolve_capacity(
     pipeline_root: Path,
     business: dict[str, Any],
@@ -1099,6 +1180,15 @@ def resolve_capacity(
         )
 
         if not presentation_only_match:
+            if _validated_novel_news_entries_after_mix(
+                pipeline_root, business["persona_id"], ledger["artifact"], active_batch["request_id"]
+            ):
+                # The frozen Mix capacity snapshot predates a real semantic
+                # News export. Reproject from the current business-wide Ledger
+                # without rewriting the original Mix export authority.
+                return _resolve_current_console_capacity(
+                    pipeline_root, business, speaker, ledger, active_batch
+                )
             raise AuthorityResolutionError(
                 "CAPACITY_LINEAGE_MISMATCH",
                 (

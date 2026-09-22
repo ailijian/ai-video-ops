@@ -131,6 +131,10 @@ from .news_delivery_gateway import (
     resolve_news_plan,
     submit_news_review,
 )
+from .novel_news_gateway import (
+    preview_novel_news, novel_news_state, review_novel_news, novel_news_excel,
+)
+from .novel_news_rollout import novel_news_available, require_if_novel_request, require_novel_news
 
 
 class SpeakerAnalysisRequest(BaseModel):
@@ -392,6 +396,8 @@ class ContentGenerationConfirmRequest(BaseModel):
         pattern=r"^[A-Za-z0-9_-]+$",
     )
 
+    selected_opportunity_id: str | None = Field(default=None, min_length=8, max_length=128)
+
 
 class ContentReviewItem(BaseModel):
     content_id: str = Field(
@@ -482,6 +488,16 @@ class NewsReviewItem(BaseModel):
 
 class NewsReviewRequest(BaseModel):
     items: list[NewsReviewItem]
+
+
+class NovelNewsReviewItem(BaseModel):
+    beat_id: str = Field(min_length=1, max_length=64)
+    decision: Literal["approved", "revised", "rejected"]
+    revised_text: str | None = Field(default=None, max_length=200)
+
+
+class NovelNewsReviewRequest(BaseModel):
+    decisions: list[NovelNewsReviewItem] = Field(min_length=4, max_length=8)
 
 
 class LoginThrottle:
@@ -738,7 +754,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     async def canonical_error_handler(
         _: Request, exc: CanonicalOperationError
     ) -> JSONResponse:
-        status_code = 409 if exc.code in {
+        status_code = 403 if exc.code == "NOVEL_NEWS_NOT_AVAILABLE" else 409 if exc.code in {
             "OPERATION_IN_PROGRESS",
             "AUTHORITY_CHANGED_REFRESH_REQUIRED",
             "CONFIGURED_CUSTOMER_NOT_FOUND",
@@ -1377,18 +1393,100 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/create/options")
     def creation_options(
-        _: SessionContext = Depends(require_console_access),
+        session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
-        return list_creation_options(settings)
+        projection = list_creation_options(settings)
+        projection["novel_news"] = {
+            "available": novel_news_available(settings, str(session.user["phone"])),
+            "verification_badge": settings.novel_news_rollout == "validation",
+        }
+        return projection
 
     @app.get("/api/create/active-request")
     def active_generation_request(
         business_id: str,
-        _: SessionContext = Depends(require_console_access),
+        profile: Literal["mix", "news"] = "mix",
+        session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
-        return get_active_generation_request(
-            settings,
-            business_id,
+        if profile == "news":
+            if not novel_news_available(settings, str(session.user["phone"])):
+                return {"active_request": None, "novel_news_unavailable": True}
+            return get_active_generation_request(settings, business_id, profile)
+        return get_active_generation_request(settings, business_id)
+
+    @app.post("/api/create/novel-news/preview")
+    def novel_news_preview_route(
+        payload: NewsPreviewRequest,
+        x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(session, x_csrf_token)
+        require_novel_news(settings, str(session.user["phone"]))
+        return {"projection": preview_novel_news(settings, payload.business_id, payload.speaker_id)}
+
+    @app.get("/api/create/novel-news/{request_id}/state")
+    def novel_news_state_route(
+        request_id: str,
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        if not novel_news_available(settings, str(session.user["phone"])):
+            return {"state": {"stage": "unavailable", "message": "该能力当前未开放；已有记录仍会保留。"}}
+        return {"state": novel_news_state(settings, request_id)}
+
+    @app.post("/api/create/novel-news/{request_id}/generate")
+    def novel_news_generate_route(
+        request_id: str,
+        x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(session, x_csrf_token)
+        require_novel_news(settings, str(session.user["phone"]))
+        task = create_background_task(
+            settings, operation="novel_news_generate", request_id=request_id,
+            created_by_user_id=int(session.user["id"]),
+        )
+        background_task_runner.schedule(task["task_id"])
+        return {"accepted": True, "task": task}
+
+    @app.post("/api/create/novel-news/{request_id}/review")
+    def novel_news_review_route(
+        request_id: str, payload: NovelNewsReviewRequest,
+        x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(session, x_csrf_token)
+        require_novel_news(settings, str(session.user["phone"]))
+        return {"result": locked_authority_call(
+            "request", request_id, review_novel_news, settings, request_id,
+            decisions=[item.model_dump() for item in payload.decisions],
+            reviewer=str(session.user["phone"]),
+        )}
+
+    @app.post("/api/create/novel-news/{request_id}/export")
+    def novel_news_export_route(
+        request_id: str,
+        x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(session, x_csrf_token)
+        require_novel_news(settings, str(session.user["phone"]))
+        task = create_background_task(
+            settings, operation="novel_news_export", request_id=request_id,
+            created_by_user_id=int(session.user["id"]),
+        )
+        background_task_runner.schedule(task["task_id"])
+        return {"accepted": True, "task": task}
+
+    @app.get("/api/create/novel-news/{request_id}/excel")
+    def novel_news_excel_route(
+        request_id: str,
+        session: SessionContext = Depends(require_console_access),
+    ) -> FileResponse:
+        require_novel_news(settings, str(session.user["phone"]))
+        path = novel_news_excel(settings, request_id)
+        return FileResponse(
+            path=path, filename=path.name,
+            media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
     @app.post("/api/create/capacity-preview")
@@ -1404,6 +1502,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             session,
             x_csrf_token,
         )
+        if payload.profile == "news":
+            require_novel_news(settings, str(session.user["phone"]))
 
         preview = preview_content_creation(
             settings,
@@ -1430,10 +1530,16 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             session,
             x_csrf_token,
         )
+        if payload.profile == "news" or payload.selected_opportunity_id is not None:
+            require_novel_news(settings, str(session.user["phone"]))
 
         # The child operation already owns the business-scoped lock. The shared
         # barrier still prevents an offline backup from racing this mutation.
         with authority_mutation_barrier(settings, timeout_seconds=0.0):
+            novel_selection = (
+                {"selected_opportunity_id": payload.selected_opportunity_id}
+                if payload.selected_opportunity_id is not None else {}
+            )
             result = confirm_content_creation(
                 settings,
                 business_id=(payload.business_id),
@@ -1444,6 +1550,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 idempotency_key=(payload.idempotency_key),
                 created_by_user_id=int(session.user["id"]),
                 created_by_phone=str(session.user["phone"]),
+                **novel_selection,
             )
 
         return {
@@ -1463,6 +1570,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             session,
             x_csrf_token,
         )
+        require_if_novel_request(settings, request_id, str(session.user["phone"]))
 
         result = locked_authority_call(
             "request",
@@ -1483,6 +1591,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
         require_csrf(session, x_csrf_token)
+        require_if_novel_request(settings, request_id, str(session.user["phone"]))
         result = locked_authority_call(
             "request",
             request_id,
@@ -1496,8 +1605,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/create/{request_id}/delivery")
     def content_delivery_state(
         request_id: str,
-        _: SessionContext = Depends(require_console_access),
+        session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
+        require_if_novel_request(settings, request_id, str(session.user["phone"]))
         return {
             "state": get_content_delivery_state(
                 settings,
@@ -1515,6 +1625,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
         require_csrf(session, x_csrf_token)
+        require_if_novel_request(settings, request_id, str(session.user["phone"]))
         task = create_background_task(
             settings,
             operation="content_plan",
@@ -1534,6 +1645,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
         require_csrf(session, x_csrf_token)
+        require_if_novel_request(settings, request_id, str(session.user["phone"]))
         task = create_background_task(
             settings,
             operation="script_generation",
@@ -1554,6 +1666,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
         require_csrf(session, x_csrf_token)
+        require_if_novel_request(settings, request_id, str(session.user["phone"]))
         return {
             "result": locked_authority_call(
                 "request",
@@ -1580,6 +1693,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
         require_csrf(session, x_csrf_token)
+        require_if_novel_request(settings, request_id, str(session.user["phone"]))
         task = create_background_task(
             settings,
             operation="mix_export",
@@ -1592,8 +1706,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/create/{request_id}/exported-excel")
     def download_exported_excel(
         request_id: str,
-        _: SessionContext = Depends(require_console_access),
+        session: SessionContext = Depends(require_console_access),
     ) -> FileResponse:
+        require_if_novel_request(settings, request_id, str(session.user["phone"]))
         path = exported_excel_path(
             settings,
             request_id,
@@ -1674,8 +1789,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/create/news/{request_id}/delivery")
     def news_delivery_state_route(
         request_id: str,
-        _: SessionContext = Depends(require_console_access),
+        session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
+        require_if_novel_request(settings, request_id, str(session.user["phone"]))
         return {
             "state": get_news_delivery_state(
                 settings,
@@ -1696,6 +1812,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             session,
             x_csrf_token,
         )
+        require_if_novel_request(settings, request_id, str(session.user["phone"]))
 
         task = create_background_task(
             settings,
@@ -1720,6 +1837,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             session,
             x_csrf_token,
         )
+        require_if_novel_request(settings, request_id, str(session.user["phone"]))
 
         return {
             "result": locked_authority_call(
@@ -1749,6 +1867,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             session,
             x_csrf_token,
         )
+        require_if_novel_request(settings, request_id, str(session.user["phone"]))
 
         task = create_background_task(
             settings,
@@ -1762,8 +1881,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/create/news/{request_id}/excel")
     def download_news_excel_route(
         request_id: str,
-        _: SessionContext = Depends(require_console_access),
+        session: SessionContext = Depends(require_console_access),
     ) -> FileResponse:
+        require_if_novel_request(settings, request_id, str(session.user["phone"]))
         path = exported_news_excel_path(
             settings,
             request_id,

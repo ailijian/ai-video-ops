@@ -344,6 +344,7 @@ def _find_equivalent_active_request(
     profile: str,
     requested_quantity: int,
     confirmed_quantity: int,
+    selected_opportunity_id: str | None = None,
 ) -> tuple[Path, dict[str, Any]] | None:
     # Effective lifecycle, not immutable Request status alone, decides in-flight.
     # Profile scope is explicit: old News validation Requests cannot block Mix.
@@ -418,6 +419,9 @@ def _find_equivalent_active_request(
             )
             != confirmed_quantity
         ):
+            continue
+
+        if (request.get("selected_content") or {}).get("concept_id") != selected_opportunity_id:
             continue
 
         confirmation = (
@@ -558,6 +562,7 @@ def validate_existing_request(
     confirmed_quantity: int,
     idempotency_key: str,
     require_idempotency_match: bool = True,
+    selected_opportunity_id: str | None = None,
 ) -> None:
     confirmation = request.get("confirmation") or {}
 
@@ -569,6 +574,7 @@ def validate_existing_request(
         and int(request.get("quantity") or 0) == confirmed_quantity
         and int(confirmation.get("operator_requested_quantity") or 0)
         == requested_quantity
+        and (request.get("selected_content") or {}).get("concept_id") == selected_opportunity_id
     )
 
     if require_idempotency_match:
@@ -663,6 +669,7 @@ def recover_existing(
     confirmed_quantity: int,
     idempotency_key: str,
     require_idempotency_match: bool = True,
+    selected_opportunity_id: str | None = None,
 ) -> dict[str, Any]:
     request = read_json(request_path)
 
@@ -675,6 +682,7 @@ def recover_existing(
         confirmed_quantity=(confirmed_quantity),
         idempotency_key=(idempotency_key),
         require_idempotency_match=(require_idempotency_match),
+        selected_opportunity_id=selected_opportunity_id,
     )
 
     if handoff_path.is_file():
@@ -734,6 +742,7 @@ def create_generation_request_handoff(
     created_at: str | None = None,
     created_by_user_id: int | None = None,
     created_by_phone: str | None = None,
+    selected_opportunity_id: str | None = None,
 ) -> dict[str, Any]:
     pipeline_root = pipeline_root.expanduser().resolve()
 
@@ -779,6 +788,7 @@ def create_generation_request_handoff(
             requested_quantity=(requested_quantity),
             confirmed_quantity=(confirmed_quantity),
             idempotency_key=(idempotency_key),
+            selected_opportunity_id=selected_opportunity_id,
         )
 
     equivalent = _find_equivalent_active_request(
@@ -788,6 +798,7 @@ def create_generation_request_handoff(
         profile,
         requested_quantity,
         confirmed_quantity,
+        selected_opportunity_id,
     )
 
     if equivalent is not None:
@@ -810,6 +821,7 @@ def create_generation_request_handoff(
             confirmed_quantity=(confirmed_quantity),
             idempotency_key=(idempotency_key),
             require_idempotency_match=False,
+            selected_opportunity_id=selected_opportunity_id,
         )
 
     if _active_in_flight_request_exists(
@@ -827,21 +839,72 @@ def create_generation_request_handoff(
             ),
         )
 
-    try:
-        preview = build_content_creation_entry(
-            pipeline_root=(pipeline_root),
-            business_id=(business_id),
-            speaker_id=(speaker_id),
-            profile=profile,
-            requested_quantity=(requested_quantity),
-            created_at=created_at,
-        )
-
-    except ContentCreationEntryError as exc:
+    selected_content = None
+    if profile == "news" and selected_opportunity_id is None:
         raise GenerationRequestError(
-            exc.code,
-            str(exc),
-        ) from exc
+            "NEWS_NOVEL_OPPORTUNITY_REQUIRED",
+            "Novel News requires one explicitly selected, novel content opportunity.",
+        )
+    if selected_opportunity_id is not None:
+        if profile != "news" or requested_quantity != 1 or confirmed_quantity != 1:
+            raise GenerationRequestError(
+                "NEWS_NOVEL_REQUEST_CONTRACT_INVALID",
+                "Novel News confirms exactly one selected opportunity per Request.",
+            )
+        from novel_news_opportunity_v1 import project_novel_news_opportunities
+
+        opportunities = project_novel_news_opportunities(
+            pipeline_root=pipeline_root, business_id=business_id, speaker_id=speaker_id
+        )
+        matching = [
+            item for item in opportunities["opportunities"]
+            if item["concept_id"] == selected_opportunity_id
+        ]
+        if len(matching) != 1:
+            raise GenerationRequestError(
+                "NEWS_NOVEL_OPPORTUNITY_STALE",
+                "The selected Novel News opportunity is no longer available.",
+            )
+        selected_content = matching[0]
+        feasibility = selected_content["production_feasibility"]
+        if (
+            selected_content["novelty_status"] != "novel"
+            or feasibility.get("status") != "supported"
+            or int(opportunities["available_novel_count"]) <= 0
+        ):
+            raise GenerationRequestError(
+                "NEWS_NOVEL_PREFLIGHT_UNSUPPORTED",
+                "Novel content and approved News source coverage must both be available.",
+                preflight=opportunities,
+            )
+        business_preview = resolve_current_persona(pipeline_root, business_id, "business")
+        speaker_preview = resolve_speaker_persona(pipeline_root, business_preview, speaker_id)
+        ledger_path = pipeline_root / "data/content_ledgers" / business_id / "content_ledger_v1.json"
+        preview = {
+            "business": {"business_id": business_id, "revision": business_preview["revision"], "status": "APPROVED"},
+            "speaker": {"speaker_id": speaker_id, "revision": speaker_preview["revision"], "status": "APPROVED"},
+            "capacity": {
+                "source_mode": "approved_fact_atoms_plus_business_wide_ledger",
+                "ledger_entry_count": len(read_json(ledger_path).get("entries") or []) if ledger_path.is_file() else 0,
+                "high_quality_novel_capacity": opportunities["available_novel_count"],
+                "capacity_status": "available", "padding_allowed": False,
+            },
+            "production_feasibility": feasibility,
+            "recommendation": {"status": "ready", "requested_quantity": 1, "recommended_quantity": 1, "can_continue": True, "blocker": None},
+            "evidence_refs": [str(business_preview["path"]), str(speaker_preview["path"]), *( [str(ledger_path)] if ledger_path.is_file() else [])],
+        }
+    else:
+        try:
+            preview = build_content_creation_entry(
+                pipeline_root=(pipeline_root),
+                business_id=(business_id),
+                speaker_id=(speaker_id),
+                profile=profile,
+                requested_quantity=(requested_quantity),
+                created_at=created_at,
+            )
+        except ContentCreationEntryError as exc:
+            raise GenerationRequestError(exc.code, str(exc)) from exc
 
     recommendation = preview.get("recommendation") or {}
 
@@ -942,6 +1005,7 @@ def create_generation_request_handoff(
         "profile": profile,
         "target_profile": profile,
         "reuse_intent": ("novel_content"),
+        **({"selected_content": selected_content} if selected_content is not None else {}),
         "content_intent": ("mixed"),
         "quantity": (confirmed_quantity),
         "platform": "douyin",
@@ -1022,6 +1086,7 @@ def create_generation_request_handoff(
             requested_quantity=(requested_quantity),
             confirmed_quantity=(confirmed_quantity),
             idempotency_key=(idempotency_key),
+            selected_opportunity_id=selected_opportunity_id,
         )
 
     handoff = build_source_handoff(
@@ -1106,6 +1171,7 @@ def main() -> None:
     )
     parser.add_argument("--created-by-user-id", type=int)
     parser.add_argument("--created-by-phone")
+    parser.add_argument("--selected-opportunity-id")
 
     args = parser.parse_args()
 
@@ -1120,6 +1186,7 @@ def main() -> None:
             idempotency_key=(args.idempotency_key),
             created_by_user_id=args.created_by_user_id,
             created_by_phone=args.created_by_phone,
+            selected_opportunity_id=args.selected_opportunity_id,
         )
 
     except GenerationRequestError as exc:

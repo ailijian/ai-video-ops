@@ -117,6 +117,26 @@ $consoleDb = Get-EnvFileSetting $resolvedEnv "AIVO_CONSOLE_DB"
 $configuredPipelinePython = Get-EnvFileSetting $resolvedEnv "AIVO_PIPELINE_PYTHON"
 $secureCookies = Get-EnvFileSetting $resolvedEnv "AIVO_SECURE_COOKIES"
 $caseAcquisitionProvider = Get-EnvFileSetting $resolvedEnv "AIVO_CASE_ACQUISITION_PROVIDER"
+$novelNewsRollout = Get-EnvFileSetting $resolvedEnv "AIVO_NOVEL_NEWS_ROLLOUT"
+if ([string]::IsNullOrWhiteSpace($novelNewsRollout)) {
+    $novelNewsRollout = "off"
+}
+$novelNewsRollout = $novelNewsRollout.ToLowerInvariant()
+if ($novelNewsRollout -notin @("off", "validation", "on")) {
+    throw "AIVO_NOVEL_NEWS_ROLLOUT must be off, validation or on."
+}
+if ($novelNewsRollout -eq "validation") {
+    $validationPhones = Get-EnvFileSetting $resolvedEnv "AIVO_NOVEL_NEWS_VALIDATION_PHONES"
+    if ([string]::IsNullOrWhiteSpace($validationPhones)) {
+        throw "AIVO_NOVEL_NEWS_VALIDATION_PHONES requires at least one phone in validation mode."
+    }
+    $validPhones = @($validationPhones.Split(',') | Where-Object { -not [string]::IsNullOrWhiteSpace($_.Trim()) })
+    if ($validPhones.Count -eq 0) {
+        throw "AIVO_NOVEL_NEWS_VALIDATION_PHONES requires at least one phone in validation mode."
+    }
+    Write-Output "PASS: Novel News validation allowlist is present (values hidden)."
+}
+Write-Output "PASS: Novel News rollout mode=$novelNewsRollout"
 if ($caseAcquisitionProvider -and $caseAcquisitionProvider -notin @("legacy_downloader", "qiyun", "upload_only")) {
     throw "AIVO_CASE_ACQUISITION_PROVIDER must be legacy_downloader, qiyun or upload_only."
 }

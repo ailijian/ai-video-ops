@@ -405,6 +405,27 @@ def resolve_matching_universe(
             )
         source_case = fingerprint.get("source_case")
         if source_case is None:
+            # Earlier News fingerprints use a draft schema but were later
+            # explicitly bound by a Human-approved, SHA-pinned compatibility
+            # sidecar. That sidecar is the binding authority, not the operator
+            # hint or observed source profile.
+            sidecar_path = case_path.with_name("case_profile_compatibility_approval_v1.json")
+            if not sidecar_path.is_file():
+                continue
+            sidecar = read_json(sidecar_path)
+            if (
+                sidecar.get("status") != "approved"
+                or sidecar.get("case_id") != case_id
+                or (sidecar.get("source_approved_case_ref") or {}).get("sha256") != sha256_file(case_path)
+                or (sidecar.get("fingerprint_ref") or {}).get("sha256") != sha256_file(fingerprint_path)
+                or fingerprint.get("source_case_sha256") != sha256_file(case_path)
+            ):
+                raise SourcePlanError(
+                    "SOURCE_PLAN_LINEAGE_MISMATCH",
+                    f"Legacy Fingerprint {case_id} has invalid Human-approved binding.",
+                )
+            case_paths.append(case_path)
+            fingerprint_paths.append(fingerprint_path)
             continue
         if (
             source_case.get("status") != "approved"

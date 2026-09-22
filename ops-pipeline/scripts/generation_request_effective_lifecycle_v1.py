@@ -840,6 +840,65 @@ def classify_request(
 
         return result
 
+    if (
+        request.get("target_profile") == "news"
+        and request.get("reuse_intent") == "novel_content"
+        and isinstance(request.get("selected_content"), dict)
+    ):
+        root = pipeline_root / "data" / "generation_batches" / request_id
+        closure_path = root / "novel_news_export_closure_v1.json"
+        approved_path = root / "approved_novel_news_v1.json"
+        beat_path = root / "novel_news_beat_plan_v1.json"
+        source_path = pipeline_root / "data" / "production_plans" / request_id / "generation_source_plan_v1.json"
+        if closure_path.is_file():
+            closure = read_json(closure_path)
+            receipt_path = root / "novel_news_export_receipt_v1.json"
+            ledger_path = pipeline_root / "data" / "content_ledgers" / str(request["persona_id"]) / "content_ledger_v1.json"
+            if not receipt_path.is_file() or not ledger_path.is_file():
+                raise EffectiveLifecycleError("NEWS_NOVEL_CLOSURE_INVALID", "Novel News closure has missing receipt or Content Ledger.")
+            receipt = read_json(receipt_path)
+            ledger = read_json(ledger_path)
+            output_path = Path(str(receipt.get("output_path") or ""))
+            if (
+                closure.get("schema_version") != "novel-news-export-closure-v1.0"
+                or closure.get("request_id") != request_id
+                or (closure.get("validation") or {}).get("passed") is not True
+                or closure.get("semantic_entry_count_delta") != 1
+                or not output_path.is_file()
+                or receipt.get("output_sha256") != sha256_file(output_path)
+                or not any(item.get("content_id") == closure.get("content_id") and item.get("reuse_intent") == "novel_content" for item in ledger.get("entries") or [])
+            ):
+                raise EffectiveLifecycleError("NEWS_NOVEL_CLOSURE_INVALID", "Novel News closure failed canonical lineage validation.")
+            result.update({"effective_terminal": True, "effective_status": "exported", "effective_stage": "TERMINAL", "terminal_reason": "validated_novel_news_export"})
+            result["evidence_refs"].append(evidence_ref(pipeline_root, closure_path))
+            return result
+        if approved_path.is_file():
+            approved = read_json(approved_path)
+            if approved.get("request_id") != request_id or approved.get("human_gate") is not True:
+                raise EffectiveLifecycleError("NEWS_NOVEL_APPROVAL_INVALID", "Novel News Human Approval is invalid.")
+            result["effective_stage"] = "APPROVED_PENDING_EXPORT"
+            result["evidence_refs"].append(evidence_ref(pipeline_root, approved_path))
+            return result
+        if beat_path.is_file():
+            beat = read_json(beat_path)
+            if beat.get("request_id") != request_id or beat.get("request_sha256") != result["request_sha256"]:
+                raise EffectiveLifecycleError("NEWS_NOVEL_BEAT_LINEAGE_INVALID", "Novel News beat Plan has wrong Request lineage.")
+            result["effective_stage"] = "HUMAN_REVIEW"
+            result["evidence_refs"].append(evidence_ref(pipeline_root, beat_path))
+            return result
+        if source_path.is_file():
+            source = read_json(source_path)
+            if source.get("request_id") != request_id or (source.get("request") or {}).get("request_sha") != result["request_sha256"]:
+                raise EffectiveLifecycleError("GENERATION_SOURCE_PLAN_LINEAGE_MISMATCH", "News Source Plan lineage is invalid.")
+            coverage = source.get("coverage") or {}
+            result["source_coverage_status"] = coverage.get("status")
+            result["source_coverage_reason"] = coverage.get("humanized_reason") or coverage.get("reason")
+            result["effective_stage"] = "SOURCE_PLAN_READY" if coverage.get("status") == "supported" else "SOURCE_COVERAGE_BLOCKED"
+            if coverage.get("status") != "supported":
+                result["effective_status"] = "blocked"
+            result["evidence_refs"].append(evidence_ref(pipeline_root, source_path))
+        return result
+
     rejected_review = (
         _reviewed_rejected_batch(
             pipeline_root,

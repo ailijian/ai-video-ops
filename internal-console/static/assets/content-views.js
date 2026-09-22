@@ -1,6 +1,7 @@
 import { escapeHtml } from "./case-components.js";
 import { createContentDeliveryViews } from "./content-delivery-views.js?v=productized-stage3-3";
 import { createNewsDeliveryViews } from "./news-delivery-views.js?v=productized-stage3-3";
+import { createNovelNewsViews } from "./novel-news-views.js?v=gate-c2-1";
 import {
   CreationHeader,
   CreationMetricRow,
@@ -24,6 +25,7 @@ export function createContentViews({
 
   const deliveryViews = createContentDeliveryViews({ api, showToast, escapeHtml });
   const newsDeliveryViews = createNewsDeliveryViews({ api, showToast, escapeHtml });
+  const novelNewsViews = createNovelNewsViews({ api, showToast, escapeHtml });
 
   function newConfirmationKey() {
     if (globalThis.crypto?.randomUUID) return globalThis.crypto.randomUUID();
@@ -32,6 +34,10 @@ export function createContentViews({
 
   function selectedProfileValue() {
     return document.querySelector('input[name="create-profile"]:checked')?.value || "mix";
+  }
+
+  function selectedNewsModeValue() {
+    return document.querySelector('input[name="create-news-mode"]:checked')?.value || "cross_profile_repurpose";
   }
 
   function selectedCustomer(businessId) {
@@ -52,6 +58,7 @@ export function createContentViews({
       { label: "客户", value: business?.selectedOptions?.[0]?.textContent?.trim() || "" },
       { label: "出镜人", value: speaker?.selectedOptions?.[0]?.textContent?.trim() || "" },
       { label: "内容类型", value: profile === "news" ? "新闻体" : "素材混剪" },
+      ...(profile === "news" ? [{ label: "创作模式", value: selectedNewsModeValue() === "novel_content" ? "创作新内容" : "重新表达已有内容" }] : []),
       ...(profile === "mix" && form?.dataset.confirmedQuantity
         ? [
             { label: "计划数量", value: `${Number(form.dataset.requestedQuantity || 0)} 条` },
@@ -113,6 +120,8 @@ export function createContentViews({
     const quantityInput = document.querySelector("#create-quantity");
     const submit = document.querySelector("#check-content-capacity");
     if (quantityField) quantityField.hidden = news;
+    const newsModes = document.querySelector("#create-news-modes");
+    if (newsModes) newsModes.hidden = !news;
     if (quantityInput) quantityInput.disabled = news || document.querySelector("#content-entry-form")?.classList.contains("completed");
     if (submit && !submit.closest("form")?.classList.contains("completed")) submit.textContent = "查看可创作内容";
   }
@@ -302,6 +311,63 @@ export function createContentViews({
     }
   }
 
+  async function restoreActiveNovelNewsRequest() {
+    const business = document.querySelector("#create-business");
+    const host = document.querySelector("#capacity-preview-result");
+    if (!business || !host) return false;
+    try {
+      const response = await api(`/api/create/active-request?business_id=${encodeURIComponent(business.value)}&profile=news`);
+      const active = response.active_request;
+      if (!active) { unlockEntryForm(); return false; }
+      const speaker = document.querySelector("#create-speaker");
+      if (speaker && active.speaker_id) {
+        if (![...speaker.options].some((option) => option.value === active.speaker_id)) {
+          activeSpeakerUnavailable(host);
+          return true;
+        }
+        speaker.value = active.speaker_id;
+      }
+      lockEntryForm("继续上次新闻体 · 创作新内容");
+      if (active.handoff_ready === false) {
+        host.innerHTML = CreationState({
+          title: "继续上次新闻体创作",
+          body: "内容方向已经确认，继续准备创作来源；不会重新建立内容方向。",
+          actions: `<button type="button" class="btn btn-primary" data-recover-novel-handoff>继续准备</button>`,
+        });
+        host.querySelector("[data-recover-novel-handoff]")?.addEventListener("click", async (event) => {
+          const button = event.currentTarget;
+          button.disabled = true;
+          try {
+            await api("/api/create/confirm", {
+              method: "POST",
+              body: JSON.stringify({
+                business_id: active.business_id, speaker_id: active.speaker_id,
+                profile: "news", requested_quantity: 1, confirmed_quantity: 1,
+                selected_opportunity_id: active.selected_opportunity_id,
+                idempotency_key: newConfirmationKey(),
+              }),
+            });
+            await restoreActiveNovelNewsRequest();
+          } catch (error) {
+            showToast(safeCreationMessage(error.detail?.next_action || error.detail?.message || error.message, "暂时无法恢复，请稍后重试。"));
+            if (button.isConnected) button.disabled = false;
+          }
+        });
+        return true;
+      }
+      await novelNewsViews.restore(active.request_id, host);
+      return true;
+    } catch (error) {
+      host.innerHTML = CreationState({
+        tone: "error", title: "新闻体创作暂时无法恢复",
+        body: safeCreationMessage(error.detail?.next_action || error.detail?.message || error.message, "请查看任务记录。"),
+        actions: `<a class="btn btn-secondary" href="/tasks">查看任务</a>`,
+      });
+      lockEntryForm("暂时无法继续");
+      return true;
+    }
+  }
+
   async function restoreActiveRequest() {
     const business = document.querySelector("#create-business");
     const host = document.querySelector("#capacity-preview-result");
@@ -392,7 +458,9 @@ export function createContentViews({
   }
 
   async function restoreSelectedProfileRequest() {
-    return selectedProfileValue() === "news" ? restoreActiveNewsRequest() : restoreActiveRequest();
+    if (selectedProfileValue() !== "news") return restoreActiveRequest();
+    return options?.novel_news?.available === true && selectedNewsModeValue() === "novel_content"
+      ? restoreActiveNovelNewsRequest() : restoreActiveNewsRequest();
   }
 
   function bindAdjustQuantity(host) {
@@ -601,7 +669,22 @@ export function createContentViews({
                     <label class="profile-choice">
                       <input type="radio" name="create-profile" value="news">
                       <strong>新闻体</strong>
-                      <span>从已有内容中重新组织新闻式标题，不新增事实。</span>
+                      <span>用短促、连续的信息节奏表达客户真实内容。</span>
+                    </label>
+                  </div>
+                </fieldset>
+                <fieldset class="field creation-type-field" id="create-news-modes" hidden>
+                  <legend>新闻体创作模式</legend>
+                  <div class="profile-choice-grid">
+                    ${data.novel_news?.available === true ? `<label class="profile-choice selected">
+                      <input type="radio" name="create-news-mode" value="novel_content" checked>
+                      <strong>创作新内容${data.novel_news.verification_badge ? " <span class=\"creation-verification-badge\">验证中</span>" : ""}</strong>
+                      <span>从客户真实信息中寻找新的内容方向，用新闻体形式表达。</span>
+                    </label>` : ""}
+                    <label class="profile-choice ${data.novel_news?.available === true ? "" : "selected"}">
+                      <input type="radio" name="create-news-mode" value="cross_profile_repurpose" ${data.novel_news?.available === true ? "" : "checked"}>
+                      <strong>重新表达已有内容</strong>
+                      <span>把以前已经讲过的重要信息重新组织成新闻体，不新增事实。</span>
                     </label>
                   </div>
                 </fieldset>
@@ -676,7 +759,22 @@ export function createContentViews({
       button.disabled = true;
       button.textContent = "正在查看…";
       try {
-        if (profile === "news") {
+        if (profile === "news" && selectedNewsModeValue() === "novel_content") {
+          const result = await api("/api/create/novel-news/preview", {
+            method: "POST",
+            body: JSON.stringify({ business_id: business.value, speaker_id: speakerId }),
+          });
+          novelNewsViews.renderPreview(host, result.projection, {
+            businessId: business.value, speakerId,
+            onRequestCreated: async (requestId) => {
+              lockEntryForm("继续新闻体 · 创作新内容");
+              await novelNewsViews.restore(requestId, host);
+            },
+          });
+          document.querySelector("#content-entry-form")?.classList.toggle(
+            "has-capacity-result", Number(result.projection?.production_ready_count || 0) > 0,
+          );
+        } else if (profile === "news") {
           const result = await api("/api/create/news/preview", {
             method: "POST",
             body: JSON.stringify({ business_id: business.value, speaker_id: speakerId }),

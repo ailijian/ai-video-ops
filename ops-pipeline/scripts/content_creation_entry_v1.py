@@ -365,13 +365,52 @@ def resolve_capacity_preview(
             pipeline_root,
             business_id,
         )
-
-        batches = resolve_batches(
-            pipeline_root,
-            business_id,
-            ledger,
-            None,
-        )
+        try:
+            batches = resolve_batches(
+                pipeline_root,
+                business_id,
+                ledger,
+                None,
+            )
+        except AuthorityResolutionError as exc:
+            entries = ledger["entries"]
+            if (
+                exc.code == "APPROVED_BATCH_NOT_FOUND"
+                and entries
+                and all(
+                    item.get("production_profile") == "news"
+                    and item.get("reuse_intent") == "novel_content"
+                    and item.get("status") in {"exported", "published"}
+                    for item in entries
+                )
+            ):
+                for item in entries:
+                    for name in ("source_request_ref", "approved_review_ref", "export_receipt_ref"):
+                        ref = item.get(name) or {}
+                        path = Path(str(ref.get("path") or ""))
+                        if not path.is_file() or sha256_file(path) != ref.get("sha256"):
+                            raise ContentCreationEntryError(
+                                "NEWS_NOVEL_LEDGER_LINEAGE_INVALID",
+                                "News-only Content Ledger has invalid export lineage.",
+                            )
+                handoff = build_initial_content_capacity_handoff(
+                    business_persona_path=business["path"],
+                    speaker_persona_path=speaker["path"],
+                    requested_quantity=requested_quantity,
+                    created_at=created_at,
+                    historical_ledger=ledger["artifact"],
+                )
+                return {
+                    "mode": "news_only_business_wide_ledger_capacity",
+                    "high_quality_novel_capacity": int(handoff["high_quality_capacity"]),
+                    "capacity_status": handoff.get("capacity_status"),
+                    "content_gap_summary": handoff.get("content_gap_summary") or [],
+                    "quality_engine": handoff.get("content_quality_engine"),
+                    "ledger_entry_count": len(entries),
+                    "evidence_paths": [ledger["path"]],
+                    "authority": {"empty_history_assumed": False, "content_ledger_written": False},
+                }
+            raise
 
         active_batch = batches["active"]
 

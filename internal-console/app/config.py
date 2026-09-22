@@ -51,6 +51,8 @@ class Settings:
     session_last_seen_interval_seconds: int = 300
     default_business_id: str | None = None
     case_acquisition_provider: str = "legacy_downloader"
+    novel_news_rollout: str = "off"
+    novel_news_validation_phones: tuple[str, ...] = ()
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -60,6 +62,14 @@ class Settings:
         ).strip()
         if acquisition_provider not in {"legacy_downloader", "qiyun", "upload_only"}:
             raise ValueError("AIVO_CASE_ACQUISITION_PROVIDER must be legacy_downloader, qiyun or upload_only")
+        novel_news_rollout = os.environ.get("AIVO_NOVEL_NEWS_ROLLOUT", "off").strip().lower()
+        if novel_news_rollout not in {"off", "validation", "on"}:
+            raise ValueError("AIVO_NOVEL_NEWS_ROLLOUT must be off, validation or on")
+        validation_phones = tuple(
+            sorted({phone.strip() for phone in os.environ.get("AIVO_NOVEL_NEWS_VALIDATION_PHONES", "").split(",") if phone.strip()})
+        )
+        if novel_news_rollout == "validation" and not validation_phones:
+            raise ValueError("AIVO_NOVEL_NEWS_VALIDATION_PHONES is required for validation mode")
         console_root = Path(__file__).resolve().parents[1]
         repo_root = console_root.parent
         database_path = Path(
@@ -129,4 +139,6 @@ class Settings:
                 os.environ.get("AIVO_DEFAULT_BUSINESS_ID", "").strip() or None
             ),
             case_acquisition_provider=acquisition_provider,
+            novel_news_rollout=novel_news_rollout,
+            novel_news_validation_phones=validation_phones,
         )
