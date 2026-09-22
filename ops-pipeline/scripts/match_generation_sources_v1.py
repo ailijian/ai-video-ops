@@ -436,6 +436,42 @@ def _approved_case_sidecar(source: dict[str, Any], target_profile: str) -> dict[
     return {"sha256": sha256_file(path), "compatible_profiles": approval["approved_compatible_generation_profiles"]}
 
 
+def case_assessment_matches_source_lineage(
+    assessment: dict[str, Any] | None,
+    source: dict[str, Any],
+) -> bool:
+    """Reject a Case-ID match when the assessment names another Case fork."""
+    if not isinstance(assessment, dict):
+        return False
+    lineage = assessment.get("lineage") or {}
+    case_ref = lineage.get("approved_case") or assessment.get("source_approved_case_ref") or {}
+    fingerprint_ref = lineage.get("fingerprint") or assessment.get("fingerprint_ref") or {}
+    case_sha = str(case_ref.get("sha256") or "").lower()
+    fingerprint_sha = str(fingerprint_ref.get("sha256") or "").lower()
+    if case_sha and case_sha != str(source["case"]["sha256"]).lower():
+        return False
+    if fingerprint_sha and fingerprint_sha != str(source["fingerprint"]["sha256"]).lower():
+        return False
+    return True
+
+
+def case_compatibility_approval_matches_source_lineage(
+    approval: dict[str, Any] | None,
+    source: dict[str, Any],
+) -> bool:
+    """A Human compatibility decision belongs to exact Case/Fingerprint bytes."""
+    if not isinstance(approval, dict) or not approval:
+        return False
+    case_sha = str((approval.get("source_approved_case_ref") or {}).get("sha256") or "").lower()
+    fingerprint_sha = str((approval.get("fingerprint_ref") or {}).get("sha256") or "").lower()
+    return bool(
+        case_sha
+        and fingerprint_sha
+        and case_sha == str(source["case"]["sha256"]).lower()
+        and fingerprint_sha == str(source["fingerprint"]["sha256"]).lower()
+    )
+
+
 def load_cases_and_fingerprints(
     case_paths: list[Path], fingerprint_paths: list[Path]
 ) -> dict[str, dict[str, Any]]:
@@ -1102,18 +1138,49 @@ def build_source_plan(
             compatibility_review_status = "legacy_not_profile_audited"
             approved_case_profile_compatibility = False
             if compatibility_report is not None:
-                assessment = assessment_by_case.get(case_id)
+                recorded_assessment = assessment_by_case.get(case_id)
+                assessment = (
+                    recorded_assessment
+                    if case_assessment_matches_source_lineage(
+                        recorded_assessment,
+                        source,
+                    )
+                    else None
+                )
                 sidecar = _approved_case_sidecar(source, target_profile)
-                if not assessment and not sidecar:
+                recorded_case_approval = compatibility_approval_by_case.get(case_id) or {}
+                case_approval = (
+                    recorded_case_approval
+                    if case_compatibility_approval_matches_source_lineage(
+                        recorded_case_approval,
+                        source,
+                    )
+                    else {}
+                )
+                if not assessment and not sidecar and not case_approval:
+                    stale_lineage = bool(recorded_assessment or recorded_case_approval)
                     excluded.append(
                         {
                             "source_id": case_id,
                             "source_type": "approved_case",
-                            "reason": "Case has no Profile Compatibility assessment.",
+                            "status": (
+                                "compatibility_review_required"
+                                if stale_lineage
+                                else "profile_compatibility_assessment_missing"
+                            ),
+                            "compatibility_assessment_status": (
+                                "STALE_NON_AUTHORITATIVE_RESEARCH_ASSESSMENT"
+                                if stale_lineage
+                                else "MISSING"
+                            ),
+                            "reason": (
+                                "Case Profile Compatibility evidence belongs to a "
+                                "different Case/Fingerprint lineage and is stale, or no "
+                                "assessment exists. Human compatibility review is required."
+                            ),
                         }
                     )
                     continue
-                case_approval = compatibility_approval_by_case.get(case_id) or {}
                 approved_profiles = set(
                     case_approval.get("approved_compatible_generation_profiles") or []
                 )

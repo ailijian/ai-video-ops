@@ -53,7 +53,9 @@ installation.
 4. Stop the existing Console with its actual service controller. Confirm port
    8000 has no listener. A new checkout cannot pass hardened runtime preflight
    until the missing Authority is installed, so do not start it in between.
-5. Verify the transferred release and inspect the read-only merge plan:
+5. Verify the transferred release, run the complete read-only collision audit,
+   then inspect the guarded merge plan. The audit enumerates every manifest
+   file; it never stops at the first collision:
 
 ```powershell
 $repo = 'E:\projects\ai-video-ops'
@@ -61,14 +63,19 @@ $release = '<transferred-release-directory>'
 $python = Join-Path $repo 'ops-pipeline\.venv\Scripts\python.exe'
 $tool = Join-Path $repo 'deploy\creative-authority\verify_release.py'
 & $python $tool verify --release $release --repo-root $repo
+& $python $tool audit --release $release --pipeline-root (Join-Path $repo 'ops-pipeline') --repo-root $repo
 & $python $tool plan --release $release --pipeline-root (Join-Path $repo 'ops-pipeline') --repo-root $repo
 ```
 
-6. If the plan reports any collision, stop. Case, Fingerprint, Pattern, and
-   singleton SHA differences require Human Authority review. The installer
-   never selects the newer file or overwrites a Production Case. Existing new
-   Production Cases remain in place; the release does not grant them Mix/News
-   compatibility.
+6. Pattern and singleton collisions, true Case identity conflicts, and any
+   same-source Case fork used by Approved Pattern/Compatibility Authority are
+   hard stops. A same-source independent reanalysis may be a local-preserve
+   candidate only when both Approved Case/receipt/Fingerprint trios bind the
+   same stable video and source-media SHA and the Release fork has no approved
+   downstream production dependency. The plan then records the local fork and
+   skips all Release Case/receipt/Fingerprint companions; it never transfers
+   compatibility. This is auditable preservation, not a silent skip. Existing
+   new Production Cases remain in place.
 7. Install only with an idle queue and stopped service:
 
 ```powershell
@@ -82,7 +89,8 @@ up affected Shared Authority files under
 `E:\AI-Video-Ops-Backup\creative-authority-pre-bootstrap-<timestamp>`, creates
 only missing files without replacement, validates the installed graph, and
 writes a secret-free receipt at
-`E:\AI-Video-Ops-Config\creative-authority-installation.json`. A partially
+`E:\AI-Video-Ops-Config\creative-authority-installation.json`, including any
+`local_authority_preserved` fork resolutions. A partially
 failed install removes only its own newly added, unchanged files; investigate
 the error before retrying. Customer runtime directories are untouched.
 

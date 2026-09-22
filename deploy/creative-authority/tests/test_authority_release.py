@@ -31,6 +31,68 @@ def put(root: Path, relative: str, value: dict) -> Path:
     return path
 
 
+def approved_case(data: Path, case_id: str, *, media_sha: str = "d" * 64) -> None:
+    case_path = put(
+        data,
+        f"cases/{case_id}/case_v1.json",
+        {
+            "case_id": case_id,
+            "lifecycle": {"status": "approved", "approved": True},
+            "source_provenance": {
+                "stable_video_id": case_id,
+                "recorded_source_media_sha256": media_sha,
+            },
+        },
+    )
+    case_sha = release.sha(case_path)
+    put(
+        data,
+        f"cases/{case_id}/approval_receipt.json",
+        {
+            "case_id": case_id,
+            "decision": "approved",
+            "human_gate": True,
+            "case_sha256_after_approval": case_sha,
+            "source_provenance": {
+                "stable_video_id": case_id,
+                "recorded_source_sha256": media_sha,
+            },
+        },
+    )
+    put(
+        data,
+        f"fingerprints/{case_id}/case_fingerprint_v1.json",
+        {
+            "case_id": case_id,
+            "source_case": {
+                "status": "approved",
+                "approved": True,
+                "sha256": case_sha,
+            },
+        },
+    )
+
+
+def fork_local_case(data: Path, case_id: str, *, media_sha: str = "d" * 64) -> None:
+    case_path = data / "cases" / case_id / "case_v1.json"
+    case = release.read(case_path)
+    case["independent_analysis_attempt"] = "production-local"
+    case["source_provenance"]["recorded_source_media_sha256"] = media_sha
+    case_path.write_text(json.dumps(case), encoding="utf-8")
+    case_sha = release.sha(case_path)
+    receipt_path = case_path.with_name("approval_receipt.json")
+    receipt = release.read(receipt_path)
+    receipt["case_sha256_after_approval"] = case_sha
+    receipt["note"] = "independent production review"
+    receipt["source_provenance"]["recorded_source_sha256"] = media_sha
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    fingerprint_path = data / "fingerprints" / case_id / "case_fingerprint_v1.json"
+    fingerprint = release.read(fingerprint_path)
+    fingerprint["source_case"]["sha256"] = case_sha
+    fingerprint["independent_analysis_attempt"] = "production-local"
+    fingerprint_path.write_text(json.dumps(fingerprint), encoding="utf-8")
+
+
 @pytest.fixture
 def source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     repo = tmp_path / "repo"
@@ -40,9 +102,18 @@ def source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     data = pipeline / "data"
     for singleton in release.SINGLETONS:
         put(data, singleton, {"schema_version": "fixture"})
-    put(data, "cases/case-a/case_v1.json", {"case_id": "case-a"})
-    put(data, "cases/case-a/approval_receipt.json", {"human_gate": True})
-    put(data, "fingerprints/case-a/case_fingerprint_v1.json", {"case_id": "case-a"})
+    approved_case(data, "case-a")
+    approved_case(data, "case-safe")
+    approved_case(data, "case-compatible")
+    put(
+        data,
+        "cases/case-compatible/case_profile_compatibility_approval_v1.json",
+        {
+            "status": "approved",
+            "case_id": "case-compatible",
+            "approved_compatible_generation_profiles": ["mix"],
+        },
+    )
     put(data, "patterns/approved/pattern-a/pattern_v1.json", {"pattern_id": "pattern-a", "scope": {"supported_case_ids": ["case-a"]}})
     put(data, "patterns/approved/pattern-a/approval_receipt.json", {"human_gate": True, "compatible_profiles": ["mix"]})
     put(data, "customer_intakes/customer-a/private.json", {"secret": "TEST_SECRET_DO_NOT_SHIP"})
@@ -91,12 +162,14 @@ def test_idempotent_case_and_pattern_collision(source, tmp_path: Path):
     assert case in plan["skipped_identical"]
     assert pattern in plan["skipped_identical"]
     (target / pattern).write_text('{"changed": true}', encoding="utf-8")
-    with pytest.raises(release.AuthorityReleaseError, match="PATTERN_AUTHORITY_COLLISION"):
+    with pytest.raises(release.AuthorityReleaseError) as exc:
         release.plan_merge(built, target, repo)
+    assert any(item["code"] == "PATTERN_COLLISION" for item in exc.value.details["unresolved_collisions"])
     (target / pattern).write_bytes((built / "bundle" / pattern).read_bytes())
     (target / case).write_text('{"changed": true}', encoding="utf-8")
-    with pytest.raises(release.AuthorityReleaseError, match="CASE_AUTHORITY_COLLISION"):
+    with pytest.raises(release.AuthorityReleaseError) as exc:
         release.plan_merge(built, target, repo)
+    assert any(item["code"] == "TRUE_CASE_IDENTITY_CONFLICT" for item in exc.value.details["unresolved_collisions"])
 
 
 def test_install_preserves_new_cases_and_does_not_grant_compatibility(source, tmp_path: Path):
@@ -134,3 +207,73 @@ def test_rejects_customer_paths_and_symlinks():
         release.safe_relative("data/customer_intakes/customer-a/intake.json")
     with pytest.raises(release.AuthorityReleaseError, match="Unsafe release path"):
         release.safe_relative("data/cases/../personas/customer-a.json")
+
+
+def test_same_source_independent_reanalysis_is_local_preserve_candidate(source):
+    repo, pipeline, built = source
+    fork_local_case(pipeline / "data", "case-safe")
+    audit = release.audit_merge(built, pipeline, repo)
+    assert audit["ready"] is True
+    assert audit["unresolved_collision_count"] == 0
+    preserved = audit["local_authority_preserved"]
+    assert len(preserved) == 1
+    assert preserved[0]["case_id"] == "case-safe"
+    assert preserved[0]["compatibility_inherited"] is False
+    assert preserved[0]["production_version_preserved"] is True
+    assert preserved[0]["release_version_installed"] is False
+    assert audit["category_counts"]["SAME_SOURCE_REANALYSIS_COLLISION"] == 3
+
+
+def test_same_source_reanalysis_with_pattern_dependency_stops(source):
+    repo, pipeline, built = source
+    fork_local_case(pipeline / "data", "case-a")
+    audit = release.audit_merge(built, pipeline, repo)
+    assert audit["ready"] is False
+    blocker = next(item for item in audit["unresolved_collisions"] if item["code"] == "DOWNSTREAM_APPROVED_AUTHORITY_DEPENDENCY")
+    assert blocker["case_id"] == "case-a"
+    assert blocker["downstream_dependencies"] == ["APPROVED_PATTERN_SUPPORT:pattern-a"]
+    with pytest.raises(release.AuthorityReleaseError) as exc:
+        release.plan_merge(built, pipeline, repo)
+    assert exc.value.code == "CREATIVE_AUTHORITY_MERGE_PLAN_BLOCKED"
+
+
+def test_same_source_reanalysis_with_approved_compatibility_stops(source):
+    repo, pipeline, built = source
+    fork_local_case(pipeline / "data", "case-compatible")
+    audit = release.audit_merge(built, pipeline, repo)
+    blocker = next(item for item in audit["unresolved_collisions"] if item["code"] == "DOWNSTREAM_APPROVED_AUTHORITY_DEPENDENCY")
+    assert blocker["case_id"] == "case-compatible"
+    assert "CASE_PROFILE_COMPATIBILITY_APPROVAL" in blocker["downstream_dependencies"]
+
+
+def test_same_case_id_with_different_source_media_is_true_identity_conflict(source):
+    repo, pipeline, built = source
+    fork_local_case(pipeline / "data", "case-safe", media_sha="e" * 64)
+    audit = release.audit_merge(built, pipeline, repo)
+    assert audit["ready"] is False
+    blocker = next(item for item in audit["unresolved_collisions"] if item["code"] == "TRUE_CASE_IDENTITY_CONFLICT")
+    assert blocker["case_id"] == "case-safe"
+
+
+def test_singleton_collision_still_stops(source):
+    repo, pipeline, built = source
+    singleton = pipeline / "data" / release.SINGLETONS[0]
+    singleton.write_text('{"changed": true}', encoding="utf-8")
+    audit = release.audit_merge(built, pipeline, repo)
+    assert audit["ready"] is False
+    assert any(item["code"] == "SINGLETON_COLLISION" for item in audit["unresolved_collisions"])
+
+
+def test_installation_receipt_records_local_preserved_fork(source, tmp_path: Path):
+    repo, pipeline, built = source
+    fork_local_case(pipeline / "data", "case-safe")
+    expected_commit = subprocess.check_output(["git", "-C", str(repo), "rev-parse", "HEAD"], text=True).strip()
+    receipt_path = tmp_path / "receipt.json"
+    result = release.install_release(built, pipeline, repo, expected_commit, tmp_path / "backups", receipt_path)
+    receipt = release.read(receipt_path)
+    assert result["merge"]["unresolved_collisions"] == 0
+    assert receipt["local_authority_preserved"][0]["case_id"] == "case-safe"
+    assert receipt["local_authority_preserved"][0]["compatibility_inherited"] is False
+    installed_paths = {item["relative_path"] for item in receipt["installed_files"]}
+    assert not installed_paths.intersection(receipt["local_authority_preserved"][0]["skipped_release_paths"])
+    assert release.preflight(pipeline, repo, receipt_path) == INVENTORY
