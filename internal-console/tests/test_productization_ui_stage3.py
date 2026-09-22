@@ -68,6 +68,26 @@ def test_capacity_ready_limited_and_zero_states_are_productized():
     assert "不代表已获得相关素材使用权" in create
 
 
+def test_coverage_gap_presents_process_supplement_as_optional():
+    create = read_asset("content-views.js")
+    blocked = create.split('if (sourcePlan?.artifactExists === true', 1)[1].split('if (!sourcePlan', 1)[0]
+    preview = create.split('if (feasibility.status !== "supported")', 1)[1].split('const limited =', 1)[0]
+
+    for branch in (blocked, preview):
+        assert "这些内容方向本身有效，但当前已批准的创作结构还不能支持这批内容。" in branch
+        assert "客户有真实流程，去补充" in branch
+        assert (
+            "只有客户确实存在稳定、真实的服务流程时才需要补充；"
+            "不需要为了生成内容而编写不存在的信息。"
+        ) in branch
+        assert "客户档案仍然有效" in branch
+        assert 'processRoute = route?.capability === "process_material"' in branch
+        assert 'class="btn btn-primary"' not in branch
+        assert "必须补充服务流程" not in branch
+    assert blocked.index("结束本次创作") < blocked.index("客户有真实流程，去补充")
+    assert preview.index("返回调整") < preview.index("客户有真实流程，去补充")
+
+
 def test_creation_recovery_and_preparation_states_are_humanized():
     create = read_asset("content-views.js")
 

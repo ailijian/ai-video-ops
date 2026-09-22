@@ -145,18 +145,22 @@ export function createContentViews({
     if (sourcePlan?.artifactExists === true && sourcePlan.coverageStatus !== "supported") {
       const feasibility = sourcePlan.productionFeasibility || {};
       const route = feasibility.optional_customer_truth_route;
+      const processRoute = route?.capability === "process_material";
       return CreationState({
         tone: "warning",
         eyebrow: "创作准备",
         title: "本次创作暂时无法继续",
-        body: safeCreationMessage(
-          feasibility.humanized_reason || sourcePlan.coverageReason,
-          "当前创作结构暂时不能支持这批内容。",
-        ),
-        content: `<p class="creation-governance-line">客户档案仍然有效；这是创作结构覆盖不足，不代表客户资料不完整。</p>`,
+        body: processRoute
+          ? "这些内容方向本身有效，但当前已批准的创作结构还不能支持这批内容。"
+          : safeCreationMessage(
+            feasibility.humanized_reason || sourcePlan.coverageReason,
+            "当前创作结构暂时不能支持这批内容。",
+          ),
+        content: `<p class="creation-governance-line">客户档案仍然有效；这是创作结构覆盖不足，不代表客户资料不完整。</p>
+          ${processRoute ? `<p class="creation-governance-line">只有客户确实存在稳定、真实的服务流程时才需要补充；不需要为了生成内容而编写不存在的信息。</p>` : ""}`,
         actions: `
-          ${route?.capability === "process_material" ? `<a class="btn btn-secondary" href="/customers/${encodeURIComponent(businessId)}/supplement?gap=process_material" data-route>${escapeHtml(route.label || "补充真实资料")}</a>` : ""}
-          <button type="button" class="btn btn-danger" data-abandon-generation-request>结束本次创作</button>`,
+          <button type="button" class="btn btn-danger" data-abandon-generation-request>结束本次创作</button>
+          ${processRoute ? `<a class="btn btn-secondary" href="/customers/${encodeURIComponent(businessId)}/supplement?gap=process_material" data-route>客户有真实流程，去补充</a>` : ""}`,
       });
     }
     if (!sourcePlan || sourcePlan.artifactExists !== true) {
@@ -443,24 +447,28 @@ export function createContentViews({
 
     if (feasibility.status !== "supported") {
       const route = feasibility.optional_customer_truth_route;
+      const processRoute = route?.capability === "process_material";
       host.innerHTML = CreationState({
         tone: "warning",
         eyebrow: "创作条件",
         title: `当前有 ${available} 个值得做的内容方向`,
-        body: safeCreationMessage(
-          feasibility.humanized_reason,
-          "但现有创作结构暂时不能支持这批内容。",
-        ),
+        body: processRoute
+          ? "这些内容方向本身有效，但当前已批准的创作结构还不能支持这批内容。"
+          : safeCreationMessage(
+            feasibility.humanized_reason,
+            "但现有创作结构暂时不能支持这批内容。",
+          ),
         content: `
           ${CreationMetricRow([
             { label: "计划数量", value: requested },
             { label: "内容方向", value: available },
             { label: "可生产", value: 0 },
           ])}
-          <p class="creation-governance-line">Content Capacity 与创作结构覆盖分别判断；客户档案仍然有效。</p>`,
+          <p class="creation-governance-line">内容方向与创作结构分别判断；客户档案仍然有效。</p>
+          ${processRoute ? `<p class="creation-governance-line">只有客户确实存在稳定、真实的服务流程时才需要补充；不需要为了生成内容而编写不存在的信息。</p>` : ""}`,
         actions: `
-          ${route?.capability === "process_material" ? `<a class="btn btn-secondary" href="/customers/${encodeURIComponent(preview.business.business_id)}/supplement?gap=process_material" data-route>${escapeHtml(route.label || "补充真实资料")}</a>` : ""}
-          <button class="btn btn-secondary" type="button" data-adjust-quantity>返回调整</button>`,
+          <button class="btn btn-secondary" type="button" data-adjust-quantity>返回调整</button>
+          ${processRoute ? `<a class="btn btn-secondary" href="/customers/${encodeURIComponent(preview.business.business_id)}/supplement?gap=process_material" data-route>客户有真实流程，去补充</a>` : ""}`,
       });
       bindAdjustQuantity(host);
       return;
