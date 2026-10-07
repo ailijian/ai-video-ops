@@ -1,0 +1,8 @@
+{
+  "regionId": "",
+  "securityGroupId": "",
+  "frpsHost": "47.116.109.155",
+  "frpsPort": 7000,
+  "ruleDescription": "AI Video Ops FRPS Control - RTX4090",
+  "aliyunProfile": "aivo-frp"
+}

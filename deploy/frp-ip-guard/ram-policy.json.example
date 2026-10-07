@@ -1,0 +1,14 @@
+{
+  "Version": "1",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ecs:DescribeSecurityGroupAttribute",
+        "ecs:AuthorizeSecurityGroup",
+        "ecs:RevokeSecurityGroup"
+      ],
+      "Resource": "acs:ecs:<RegionId>:<AlibabaCloudAccountId>:securitygroup/<SecurityGroupId>"
+    }
+  ]
+}
