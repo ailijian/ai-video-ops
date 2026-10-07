@@ -1,5 +1,11 @@
 # 鲸汤 AI 视频代运营工作台｜Productized UI & Information Architecture Freeze V1.0
 
+**Role：Frozen presentation design reference / design target**
+**Scope：Console 导航、视觉语言、产品文案、页面布局与响应式规则**
+**Freeze record：`da4919bd6933bba665b87e0f6ed76249e8f6320a`（设计冻结提交；不代表全量实施或生产验收）**
+
+本文在上述明确覆盖的范围内局部替代 [Internal Console UX & Interaction Freeze](AI%20Video%20Ops%20MVP%20V1｜Internal%20Console%20UX%20&%20Interaction%20Freeze%20V1.0.md) 的早期呈现规则；未覆盖的交互、业务、Human Gate、认证与数据权威边界继续由原规范和系统 Baseline 约束。本文引用的“当前页面”数据是产品化前的 [UI 审计 checkpoint 证据](INTERNAL_CONSOLE_PRODUCTIZATION_UI_AUDIT_V1.md)，不是实时状态。当前能力、受控开放和代码入口见 [Knowledge and Operations Index](../operations/README.md)。
+
 这一版的设计目标不是“更酷”，而是：
 
 > **安静、专业、可信、低学习成本。**

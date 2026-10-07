@@ -5,6 +5,8 @@
 
 Run commands from the repository root. Replace angle-bracket placeholders with explicit reviewed paths. Never select an authority by file timestamp or filename sorting.
 
+For scoped product/design rules and machine owners, start with the [Knowledge and Operations Index](README.md). Implementation status below describes the checked-in flow, not whether a particular production host has enabled it or passed a real-customer gate. Direct mutation commands are offline recovery only under the runtime boundary below.
+
 ## LOCAL_PRODUCTION_NODE_RUNTIME
 
 - **Runtime Freeze:** Internal Console listens on `127.0.0.1:8000`, uses exactly one Uvicorn worker, and never enables reload in production.
@@ -58,13 +60,23 @@ Run commands from the repository root. Replace angle-bracket placeholders with e
 - **Goal:** Create approved Customer Truth for a new business and speaker.
 - **Required Inputs:** Interview/raw intake followed by Human-reviewed persona inputs.
 - **Authority Preconditions:** Raw input and Fact Candidates are not Production Authority.
-- **Canonical Entry Point:** Intake functions in `customer_intake_v1.py`, then the Persona build/approval CLIs below.
-- **Execution:** No generic end-to-end intake CLI exists. Do not use `--run-stage-a` as a generic real-customer command. Continue with `BUILD_PERSONA` only after reviewed inputs exist.
+- **Canonical Entry Point:** Internal Console Customer gateway and durable Customer Analysis task, backed by `customer_onboarding_analysis_v1.py`, `customer_fact_review_v1.py`, `build_persona_v1.py`, and `approve_persona_v1.py`.
+- **Execution:** Create customer → analyze materials → Human fact review → explicit Persona approval. The Console routes `/api/customers/analyze`, `/api/customers/<business_id>/facts/review`, and `/api/customers/<business_id>/persona/approve` preserve this separation. Speaker discovery creates only drafts; Speaker review/approval remains separate. No generic one-command intake CLI exists; do not use `--run-stage-a` as a real-customer command. Offline Persona recovery uses the build/approval CLIs below with reviewed inputs and exact lineage.
 - **Human Gate:** Fact review and Customer Truth Approval.
 - **Outputs:** Approved Business Persona, Approved Speaker Persona, receipts.
 - **Stop Conditions:** Any unresolved or `requires_review` fact; ambiguous business/speaker binding.
 - **Next Action:** `CHECK_CONTENT_CAPACITY`.
-- **Implementation Status:** `PARTIAL / MULTI_STEP_OPERATION`.
+- **Implementation Status:** `IMPLEMENTED / CONSOLE-ORCHESTRATED / MULTI_STEP HUMAN GATES`.
+
+## NEW_SPEAKER
+
+- **Goal:** Establish approved Speaker Truth bound to an exact approved Business Persona without granting media rights.
+- **Canonical Entry Point:** Internal Console Speaker gateway, backed by `speaker_onboarding_analysis_v1.py`, `speaker_fact_review_v1.py`, `build_persona_v1.py`, and `approve_persona_v1.py`.
+- **Execution:** Add or confirm a discovered Speaker draft → analysis task → Human fact review → explicit Speaker Persona approval. Gap supplementation and readiness rechecks reuse this lineage; they do not approve facts automatically.
+- **Human Gate:** Speaker fact review and separate Persona approval; media/rights confirmation is independent.
+- **Outputs:** Immutable Speaker Persona revision and approval receipt bound to the approved Business Persona.
+- **Stop Conditions:** Unapproved/ambiguous Business Persona, unresolved Speaker facts or stale business binding.
+- **Implementation Status:** `IMPLEMENTED / CONSOLE-ORCHESTRATED`.
 
 ## BUILD_PERSONA
 
@@ -133,7 +145,7 @@ Run commands from the repository root. Replace angle-bracket placeholders with e
 
 ## NEW_NEWS_BATCH
 
-- **Goal:** Execute the currently validated narrow Price / Offer Cross-profile Repurpose production path.
+- **Goal:** Execute the currently validated narrow Price / Offer Cross-profile Repurpose production path. This section describes repurpose only; new semantic content uses `NEW_NOVEL_NEWS` below.
 - **Required Inputs:** Explicit novel/repurpose requests, registry, active coverage update, approved News patterns, historical approved Mix/export lineage, fingerprints and template.
 - **Authority Preconditions:** News price pattern approved; Scene Contrast requires real Customer Truth opportunity.
 - **Canonical Entry Point:** Internal Console News Delivery gateway backed by `news_delivery_v1.py`.
@@ -144,17 +156,31 @@ Run commands from the repository root. Replace angle-bracket placeholders with e
 - **Next Action:** Complete explicit review/export for Price / Offer repurpose. Scene Contrast remains `pending_real_customer_opportunity` and is not Generic Novel News Production Ready.
 - **Implementation Status:** `IMPLEMENTED / NARROW PRICE-OFFER CROSS-PROFILE REPURPOSE`; Scene Contrast remains pending.
 
+## NEW_NOVEL_NEWS
+
+- **Goal:** Produce one News video from a selected, genuinely novel Customer Truth opportunity, independently of historical-content repurpose.
+- **Required Inputs:** Explicit approved Business/Speaker Personas, business-wide Content Ledger, a supported selected opportunity, and approved Pattern/Case/compatibility lineage.
+- **Authority Preconditions:** Opportunity projection is read-only; novelty and source feasibility must pass. Ordinary opportunities are Price / Offer anchored. Scene Contrast additionally requires the separate request/SHA-bound Human controlled-validation approval checked by `novel_news_v1.py`; enabling rollout alone does not satisfy this gate.
+- **Canonical Entry Point:** Internal Console `novel_news_gateway.py`, backed by `novel_news_opportunity_v1.py` and `novel_news_v1.py`; request confirmation and source planning reuse the existing creation gateways.
+- **Execution:** Preview opportunity → confirm one selected opportunity → resolve sources → durable Novel News generation task → Human beat review → durable export/closure task. Preview uses `/api/create/novel-news/preview`; confirmation uses `/api/create/confirm`. State, generation, review, export and download use `/api/create/novel-news/<request_id>/...`. Payloads and validation belong to `internal-console/app/main.py` and the canonical scripts, not a second Markdown schema.
+- **Rollout:** `AIVO_NOVEL_NEWS_ROLLOUT` defaults to `off`. `validation` requires explicit `AIVO_NOVEL_NEWS_VALIDATION_PHONES` and grants access only to those configured accounts; `on` enables access for otherwise authorized Console users. API and task execution check this boundary. These modes do not prove production validation or authorize changing deployment configuration.
+- **Human Gate:** Every beat requires an explicit decision; revised content is revalidated against approved facts and privacy/semantic constraints. Generation completion never approves content.
+- **Outputs:** `novel_news_beat_plan_v1.json`, `novel_news_human_review_v1.json`, `approved_novel_news_v1.json`, export receipt and closure under `data/generation_batches/<request_id>/`, plus validated XLSX. The exported novel video creates semantic history in the business-wide Ledger; its presentation entry references that semantic content and adds no second novelty count. Repurpose remains presentation-only.
+- **Stop Conditions:** Rollout unavailable, missing approved lineage, exhausted novelty, unsupported coverage, unresolved Scene Contrast gate, invalid Human review, export/ledger conflict or stale hashes.
+- **Next Action:** Re-read canonical Novel News state and export closure; a task's `completed` value alone is not delivery proof.
+- **Implementation Status:** `IMPLEMENTED / CONTROLLED ROLLOUT / DEFAULT OFF`; production-host availability and real-customer validation require attributable evidence.
+
 ## CONTENT_HUMAN_REVIEW
 
 - **Goal:** Record item-level Human content decisions.
 - **Required Inputs:** Immutable generation batch and complete Human review artifact.
 - **Authority Preconditions:** Machine pass is not approval.
-- **Canonical Entry Point:** Human review artifact contract consumed by `approve_generation_batch_v1.py`.
-- **Execution:** Prepare the explicit review file; do not mutate the source batch.
+- **Canonical Entry Point:** Internal Console `/api/create/<request_id>/review`, backed by `review_generation_batch_v2.py`. This section describes Mix review; Novel News has its separate beat review above.
+- **Execution:** Decide every item as approved, revised or rejected. The gateway supplies the authenticated reviewer and V2 input; the canonical reviewer preserves the generated candidate, validates revisions and creates an approved export subset or an all-rejected result. Offline recovery: `python ops-pipeline/scripts/review_generation_batch_v2.py --batch <generation_batch_v1.json> --review-file <human_review_v2_input.json>`; use the script's input contract.
 - **Human Gate:** Required.
-- **Outputs:** Review decision input for batch approval.
+- **Outputs:** Persisted V2 Human review, approved/reviewed batch and approval receipt where approval exists; no Ledger write during review.
 - **Stop Conditions:** Missing item decision or request/SHA mismatch.
-- **Next Action:** `APPROVE_BATCH`.
+- **Next Action:** `EXPORT_MIX` when an approved subset exists; an all-rejected result cannot export.
 - **Implementation Status:** `IMPLEMENTED / HUMAN_OPERATION`.
 
 ## APPROVE_BATCH
@@ -162,13 +188,13 @@ Run commands from the repository root. Replace angle-bracket placeholders with e
 - **Goal:** Create an Approved Content Batch after Human review.
 - **Required Inputs:** Generation batch and review file.
 - **Authority Preconditions:** Request, item decisions and source SHA agree.
-- **Canonical Entry Point:** `ops-pipeline/scripts/approve_generation_batch_v1.py`.
-- **Execution:** `python ops-pipeline/scripts/approve_generation_batch_v1.py --batch <generation_batch_v1.json> --review-file <human_review.json>`
+- **Canonical Entry Point:** Approval is the result of the Human Review V2 operation above, not a second approval step.
+- **Execution:** Re-read the approved subset and SHA-bound receipt after V2 review. `approve_generation_batch_v1.py` remains the legacy `generation-batch-review-v1.0` workflow for compatible historical/offline inputs; it does not accept V2 review inputs and is not the current Console writer.
 - **Human Gate:** Explicit content approval.
 - **Outputs:** Approved/reviewed batch and approval receipt.
-- **Stop Conditions:** Existing approved output, incomplete review, validation failure.
+- **Stop Conditions:** Conflicting existing output, stale hashes, incomplete review or failed validation; an identical validated result may be recovered without re-approval.
 - **Next Action:** Profile-appropriate export.
-- **Implementation Status:** `IMPLEMENTED`.
+- **Implementation Status:** `IMPLEMENTED / HUMAN REVIEW V2 PROMOTION`.
 
 ## EXPORT_MIX
 
@@ -185,7 +211,7 @@ Run commands from the repository root. Replace angle-bracket placeholders with e
 
 ## EXPORT_NEWS
 
-- **Goal:** Export an explicitly approved News result.
+- **Goal:** Export an explicitly approved News repurpose result. Novel News export uses the separate `NEW_NOVEL_NEWS` flow.
 - **Required Inputs:** News Human approval, template, new output/preview/validation paths.
 - **Authority Preconditions:** Approval schema and `approved_for_export` status validate.
 - **Canonical Entry Point:** Internal Console async News Export task backed by `news_delivery_v1.py --action export`.
@@ -193,7 +219,7 @@ Run commands from the repository root. Replace angle-bracket placeholders with e
 - **Human Gate:** Explicit News content approval.
 - **Outputs:** News XLSX, preview and validation; final closure writes receipt/presentation history.
 - **Stop Conditions:** Approval, workbook or template validation failure.
-- **Next Action:** Customer-specific final closure.
+- **Next Action:** Re-read the News Delivery export receipt and completed presentation-history closure.
 - **Implementation Status:** `IMPLEMENTED / NARROW REPURPOSE PATH / ASYNC CONSOLE TASK`.
 
 ## WRITE_CONTENT_LEDGER
@@ -201,13 +227,13 @@ Run commands from the repository root. Replace angle-bracket placeholders with e
 - **Goal:** Record approved/exported semantic history once.
 - **Required Inputs:** Canonical business ledger, approved batch, validated export and lineage artifacts.
 - **Authority Preconditions:** Content approval and export validation complete.
-- **Canonical Entry Point:** Ledger functions in `content_quality_v1.py`; current closure in `generate_mix_scripts_v1.py --post-replenishment-export-ledger-close`.
-- **Execution:** `CUSTOMER_SPECIFIC`: `python ops-pipeline/scripts/generate_mix_scripts_v1.py --post-replenishment-export-ledger-close --content-ledger <ledger.json> --mix-export <export.xlsx> --mix-export-validation <validation.json>`.
+- **Canonical Entry Point:** Mix export invokes `close_generation_export_v1.py`, reusing Ledger functions in `content_quality_v1.py`. Novel News has its own validated export/semantic closure in `novel_news_v1.py`; News repurpose closes presentation history through `news_delivery_v1.py`.
+- **Execution:** Normal Mix Console export already includes closure; verify `generation_export_closure_v1.json` and canonical delivery state instead of appending again. Offline recovery: `python ops-pipeline/scripts/close_generation_export_v1.py --request-id <request_id> --pipeline-root ops-pipeline --excel <export.xlsx>`. The customer-specific `generate_mix_scripts_v1.py --post-replenishment-export-ledger-close` path remains historical recovery for its own inputs, not the generic current writer.
 - **Human Gate:** Upstream Content Approval; closure validation.
 - **Outputs:** Updated business-wide ledger, lineage audit, post-export capacity.
 - **Stop Conditions:** Hash mismatch, duplicate append, unapproved/unexported content.
 - **Next Action:** `FOOTAGE_PLANNING` or capacity replenishment.
-- **Implementation Status:** `PARTIAL / CLOSURE_COUPLED`.
+- **Implementation Status:** `IMPLEMENTED / EXPORT-COUPLED / RECOVERABLE`.
 
 ## FOOTAGE_PLANNING
 

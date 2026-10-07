@@ -5,6 +5,8 @@
 
 These classifications describe the role of an artifact. They are not a new workflow state machine.
 
+Paths below are relative to `ops-pipeline/`. The [Authority Map](AUTHORITY_MAP_V1.md) owns artifact/writer routing; machine sources linked from the [Knowledge Index](README.md#machine-sources) own executable structure. A design target, implementation status, rollout setting, and validation receipt answer different questions.
+
 | Classification | Meaning | Typical repository examples |
 |---|---|---|
 | `CURRENT_AUTHORITY` | Current owner of a business or production fact | Current approved personas, business ledger, approved patterns/cases, approved batch, subject media confirmation, registered asset eligibility |
@@ -27,6 +29,7 @@ These classifications describe the role of an artifact. They are not a new workf
 - Pattern candidates and rejected hypotheses must be preserved as research history; only approved patterns are Production Authority.
 - Approval and validation receipts must be preserved even though they do not create business truth.
 - Fixture data must remain isolated from real production consumers.
+- Novel News opportunity previews are derived-only. Its beat plan remains an unapproved candidate until explicit Human review; preserve the candidate and decisions independently of the approved result. Export/closure receipts are evidence, not a substitute for approved content or the business Ledger.
 
 ## Current directory mapping
 
@@ -36,6 +39,10 @@ These classifications describe the role of an artifact. They are not a new workf
 | `data/content_ledgers/<business_id>` | `CURRENT_AUTHORITY` |
 | `data/content_plans`, `data/production_plans` | `ACTIVE_DERIVED` or `HISTORICAL_IMMUTABLE`, depending on active lineage |
 | `data/generation_batches/**/revisions` | Current approved production input: `CURRENT_AUTHORITY`; other attempts/revisions: `HISTORICAL_IMMUTABLE`; receipts: `VALIDATION_RECEIPT` |
+| `data/generation_batches/<request_id>` — Console Mix | Approved export subset: `CURRENT_AUTHORITY`; generated candidate, rejected items and completed review history: retained evidence, never an independent approval; approval/export/closure receipts: `VALIDATION_RECEIPT` |
+| `data/generation_batches/<request_id>` — Novel News | Beat plan: unapproved candidate, retained as evidence after review; `approved_novel_news_v1.json`: `CURRENT_AUTHORITY` within its request; Human review, export receipt and closure: approval/validation evidence; semantic history is owned by the business Ledger |
+| `data/generation_requests/<request_id>` | Immutable execution inputs and selected opportunity lineage; Scene Contrast controlled-validation approval is request/SHA-bound gate evidence, not new Customer Truth |
+| `data/production_profiles`, `data/creative_coverage` | Registry/approved compatibility records govern structural eligibility; coverage projections are `ACTIVE_DERIVED` or historical evidence according to their validated lineage |
 | `data/patterns/approved` | `CURRENT_AUTHORITY`; approval receipts are `VALIDATION_RECEIPT` |
 | `data/patterns/candidates` | `HISTORICAL_IMMUTABLE` or research candidate, never Production Authority |
 | `data/cases`, `data/case_governance`, `data/analysis`, `data/visual`, `data/shots` | Approved structural authority plus preserved research evidence; never Production Asset by location alone |

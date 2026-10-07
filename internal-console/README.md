@@ -6,6 +6,11 @@ in SQLite. Customer Truth, Cases, Persona, Content Ledger, Capacity, Batch,
 Rights, Footage, and Operational Hold remain owned by `ops-pipeline` artifacts
 and resolvers.
 
+The [Knowledge and Operations Index](../docs/operations/README.md) routes current
+product/design rules and machine owners. Presentation rules and business
+interaction boundaries have distinct scopes; design freezes do not establish
+implementation or production availability.
+
 ## Local setup
 
 From `internal-console`:
@@ -97,7 +102,7 @@ install services or modify Windows power/update settings.
 
 ## Current capability boundary
 
-Implemented in the foundation slice:
+The implemented foundation includes:
 
 - internal login, forced first-password change, logout, HttpOnly session;
 - responsive mobile/desktop shell;
@@ -115,3 +120,16 @@ attempt is isolated under `ops-pipeline/data/case_analysis_attempts`, can resume
 from validated checkpoints, and always stops at Human Review. Console task
 status is execution projection only. Case approval remains an explicit Human
 operation and never grants production-media rights.
+
+Current orchestration also includes Customer/Speaker analysis, separate fact
+review and Persona approval, readiness/gap flows, Mix creation with Human
+Review V2 and export/Ledger closure, and the narrow News repurpose flow.
+Their canonical entries and recovery boundaries are in the
+[RUNBOOK](../docs/operations/RUNBOOK.md).
+
+[Novel News](../docs/operations/RUNBOOK.md#new_novel_news) is a separate
+implemented flow with rollout defaulting to `off`. Its controlled access,
+supported opportunities and additional Scene Contrast validation gate do not
+follow from the existence of UI/code or from a completed task. Runtime access
+is owned by `app/config.py` and `app/novel_news_rollout.py`; artifact structure
+and semantic closure are owned by `ops-pipeline/scripts/novel_news_v1.py`.

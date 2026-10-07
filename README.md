@@ -4,9 +4,12 @@ This repository contains the approved Customer Truth → Content → Pre-product
 
 ## Start Here
 
-1. [Frozen Operations Baseline](docs/product/AI%20Video%20Ops%20MVP%20V1｜End-to-End%20System%20Map%20&%20Operations%20Baseline.md) — Approved / Frozen system authority.
-2. [Operations RUNBOOK](docs/operations/RUNBOOK.md) — commands and honest implementation status for current operations.
-3. [Current Status Read Model](docs/operations/CURRENT_STATUS_READ_MODEL_V1.md) — read-only customer status and next-action projection.
+1. [Knowledge and Operations Index](docs/operations/README.md) — scoped owners for system rules, design, machine contracts, operations, testing, and history.
+2. [Frozen Operations Baseline](docs/product/AI%20Video%20Ops%20MVP%20V1｜End-to-End%20System%20Map%20&%20Operations%20Baseline.md) — Approved / Frozen system rules; dated customer values are checkpoint evidence.
+3. [Operations RUNBOOK](docs/operations/RUNBOOK.md) — current operation entry points, recovery paths, and implementation/rollout boundaries.
+4. [Current Status Read Model](docs/operations/CURRENT_STATUS_READ_MODEL_V1.md) — read-only customer status and next-action projection.
+
+Coding Agents should also read [Repository Agent Guide](AGENTS.md).
 
 ## Internal Console
 

@@ -20,15 +20,17 @@ If the speaker cannot be uniquely bound to the Current Approved Business Persona
 |---|---|
 | Business/Speaker Persona | Explicit persona revision + approved lifecycle + approval receipt + SHA/lineage |
 | Ledger entry count | Length of canonical `entries`; stale `validation.entry_count` is diagnostic only |
-| Remaining capacity | Active batch-bound post-export capacity + source persona lineage + current ledger SHA |
+| Remaining capacity | Validated batch-bound post-export capacity + source persona lineage + current Ledger SHA/semantic history; validated later Novel News semantic entries participate in reconciliation, while repurpose is presentation-only |
 | Latest exported Mix | Approved batch/receipt/export receipt jointly validated, ordered by append-only ledger batch references |
-| Latest exported News | Business ledger presentation history; cross-profile repurpose remains non-novel |
+| Latest exported News | Business ledger presentation history plus validated approval/export/closure lineage; repurpose is non-novel, while Novel News presentation points to semantic content recorded separately |
 | Creative paths | Frozen profile registry + active derived News coverage update |
 | Footage | Exact Active Batch request ID → requirement/approval/mission/inventory/coverage artifacts |
 | Speaker media | Batch-bound subject media confirmation |
 | Operational Hold | `operational-controls-v1` metadata |
 
 No source is selected by mtime, filename length, alphabetical order, or directory order. Explicit revision numbers may select the highest valid approved Persona only when approval receipts and previous-approved lineage do not conflict.
+
+Novel News has its own request-scoped state in `novel_news_v1.py`; `/api/create/options` and the rollout guard determine feature access separately. Customer status does not prove that Novel News is enabled or that a real-customer validation gate has passed. See the [RUNBOOK](RUNBOOK.md#new_novel_news) for the operation boundary and [machine sources](README.md#machine-sources) for field ownership.
 
 ## Next action priority
 

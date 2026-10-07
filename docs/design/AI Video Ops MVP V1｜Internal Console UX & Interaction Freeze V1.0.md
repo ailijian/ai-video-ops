@@ -6,6 +6,8 @@
 **Primary Users：内部运营人员**
 **MVP Stop Point：案例入库 → 客户/人设 → 内容生成 → Human Review → Excel 导出 → 素材准备入口**
 
+> **Authority scope / partial supersession：** 本文继续定义 Console 的交互原则、业务能力与 Human Gate、认证和业务数据边界。[Productized UI & Information Architecture Freeze](鲸汤%20AI%20视频代运营工作台｜Productized%20UI%20&%20Information%20Architecture%20Freeze%20V1.0.md) 在明确覆盖的导航顺序、视觉强调、产品语言、页面布局和响应式范围内替代本文的早期呈现规则，包括下文中央强化的创作入口。它不替代业务权威或安全边界。两份设计均表达设计意图，不能证明某能力已经实现或开放；当前操作与机器入口见 [Knowledge and Operations Index](../operations/README.md)。
+
 ---
 
 # 1. 产品定位
