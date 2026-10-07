@@ -860,6 +860,33 @@ export function createSpeakerViews({
     );
 
     bindCommonActions();
+
+    document
+      .querySelector("#recheck-speaker-readiness")
+      ?.addEventListener("click", async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        button.textContent = "正在检查…";
+        try {
+          const result = await api(
+            `/api/customers/${encodeURIComponent(businessId)}/speakers/${encodeURIComponent(detail.speaker_id)}/readiness/recheck`,
+            { method: "POST" },
+          );
+          if (
+            result.recheck.status ===
+            "completed_persona_review_required"
+          ) {
+            showToast("现有资料已满足要求，请确认出镜人档案。");
+          } else {
+            showToast("已重新检查，请继续补充仍缺少的信息。");
+          }
+          renderSpeakerDetail(businessId, detail.speaker_id);
+        } catch (error) {
+          showToast(error.detail?.next_action || error.message);
+          button.disabled = false;
+          button.textContent = "重新检查现有资料";
+        }
+      });
   }
 
   function renderFailedSpeaker(
@@ -908,33 +935,6 @@ export function createSpeakerViews({
     );
 
     bindCommonActions();
-
-    document
-      .querySelector("#recheck-speaker-readiness")
-      ?.addEventListener("click", async (event) => {
-        const button = event.currentTarget;
-        button.disabled = true;
-        button.textContent = "正在检查…";
-        try {
-          const result = await api(
-            `/api/customers/${encodeURIComponent(businessId)}/speakers/${encodeURIComponent(detail.speaker_id)}/readiness/recheck`,
-            { method: "POST" },
-          );
-          if (
-            result.recheck.status ===
-            "completed_persona_review_required"
-          ) {
-            showToast("现有资料已满足要求，请确认出镜人档案。");
-          } else {
-            showToast("已重新检查，请继续补充仍缺少的信息。");
-          }
-          renderSpeakerDetail(businessId, detail.speaker_id);
-        } catch (error) {
-          showToast(error.detail?.next_action || error.message);
-          button.disabled = false;
-          button.textContent = "重新检查现有资料";
-        }
-      });
   }
 
   async function renderSpeakerSupplement(

@@ -534,3 +534,12 @@ def test_speaker_ui_exposes_optional_forbidden_and_no_dead_end_loop():
     assert "重新检查现有资料" in source
     assert "未记录额外明确限制" in source
     assert 'primaryLabel: "返回出镜人"' not in source
+
+    needs_more_info = source.index("function renderNeedsMoreInfo")
+    failed_speaker = source.index("function renderFailedSpeaker")
+    supplement = source.index("async function renderSpeakerSupplement")
+    click_binding = source.index(
+        '.querySelector("#recheck-speaker-readiness")'
+    )
+    assert needs_more_info < click_binding < failed_speaker
+    assert click_binding < supplement
