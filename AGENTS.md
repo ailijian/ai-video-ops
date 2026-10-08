@@ -43,11 +43,19 @@ does not mean disposable; follow the
 
 ## Verification routes
 
+- From the repository root, `python tools/verify.py` runs complete isolated
+  regression with bounded parallelism. For affected feedback use
+  `python tools/verify.py --mode affected --base <explicit-ref>`; uncertain
+  selection falls back to full. See [Verification](tools/README.md) for target
+  scope, runtimes, evidence, and serial diagnosis.
 - Pipeline checks: from `ops-pipeline`, run `python -m pytest` with its test
   dependencies installed. The default suite excludes live Authority checks;
   see [Test layers](ops-pipeline/tests/README.md).
 - Console checks: from `internal-console`, run `python -m pytest` with its
-  declared development dependencies. Tests use isolated fixture copies.
+  declared development dependencies and Node.js. Tests use isolated fixture
+  copies and include all frontend JavaScript regressions.
+- The full root route also covers Authority release and FRP Guard offline
+  checks. Package-only results do not establish complete repository regression.
 - Fixtures are test evidence, never runtime fallback Authority. Live Authority
   checks require an explicit root and remain read-only; do not repoint ordinary
   mutation tests at production data.

@@ -7,3 +7,8 @@
 /internal-console/.pytest_cache/
 /internal-console/**/__pycache__/
 /internal-console/*.egg-info/
+
+# Isolated verification logs, timings and short per-process temporary roots.
+/.verify/
+/**/__pycache__/
+/deploy/creative-authority/.pytest_cache/

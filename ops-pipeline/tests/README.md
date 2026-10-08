@@ -1,5 +1,11 @@
 # Test layers
 
+For complete repository regression, affected selection, short isolated temporary
+roots and parallel execution, use the [root verification runner](../../tools/README.md).
+The package command below covers only Pipeline. Its native pytest defaults may
+encounter host-specific temporary-path limits; the root runner supplies unique
+short roots without changing Windows policy.
+
 The default test command is hermetic:
 
 ```powershell

@@ -11,6 +11,10 @@ This repository contains the approved Customer Truth → Content → Pre-product
 
 Coding Agents should also read [Repository Agent Guide](AGENTS.md).
 
+Run `python tools/verify.py` from the repository root for complete isolated
+regression. [Verification commands and selection](tools/README.md) describe
+affected feedback, parallelism, required runtimes, and attributable reports.
+
 ## Internal Console
 
 The Phase 1 mobile-first operations surface lives in

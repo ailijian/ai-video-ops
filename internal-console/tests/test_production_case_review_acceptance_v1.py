@@ -3,7 +3,6 @@ from __future__ import annotations
 import hashlib
 import json
 import shutil
-import subprocess
 import sys
 from pathlib import Path
 
@@ -421,19 +420,6 @@ def test_review_media_projects_portrait_dimensions_and_keeps_official_source(tmp
     assert _source_dimensions({}) == (None, None)
 
 
-def test_case_submit_state_projection_runs_in_node():
-    script = Path(__file__).parent / "js" / "case-submit-state.test.mjs"
-    result = subprocess.run(
-        ["node", str(script)],
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    )
-    assert result.returncode == 0, result.stderr or result.stdout
-
-
 def test_review_player_uses_compact_orientation_layout_without_source_ratio_geometry():
     static = Path(__file__).resolve().parents[1] / "static" / "assets"
     css = (static / "styles.css").read_text(encoding="utf-8")
@@ -451,12 +437,3 @@ def test_review_player_uses_compact_orientation_layout_without_source_ratio_geom
     assert 'scrolling="no"' in component
     assert "allowfullscreen" in component
     assert "在抖音打开原视频" in component
-
-
-def test_official_player_resizes_the_whole_frame_including_bottom_controls():
-    script = Path(__file__).parent / "js" / "case-media-preview.test.mjs"
-    result = subprocess.run(
-        ["node", str(script)], capture_output=True, text=True,
-        encoding="utf-8", errors="replace", check=False,
-    )
-    assert result.returncode == 0, result.stderr or result.stdout

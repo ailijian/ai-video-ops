@@ -13,6 +13,12 @@ implementation or production availability.
 
 ## Local setup
 
+Verification requires the declared `[dev]` dependencies and Node.js. From the
+repository root use `python tools/verify.py --target console` for isolated,
+parallel Console checks, or omit `--target` for complete repository regression.
+See [Verification](../tools/README.md). The package's `python -m pytest` also
+includes every frontend JavaScript behavior test.
+
 From `internal-console`:
 
 ```powershell

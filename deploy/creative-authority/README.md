@@ -1,5 +1,11 @@
 # Shared Creative Authority deployment
 
+Offline regression is included in the [repository verification runner](../../tools/README.md)
+as `authority-release`. Its unit fixtures replace formal graph validation;
+passing them does not establish real Pipeline parser interoperability. The
+release verification and runtime preflight below remain required deployment
+checks against the actual immutable artifact.
+
 This release moves **company-wide structural production authority**, not customer
 runtime state. It contains approved Case JSON, Case approval receipts and
 Fingerprints; approved Pattern JSON and receipts; Human-approved compatibility;

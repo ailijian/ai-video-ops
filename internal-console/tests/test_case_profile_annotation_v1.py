@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Barrier
@@ -272,9 +271,3 @@ def test_annotation_requires_auth_csrf_and_valid_hint(client, settings):
     assert client.post(URL, headers={"X-CSRF-Token": csrf}, json={**body(client), "operator_profile_hint": "invalid"}).status_code == 422
     assert client.post("/api/cases/not-a-case/profile-annotation", headers={"X-CSRF-Token": csrf}, json=payload).status_code == 409
     assert not annotation_path(settings).exists()
-
-
-def test_annotation_js_projection_and_flow():
-    script = Path(__file__).parent / "js" / "case-profile-annotation.test.mjs"
-    result = subprocess.run(["node", str(script)], capture_output=True, text=True, encoding="utf-8", errors="replace")
-    assert result.returncode == 0, result.stderr or result.stdout

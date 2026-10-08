@@ -25,7 +25,7 @@ This is a reading route, not a global precedence rule. The Baseline owns system 
 | Business artifacts and their writers/consumers | [Authority Map](AUTHORITY_MAP_V1.md) | Current ownership route; artifact fields and validation belong to the linked machine sources |
 | Runtime, rollout, recovery and deployment | [RUNBOOK](RUNBOOK.md), [Console](../../internal-console/README.md), [Local Node](../../deploy/local-node/README.md) | Current operating references; implementation, availability and validation evidence remain separate |
 | Portable shared creative Authority | [Creative Authority deployment](../../deploy/creative-authority/README.md) | Source/consumer and immutable manifest route; installation never re-runs approval or copies customer runtime state |
-| Test isolation and live Authority smoke | [Pipeline test layers](../../ops-pipeline/tests/README.md), [Console test configuration](../../internal-console/pyproject.toml) | Canonical verification routes; fixture and test results are evidence, not production Authority |
+| Verification execution, isolation and live Authority smoke | [Repository verification](../../tools/README.md), [Pipeline test layers](../../ops-pipeline/tests/README.md), [Console test configuration](../../internal-console/pyproject.toml) | The root runner owns full/affected execution; package configuration owns its checks. Fixtures and test results remain evidence, not production Authority |
 
 ## Machine sources
 

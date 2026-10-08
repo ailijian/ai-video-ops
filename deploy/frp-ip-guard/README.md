@@ -120,6 +120,9 @@ Get-Content 'E:\AI-Video-Ops-Logs\frp-ip-guard.log' -Tail 15
 
 ## 离线回归
 
+主仓库完整回归会执行本测试；独立反馈可从仓库根目录运行
+`python tools/verify.py --target frp-guard`，参见[验证入口](../../tools/README.md)。
+
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\frp-ip-guard\tests.ps1
 ```
