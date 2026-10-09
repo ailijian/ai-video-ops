@@ -1,7 +1,7 @@
 import { createApiClient } from "./api-client.js?v=productized-stage3-3";
-import { createCaseViews } from "./case-views.js?v=case-final-review-1";
+import { createCaseViews } from "./case-views.js?v=smart-intake-1.1-r1";
 import { createCustomerViews } from "./customer-views.js?v=productized-stage3-3";
-import { progressPanel } from "./case-components.js?v=case-final-review-1";
+import { progressPanel } from "./case-components.js?v=smart-intake-1.1";
 import { startTaskPolling } from "./task-progress.js?v=mobile-reliability-1";
 import { CUSTOM_INDUSTRY, industryOptions, industryValue as readIndustryValue, setIndustryValue, syncCustomIndustry } from "./case-industry.mjs?v=industry-2";
 import { customerProgressPanel } from "./customer-components.js?v=productized-stage2-3";
@@ -728,6 +728,8 @@ async function renderRoute() {
 if (path === "/customers/new") return customerViews.renderCustomerNew();
   if (path === "/create") return contentViews.renderCreate();
   const workflowRoute = matchWorkflowRoute(path);
+  if (workflowRoute?.name === "case-intake") return caseViews.renderIntakeGroup(workflowRoute.value);
+  if (workflowRoute?.name === "case-classification") return caseViews.renderIntakeGroup(null, workflowRoute.value);
   if (
     workflowRoute?.name ===
     "speaker-new"

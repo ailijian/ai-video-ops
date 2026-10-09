@@ -1,4 +1,8 @@
 export function matchWorkflowRoute(path) {
+  const intakeMatch = path.match(/^\/case-intake\/(intake-[a-f0-9]{32})$/);
+  if (intakeMatch) return { name: "case-intake", value: intakeMatch[1] };
+  const classificationMatch = path.match(/^\/cases\/(\d{10,24})\/classification$/);
+  if (classificationMatch) return { name: "case-classification", value: classificationMatch[1] };
   const caseMatch = path.match(
     /^\/cases\/(\d{10,24})$/,
   );

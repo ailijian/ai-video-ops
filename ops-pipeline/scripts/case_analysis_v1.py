@@ -228,10 +228,10 @@ class Orchestrator:
         self.provider_source_url = provider_source_url
         if bool(source_upload_id) != bool(source_upload_receipt_sha256):
             raise CaseAnalysisError("SOURCE_UPLOAD_INVALID", "Upload receipt checksum is required.")
-        if bool(profile) == bool(operator_profile_hint):
+        if profile and operator_profile_hint:
             raise CaseAnalysisError(
                 "CASE_PROFILE_INPUT_INVALID",
-                "Provide exactly one legacy profile or operator profile hint.",
+                "Provide at most one legacy profile or operator profile hint.",
             )
         if operator_profile_hint and operator_profile_hint not in {"mix", "news", "hybrid", "uncertain"}:
             raise CaseAnalysisError("CASE_OPERATOR_PROFILE_HINT_INVALID", "Operator profile hint is invalid.")
@@ -1180,7 +1180,7 @@ class Orchestrator:
                 ]
                 if self.operator_profile_hint:
                     command.extend(["--operator-profile-hint", self.operator_profile_hint])
-                else:
+                elif self.profile:
                     command.extend(["--profile", str(self.profile)])
                 if pending_review:
                     command.append("--defer-manual-review")
@@ -1293,8 +1293,8 @@ def main() -> None:
     parser.add_argument("--acquisition-provider", choices=["legacy_downloader", "qiyun", "upload_only"], default="legacy_downloader")
     parser.add_argument("--provider-source-url", default=None)
     args = parser.parse_args()
-    if bool(args.profile) == bool(args.operator_profile_hint):
-        parser.error("Provide exactly one of --profile or --operator-profile-hint")
+    if args.profile and args.operator_profile_hint:
+        parser.error("Provide at most one of --profile or --operator-profile-hint")
 
     pipeline_root = (
         Path(args.pipeline_root).expanduser().resolve()

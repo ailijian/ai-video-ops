@@ -219,7 +219,7 @@ def create_case_task(
     *,
     source_url: str,
     case_id: str,
-    operator_profile_hint: str,
+    operator_profile_hint: str | None = None,
     source_upload: dict[str, str] | None = None,
     acquisition_provider: str = "legacy_downloader",
     provider_source_url: str | None = None,
@@ -230,18 +230,19 @@ def create_case_task(
     queue_max: int = 20,
     gpu_pending_per_user_max: int = 3,
 ) -> dict[str, Any]:
-    if operator_profile_hint not in {"mix", "news", "hybrid", "uncertain"}:
-        raise ValueError("Case operator_profile_hint must be explicitly selected")
+    if operator_profile_hint is not None and operator_profile_hint not in {"mix", "news", "hybrid", "uncertain"}:
+        raise ValueError("Invalid Case operator_profile_hint")
     if acquisition_provider not in {"legacy_downloader", "qiyun", "upload_only"}:
         raise ValueError("Unsupported case acquisition provider")
     payload = {
         "source_url": source_url,
-        "operator_profile_hint": operator_profile_hint,
         "industry": industry,
         "reanalyze": reanalyze,
         "reason": reason,
         "acquisition_provider": acquisition_provider,
     }
+    if operator_profile_hint is not None:
+        payload["operator_profile_hint"] = operator_profile_hint
     if source_upload is not None:
         payload["source_upload"] = source_upload
     if provider_source_url and source_upload is None and acquisition_provider == "qiyun":
@@ -261,6 +262,17 @@ def create_case_task(
         include_awaiting_review=True,
         allow_existing=(not reanalyze),
     )
+
+
+def ensure_task_capacity(connection, *, queue_max: int, gpu_pending_per_user_max: int,
+                         execution_lane: str, created_by_user_id: int | None) -> None:
+    active_count = connection.execute("SELECT COUNT(*) FROM tasks WHERE status IN ('queued','running')").fetchone()[0]
+    if active_count >= queue_max:
+        raise TaskSubmissionError("TASK_QUEUE_FULL", "The task queue is full.")
+    if execution_lane == GPU_HEAVY and created_by_user_id is not None:
+        count = connection.execute("SELECT COUNT(*) FROM tasks WHERE execution_lane='GPU_HEAVY' AND created_by_user_id=? AND status IN ('queued','running')", (created_by_user_id,)).fetchone()[0]
+        if count >= gpu_pending_per_user_max:
+            raise TaskSubmissionError("GPU_PENDING_LIMIT_REACHED", "The user already has the maximum number of pending GPU tasks.")
 
 
 def submit_task(
@@ -308,27 +320,9 @@ def submit_task(
                 "AND json_extract(payload_json, '$.source_upload.upload_id') = ? LIMIT 1", (upload_id,),
             ).fetchone():
                 raise TaskSubmissionError("SOURCE_UPLOAD_ALREADY_USED", "该文件已用于一条分析任务，重新分析请重新上传。")
-            active_count = connection.execute(
-                "SELECT COUNT(*) AS count FROM tasks WHERE status IN ('queued', 'running')"
-            ).fetchone()["count"]
-            if int(active_count) >= queue_max:
-                raise TaskSubmissionError("TASK_QUEUE_FULL", "The task queue is full.")
-
-            if execution_lane == GPU_HEAVY and created_by_user_id is not None:
-                gpu_count = connection.execute(
-                    """
-                    SELECT COUNT(*) AS count FROM tasks
-                    WHERE execution_lane = 'GPU_HEAVY'
-                      AND created_by_user_id = ?
-                      AND status IN ('queued', 'running')
-                    """,
-                    (created_by_user_id,),
-                ).fetchone()["count"]
-                if int(gpu_count) >= gpu_pending_per_user_max:
-                    raise TaskSubmissionError(
-                        "GPU_PENDING_LIMIT_REACHED",
-                        "The user already has the maximum number of pending GPU tasks.",
-                    )
+            ensure_task_capacity(connection, queue_max=queue_max,
+                                 gpu_pending_per_user_max=gpu_pending_per_user_max,
+                                 execution_lane=execution_lane, created_by_user_id=created_by_user_id)
 
             try:
                 connection.execute(
@@ -693,6 +687,7 @@ class CaseTaskRunner:
         self._lock = threading.Lock()
         self.worker_id = f"case-{os.getpid()}-{uuid.uuid4().hex[:8]}"
         self._last_storage_maintenance = 0.0
+        self.intake_dispatch = lambda: None
         self.maintenance = LeaseRecoveryMaintenance(
             interval_seconds=self.settings.task_heartbeat_seconds,
             name="case-lease-recovery",
@@ -742,6 +737,7 @@ class CaseTaskRunner:
             reconciler=self._reconcile_business_state,
         )
         self._run_storage_maintenance_if_due()
+        self.intake_dispatch()
         self.schedule_pending()
 
     def _run_storage_maintenance_if_due(self) -> None:
@@ -866,8 +862,7 @@ class CaseTaskRunner:
                 # Pre-closure queued tasks already durably recorded an explicit
                 # legacy profile. Resume that lineage without inventing a hint.
                 command.extend(["--profile", str(payload["profile"])])
-            else:
-                raise ValueError("Case task has no recorded profile input")
+            # A missing hint is an intentional absence of operator judgment.
             if payload.get("reanalyze"):
                 command.append("--reanalyze")
             if payload.get("source_upload"):

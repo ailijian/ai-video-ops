@@ -108,6 +108,77 @@ install services or modify Windows power/update settings.
 
 ## Current capability boundary
 
+### Case Smart Intake
+
+`/cases/new` extracts Douyin URLs from share text and admits at most ten distinct,
+resolved video identities per UI group. `POST /api/case-intake/groups` accepts
+`text`, a stable `client_request_id`, and an optional single-source upload ID.
+SQLite groups reference existing Case tasks; they own navigation only. Pending
+items enter the original gateway as capacity becomes available. Shared group
+GET routes recover state across sessions/devices without submitting new work.
+
+Missing `operator_profile_hint` means no operator judgment was supplied. The
+legacy explicit values remain `mix`, `news`, `hybrid`, and `uncertain`; absence
+does not silently select any of them. Industry initially remains `待分类`.
+Recommendations read validated, privacy-projected Case evidence and the
+SHA-bound Storyboard narration timeline. No new remote model is called.
+
+`GET/POST /api/cases/<id>/classification` reads/writes the attempt-bound
+`case_classification_review_v1.json` companion under the Case operation lock.
+It retains the original suggestion, human choices/history, authenticated actor,
+time and optimistic hashes. Human confirmation admits unresolved labels only
+explicitly and never approves Case, Compatibility, media rights or customer
+facts. Smart-intake Case approval additionally requires classification first;
+all existing final evidence, privacy, Proof and source gates remain in force.
+Approved label corrections use existing SHA-bound annotation companions.
+
+`POST /api/tasks/<id>/retry` resumes the latest failed Case task with its same
+attempt/checkpoints, subject to existing queue/GPU admission limits.
+Each task permits at most three explicit failed-stage retries; queued duplicate
+clicks do not consume another retry. Existing Qiyun pacing remains one provider
+call per 60 seconds, with no implicit provider fallback. A retry can incur cost
+when acquisition/model evidence was not completed; the cap is not a currency
+budget. Operator identity/time remain in `retry_actions`.
+Pending Shot Boundary review must still use the existing boundary-review gateway.
+Replacing a source file requires an explicit new upload/attempt, with original
+source identity and rights checks retained. Cover images are served only when
+an existing local, SHA-bound cover survives transient-media cleanup.
+
+Confirmed classification cards are read-only until the operator chooses to
+edit. An individual confirmation is itself the audited Human action; its form
+does not require an extra checkbox. Explicit industry uncertainty is a field
+choice mapped to `null`, while an untouched empty field cannot be submitted.
+Only checked, determinate, pending classifications enable the batch action.
+Execution completion and canonical Case admission have separate counters.
+Confirmed copy distinguishes known labels, both explicitly unknown labels, and
+partially unknown labels without changing counters or blocking Human Case Review.
+For controlled runtime promotion and rollback gates, use the
+[V1.1 production deploy runbook](../docs/operations/CASE_SMART_INTAKE_V1_1_PRODUCTION_DEPLOY_RUNBOOK.md).
+
+Migrations execute DDL, copied rows and applied markers in one `BEGIN IMMEDIATE`
+transaction; a failed migration rolls back before the node begins serving.
+An applied marker prevents repeat creation. Before deployment, use the existing
+idle-window backup route, verify restore/integrity and rehearse the upgrade on
+the backup. Restore the verified backup if a previously interrupted,
+non-transactional upgrade left unmarked partial tables; do not drop tables or
+insert migration markers by hand.
+
+Offline migration checks: `python -m pytest tests/test_case_intake_migration_v1.py`.
+The same module's CLI accepts `--source <existing DB> --output <new external
+directory>` and only opens the source in SQLite read-only online-backup mode.
+It records preserved historical rows, applied markers, repeated startup,
+injected failure rollback and backup restore/integrity without exposing rows.
+
+Browser acceptance uses `tests/browser_case_smart_intake_v1.py --workdir <new
+directory outside the repo> [--database-backup <audited external DB copy>]`.
+It runs the current complete ASGI app on loopback with real cookies, login and
+CSRF, replacing the V1.0 pre-authenticated HTTP bridge. All production workers
+are off. A serial test-only fixture driver exercises task claim/admission and
+recovery with synthetic analysis evidence; it invokes no provider/model/GPU.
+`--resume` reuses only a verified fixture directory, its database and artifacts.
+Port 8000 is rejected. Close the isolated node after screenshots. This is not
+real media, model/provider or production validation.
+
 The implemented foundation includes:
 
 - internal login, forced first-password change, logout, HttpOnly session;

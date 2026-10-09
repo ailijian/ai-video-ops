@@ -1,13 +1,11 @@
-import { boundaryReviewPanel, caseCard, caseReviewContent, escapeHtml, progressPanel } from "./case-components.js?v=case-final-review-1";
+import { boundaryReviewPanel, caseCard, caseReviewContent, escapeHtml, progressPanel } from "./case-components.js?v=smart-intake-1";
 import { bindCaseMediaPreview } from "./case-media-preview.mjs?v=case-media-fit-1";
-import { caseTaskResumeDestination, projectCaseSubmitState, projectFailedCaseTask, resetCaseSubmitState } from "./case-submit-state.mjs?v=mobile-reliability-2";
+import { caseTaskResumeDestination } from "./case-submit-state.mjs?v=mobile-reliability-2";
 import { startTaskPolling } from "./task-progress.js?v=mobile-reliability-1";
 import { detectCaseSourceInput, extractCaseSourceUrls } from "./case-source-detection.mjs?v=case-batch-1";
 import { uploadCaseFile, validateCaseFile } from "./case-file-upload.mjs?v=source-upload-ui-2";
-import { submitCaseBatch } from "./case-batch-submit.mjs?v=case-batch-1";
-import { CASE_INDUSTRIES, CUSTOM_INDUSTRY, industryOptions, industryValue, setIndustryValue, syncCustomIndustry } from "./case-industry.mjs?v=industry-2";
-
-const hasSpecificIndustry = (value) => Boolean(value?.trim() && !["待分类", "unknown"].includes(value.trim().toLowerCase()));
+import { intakeCounts, intakeItemState, intakeStage, UNCERTAIN_INDUSTRY, classificationDraft, classificationSubmittable, classificationDiffers, batchConfirmableItems, confirmedClassificationLabel } from "./case-batch-submit.mjs?v=smart-intake-1.1-r1";
+import { CASE_INDUSTRIES, industryOptions, industryValue, syncCustomIndustry } from "./case-industry.mjs?v=industry-2";
 
 export function caseAcquisitionWarning(acquisition, { hasFile = false, unavailable = false } = {}) {
   if (hasFile || (acquisition?.mode === "qiyun" && acquisition.configured)) return "";
@@ -15,51 +13,6 @@ export function caseAcquisitionWarning(acquisition, { hasFile = false, unavailab
   if (acquisition?.mode === "legacy_downloader") return "当前使用原有下载方式，未启用奇云付费解析。获取失败时可上传本地视频。";
   if (acquisition?.mode === "upload_only") return "当前无法自动获取视频，请上传本地视频。";
   return unavailable ? "暂时无法确认视频获取方式，请刷新页面后再提交。" : "";
-}
-
-function duplicateResultHtml(result) {
-  const state = result.state || "";
-
-  if (state === "approved" && result.existing_case) {
-    return `<div class="result-banner">
-      <h3>这个视频已经在案例库里</h3>
-      <p>${escapeHtml(result.existing_case.title || "")}</p>
-    </div>`;
-  }
-
-  if (state === "awaiting_review") {
-    return `<div class="result-banner">
-      <h3>这个视频已经分析完成</h3>
-      <p>现在正在等待人工审核，无需重复分析。</p>
-    </div>`;
-  }
-
-  if (state === "running" && result.existing_task) {
-    return `<div class="result-banner">
-      <h3>这个视频正在分析</h3>
-      <p>无需重复提交，可以继续查看当前任务。</p>
-    </div>`;
-  }
-
-  if (state === "rejected") {
-    return `<div class="result-banner">
-      <h3>这个案例之前没有收录</h3>
-      <p>${escapeHtml(result.rejection_reason || "如果你现在认为值得重新评估，可以显式重新分析。")}</p>
-    </div>`;
-  }
-
-  if (state === "failed") {
-    return `<div class="result-banner">
-      <h3>这个视频之前分析失败</h3>
-      <p>可以重新建立一个分析任务；旧记录不会被覆盖。</p>
-    </div>`;
-  }
-
-  return `<div class="result-banner">
-    <h3>${escapeHtml(
-      result.message || "这个视频已经提交过"
-    )}</h3>
-  </div>`;
 }
 
 export function createCaseViews({ app, api, navigate, shell, bindCommonActions, pageHeading, skeletonPage, statusPill, showToast, openModal, renderLoadError }) {
@@ -73,7 +26,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
     dispose();
     skeletonPage("案例");
     try {
-      const data = await api("/api/cases");
+      const [data, groups] = await Promise.all([api("/api/cases"), api("/api/case-intake/groups")]);
       const cases = data.cases;
       const content = cases.length ? `<div class="filter-row" role="group" aria-label="案例状态筛选">
           <button class="filter-chip active" data-filter="all" type="button">全部 ${cases.length}</button>
@@ -81,7 +34,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
           <button class="filter-chip" data-filter="approved" type="button">已入库 ${cases.filter((item) => item.status === "approved").length}</button>
         </div><div class="case-list">${cases.map((item) => caseCard(item, statusPill)).join("")}</div>` :
         `<section class="state-panel empty-state"><h2>还没有案例</h2><p>添加一个抖音视频，分析完成后即可审核。</p></section>`;
-      app.innerHTML = shell("案例", `<main class="page page-standard case-library-page">${pageHeading("", "案例", "浏览和审核团队已经分析的视频案例。", '<a class="btn btn-primary" href="/cases/new" data-route>+ 添加案例</a>')}${content}</main>`);
+      app.innerHTML = shell("案例", `<main class="page page-standard case-library-page">${pageHeading("", "案例", "浏览和审核团队已经分析的视频案例。", '<a class="btn btn-primary" href="/cases/new" data-route>+ 添加案例</a>')}${(groups.groups || []).length ? `<section class="intake-recent-groups" aria-label="最近解析批次">${groups.groups.slice(0, 5).map(g => `<a class="btn btn-secondary" href="/case-intake/${g.group_id}" data-route>恢复本批解析 · ${escapeHtml(new Date(g.created_at).toLocaleString("zh-CN"))}</a>`).join("")}</section>` : ""}${content}</main>`);
       bindCommonActions();
       document.querySelectorAll("[data-filter]").forEach((button) => button.addEventListener("click", () => {
         document.querySelectorAll("[data-filter]").forEach((item) => item.classList.toggle("active", item === button));
@@ -110,460 +63,197 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
     });
   }
 
-  function renderCaseNew() {
+
+  const profileLabels = { mix: "素材混剪", news: "新闻体", hybrid: "混合型", uncertain: "暂不确定" };
+  const intakeSteps = (step) => `<ol class="intake-steps" aria-label="录入步骤">${["粘贴链接", "自动解析", "确认分类"].map((label, i) => `<li class="${i === step ? "active" : ""}"><span>${i + 1}</span>${label}</li>`).join("")}</ol>`;
+
+  async function renderCaseNew() {
     dispose();
-    const body = `<main class="page page-form add-case-page">${pageHeading("", "添加案例", "粘贴一个或多个抖音视频链接，系统会逐条建立分析任务。")}
-      <section class="work-surface add-case-surface">
-        <form id="case-url-form" novalidate><div data-case-input-panel><div class="field"><label for="case-url">粘贴抖音分享内容或视频链接</label>
-          <div class="input-combo"><textarea id="case-url" autocomplete="off" rows="3" placeholder="粘贴分享文本或视频链接；多个链接可按行粘贴" required></textarea><button class="paste-button" type="button" data-paste>粘贴</button></div>
-          <div id="source-detection" class="source-detection muted">输入内容后自动识别来源</div>
-          <div id="case-acquisition-status" class="source-acquisition-status warning" role="status" hidden></div>
-          <div id="case-batch-choices" class="case-batch-choices" hidden></div></div>
-          <div class="field case-industry-field" data-case-industry-panel><label for="case-industry">所属行业</label>
-            <select id="case-industry" aria-describedby="case-industry-help">${industryOptions()}</select>
-            <input id="case-industry-custom" type="text" maxlength="30" autocomplete="off" placeholder="填写行业名称" aria-label="自定义行业名称" hidden disabled>
-            <p id="case-industry-help" class="field-hint">选择行业；列表没有时可选“自定义”。</p>
-          </div>
-          <div class="field case-file-field"><span class="case-file-label">或上传本地视频</span>
-            <label class="case-file-picker">
-              <input id="case-video-file" type="file" accept=".mp4,.mov,.m4v,.webm,video/mp4,video/quicktime,video/webm" aria-label="选择视频文件" aria-describedby="case-file-help case-file-selected">
-              <span class="case-file-picker-main"><strong>选择本地视频</strong><small>MP4、MOV、M4V、WebM · 最大 256 MB</small></span>
-              <span class="case-file-picker-action" aria-hidden="true">选择文件</span>
-            </label>
-            <p id="case-file-selected" class="case-file-selected" role="status" aria-live="polite">未选择文件</p>
-            <p id="case-file-help" class="field-hint">自动获取失败时可上传对应的视频。最长 10 分钟、最高 4K，需保留画面和音轨。</p>
-          </div></div>
-          <fieldset class="case-profile-choice" data-case-profile-panel><legend>这个视频更接近哪种结构？</legend>
-            <label><input type="radio" name="operator-profile-hint" value="mix"><span><strong>混剪型</strong><small>以口播 / 叙事为主，画面配合表达。</small></span></label>
-            <label><input type="radio" name="operator-profile-hint" value="news"><span><strong>新闻体</strong><small>短促的信息卡点或新闻式表达。</small></span></label>
-            <label><input type="radio" name="operator-profile-hint" value="hybrid"><span><strong>混合型</strong><small>两种结构都比较明显。</small></span></label>
-            <label><input type="radio" name="operator-profile-hint" value="uncertain"><span><strong>不确定</strong><small>先交给系统分析。</small></span></label>
-          </fieldset>
-          <div id="case-form-error" class="form-error" role="alert"></div><div id="case-result"></div>
-          <div class="case-submit-actions" data-case-submit-actions></div>
-          <p class="governance-copy">批准后的案例只用于内部参考，不会获得原视频素材使用权。</p>
-        </form>
-      </section></main>`;
-    app.innerHTML = shell("添加案例", body);
+    const params = new URLSearchParams(location.search);
+    app.innerHTML = shell("添加案例", `<main class="page page-form add-case-page">
+      ${pageHeading("", "添加案例", "粘贴视频链接，系统会自动分析内容并推荐分类。")}
+      ${intakeSteps(0)}<section class="work-surface add-case-surface"><h2>粘贴链接，开始解析</h2>
+      <form id="case-url-form" novalidate><div class="field"><label for="case-url">视频链接</label>
+        <div class="input-combo"><textarea id="case-url" rows="5" maxlength="40000" placeholder="粘贴抖音分享内容或视频链接，多个链接可以一起粘贴。" required></textarea><button class="paste-button" type="button" data-paste>粘贴</button></div>
+        <p class="field-hint">无需提前判断视频类型，分析完成后可以修改。</p>
+        <p id="source-detection" class="source-detection muted">当前支持抖音，每批最多 10 条有效视频。</p>
+        <p id="case-acquisition-status" class="warning" role="status" hidden></p></div>
+        <details class="intake-upload"><summary>自动获取失败？上传本地视频</summary>
+          <div class="field case-file-field"><label for="case-video-file">选择与来源链接对应的视频文件</label>
+            <input id="case-video-file" type="file" accept=".mp4,.mov,.m4v,.webm,video/mp4,video/quicktime,video/webm">
+            <p id="case-file-selected" class="field-hint" role="status">MP4、MOV、M4V、WebM · 最大 256 MB</p>
+            <p class="field-hint">每个文件对应一个来源链接。最长 10 分钟、最高 4K；上传仍须确认来源与使用权限。</p></div></details>
+        <div id="case-form-error" class="form-error" role="alert"></div><div id="case-result" role="status"></div>
+        <button class="btn btn-primary btn-wide" type="submit">开始解析</button>
+        <p class="governance-copy">批准后的案例只用于内部参考，不会获得原视频素材使用权。</p>
+      </form></section></main>`);
     bindCommonActions();
-    const input = document.querySelector("#case-url");
-    const industryInput = document.querySelector("#case-industry");
-    const industryCustomInput = document.querySelector("#case-industry-custom");
-    const industryPanel = document.querySelector("[data-case-industry-panel]");
-    const detection = document.querySelector("#source-detection");
-    const form = document.querySelector("#case-url-form");
-    const fileInput = form.querySelector("#case-video-file");
-    const fileSelected = form.querySelector("#case-file-selected");
-    let uploadedFile = null;
-    let uploadedUrl = null;
-    let uploadedReceipt = null;
-    let reviewCaseId = null;
-    let reanalysisRequiresFile = false;
-    let uploadRequired = false;
-    let acquisition = null;
-    let capabilityUnavailable = false;
-    const pasteButton = document.querySelector("[data-paste]");
-    const resultBox = document.querySelector("#case-result");
-    const actionsHost = document.querySelector("[data-case-submit-actions]");
-    const inputPanel = document.querySelector("[data-case-input-panel]");
-    const profilePanel = document.querySelector("[data-case-profile-panel]");
-    const batchChoices = document.querySelector("#case-batch-choices");
-    const acquisitionStatus = document.querySelector("#case-acquisition-status");
-    const selectedHint = () => form.querySelector('input[name="operator-profile-hint"]:checked')?.value || null;
-    const selectedIndustry = () => industryValue(industryInput, industryCustomInput);
-    const focusIndustry = () => (industryInput.value === CUSTOM_INDUSTRY ? industryCustomInput : industryInput).focus();
-    const batchHints = new Map();
-    const batchIndustries = new Map();
-    const batchCustomUrls = new Set();
-    let activeState = "idle";
-    let activeCaseId = null;
-    let activeTaskId = null;
-    let reanalysisState = null;
-
-    const actionMarkup = (projection) => {
-      const actions = [];
-      if (projection.submitVisible) {
-        actions.push(`<button class="btn btn-primary btn-wide" type="submit" ${projection.submitDisabled || ((uploadRequired || reanalysisRequiresFile) && !fileInput.files.length) ? "disabled" : ""}>${projection.submitLabel}</button>`);
-      }
-      if (projection.primaryAction?.kind === "review") {
-        actions.push(`<a class="btn btn-primary btn-wide" href="/cases/${encodeURIComponent(activeCaseId || "")}" data-route>去审核案例</a>`);
-      } else if (projection.primaryAction?.kind === "existing") {
-        actions.push(`<a class="btn btn-primary btn-wide" href="/cases/${encodeURIComponent(activeCaseId || "")}" data-route>查看已有案例</a>`);
-      } else if (projection.primaryAction?.kind === "reanalyze") {
-        actions.push(`<button class="btn btn-primary btn-wide" type="button" data-explicit-reanalysis>重新分析</button>`);
-      } else if (projection.primaryAction?.kind === "progress" && activeTaskId) {
-        actions.push(`<a class="btn btn-primary btn-wide" href="/tasks/${encodeURIComponent(activeTaskId)}" data-route>查看当前进度</a>`);
-      }
-      if (projection.showNewCaseReset) {
-        actions.push(`<button class="btn btn-quiet btn-wide" type="button" data-new-case-reset>添加另一个案例</button>`);
-      }
-      return actions.join("");
-    };
-
-    const setSubmitState = (status, { caseId = activeCaseId, taskId = activeTaskId, reanalysis = reanalysisState } = {}) => {
-      activeState = status;
-      activeCaseId = caseId;
-      activeTaskId = taskId;
-      reanalysisState = reanalysis;
-      const projection = projectCaseSubmitState(status);
-      input.disabled = projection.inputDisabled;
-      industryInput.disabled = !["idle", "failed", "rejected"].includes(status);
-      syncCustomIndustry(industryInput, industryCustomInput);
-      pasteButton.disabled = projection.pasteDisabled;
-      fileInput.disabled = projection.inputDisabled;
-      inputPanel.hidden = !["idle", "failed", "rejected"].includes(status);
-      industryPanel.hidden = extractCaseSourceUrls(input.value).length > 1 || !["idle", "failed", "rejected"].includes(status);
-      profilePanel.hidden = !["idle", "failed", "rejected"].includes(status) || extractCaseSourceUrls(input.value).length > 1;
-      actionsHost.innerHTML = actionMarkup(projection);
-      actionsHost.querySelectorAll("[data-route]").forEach((link) => link.addEventListener("click", (event) => {
-        event.preventDefault();
-        navigate(link.getAttribute("href"));
-      }));
-    };
-
-    const resetForAnotherCase = () => {
-      stopTaskPolling();
-      if (location.search) history.replaceState({}, "", "/cases/new");
-      activeCaseId = null;
-      activeTaskId = null;
-      reanalysisState = null;
-      input.value = "";
-      setIndustryValue(industryInput, industryCustomInput);
-      fileInput.value = "";
-      fileSelected.textContent = "未选择文件";
-      fileSelected.classList.remove("has-file");
-      uploadedFile = uploadedUrl = uploadedReceipt = null;
-      reviewCaseId = null;
-      reanalysisRequiresFile = false;
-      batchHints.clear();
-      batchIndustries.clear();
-      batchCustomUrls.clear();
-      form.querySelectorAll('input[name="operator-profile-hint"]').forEach((radio) => { radio.checked = false; });
-      resultBox.innerHTML = "";
-      document.querySelector("#case-form-error").classList.remove("visible");
-      const projection = resetCaseSubmitState();
-      setSubmitState(projection.status);
-      updateDetection();
-      updateAcquisitionNotice();
-      input.focus();
-    };
-    const updateDetection = () => {
-      const urls = extractCaseSourceUrls(input.value);
-      const projection = detectCaseSourceInput(input.value);
-      detection.textContent = projection.label;
-      detection.className = projection.recognized ? "source-detection" : "source-detection muted";
-      const multi = urls.length > 1 && !reviewCaseId;
-      industryPanel.hidden = multi || !["idle", "failed", "rejected"].includes(activeState);
-      profilePanel.hidden = multi || !["idle", "failed", "rejected"].includes(activeState);
-      batchChoices.hidden = !multi;
-      if (!multi) { batchChoices.innerHTML = ""; return; }
-      batchChoices.innerHTML = `<p class="field-hint">每个视频单独选择行业和结构类型；已存在的案例不会重复建立任务。</p>
-        ${urls.map((url, index) => { const saved = batchIndustries.get(url) || ""; return `<div class="case-batch-choice"><span><strong>${index + 1}. ${escapeHtml(url)}</strong></span>
-          <div class="case-batch-controls"><select data-batch-industry-url="${escapeHtml(url)}" aria-label="第 ${index + 1} 个视频的所属行业">${industryOptions(saved || (batchCustomUrls.has(url) ? CUSTOM_INDUSTRY : ""))}</select>
-          <select data-batch-url="${escapeHtml(url)}" aria-label="第 ${index + 1} 个视频的结构类型">
-            <option value="">选择结构类型</option>
-            <option value="mix" ${batchHints.get(url) === "mix" ? "selected" : ""}>混剪型</option>
-            <option value="news" ${batchHints.get(url) === "news" ? "selected" : ""}>新闻体</option>
-            <option value="hybrid" ${batchHints.get(url) === "hybrid" ? "selected" : ""}>混合型</option>
-            <option value="uncertain" ${batchHints.get(url) === "uncertain" ? "selected" : ""}>不确定</option>
-          </select><input type="text" data-batch-industry-custom-url="${escapeHtml(url)}" maxlength="30" placeholder="填写行业名称" value="${escapeHtml(saved && !CASE_INDUSTRIES.includes(saved) ? saved : "")}" aria-label="第 ${index + 1} 个视频的自定义行业名称" ${batchCustomUrls.has(url) || saved && !CASE_INDUSTRIES.includes(saved) ? "" : "hidden disabled"}></div></div>`; }).join("")}`;
-    };
-    const updateAcquisitionNotice = () => {
-      const warning = caseAcquisitionWarning(acquisition, {
-        hasFile: Boolean(fileInput.files.length), unavailable: capabilityUnavailable,
-      });
-      acquisitionStatus.textContent = warning;
-      acquisitionStatus.hidden = !warning;
-    };
-    batchChoices.addEventListener("change", (event) => {
-      const select = event.target.closest("[data-batch-url]");
-      if (select) batchHints.set(select.dataset.batchUrl, select.value);
-      const industry = event.target.closest("[data-batch-industry-url]");
-      if (industry) {
-        const custom = industry.closest(".case-batch-controls").querySelector("[data-batch-industry-custom-url]");
-        if (industry.value === CUSTOM_INDUSTRY) batchCustomUrls.add(industry.dataset.batchIndustryUrl);
-        else batchCustomUrls.delete(industry.dataset.batchIndustryUrl);
-        syncCustomIndustry(industry, custom);
-        batchIndustries.set(industry.dataset.batchIndustryUrl, industryValue(industry, custom));
-        if (industry.value === CUSTOM_INDUSTRY) custom.focus();
-      }
+    const form = app.querySelector("#case-url-form"), input = form.querySelector("#case-url");
+    const fileInput = form.querySelector("#case-video-file"), button = form.querySelector('[type="submit"]');
+    const errorBox = form.querySelector("#case-form-error"), result = form.querySelector("#case-result");
+    let busy=false, retryTask=null, reviewCase=null, requestId=crypto.randomUUID(), requestText=null;
+    let uploaded=null, uploadedFile=null, uploadedText=null;
+    const update=()=>{form.querySelector("#source-detection").textContent=detectCaseSourceInput(input.value).label;};
+    input.addEventListener("input",update);
+    fileInput.addEventListener("change",()=>{form.querySelector("#case-file-selected").textContent=fileInput.files[0]?.name||"未选择文件";});
+    form.querySelector("[data-paste]").addEventListener("click",async()=>{
+      try{input.value=await navigator.clipboard.readText();update();}catch{showToast("请长按输入框或使用键盘粘贴链接。");}
     });
-    batchChoices.addEventListener("input", (event) => {
-      const custom = event.target.closest("[data-batch-industry-custom-url]");
-      if (custom) batchIndustries.set(custom.dataset.batchIndustryCustomUrl, custom.value);
-    });
-    const showSubmissionResult = (result) => {
-      if (!result.duplicate) {
-        if (!result.task?.task_id) throw new Error("未取得任务编号，请到任务记录确认状态。");
-        navigate(`/tasks/${encodeURIComponent(result.task.task_id)}`, true);
-        return;
-      }
-      if (["queued", "running", "awaiting_review"].includes(result.state) && result.existing_task?.task_id) {
-        navigate(`/tasks/${encodeURIComponent(result.existing_task.task_id)}`, true);
-        return;
-      }
-      resultBox.innerHTML = duplicateResultHtml(result);
-      setSubmitState(result.state, {
-        caseId: result.case_id,
-        taskId: result.existing_task?.task_id || null,
-        reanalysis: result.state,
-      });
-    };
-    const renderBatchResults = (results, total, pendingCount = null) => {
-      const added = results.filter(({ response }) => response && !response.duplicate).length;
-      const existing = results.filter(({ response }) => response?.duplicate).length;
-      const unfinished = pendingCount ?? total - results.length;
-      const rows = results.map(({ item, response, error }) => {
-        const label = escapeHtml(item.url);
-        if (error) {
-          return `<li><span>${label}</span><strong class="case-batch-error">未提交</strong><small>${escapeHtml(error.detail?.next_action || error.message || "请稍后重试。")}</small></li>`;
+    api("/api/capabilities").then(data=>{
+      if(!form.isConnected)return;
+      const notice=form.querySelector("#case-acquisition-status"), warning=caseAcquisitionWarning(data.case_analysis?.source_acquisition);
+      notice.textContent=warning;notice.hidden=!warning;
+      if(data.case_analysis?.upload_required)form.querySelector("details").open=true;
+    }).catch(()=>{});
+    if(params.get("retry_task")){
+      try{
+        const {task}=await api(`/api/tasks/${encodeURIComponent(params.get("retry_task"))}`);
+        if(!form.isConnected)return;
+        const destination=caseTaskResumeDestination(task);
+        if(destination)return navigate(destination,true);
+        retryTask=task;input.value=task.payload?.source_url||"";
+        result.innerHTML='<p class="warning">恢复原任务会复用已完成步骤；上传替代文件会建立有独立来源记录的新尝试。</p>';
+      }catch(error){errorBox.textContent=error.message;errorBox.classList.add("visible");}
+    }
+    if(params.get("reanalyze_case")){
+      reviewCase=params.get("reanalyze_case");
+      const detail=await api(`/api/cases/${encodeURIComponent(reviewCase)}`);
+      if(!form.isConnected)return;
+      input.value=detail.source_url||"";
+      result.innerHTML='<p class="warning">重新分析需要说明原因，原有审核记录会保留。</p>';
+    }
+    if(params.get("source"))input.value=params.get("source");
+    update();
+    form.addEventListener("submit",async event=>{
+      event.preventDefault();if(busy)return;errorBox.classList.remove("visible");
+      if(!input.value.trim()){errorBox.textContent="请粘贴抖音分享内容或视频链接。";errorBox.classList.add("visible");return;}
+      const file=fileInput.files[0];
+      if(file&&extractCaseSourceUrls(input.value).length!==1){errorBox.textContent="本地视频只能对应一个来源链接。";errorBox.classList.add("visible");return;}
+      busy=true;button.disabled=true;input.disabled=true;fileInput.disabled=true;
+      const controller=new AbortController();stopUpload=()=>controller.abort();
+      try{
+        const originalText=input.value.trim();
+        if(requestText!==originalText){requestText=originalText;requestId=crypto.randomUUID();}
+        let text=originalText;
+        if(file&&(file!==uploadedFile||originalText!==uploadedText)){
+          const invalid=validateCaseFile(file);if(invalid)throw new Error(invalid);
+          result.innerHTML="<p>正在上传并检查视频，请保持页面打开。上传完成后任务可以恢复查看。</p>";
+          uploaded=await uploadCaseFile(api,{file,sourceUrl:text,signal:controller.signal});
+          uploadedFile=file;uploadedText=originalText;requestId=crypto.randomUUID();
         }
-        const taskId = response.duplicate ? response.existing_task?.task_id : response.task?.task_id;
-        const caseId = response.case_id;
-        const state = response.duplicate ? response.state : "queued";
-        const stateLabel = ({ queued: "已加入队列", running: "正在分析", awaiting_review: "待审核", approved: "已入库", failed: "需重新分析", rejected: "未收录" })[state] || "已有记录";
-        const href = taskId && ["queued", "running", "failed"].includes(state) ? `/tasks/${encodeURIComponent(taskId)}`
-          : caseId && ["awaiting_review", "approved", "rejected"].includes(state) ? `/cases/${encodeURIComponent(caseId)}` : null;
-        const action = href ? `<a href="${href}" data-route>查看${["queued", "running"].includes(state) ? "进度" : state === "failed" ? "任务" : "案例"}</a>` : "";
-        return `<li><span>${label}</span><strong>${stateLabel}</strong>${action}</li>`;
+        if(controller.signal.aborted||!form.isConnected)return;
+        if(reviewCase){
+          const decision=await openModal({title:"重新分析这个案例？",description:"新尝试保留独立记录。",confirmLabel:"重新分析",reasonRequired:true,reasonLabel:"重新分析原因"});
+          if(!decision.confirmed)return;
+          await api(`/api/cases/${encodeURIComponent(reviewCase)}/review`,{method:"POST",body:JSON.stringify({decision:"reanalyze",reason:decision.reason,...(file?{source_upload_id:uploaded.upload_id}:{})})});
+        }else if(retryTask){
+          if(file)await api("/api/cases/analyze",{method:"POST",body:JSON.stringify({url:uploaded.canonical_url,source_upload_id:uploaded.upload_id,reanalyze:true})});
+          else await api(`/api/tasks/${encodeURIComponent(retryTask.task_id)}/retry`,{method:"POST"});
+        }
+        result.innerHTML="<p>正在读取链接并建立可恢复的解析记录…</p>";
+        const group=await api("/api/case-intake/groups",{method:"POST",body:JSON.stringify({
+          text:file?uploaded.canonical_url:text,client_request_id:requestId,...(file&&!retryTask&&!reviewCase?{source_upload_id:uploaded.upload_id}:{})})});
+        if(form.isConnected)navigate(`/case-intake/${encodeURIComponent(group.group_id)}`);
+      }catch(error){
+        if(form.isConnected&&error.name!=="AbortError"){errorBox.textContent=error.detail?.message||error.message;errorBox.classList.add("visible");}
+      }finally{busy=false;button.disabled=false;input.disabled=false;fileInput.disabled=false;stopUpload=null;}
+    });
+  }
+
+  async function renderIntakeGroup(groupId, singleCaseId=null){
+    dispose();skeletonPage("案例解析中");
+    let cancelled=false,timer=null,filter="all",last=null,submitting=false,revision=null;
+    const drafts=new Map(),editing=new Set();
+    stopPolling=()=>{cancelled=true;clearTimeout(timer);};
+    const load=async()=>{
+      if(!singleCaseId)return api(`/api/case-intake/groups/${encodeURIComponent(groupId)}`);
+      const [detail,classification]=await Promise.all([api(`/api/cases/${encodeURIComponent(singleCaseId)}`),api(`/api/cases/${encodeURIComponent(singleCaseId)}/classification`)]);
+      return {group_id:null,items:[{position:0,state:"linked",case_id:singleCaseId,source_url:detail.source_url,case:detail,classification}]};
+    };
+    const save=async(item,draft)=>api(`/api/cases/${encodeURIComponent(item.case_id)}/classification`,{
+      method:"POST",body:JSON.stringify({industry:draft.industry===UNCERTAIN_INDUSTRY?null:draft.industry,profile:draft.profile,
+        candidate_sha256:item.classification.candidate_sha256,expected_confirmation_sha256:item.classification.confirmation_sha256})});
+    const refresh=async()=>{
+      try{
+        const group=await load();if(cancelled)return;const next=JSON.stringify(group);last=group;if(next!==revision){revision=next;draw();}
+        if(intakeCounts(group.items).analyzing)timer=setTimeout(refresh,3000);
+      }catch(error){if(!cancelled)renderLoadError("解析记录暂时无法读取",error);}
+    };
+    const draw=()=>{
+      const counts=intakeCounts(last.items);
+      const batchMode=counts.total>1;
+      const rows=last.items.filter(item=>filter==="all"||intakeItemState(item)===filter);
+      const cards=rows.map(item=>{
+        const state=intakeItemState(item),rec=item.classification?.suggestion,human=item.classification?.human;
+        const draft=drafts.get(item.position)||classificationDraft(item.classification||{});
+        if(rec)drafts.set(item.position,draft);
+        const title=item.case?.title||(item.case_id?`视频 ${item.case_id}`:"未识别的视频链接");
+        const duration=item.case?.duration_seconds==null?"时长待解析":`${Math.round(item.case.duration_seconds)} 秒`;
+        let body="";
+        if(state==="input_duplicate")body+="<p>当前输入中重复的视频，已合并处理，不会重复获取或分析。</p>";
+        else if(state==="approved")body+=`<p>该视频已经添加过</p><a class="btn btn-secondary" href="/cases/${item.case_id}" data-route>查看已有案例</a>`;
+        else if(rec&&state!=="failed"){
+          if(state==="confirmed")body+=`<div class="intake-confirmed"><p><strong>${confirmedClassificationLabel(human)}</strong></p><p>${escapeHtml(human.industry||"行业暂不确定")} · ${profileLabels[human.profile]}</p><small>操作人 ${escapeHtml(String(human.confirmed_by_phone).replace(/^(\d{3})\d+(\d{4})$/,"$1****$2"))} · ${escapeHtml(new Date(human.confirmed_at).toLocaleString("zh-CN"))}</small></div>`;
+          else body+=`<div class="intake-recommendation"><p><strong>系统推荐</strong> ${escapeHtml(rec.industry||"行业暂不确定")} · ${profileLabels[rec.observed_source_profile]||"暂不确定"}</p><p>${escapeHtml(rec.profile_reason)}</p></div>`;
+          body+=`<details class="intake-evidence"><summary>查看推荐依据与来源</summary><p>系统建议：${escapeHtml(rec.industry||"行业暂不确定")} · ${profileLabels[rec.observed_source_profile]||"暂不确定"}</p><p>${escapeHtml(rec.industry_reason)}</p><p>${escapeHtml(rec.profile_reason)}</p>${rec.shot_refs?.length?`<p>对应画面：${escapeHtml(rec.shot_refs.join("、"))}</p>`:""}<p>${escapeHtml(item.source_url||"")}</p></details>`;
+          if(item.classification.can_confirm&&(state!=="confirmed"||editing.has(item.position)))body+=`<form data-classify="${item.position}" class="intake-classify-form"><div class="intake-selects">
+            <div class="field"><label for="intake-industry-${item.position}">所属行业</label><select id="intake-industry-${item.position}" data-industry>${industryOptions(draft.industry,{uncertainValue:UNCERTAIN_INDUSTRY})}</select><input data-custom maxlength="30" aria-label="自定义行业名称" value="${escapeHtml(CASE_INDUSTRIES.includes(draft.industry)||draft.industry===UNCERTAIN_INDUSTRY?"":draft.industry)}" ${draft.industry&&draft.industry!==UNCERTAIN_INDUSTRY&&!CASE_INDUSTRIES.includes(draft.industry)?"":"hidden disabled"}></div>
+            <div class="field"><label for="intake-profile-${item.position}">视频结构</label><select id="intake-profile-${item.position}" data-profile><option value="">请选择</option>${Object.entries(profileLabels).map(([v,label])=>`<option value="${v}" ${draft.profile===v?"selected":""}>${label}</option>`).join("")}</select></div></div>
+            ${batchMode&&state==="needs_confirmation"?`<label class="intake-check"><input type="checkbox" data-checked ${draft.checked?"checked":""} ${classificationSubmittable(draft,{batch:true})?"":"disabled"}>已逐条检查，加入批量确认</label>`:""}
+            <button class="btn ${state==="confirmed"?"btn-secondary":"btn-primary"}" type="submit">${state==="confirmed"?"保存分类修改":"确认分类"}</button>${state==="confirmed"?'<button class="btn btn-text" type="button" data-cancel-edit>取消修改</button>':""}</form>`;
+          if(state==="confirmed")body+=`<div class="intake-card-actions"><a class="btn btn-primary" href="/cases/${item.case_id}" data-route>继续案例审核</a>${!editing.has(item.position)&&item.classification.can_confirm?`<button class="btn btn-text" type="button" data-edit-classify="${item.position}">修改分类</button>`:""}</div>`;
+          else if(!item.classification.can_confirm)body+=`<a class="btn btn-secondary" href="/cases/${item.case_id}" data-route>继续案例审核</a>`;
+        }else if(state==="failed"){
+          body+=`<p class="warning">${escapeHtml(item.message||item.task?.error_message||"解析未完成，请检查来源后重试。")}</p>`;
+          if(item.task)body+=`<div class="intake-card-actions"><button class="btn btn-secondary" type="button" data-retry="${item.task.task_id}">${item.task.error_code==="SOURCE_ACQUISITION_FAILED"?"重试获取":"重试失败阶段"}</button><a class="btn btn-secondary" href="/cases/new?retry_task=${encodeURIComponent(item.task.task_id)}" data-route>上传本地视频</a><a class="inline-link" href="/tasks/${encodeURIComponent(item.task.task_id)}" data-route>查看任务详情</a></div>`;
+          else body+=`<a class="btn btn-secondary" href="/cases/new?source=${encodeURIComponent(item.canonical_url||item.source_url||"")}" data-route>检查链接 / 上传本地视频</a>`;
+        }else body+='<p class="field-hint">状态来自后台任务；按队列顺序处理，不会同时启动多个高负载模型任务。</p>';
+        return `<article class="panel intake-result-card" data-intake-state="${state}"><div class="intake-card-heading">${item.case?.cover_url?`<img class="intake-cover" src="${escapeHtml(item.case.cover_url)}" alt="视频来源封面" loading="lazy">`:'<div class="intake-cover-placeholder" aria-label="没有可用封面">视频</div>'}<div><h2>${escapeHtml(title)}</h2><p>${item.case_id?"抖音":"来源待核对"} · ${duration}</p><span class="status-pill">${intakeStage(item)}</span></div></div>${body}</article>`;
       }).join("");
-      resultBox.innerHTML = `<div class="case-batch-results" role="status"><h3>${pendingCount === null ? "正在逐条提交" : "提交结果"}</h3>
-        <p>已加入队列 ${added} 条 · 已有记录 ${existing} 条 · ${pendingCount === null ? `处理中 ${unfinished} 条` : `未提交 ${unfinished} 条`}</p>
-        ${pendingCount ? '<p>未提交的链接已保留在输入框；请在任务完成或问题解决后重试。</p>' : ""}
-        <ol>${rows}</ol>${results.length ? '<a class="inline-link" href="/tasks" data-route>查看所有任务</a>' : ""}</div>`;
-      resultBox.querySelectorAll("[data-route]").forEach((link) => link.addEventListener("click", (event) => {
-        event.preventDefault();
-        navigate(link.getAttribute("href"));
+      app.innerHTML=shell("案例解析",`<main class="page page-standard intake-results-page">${pageHeading("",counts.analyzing?"案例解析中":counts.needs_confirmation?"请确认系统推荐的分类":counts.confirmed?(counts.total===1?confirmedClassificationLabel(last.items.find(item=>intakeItemState(item)==="confirmed").classification.human):"分类已确认"):"案例解析结果",counts.analyzing?"正在分析视频内容":counts.needs_confirmation?"分类确认后，继续逐条审核案例。":counts.confirmed?"分类结果已保存，继续完成案例审核。":"查看解析结果，失败项目可单独重试。")}
+        ${intakeSteps(counts.analyzing?1:2)}<section class="intake-overview panel"><div class="intake-counts">${[["本批总数",counts.total],["分析中",counts.analyzing],["待确认",counts.needs_confirmation],["已确认",counts.confirmed],["失败",counts.failed],["已入库",counts.approved],...(counts.completed?[["任务已结束",counts.completed]]:[])].map(([label,n])=>`<div><strong>${n}</strong><span>${label}</span></div>`).join("")}</div><p>可以离开当前页面，解析任务会继续进行。</p>${counts.duplicates?`<p>另有 ${counts.duplicates} 条输入内重复链接，已合并处理。</p>`:""}</section>
+        <div class="intake-toolbar"><div class="filter-row">${[["all","全部"],["needs_confirmation","待确认"],["confirmed","已确认"],["failed","失败"]].map(([value,label])=>`<button class="filter-chip ${filter===value?"active":""}" type="button" data-intake-filter="${value}">${label}</button>`).join("")}</div><button class="btn btn-secondary" type="button" data-confirm-checked hidden disabled>批量确认已检查的分类</button></div>
+        <p class="field-hint">分类确认不会批准案例入库，也不会授予创作可用资格；未确定分类请逐条确认。</p><div class="intake-result-grid">${cards||'<section class="panel"><p>此分类下暂无视频。</p></section>'}</div></main>`);
+      bindCommonActions();
+      const updateBatchButton=()=>{const button=app.querySelector("[data-confirm-checked]"),ready=batchConfirmableItems(last.items,drafts).length;button.hidden=!batchMode||!ready;button.disabled=submitting||!ready;};
+      updateBatchButton();
+      app.querySelectorAll("[data-intake-filter]").forEach(b=>b.addEventListener("click",()=>{filter=b.dataset.intakeFilter;draw();}));
+      app.querySelectorAll("[data-edit-classify]").forEach(b=>b.addEventListener("click",()=>{editing.add(Number(b.dataset.editClassify));draw();}));
+      app.querySelectorAll("[data-classify]").forEach(form=>{
+        const position=Number(form.dataset.classify),draft=drafts.get(position),industry=form.querySelector("[data-industry]"),custom=form.querySelector("[data-custom]");
+        const item=last.items.find(i=>i.position===position),checkbox=form.querySelector("[data-checked]");
+        const capture=()=>{syncCustomIndustry(industry,custom);draft.industry=industryValue(industry,custom);draft.profile=form.querySelector("[data-profile]").value;
+          if(checkbox){checkbox.disabled=!classificationSubmittable(draft,{batch:true});if(checkbox.disabled)checkbox.checked=false;draft.checked=checkbox.checked;}
+          if(!draft.reminded&&classificationDiffers(draft,item.classification.suggestion)){draft.reminded=true;showToast("你的选择与系统建议不同，确认后将采用你的选择。");}
+          updateBatchButton();};
+        form.addEventListener("change",capture);form.addEventListener("input",capture);
+        form.querySelector("[data-cancel-edit]")?.addEventListener("click",()=>{editing.delete(position);drafts.delete(position);draw();});
+        form.addEventListener("submit",async event=>{
+          event.preventDefault();capture();if(submitting)return;
+          if(!classificationSubmittable(draft))return showToast("请选择行业和视频结构；无法判断时可以选择暂不确定。");
+          submitting=true;clearTimeout(timer);form.querySelector("button").disabled=true;
+          try{await save(item,draft);editing.delete(position);drafts.delete(position);revision=null;showToast(`${confirmedClassificationLabel(draft)}，可以继续案例审核。`);}
+          catch(error){showToast(error.detail?.next_action||error.message);form.querySelector("button").disabled=false;}
+          finally{submitting=false;revision=null;await refresh();}
+        });
+      });
+      app.querySelector("[data-confirm-checked]").addEventListener("click",async event=>{
+        if(submitting)return;
+        const checked=batchConfirmableItems(last.items,drafts);
+        if(!checked.length)return showToast("请先逐条检查并勾选分类。");
+        submitting=true;clearTimeout(timer);event.currentTarget.disabled=true;let saved=0;
+        try{for(const item of checked){await save(item,drafts.get(item.position));drafts.delete(item.position);saved++;}showToast(`已确认 ${saved} 条分类，可以继续逐条审核案例。`);}
+        catch(error){showToast(`已确认 ${saved} 条；${error.detail?.next_action||error.message}`);}
+        finally{submitting=false;revision=null;await refresh();}
+      });
+      app.querySelectorAll("[data-retry]").forEach(b=>b.addEventListener("click",async()=>{
+        if(submitting)return;submitting=true;clearTimeout(timer);b.disabled=true;
+        try{await api(`/api/tasks/${encodeURIComponent(b.dataset.retry)}/retry`,{method:"POST"});}
+        catch(error){showToast(error.detail?.next_action||error.message);b.disabled=false;}
+        finally{submitting=false;revision=null;await refresh();}
       }));
     };
-    const submitCaseSource = async (extra = {}) => {
-      const file = fileInput.files[0];
-      if (file) {
-        const invalid = validateCaseFile(file);
-        if (invalid) throw new Error(invalid);
-      } else if (reanalysisRequiresFile) {
-        throw new Error("请重新上传与来源对应的视频文件。");
-      }
-      if (!input.value.trim()) throw new Error("请粘贴来源链接或抖音分享内容。");
-      const controller = new AbortController();
-      stopUpload = () => controller.abort();
-      if (file && (file !== uploadedFile || input.value !== uploadedUrl || !uploadedReceipt)) {
-        resultBox.innerHTML = `<div class="result-banner" role="status"><h3>正在上传并检查视频</h3><p>请保持页面打开。上传完成后，会自动进入可恢复的任务进度页。</p></div>`;
-        uploadedReceipt = await uploadCaseFile(api, { file, sourceUrl: input.value, signal: controller.signal });
-        uploadedFile = file;
-        uploadedUrl = input.value;
-      }
-      if (controller.signal.aborted || document.querySelector("#case-url-form") !== form) throw new DOMException("Aborted", "AbortError");
-      resultBox.innerHTML = `<div class="result-banner" role="status"><h3>正在建立分析任务</h3></div>`;
-      if (reviewCaseId) {
-        const reviewed = await api(`/api/cases/${encodeURIComponent(reviewCaseId)}/review`, {
-          method: "POST", body: JSON.stringify({ decision: "reanalyze", reason: extra.reason,
-            operator_profile_hint: selectedHint(), industry: selectedIndustry(),
-            ...(file ? { source_upload_id: uploadedReceipt.upload_id } : {}) }),
-        });
-        return { ...reviewed, duplicate: false, case_id: reviewCaseId };
-      }
-      return api("/api/cases/analyze", {
-        method: "POST", body: JSON.stringify({ url: file ? uploadedReceipt.canonical_url : input.value,
-          operator_profile_hint: selectedHint(), industry: selectedIndustry(),
-          ...(file ? { source_upload_id: uploadedReceipt.upload_id } : {}), ...extra }),
-      });
-    };
-    input.addEventListener("input", updateDetection);
-    industryInput.addEventListener("change", () => {
-      syncCustomIndustry(industryInput, industryCustomInput);
-      if (industryInput.value === CUSTOM_INDUSTRY) industryCustomInput.focus();
-    });
-    fileInput.addEventListener("change", () => {
-      const file = fileInput.files[0];
-      fileSelected.textContent = file ? `${file.name} · ${(file.size / 1024 / 1024).toFixed(1)} MB` : "未选择文件";
-      fileSelected.classList.toggle("has-file", Boolean(file));
-      updateAcquisitionNotice();
-      setSubmitState(activeState);
-    });
-    pasteButton.addEventListener("click", async () => {
-      if (!navigator.clipboard?.readText) return showToast("当前浏览器不支持读取剪贴板，请长按输入框粘贴。");
-      try { input.value = await navigator.clipboard.readText(); updateDetection(); input.focus(); }
-      catch { showToast("无法读取剪贴板，请手动粘贴链接。"); }
-    });
-    actionsHost.addEventListener("click", async (event) => {
-      const resetButton = event.target.closest("[data-new-case-reset]");
-      if (resetButton) return resetForAnotherCase();
-      const reanalyzeButton = event.target.closest("[data-explicit-reanalysis]");
-      if (!reanalyzeButton || !projectCaseSubmitState(activeState).allowReanalysis) return;
-      if (!hasSpecificIndustry(selectedIndustry())) {
-        showToast("请填写案例所属行业。");
-        focusIndustry();
-        return;
-      }
-
-      let reason = "分析失败后由运营人员显式重新分析。";
-      if (reanalysisState === "rejected") {
-        const decision = await openModal({
-          title: "重新分析这个案例？",
-          description: "请说明重新分析的原因，新的分析会单独记录。",
-          confirmLabel: "重新分析",
-          reasonLabel: "重新分析原因",
-          reasonRequired: true,
-        });
-        if (!decision.confirmed) return;
-        reason = decision.reason;
-      }
-      setSubmitState("submitting");
-      try {
-        const restarted = await submitCaseSource({ reanalyze: true, reason });
-        if (document.querySelector("#case-url-form") !== form) return;
-        showSubmissionResult(restarted);
-      } catch (error) {
-        if (document.querySelector("#case-url-form") !== form) return;
-        showToast(error.detail?.next_action || error.message);
-        setSubmitState(reanalysisState || "failed");
-      }
-    });
-
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
-      const errorBox = document.querySelector("#case-form-error");
-      if (activeState !== "idle") return;
-      errorBox.classList.remove("visible"); resultBox.innerHTML = "";
-      const urls = extractCaseSourceUrls(input.value);
-      if (urls.length > 1) {
-        const showError = (message) => { errorBox.textContent = message; errorBox.classList.add("visible"); };
-        if (urls.length > 20) return showError("一次最多添加 20 个链接，请分批提交。");
-        if (fileInput.files.length) return showError("多个链接不能共用一个视频文件。请移除文件，或逐条上传对应视频。");
-        if (uploadRequired) return showError("当前需要上传视频文件，请逐条添加并上传对应的视频。");
-        if (urls.some((url) => !batchHints.get(url))) return showError("请为每个视频选择结构类型；不确定也可以选择。");
-        if (urls.some((url) => !hasSpecificIndustry(batchIndustries.get(url)))) return showError("请为每个视频填写具体行业。");
-        const items = urls.map((url) => ({ url, hint: batchHints.get(url), industry: batchIndustries.get(url).trim() }));
-        const controller = new AbortController();
-        const abortBatch = () => controller.abort();
-        stopUpload = abortBatch;
-        const batchProgress = [];
-        setSubmitState("submitting");
-        try {
-          const batch = await submitCaseBatch(items, ({ url, hint, industry }) => api("/api/cases/analyze", {
-            method: "POST", body: JSON.stringify({ url, operator_profile_hint: hint, industry }), signal: controller.signal,
-          }), (result) => {
-            batchProgress.push(result);
-            if (document.querySelector("#case-url-form") === form) renderBatchResults(batchProgress, items.length);
-          });
-          if (document.querySelector("#case-url-form") !== form) return;
-          input.value = batch.pending.map((item) => item.url).join("\n");
-          if (batch.pending.length === 1) {
-            const hint = form.querySelector(`input[name="operator-profile-hint"][value="${batch.pending[0].hint}"]`);
-            if (hint) hint.checked = true;
-            setIndustryValue(industryInput, industryCustomInput, batch.pending[0].industry);
-          } else {
-            setIndustryValue(industryInput, industryCustomInput);
-          }
-          setSubmitState("idle");
-          updateDetection();
-          renderBatchResults(batch.results, items.length, batch.pending.length);
-        } catch (error) {
-          if (document.querySelector("#case-url-form") !== form) return;
-          if (error.name !== "AbortError") showError(error.detail?.next_action || error.message || "请到任务记录确认提交状态。");
-          setSubmitState("idle");
-          updateDetection();
-        } finally { if (stopUpload === abortBatch) stopUpload = null; }
-        return;
-      }
-      if (!selectedHint()) {
-        errorBox.textContent = "请选择视频结构类型；不确定也可以选择。";
-        errorBox.classList.add("visible");
-        profilePanel.querySelector("input")?.focus();
-        return;
-      }
-      if (!hasSpecificIndustry(selectedIndustry())) {
-        errorBox.textContent = "请填写案例所属的具体行业。";
-        errorBox.classList.add("visible");
-        focusIndustry();
-        return;
-      }
-      setSubmitState("submitting");
-      try {
-        const result = await submitCaseSource();
-        if (document.querySelector("#case-url-form") !== form) return;
-        showSubmissionResult(result);
-      } catch (error) {
-        if (document.querySelector("#case-url-form") !== form) return;
-        const next = error.detail?.next_action || error.message || "请检查来源链接和视频文件后重新提交。";
-        const progressUnavailable = error.detail?.code === "CASE_TASK_PROGRESS_UNAVAILABLE";
-        resultBox.innerHTML = `<div class="result-banner error"><h3>${progressUnavailable ? "未找到当前进度" : "暂时无法分析这个视频"}</h3><p>${escapeHtml(next)}</p>${progressUnavailable ? '<a class="btn btn-secondary" href="/tasks" data-route>查看任务记录</a>' : ""}</div>`;
-        resultBox.querySelector("[data-route]")?.addEventListener("click", (event) => {
-          event.preventDefault();
-          navigate("/tasks");
-        });
-        setSubmitState("idle");
-      }
-    });
-    setSubmitState("idle");
-    api("/api/capabilities").then((capabilities) => {
-      if (document.querySelector("#case-url-form") !== form) return;
-      uploadRequired = capabilities.case_analysis?.upload_required === true;
-      acquisition = capabilities.case_analysis?.source_acquisition || null;
-      capabilityUnavailable = !["qiyun", "legacy_downloader", "upload_only"].includes(acquisition?.mode);
-      if (uploadRequired) {
-        const description = document.querySelector(".add-case-page .page-heading-copy > p");
-        if (description) description.textContent = "粘贴来源链接，并上传对应的视频文件。";
-        form.querySelector(".case-file-label").textContent = "上传本地视频";
-        form.querySelector("#case-file-help").textContent = "当前需要上传视频。最长 10 分钟、最高 4K，需保留画面和音轨。";
-      }
-      updateAcquisitionNotice();
-      setSubmitState(activeState);
-    }).catch(() => {
-      if (document.querySelector("#case-url-form") !== form) return;
-      capabilityUnavailable = true;
-      updateAcquisitionNotice();
-    });
-    const reanalysisCaseId = new URLSearchParams(location.search).get("reanalyze_case");
-    if (reanalysisCaseId) {
-      setSubmitState("restoring");
-      api(`/api/cases/${encodeURIComponent(reanalysisCaseId)}`).then((detail) => {
-        if (document.querySelector("#case-url-form") !== form) return;
-        reviewCaseId = reanalysisCaseId;
-        reanalysisRequiresFile = detail.review_media?.operator_uploaded === true;
-        input.value = detail.source_url || "";
-        setIndustryValue(industryInput, industryCustomInput, detail.industry === "待分类" ? "" : detail.industry);
-        const hint = detail.operator_profile_hint;
-        if (["mix", "news", "hybrid", "uncertain"].includes(hint)) {
-          form.querySelector(`input[name="operator-profile-hint"][value="${hint}"]`).checked = true;
-        }
-        updateDetection();
-        resultBox.innerHTML = `<div class="result-banner"><h3>准备重新分析</h3><p>${reanalysisRequiresFile ? "请重新上传对应的视频文件。" : "可自动获取原视频，或上传对应的视频文件。"}提交时需要说明原因，原有记录不会被覆盖。</p></div>`;
-        setSubmitState("rejected", { caseId: reviewCaseId, reanalysis: "rejected" });
-      }).catch((error) => { if (document.querySelector("#case-url-form") === form) { showToast(error.message); setSubmitState("idle"); } });
-      return;
-    }
-    const retryTaskId = new URLSearchParams(location.search).get("retry_task");
-    if (retryTaskId) {
-      setSubmitState("restoring");
-      resultBox.innerHTML = `<div class="result-banner"><h3>正在恢复上次任务</h3></div>`;
-      api(`/api/tasks/${encodeURIComponent(retryTaskId)}`).then(({ task }) => {
-        if (document.querySelector("#case-url-form") !== form) return;
-        const resumeDestination = caseTaskResumeDestination(task);
-        if (resumeDestination) {
-          navigate(resumeDestination, true);
-          return;
-        }
-        const retry = projectFailedCaseTask(task);
-        if (!retry || retry.taskId !== retryTaskId) {
-          throw new Error("这条任务不能从添加案例页恢复。请返回任务记录确认状态。");
-        }
-        input.value = retry.sourceUrl;
-        setIndustryValue(industryInput, industryCustomInput, retry.industry === "待分类" ? "" : retry.industry);
-        if (retry.operatorProfileHint) {
-          const choice = form.querySelector(`input[name="operator-profile-hint"][value="${retry.operatorProfileHint}"]`);
-          if (choice) choice.checked = true;
-        }
-        updateDetection();
-        resultBox.innerHTML = `<div class="result-banner error"><h3>上次分析未完成</h3><p>请核对来源后重新分析；也可以上传对应的视频文件。上次任务记录会保留。</p></div>`;
-        setSubmitState("failed", { caseId: retry.caseId, taskId: retry.taskId, reanalysis: "failed" });
-      }).catch((error) => {
-        if (document.querySelector("#case-url-form") !== form) return;
-        resultBox.innerHTML = `<div class="result-banner error"><h3>无法恢复这条任务</h3><p>${escapeHtml(error.message || "请返回任务记录确认状态。")}</p></div>`;
-        setSubmitState("idle");
-      });
-    }
+    await refresh();
   }
 
   async function renderCaseDetail(caseId) {
@@ -576,8 +266,8 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       document.querySelector("[data-profile-annotation]")?.addEventListener("click", async (event) => {
         const button = event.currentTarget;
         const decision = await openModal({
-          title: detail.profile_annotation ? "修改历史补充" : "补充结构类型",
-          description: "这是对历史案例的人工标记，不改变已批准案例或创作可用范围。请选择你观察到的结构类型。",
+          title: "修改结构标签",
+          description: "标签保存在独立补充记录中，不改变已批准案例或创作可用范围。请选择你观察到的结构类型。",
           confirmLabel: "保存补充",
           profileHintRequired: true,
           reasonOptional: true,
@@ -606,8 +296,8 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       document.querySelector("[data-industry-annotation]")?.addEventListener("click", async (event) => {
         const button = event.currentTarget;
         const decision = await openModal({
-          title: detail.industry_annotation ? "修改历史补充行业" : "补充行业",
-          description: "这是对历史案例的人工补充，不改变已入库案例。",
+          title: "修改行业标签",
+          description: "行业标签保存在独立补充记录中，不改变已入库案例。",
           confirmLabel: "保存补充",
           industryRequired: true,
           industryValue: detail.industry_annotation?.industry || "",
@@ -686,7 +376,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
         document.querySelectorAll("[data-review-action]").forEach((item) => { item.disabled = true; });
         try {
           const result = await api(`/api/cases/${encodeURIComponent(caseId)}/review`, { method: "POST", body: JSON.stringify({ decision: action, reason, operator_profile_hint: profileHint, evidence_review: evidenceReview }) });
-          if (action === "approve") { showToast("案例已进入案例库"); return renderCaseDetail(caseId); }
+          if (action === "approve") { showToast("已加入正式案例库"); return renderCaseDetail(caseId); }
           if (action === "reanalyze") { showToast("已退回重新分析"); return navigate(`/tasks/${result.task.task_id}`); }
           showToast("已记录为不收录"); navigate("/cases");
         } catch (error) {
@@ -733,5 +423,5 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
     } catch (error) { renderLoadError("任务暂时无法读取", error); }
   }
 
-  return { renderCases, renderCaseNew, renderCaseDetail, renderTaskDetail, dispose };
+  return { renderCases, renderCaseNew, renderCaseDetail, renderTaskDetail, renderIntakeGroup, dispose };
 }

@@ -33,6 +33,7 @@ export function progressPanel(task, { compact = false, embedded = false, boundar
   const currentTaskId = isCaseTask && task.current_active_task_id && task.current_active_task_id !== task.task_id
     ? task.current_active_task_id : null;
   const reviewConflict = caseApproved && task.status === "awaiting_review";
+  const classificationHref = task.subject_ref ? `/cases/${encodeURIComponent(task.subject_ref)}/classification` : "/cases";
   const caseHref = task.subject_ref ? `/cases/${encodeURIComponent(task.subject_ref)}` : "/cases";
   const stages = CASE_PROGRESS_STAGES.map(([, label, threshold], index) => {
     const done = terminal || task.progress >= threshold;
@@ -67,7 +68,7 @@ export function progressPanel(task, { compact = false, embedded = false, boundar
     : reviewConflict
       ? `<div class="next-action"><strong>本次结果需要核对</strong><span>这个来源已有入库案例，但本次任务的审核记录未与其对应。</span><a class="btn btn-secondary" href="${caseHref}" data-route>查看已入库案例</a></div>`
     : isCaseTask && task.status === "awaiting_review"
-      ? `<div class="next-action"><a class="btn btn-primary" href="${caseHref}">去审核案例</a></div>`
+      ? `<div class="next-action"><a class="btn btn-primary" href="${task.payload?.operator_profile_hint || task.payload?.profile ? caseHref : classificationHref}" data-route>查看并确认分类</a></div>`
       : isCaseTask && task.status === "completed" && caseApproved
         ? `<div class="next-action"><a class="btn btn-primary" href="${caseHref}">查看案例</a></div>`
       : isCaseTask && task.status === "completed"
@@ -90,8 +91,8 @@ export function progressPanel(task, { compact = false, embedded = false, boundar
       <p>${escapeHtml(reviewConflict ? "这个来源已有入库案例，本次结果仍待核对。" : failed && boundaryReview ? "分镜划分尚待人工确认。" : failed && caseApproved ? "历史分析未完成；当前案例已入库。" : failed ? task.error_message || "请稍后重试。" : task.stage || "等待开始")}</p>
       ${isCaseTask && task.payload?.acquisition_provider === "legacy_downloader" && !task.payload?.source_upload
         ? `<p class="task-acquisition-label">视频获取方式：原有下载方式（未使用付费解析）</p>` : ""}</div>
-      <strong>${Number(task.progress || 0)}%</strong></div>
-    <div class="progress-track"><span style="width:${Math.max(0, Math.min(100, Number(task.progress || 0)))}%"></span></div>
+      ${isCaseTask ? "" : `<strong>${Number(task.progress || 0)}%</strong>`}</div>
+    ${isCaseTask ? "" : `<div class="progress-track"><span style="width:${Math.max(0, Math.min(100, Number(task.progress || 0)))}%"></span></div>`}
     <ol class="progress-steps">${stages}</ol>
     ${failureAction}
   </section>`;
@@ -125,14 +126,19 @@ function caseProfileMetadata(item) {
   const labels = { mix: "混剪型", news: "新闻体", hybrid: "混合型", uncertain: "不确定" };
   const submission = labels[item.operator_profile_hint];
   const annotation = labels[item.profile_annotation?.operator_profile_hint];
+  const classification = item.classification?.status === "confirmed" ? labels[item.classification.profile] : null;
   const observed = labels[item.observed_source_profile];
   return [
-    submission ? `提交标记：${submission}` : annotation ? `历史补充：${annotation}` : "",
+    submission ? `提交标记：${submission}` : "",
+    annotation ? `人工标签：${annotation}` : "",
+    classification ? `分类确认：${classification}` : "",
     observed ? `系统观察：${observed}` : "",
   ].filter(Boolean);
 }
 
 function caseIndustryMetadata(item) {
+  if (item.classification?.status === "confirmed" && !item.industry_annotation)
+    return `行业（人工确认）：${item.classification.industry || "未确定"}`;
   const historical = item.industry_annotation?.industry;
   return historical ? `行业（历史补充）：${historical}` : `行业：${item.industry || "待分类"}`;
 }
@@ -155,9 +161,9 @@ function paragraphList(values) {
 export function caseReviewContent(detail, statusPill) {
   const profileLine = caseProfileMetadata(detail).join(" · ") || "未记录结构类型";
   const industryLine = caseIndustryMetadata(detail);
-  const annotationAction = detail.can_annotate_profile && !detail.operator_profile_hint
+  const annotationAction = detail.can_annotate_profile
     ? `<button class="btn btn-secondary" type="button" data-profile-annotation>${detail.profile_annotation ? "修改历史补充" : "补充结构类型"}</button>` : "";
-  const industryAction = detail.can_annotate_industry && detail.industry === "待分类"
+  const industryAction = detail.can_annotate_industry
     ? `<button class="btn btn-secondary" type="button" data-industry-annotation>${detail.industry_annotation ? "修改历史补充行业" : "补充行业"}</button>` : "";
   const development = paragraphList(detail.how_it_tells?.development);
   const reviewMedia = detail.review_media || {};
@@ -208,7 +214,9 @@ export function caseReviewContent(detail, statusPill) {
       : `<section class="panel case-evidence-review"><h2>入库前确认</h2><p>待确认的分析证据暂时无法读取，请勿批准。刷新后仍有问题时请联系管理员。</p></section>`
     : "";
   const reviewDecision = detail.review?.approved
-    ? `<div class="approved-message"><strong>已进入案例库</strong><p>这个案例已经完成审核。</p></div>`
+    ? `<div class="approved-message"><strong>已加入正式案例库</strong><p>这个案例已经完成审核。</p></div>`
+    : detail.classification_required && detail.classification?.status !== "confirmed"
+      ? `<p>请先检查系统推荐的行业与视频结构，确认后继续审核。</p><a class="btn btn-primary" href="/cases/${detail.case_id}/classification" data-route>确认分类</a>`
     : detail.review?.approval_recovery_required
       ? `<p>上次批准尚未完整保存。继续后只会完成原有批准，不会重复审核。</p><button class="btn btn-primary btn-wide" type="button" data-review-action="approve">完成批准</button>`
       : `<p>请对照原视频检查内容理解、叙事顺序与画面拆解。</p>

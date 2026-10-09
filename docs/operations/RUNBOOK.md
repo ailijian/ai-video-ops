@@ -29,7 +29,7 @@ For scoped product/design rules and machine owners, start with the [Knowledge an
 ## CASE_ANALYSIS
 
 - **Goal:** Turn one full public Douyin video URL into a traceable, review-required Case Candidate by orchestrating the current acquisition, transcription, visual evidence, privacy, shot-boundary, storyboard, and Case-build implementations.
-- **Required Inputs:** Full URL containing a stable Douyin video ID; immutable attempt ID; observed profile (`mix` or `news`) and industry label.
+- **Required Inputs:** Full URL containing a stable Douyin video ID and immutable attempt ID. An operator hint (`mix`, `news`, `hybrid`, `uncertain`) or legacy profile may be supplied, but neither is required. Absence means no operator judgment; it does not mean `uncertain` or `mix`. Industry may remain `待分类` pending human classification.
 - **Authority Preconditions:** Duplicate Case IDs and active/review-ready attempts fail closed. Source acquisition does not grant media rights. Every remote-model input passes through the existing Privacy Projection boundary.
 - **Canonical Entry Point:** `ops-pipeline/scripts/case_analysis_v1.py`.
 - **Execution:** `ops-pipeline/.venv/Scripts/python.exe ops-pipeline/scripts/case_analysis_v1.py --source-url <full_douyin_video_url> --attempt-id <immutable_attempt_id> [--profile mix|news] [--industry <label>] [--reanalyze]`
@@ -40,7 +40,7 @@ For scoped product/design rules and machine owners, start with the [Knowledge an
 - **Human Gate:** Required. Successful analysis stops at `awaiting_review`; this operation never calls `approve_case_v1.py`. Low-confidence narration and shot-boundary decisions may be carried as provisional evidence to the final Case Review. Pending narration uses source ASR, not the model's tentative correction; the reviewer must explicitly confirm every pending item against the original source before approval. The decision receipt is bound to the candidate and source-evidence hashes.
 - **Outputs:** Immutable attempt lineage, source-acquisition receipt, existing canonical evidence artifact types, and one review-required `case_v1.json` under the attempt directory.
 - **Stop Conditions:** Duplicate Case/attempt, ambiguous source identity, privacy failure, invalid lineage, invalid/unactionable provisional review evidence, or any canonical stage failure. Unresolved narration/boundary decisions block approval, not generation of a provisional Case candidate.
-- **Next Action:** Human Case Review, then explicit `APPROVE_CASE`; rejection and reanalysis remain separate reviewed attempts.
+- **Next Action:** Smart Intake first offers independent human classification through the [Console companion gateway](../../internal-console/README.md#case-smart-intake), then Human Case Review and explicit `APPROVE_CASE`. Groups organize up to ten resolved videos without replacing tasks or Case lifecycle. Failed-stage retry preserves the attempt and validated checkpoints; an explicit reanalysis remains a separate attempt.
 - **Implementation Status:** `IMPLEMENTED / RECOVERABLE ORCHESTRATION`.
 
 ## APPROVE_CASE

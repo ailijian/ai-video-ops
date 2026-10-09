@@ -58,7 +58,17 @@ def apply_migrations(database_path: Path, migrations_path: Path) -> None:
             version = migration.stem
             if version in applied:
                 continue
-            connection.executescript(migration.read_text(encoding="utf-8"))
+            # executescript implicitly commits an existing transaction. Execute
+            # complete statements individually so DDL, copied historical rows,
+            # and the applied marker share the same rollback boundary.
+            statement = ""
+            for character in migration.read_text(encoding="utf-8"):
+                statement += character
+                if character == ";" and sqlite3.complete_statement(statement):
+                    connection.execute(statement)
+                    statement = ""
+            if statement.strip():
+                connection.execute(statement)
             connection.execute(
                 "INSERT INTO schema_migrations(version) VALUES (?)",
                 (version,),

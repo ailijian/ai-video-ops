@@ -24,6 +24,7 @@ This is a reading route, not a global precedence rule. The Baseline owns system 
 | Console presentation, navigation, language, layout and responsive rules | [Productized UI & Information Architecture](../design/鲸汤%20AI%20视频代运营工作台｜Productized%20UI%20&%20Information%20Architecture%20Freeze%20V1.0.md) | Frozen design target for this scope; does not prove implementation or replace business/security boundaries |
 | Business artifacts and their writers/consumers | [Authority Map](AUTHORITY_MAP_V1.md) | Current ownership route; artifact fields and validation belong to the linked machine sources |
 | Runtime, rollout, recovery and deployment | [RUNBOOK](RUNBOOK.md), [Console](../../internal-console/README.md), [Local Node](../../deploy/local-node/README.md) | Current operating references; implementation, availability and validation evidence remain separate |
+| Case Smart Intake V1.1 controlled deployment | [CSI production deploy procedure](CASE_SMART_INTAKE_V1_1_PRODUCTION_DEPLOY_RUNBOOK.md) | Exact-commit promotion, migration/backup, preflight and real-validation gates; preparation does not establish Production PASS |
 | Portable shared creative Authority | [Creative Authority deployment](../../deploy/creative-authority/README.md) | Source/consumer and immutable manifest route; installation never re-runs approval or copies customer runtime state |
 | Verification execution, isolation and live Authority smoke | [Repository verification](../../tools/README.md), [Pipeline test layers](../../ops-pipeline/tests/README.md), [Console test configuration](../../internal-console/pyproject.toml) | The root runner owns full/affected execution; package configuration owns its checks. Fixtures and test results remain evidence, not production Authority |
 
@@ -39,6 +40,7 @@ Runtime artifact paths in the Authority Map and Artifact Lifecycle are relative 
 | Novel News opportunities, review, export and semantic closure | [Opportunity projection](../../ops-pipeline/scripts/novel_news_opportunity_v1.py), [Novel News](../../ops-pipeline/scripts/novel_news_v1.py); shared novelty rules remain in [Content Quality](../../ops-pipeline/scripts/content_quality_v1.py) |
 | Privacy projection and remote-model boundary | [Privacy Projection](../../ops-pipeline/scripts/privacy_projection_v1.py) |
 | Console persistence and feature availability | [Migrations](../../internal-console/migrations), [Settings](../../internal-console/app/config.py), [Novel News rollout](../../internal-console/app/novel_news_rollout.py) |
+| Smart Case intake groups and independent classification labels | Console [intake admission](../../internal-console/app/case_intake_service.py), [classification companion](../../internal-console/app/case_classification.py), and [usage/API boundaries](../../internal-console/README.md#case-smart-intake); canonical analysis and approval retain their existing owners |
 | Shared Authority release provenance and checksums | [Authority release](../../deploy/creative-authority/authority_release.py) |
 
 ## History and evidence

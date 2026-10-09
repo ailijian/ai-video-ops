@@ -185,6 +185,7 @@ def build_speechless_chain(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     operator_hint: str | None = None,
+    absent_judgment: bool = False,
 ) -> dict[str, Path]:
     speechless_raw = raw_transcription(segments=[])
     speechless_raw["initial_prompt"] = "下载标题不能成为语音事实"
@@ -451,8 +452,7 @@ def build_speechless_chain(
         [
             "--case-id",
             CASE_ID,
-            "--operator-profile-hint" if operator_hint else "--profile",
-            operator_hint or "mix",
+            *([] if absent_judgment else ["--operator-profile-hint" if operator_hint else "--profile", operator_hint or "mix"]),
             "--industry",
             "测试行业",
             "--video",
@@ -654,3 +654,13 @@ def test_no_detected_speech_full_canonical_chain_and_model_accounting(
     assert fingerprint["narration_features"]["speech_evidence_status"] == "not_detected"
     assert fingerprint["narration_features"]["segment_count"] == 0
     assert fingerprint["narration_features"]["total_speech_seconds"] == 0
+
+
+def test_absent_judgment_builds_real_candidate_without_fake_profile(tmp_path, monkeypatch):
+    artifacts = build_speechless_chain(tmp_path, monkeypatch, absent_judgment=True)
+    case = read_json(artifacts["candidate"])
+    assert "operator_profile_hint" not in case
+    assert "analysis_profile" not in case["identity"]
+    assert case["lifecycle"]["status"] == "review_required"
+    assert case["lifecycle"]["approved"] is False
+    assert not case.get("compatible_generation_profiles")

@@ -105,18 +105,20 @@ def test_read_never_backfills_or_copies_system_observation(client, settings):
     assert not annotation_path(settings).exists()
 
 
-def test_new_submission_hint_cannot_be_overridden_even_by_existing_annotation(client, settings):
+def test_new_submission_hint_is_preserved_when_human_label_is_corrected(client, settings):
     csrf = login_and_change_password(client)
-    request = body(client)
-    assert client.post(URL, headers={"X-CSRF-Token": csrf}, json=request).status_code == 200
     write_fixture_case(settings, operator_profile_hint="mix", profile_analysis={"observed_source_profile": "hybrid"})
-    before = {path: path.read_bytes() for path in (*paths(settings), annotation_path(settings))}
+    before = {path: path.read_bytes() for path in paths(settings)}
     detail = client.get(f"/api/cases/{CASE_ID}").json()
     assert detail["operator_profile_hint"] == "mix"
     assert detail["observed_source_profile"] == "hybrid"
     assert detail["profile_annotation"] is None
-    assert detail["can_annotate_profile"] is False
-    assert client.post(URL, headers={"X-CSRF-Token": csrf}, json=request).status_code == 409
+    assert detail["can_annotate_profile"] is True
+    response = client.post(URL, headers={"X-CSRF-Token": csrf}, json=body(client, "news"))
+    assert response.status_code == 200
+    assert response.json()["case"]["operator_profile_hint"] == "mix"
+    assert response.json()["case"]["observed_source_profile"] == "hybrid"
+    assert response.json()["case"]["profile_annotation"]["operator_profile_hint"] == "news"
     for path, original in before.items():
         assert path.read_bytes() == original
 

@@ -835,6 +835,23 @@ def approved_case_attempt_id(settings: Settings, case_id: str) -> str | None:
     return str(attempt_id) if attempt_id else None
 
 
+def case_cover_path(settings: Settings, case_id: str) -> Path | None:
+    case_path, _ = _find_case_path(settings, case_id)
+    ref = (_read_json(case_path).get("source_evidence") or {}).get("cover") or {}
+    if not ref.get("path") or not ref.get("sha256"):
+        return None
+    path = Path(ref["path"])
+    if not path.is_absolute():
+        path = settings.pipeline_root / path
+    path = path.resolve()
+    allowed = [(settings.repo_root / "douyin-downloader" / "Downloaded").resolve(),
+               (settings.pipeline_root / "data").resolve()]
+    if (not any(path.is_relative_to(root) for root in allowed) or not path.is_file()
+            or path.suffix.lower() not in {".jpg", ".jpeg", ".png", ".webp"} or _sha256(path) != ref["sha256"]):
+        return None
+    return path
+
+
 def case_media_path(settings: Settings, case_id: str) -> Path:
     case_path, _ = _find_case_path(settings, case_id)
     case = _read_json(case_path)
@@ -955,14 +972,6 @@ def _validate_annotation_case(case_path: Path, case_id: str, *, field: str = "pr
         raise CanonicalOperationError(
             "CASE_PROFILE_ANNOTATION_BLOCKED", "案例审批记录校验未通过。", "请检查审批记录后刷新，不要修改已批准案例。"
         )
-    if field == "profile" and case.get("operator_profile_hint"):
-        raise CanonicalOperationError(
-            "CASE_PROFILE_ANNOTATION_BLOCKED", "这个案例已有提交标记。", "请使用原有提交标记，无需历史补充。"
-        )
-    if field == "industry" and str((case.get("identity") or {}).get("industry") or "").strip().lower() not in {"", "unknown", "待分类"}:
-        raise CanonicalOperationError(
-            "CASE_INDUSTRY_ANNOTATION_BLOCKED", "这个案例已有行业记录。", "请使用原有行业记录，无需历史补充。"
-        )
     return digest
 
 
@@ -974,7 +983,7 @@ def _case_profile_annotation_projection(settings: Settings, projection: dict[str
         "can_annotate_profile": False,
     }
     # Submission metadata remains primary; annotations never fill that field.
-    if projection["status"] != "approved" or projection.get("operator_profile_hint"):
+    if projection["status"] != "approved":
         return result
     case_id = projection["case_id"]
     case_path, annotation_path = _profile_annotation_paths(settings, case_id)
@@ -1061,7 +1070,7 @@ def _case_industry_annotation_projection(settings: Settings, projection: dict[st
         "can_annotate_industry": False,
     }
     # A supplement never replaces the Case's canonical industry or its fingerprint.
-    if projection["status"] != "approved" or projection.get("industry") != "待分类":
+    if projection["status"] != "approved":
         return result
     case_id = projection["case_id"]
     case_path, annotation_path = _industry_annotation_paths(settings, case_id)

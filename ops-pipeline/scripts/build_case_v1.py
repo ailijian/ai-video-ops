@@ -175,8 +175,8 @@ def main() -> None:
         help="Allow only unresolved narration/shot decisions in a provisional, human-review-required Case candidate.",
     )
     args = parser.parse_args()
-    if bool(args.profile) == bool(args.operator_profile_hint):
-        parser.error("Provide exactly one of --profile or --operator-profile-hint")
+    if args.profile and args.operator_profile_hint:
+        parser.error("Provide at most one of --profile or --operator-profile-hint")
 
     case_id = args.case_id
 

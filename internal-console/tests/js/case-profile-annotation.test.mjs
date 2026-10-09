@@ -10,18 +10,18 @@ const legacy = {
 const pill = () => "已入库";
 assert.match(caseCard(legacy, pill), /行业：待分类/);
 assert.match(caseCard({ ...legacy, industry: "本地生活" }, pill), /行业：本地生活/);
-assert.doesNotMatch(caseCard(legacy, pill), /提交标记：|历史补充：/);
+assert.doesNotMatch(caseCard(legacy, pill), /提交标记：|人工标签：/);
 assert.match(caseReviewContent(legacy, pill), /补充结构类型/);
 for (const [hint, label] of Object.entries({ mix: "混剪型", news: "新闻体", hybrid: "混合型", uncertain: "不确定" })) {
   const annotated = { ...legacy, profile_annotation: { operator_profile_hint: hint }, observed_source_profile: "mix" };
   for (const render of [caseCard, caseReviewContent]) {
     const html = render(annotated, pill);
-    assert.ok(html.includes(`历史补充：${label}`));
+    assert.ok(html.includes(`人工标签：${label}`));
     assert.match(html, /系统观察：混剪型/);
     assert.doesNotMatch(html, /提交标记：|approved_case_sha256|annotation_grants/);
     const submitted = render({ ...annotated, operator_profile_hint: "news" }, pill);
     assert.match(submitted, /提交标记：新闻体/);
-    assert.doesNotMatch(submitted, /历史补充：|data-profile-annotation/);
+    assert.match(submitted, /人工标签：/);
   }
 }
 assert.doesNotMatch(caseReviewContent({ ...legacy, can_annotate_profile: false }, pill), /data-profile-annotation/);
@@ -70,6 +70,6 @@ decision = { confirmed: true, profileHint: "news", reason: "人工选择" };
 await handler({ currentTarget: button });
 assert.equal(calls[1].url, `/api/cases/${legacy.case_id}/profile-annotation`);
 assert.equal(calls.length, 3, "save rereads canonical detail projection");
-assert.match(app.innerHTML, /历史补充：新闻体/);
+assert.match(app.innerHTML, /人工标签：新闻体/);
 views.dispose();
 console.log("CASE_PROFILE_ANNOTATION_UI_PASS");

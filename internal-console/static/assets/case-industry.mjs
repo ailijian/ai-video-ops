@@ -4,11 +4,11 @@ export const CASE_INDUSTRIES = [
 
 export const CUSTOM_INDUSTRY = "__custom__";
 
-export function industryOptions(value = "") {
-  const choice = CASE_INDUSTRIES.includes(value) ? value : value ? CUSTOM_INDUSTRY : "";
+export function industryOptions(value = "", { uncertainValue = null } = {}) {
+  const choice = uncertainValue && value === uncertainValue ? uncertainValue : CASE_INDUSTRIES.includes(value) ? value : value ? CUSTOM_INDUSTRY : "";
   return `<option value="" ${choice ? "" : "selected"}>选择行业</option>${CASE_INDUSTRIES.map((item) =>
     `<option value="${item}" ${choice === item ? "selected" : ""}>${item}</option>`
-  ).join("")}<option value="${CUSTOM_INDUSTRY}" ${choice === CUSTOM_INDUSTRY ? "selected" : ""}>自定义</option>`;
+  ).join("")}<option value="${CUSTOM_INDUSTRY}" ${choice === CUSTOM_INDUSTRY ? "selected" : ""}>自定义</option>${uncertainValue ? `<option value="${uncertainValue}" ${choice === uncertainValue ? "selected" : ""}>暂不确定</option>` : ""}`;
 }
 
 export function industryValue(select, customInput) {

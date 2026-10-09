@@ -58,6 +58,11 @@ def test_source_input_fails_closed_for_ambiguous_or_unidentified_input(raw, code
     "https://example.com/video/7999999999999999901",
     "http://www.douyin.com/video/7999999999999999901",
     "http://127.0.0.1/video/7999999999999999901",
+    "https://169.254.169.254/latest/meta-data/",
+    "https://10.0.0.1/",
+    "https://[::1]/",
+    "https://v.douyin.com@127.0.0.1/",
+    "https://v.douyin.com.evil.example/",
     "file:///etc/passwd",
     "data:text/plain,hello",
 ])
@@ -141,11 +146,12 @@ def test_account_share_link_rejected_before_case_task_creation(client: TestClien
     assert client.get("/api/tasks").json()["tasks"] == before
 
 
-def test_short_link_dns_private_address_is_rejected(monkeypatch):
+@pytest.mark.parametrize("address", ["127.0.0.1", "10.0.0.1", "169.254.169.254", "::1", "fd00::1"])
+def test_short_link_dns_private_address_is_rejected(monkeypatch, address):
     import app.douyin_source_input as resolver
 
     monkeypatch.setattr(resolver.socket, "getaddrinfo", lambda *_args, **_kwargs: [
-        (socket.AF_INET, socket.SOCK_STREAM, 6, "", ("127.0.0.1", 443)),
+        (socket.AF_INET, socket.SOCK_STREAM, 6, "", (address, 443)),
     ])
     with pytest.raises(SourceInputError) as error:
         resolver._public_address("v.douyin.com")

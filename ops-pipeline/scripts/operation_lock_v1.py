@@ -66,11 +66,8 @@ def operation_lock(
     acquired = False
 
     try:
-        handle.seek(0, os.SEEK_END)
-        if handle.tell() == 0:
-            handle.write(b"\0")
-            handle.flush()
-
+        # Windows byte locks may extend past EOF. Initialize only while owning
+        # the exclusive lock; an unlocked first-byte write races first users.
         deadline = time.monotonic() + timeout_seconds
         while True:
             try:
@@ -89,6 +86,10 @@ def operation_lock(
                 time.sleep(poll_seconds)
 
         if not shared:
+            handle.seek(0, os.SEEK_END)
+            if handle.tell() == 0:
+                handle.write(b"\0")
+                handle.flush()
             metadata = {
                 "schema_version": LOCK_SCHEMA_VERSION,
                 "key": key,

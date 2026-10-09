@@ -59,11 +59,11 @@ def test_add_case_is_one_continuous_surface_and_progress_moves_to_durable_task_r
     case_components = read_asset("case-components.js")
 
     assert 'class="work-surface add-case-surface"' in case_views
-    assert 'data-case-input-panel' in case_views
+    assert 'id="case-url-form"' in case_views
     assert 'data-live-progress data-embedded="true"' not in case_views
-    assert 'navigate(`/tasks/${encodeURIComponent(result.task.task_id)}`, true)' in case_views
-    assert 'navigate(`/tasks/${encodeURIComponent(result.existing_task.task_id)}`, true)' in case_views
-    assert "查看当前进度" in case_views
+    assert 'navigate(`/case-intake/${encodeURIComponent(group.group_id)}`)' in case_views
+    assert '/api/case-intake/groups' in case_views
+    assert "可以离开当前页面，解析任务会继续进行。" in case_views
     assert "批准后的案例只用于内部参考，不会获得原视频素材使用权。" in case_views
     assert "案例使用边界" not in case_views
     assert "embedded = false" in case_components

@@ -87,18 +87,22 @@ def test_legacy_industry_annotation_is_attributed_and_does_not_edit_approved_art
     assert hashlib.sha256(case_path.read_bytes()).hexdigest() == case_sha
 
 
-def test_known_industry_is_primary_and_cannot_be_overridden(client, settings):
+def test_known_industry_can_be_relabelled_without_overriding_case(client, settings):
     csrf = login_and_change_password(client)
     detail = client.get(f"/api/cases/{CASE_ID}").json()
     assert detail["industry"] == "餐饮"
     assert detail["industry_annotation"] is None
-    assert detail["can_annotate_industry"] is False
+    assert detail["can_annotate_industry"] is True
+    before = {path: path.read_bytes() for path in paths(settings)[:3]}
     response = client.post(URL, headers={"X-CSRF-Token": csrf}, json={
-        "industry": "零售", "approved_case_sha256": "0" * 64,
+        "industry": "零售", "approved_case_sha256": detail["approved_case_sha256"],
         "expected_annotation_sha256": None,
     })
-    assert response.status_code == 409
-    assert not paths(settings)[3].exists()
+    assert response.status_code == 200
+    assert response.json()["case"]["industry"] == "餐饮"
+    assert response.json()["case"]["industry_annotation"]["industry"] == "零售"
+    for path, content in before.items():
+        assert path.read_bytes() == content
 
 
 def test_industry_annotation_requires_fresh_version(client, settings):

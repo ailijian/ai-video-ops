@@ -1,34 +1,22 @@
-import assert from "node:assert/strict";
-import { submitCaseBatch } from "../../static/assets/case-batch-submit.mjs";
-
-const items = ["1", "2", "3", "4"].map((url) => ({ url, hint: "uncertain", industry: `行业${url}` }));
-const submitted = [];
-const progress = [];
-const capacityError = Object.assign(new Error("稍后重试"), { detail: { code: "GPU_PENDING_LIMIT_REACHED" }, status: 429 });
-const result = await submitCaseBatch(items, async (item) => {
-  submitted.push(item.url);
-  if (item.url === "2") return { duplicate: true, state: "approved", case_id: "2" };
-  if (item.url === "4") throw capacityError;
-  return { duplicate: false, task: { task_id: `case-${item.url}` } };
-}, (item) => progress.push(item));
-assert.deepEqual(submitted, ["1", "2", "3", "4"]);
-assert.deepEqual(result.pending.map((item) => item.url), ["4"]);
-assert.equal(result.pending[0].industry, "行业4");
-assert.equal(result.results.length, 4);
-assert.equal(progress.length, 4);
-assert.equal(result.results[1].response.state, "approved");
-
-const stopped = await submitCaseBatch(items, async (item) => {
-  if (item.url === "2") throw capacityError;
-  return { duplicate: false, task: { task_id: `case-${item.url}` } };
-});
-assert.deepEqual(stopped.pending.map((item) => item.url), ["2", "3", "4"]);
-
-const transientError = Object.assign(new Error("短链接暂不可用"), { detail: { code: "CASE_SOURCE_RESOLUTION_FAILED" } });
-const continued = await submitCaseBatch(items.slice(0, 3), async (item) => {
-  if (item.url === "2") throw transientError;
-  return { duplicate: false, task: { task_id: `case-${item.url}` } };
-});
-assert.deepEqual(continued.pending.map((item) => item.url), ["2"]);
-assert.equal(continued.results.length, 3);
-console.log("case batch submit PASS");
+import assert from 'node:assert/strict';
+import { intakeItemState, intakeCounts, intakeStage } from '../../static/assets/case-batch-submit.mjs';
+const items = [
+ {state:'pending'},
+ {state:'linked',task:{status:'running',stage:'分析画面'}},
+ {state:'linked',task:{status:'failed'}},
+ {state:'linked',case:{status:'awaiting_review'},classification:{status:'needs_confirmation'}},
+ {state:'linked',case:{status:'awaiting_review'},classification:{status:'confirmed',human:{industry:'餐饮',profile:'mix'}}},
+ {state:'linked',case:{status:'approved'},task:{status:'failed'}},
+ {state:'input_duplicate'},
+];
+assert.deepEqual(intakeCounts(items),{total:6,analyzing:2,needs_confirmation:1,confirmed:1,failed:1,completed:0,approved:1,duplicates:1});
+assert.equal(intakeCounts([{task:{status:'completed'}}]).approved,0,'execution completion is not admission to the Case library');
+assert.equal(intakeItemState(items[5]),'approved','canonical approval wins over historical failed execution');
+assert.equal(intakeStage(items[0]),'读取链接 / 等待入队');
+assert.equal(intakeStage(items[1]),'分析视频内容');
+assert.equal(intakeStage(items[3]),'等待人工确认');
+assert.equal(intakeStage(items[4]),'分类已确认');
+assert.equal(intakeStage(items[5]),'已加入正式案例库');
+assert.equal(intakeStage(items[6]),'本批重复，已合并');
+for(const item of items) assert.doesNotMatch(intakeStage(item), /%|剩余.*秒/);
+console.log('CASE_INTAKE_BATCH_STATES_PASS');

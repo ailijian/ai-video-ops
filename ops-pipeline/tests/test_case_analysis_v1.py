@@ -827,3 +827,19 @@ def test_approval_does_not_substitute_local_media_for_acquisition_lineage(
     assert provenance["acquisition_lineage_valid"] is False
     assert provenance["traceable"] is False
     assert "Source acquisition lineage is missing." in errors
+
+def test_missing_operator_judgment_is_resumable_and_distinct_from_uncertain(tmp_path):
+    repo, pipeline, downloader = roots(tmp_path)
+    kwargs = dict(pipeline_root=pipeline, repo_root=repo, downloader_root=downloader,
+                  source_url='https://www.douyin.com/video/7682442957798161531',
+                  attempt_id='attempt_smart_001', profile=None, industry='待分类', reanalyze=False)
+    operation = module.Orchestrator(**kwargs)
+    assert 'operator_profile_hint' not in operation.state['request']
+    assert 'profile' not in operation.state['request']
+    operation.start_stage('acquire')
+    operation.complete_stage('acquire')
+    resumed = module.Orchestrator(**kwargs)
+    assert resumed.stage_record('acquire')['status'] == 'completed'
+    with pytest.raises(module.CaseAnalysisError) as error:
+        module.Orchestrator(**kwargs, operator_profile_hint='uncertain')
+    assert error.value.code == 'ATTEMPT_IDENTITY_MISMATCH'

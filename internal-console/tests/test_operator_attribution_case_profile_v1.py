@@ -20,16 +20,17 @@ from app.task_service import create_case_task
 from conftest import login_and_change_password
 
 
-def test_new_case_requires_explicit_hint(client):
+def test_new_case_preserves_absent_operator_judgment(client):
     csrf = login_and_change_password(client)
     response = client.post(
         "/api/cases/analyze",
         headers={"X-CSRF-Token": csrf},
         json={"url": "https://www.douyin.com/video/7999999999999999911"},
     )
-    assert response.status_code == 422
-    assert response.json()["detail"]["code"] == "CASE_OPERATOR_PROFILE_HINT_REQUIRED"
-    assert client.get("/api/tasks").json()["tasks"] == []
+    assert response.status_code == 200
+    assert "operator_profile_hint" not in response.json()["task"]["payload"]
+    assert "profile" not in response.json()["task"]["payload"]
+    assert len(client.get("/api/tasks").json()["tasks"]) == 1
 
 
 def test_activity_api_filter_and_shared_workspace(client, settings):
@@ -113,7 +114,7 @@ def test_legacy_case_task_does_not_infer_operator_hint(settings):
     assert case_reanalysis_hint(settings.database_path, task["subject_ref"]) is None
 
 
-def test_legacy_review_reanalysis_rejects_before_mutation(client, monkeypatch):
+def test_legacy_review_reanalysis_requires_source_before_mutation(client, monkeypatch):
     csrf = login_and_change_password(client)
     monkeypatch.setattr(
         main_module, "get_case_detail", lambda *_: {"operator_profile_hint": None}
@@ -131,7 +132,7 @@ def test_legacy_review_reanalysis_rejects_before_mutation(client, monkeypatch):
         json={"decision": "reanalyze", "reason": "重新检查"},
     )
     assert response.status_code == 422
-    assert response.json()["detail"]["code"] == "CASE_OPERATOR_PROFILE_HINT_REQUIRED"
+    assert response.json()["detail"]["code"] == "CASE_SOURCE_URL_MISSING"
 
 
 def test_original_actor_and_activity_filter_use_existing_task_truth(settings):

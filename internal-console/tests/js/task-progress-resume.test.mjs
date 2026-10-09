@@ -49,7 +49,7 @@ doc.dispatchEvent(new Event("visibilitychange"));
 assert.equal(calls, 3);
 
 const waiting = progressPanel({ task_type: "case_analysis", status: "awaiting_review", progress: 100, subject_ref: "7999999999999999901" });
-assert.match(waiting, /去审核案例/);
+assert.match(waiting, /查看并确认分类/);
 assert.match(waiting, /\/cases\/7999999999999999901/);
 const completed = progressPanel({ task_type: "case_analysis", status: "completed", progress: 100, subject_ref: "7999999999999999901", current_case_status: "approved" });
 assert.match(completed, /查看案例/);
@@ -67,7 +67,7 @@ assert.match(newerProgress, /\/tasks\/new-task/);
 assert.doesNotMatch(newerProgress, /retry_task=/);
 const reviewConflict = progressPanel({ task_id: "new-task", task_type: "case_analysis", status: "awaiting_review", progress: 100, subject_ref: "7999999999999999901", current_case_status: "approved" });
 assert.match(reviewConflict, /本次分析待核对/);
-assert.doesNotMatch(reviewConflict, /去审核案例/);
+assert.doesNotMatch(reviewConflict, /查看并确认分类/);
 const rejectedTask = progressPanel({ task_id: "rejected-task", task_type: "case_analysis", status: "completed", progress: 100, stage: "不收录", subject_ref: "7999999999999999901" });
 assert.match(rejectedTask, /本次审核已结束/);
 assert.doesNotMatch(rejectedTask, /案例已入库/);

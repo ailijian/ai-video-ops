@@ -211,6 +211,15 @@ def operator_activity(
             )
 
     data = pipeline_root / "data"
+    for path in data.glob("case_analysis_attempts/*/*/case_classification_review_v1.json"):
+        record = _read_json(path)
+        if not record or record.get("schema_version") != "case-classification-review-v1.0":
+            continue
+        for choice in [*record.get("previous_human_choices", []), record.get("human") or {}]:
+            add("确认案例分类", str(record.get("case_id") or path.parent.parent.name),
+                choice.get("confirmed_at"),
+                {"user_id": choice.get("confirmed_by_user_id"), "phone": choice.get("confirmed_by_phone")},
+                "confirmed", path.name)
     for folder, filename, kind in (
         ("generation_requests", "generation_request_v1.json", "创建 Mix 内容"),
         ("news_deliveries", "news_delivery_request_v1.json", "创建 News 内容"),

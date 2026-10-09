@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import os
+import json
 import threading
 import time
 from collections import defaultdict, deque
 from collections.abc import Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
+from datetime import datetime, timezone
 from typing import Any
 from typing import Literal
 
@@ -35,6 +37,7 @@ from .auth_service import (
 from .background_task_service import BackgroundTaskRunner, create_background_task
 from .canonical_gateway import (
     CanonicalOperationError,
+    case_cover_path,
     case_analysis_capability,
     find_duplicate_case,
     resolve_case_source_duplicate,
@@ -66,6 +69,10 @@ from .customer_task_service import (
     mark_customer_task_reviewed,
 )
 from .config import Settings
+from .case_classification import classification_state, classification_summary, confirm_classification
+from .case_intake_service import create_group, dispatch_groups, get_group, list_groups
+from .database import transaction
+from .douyin_source_input import DouyinSourceInput
 from .database import apply_migrations
 from .douyin_source_input import SourceInputError, resolve_douyin_source_input
 from .operator_projection import case_reanalysis_hint, operator_activity, original_task_actor, persona_approval_actor
@@ -73,6 +80,7 @@ from .operation_lock import authority_mutation_barrier, authority_operation_lock
 from .task_service import (
     CaseTaskRunner,
     create_case_task,
+    ensure_task_capacity,
     find_active_case_task,
     get_task,
     list_tasks,
@@ -217,6 +225,19 @@ class CaseAnalysisRequest(BaseModel):
     reanalyze: bool = False
     reason: str = Field(default="", max_length=1000)
     source_upload_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
+
+
+class CaseIntakeGroupRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=40000)
+    client_request_id: str = Field(pattern=r"^[a-f0-9-]{32,36}$")
+    source_upload_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
+
+
+class CaseClassificationRequest(BaseModel):
+    industry: str | None = Field(default=None, max_length=30)
+    profile: Literal["mix", "news", "hybrid", "uncertain"]
+    candidate_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    expected_confirmation_sha256: str | None = Field(..., pattern=r"^[0-9a-f]{64}$")
 
 
 class CaseEvidenceDecision(BaseModel):
@@ -767,6 +788,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             "CASE_APPROVAL_RECOVERY_REQUIRED",
             "CASE_PROFILE_ANNOTATION_BLOCKED",
             "CASE_INDUSTRY_ANNOTATION_BLOCKED",
+            "CASE_CLASSIFICATION_CONFLICT",
+            "CASE_CLASSIFICATION_INVALID",
             "CONTENT_PLAN_SOURCE_COVERAGE_UNSUPPORTED",
             "PERSONA_LACKS_PATTERN_CAPABILITY",
             "NO_APPROVED_PATTERN_FOR_PROFILE",
@@ -2567,6 +2590,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         projected = list_cases(settings)
         for case in projected:
             case["submitted_by"] = original_task_actor(settings.database_path, "case_analysis", case["case_id"])
+            case["classification"] = classification_summary(settings, case["case_id"])
         return {"cases": projected, "analysis": case_capability()}
 
     @app.post("/api/cases/source-files")
@@ -2605,12 +2629,12 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             # Serialize claim with orphan cleanup. Task insertion separately
             # enforces one task per upload and the existing canonical case identity.
             with operation_lock(settings.pipeline_root, f"source-upload:{payload.source_upload_id}"):
-                return submit_case_analysis(payload, session)
-        return submit_case_analysis(payload, session)
+                return submit_case_analysis(payload, int(session.user["id"]))
+        return submit_case_analysis(payload, int(session.user["id"]))
 
-    def submit_case_analysis(payload: CaseAnalysisRequest, session: SessionContext) -> dict[str, Any]:
+    def submit_case_analysis(payload: CaseAnalysisRequest, actor_user_id: int, source_input=None) -> dict[str, Any]:
         try:
-            source = resolve_douyin_source_input(payload.url)
+            source = source_input or resolve_douyin_source_input(payload.url)
         except SourceInputError as exc:
             raise HTTPException(
                 status_code=422,
@@ -2652,6 +2676,16 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 ),
             }
 
+        if duplicate is None:
+            with transaction(settings.database_path) as connection:
+                previous = connection.execute(
+                    "SELECT task_id,status FROM tasks WHERE task_type='case_analysis' AND subject_ref=? ORDER BY created_at DESC,task_id DESC LIMIT 1",
+                    (case_id,),
+                ).fetchone()
+            if previous and previous["status"] == "failed":
+                duplicate = {"duplicate": True, "state": "failed", "case_id": case_id,
+                             "attempt_id": previous["task_id"], "message": "这个视频已有失败任务，请恢复原任务。"}
+
         hint = payload.operator_profile_hint
         if payload.reanalyze and hint is None:
             hint = case_reanalysis_hint(settings.database_path, case_id)
@@ -2661,22 +2695,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 except CanonicalOperationError:
                     pass
 
-        def require_hint() -> Literal["mix", "news", "hybrid", "uncertain"]:
-            if hint is None:
-                raise HTTPException(
-                    status_code=422,
-                    detail=error_detail(
-                        "CASE_OPERATOR_PROFILE_HINT_REQUIRED",
-                        "请选择视频结构类型。",
-                        "请选择混剪型、新闻体、混合型或不确定后再提交。",
-                    ),
-                )
-            return hint
-
         def source_upload() -> dict | None:
             if not payload.source_upload_id:
                 return None
-            return validate_for_submission(settings, payload.source_upload_id, normalized_url, int(session.user["id"]))
+            return validate_for_submission(settings, payload.source_upload_id, normalized_url, actor_user_id)
 
         def require_media_provider() -> None:
             if not payload.source_upload_id and settings.case_acquisition_provider == "upload_only":
@@ -2753,14 +2775,14 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 settings.database_path,
                 source_url=normalized_url,
                 case_id=case_id,
-                operator_profile_hint=require_hint(),
+                operator_profile_hint=hint,
                 industry=selected_case_industry(payload.industry, str(prior_industry)),
                 source_upload=source_upload(),
                 acquisition_provider=settings.case_acquisition_provider,
                 provider_source_url=provider_source_url,
                 reanalyze=True,
                 reason=reason,
-                created_by_user_id=int(session.user["id"]),
+                created_by_user_id=actor_user_id,
                 queue_max=settings.task_queue_max,
                 gpu_pending_per_user_max=settings.gpu_pending_per_user_max,
             )
@@ -2779,12 +2801,12 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             settings.database_path,
             source_url=normalized_url,
             case_id=case_id,
-            operator_profile_hint=require_hint(),
+            operator_profile_hint=hint,
             industry=selected_case_industry(payload.industry),
             source_upload=source_upload(),
             acquisition_provider=settings.case_acquisition_provider,
             provider_source_url=provider_source_url,
-            created_by_user_id=int(session.user["id"]),
+            created_by_user_id=actor_user_id,
             queue_max=settings.task_queue_max,
             gpu_pending_per_user_max=settings.gpu_pending_per_user_max,
         )
@@ -2797,6 +2819,86 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             "next_action": "请前往任务进度查看；离开页面后任务会继续。",
         }
 
+    intake_dispatch_lock = threading.RLock()
+
+    def submit_group_item(item):
+        source = DouyinSourceInput("full_url", item["source_url"], item["canonical_url"], item["case_id"])
+        payload = CaseAnalysisRequest(url=item["canonical_url"], source_upload_id=item["source_upload_id"])
+        if payload.source_upload_id:
+            with operation_lock(settings.pipeline_root, f"source-upload:{payload.source_upload_id}"):
+                return submit_case_analysis(payload, item["created_by_user_id"], source)
+        return submit_case_analysis(payload, item["created_by_user_id"], source)
+
+    def dispatch_intake():
+        with intake_dispatch_lock:
+            dispatch_groups(settings.database_path, submit_group_item)
+
+    task_runner.intake_dispatch = dispatch_intake
+    app.state.intake_dispatch = dispatch_intake
+
+    def intake_group_projection(group_id):
+        group = get_group(settings.database_path, group_id)
+        if group is None:
+            raise HTTPException(404, detail=error_detail("CASE_GROUP_NOT_FOUND", "没有找到这批解析记录。", "请从案例列表重新进入。"))
+        for item in group["items"]:
+            if item["task"]:
+                item["task"] = project_case_task_statuses([item["task"]])[0]
+            item["case"] = None
+            item["classification"] = None
+            if item["case_id"] and item["state"] != "input_duplicate":
+                try:
+                    detail = get_case_detail(settings, item["case_id"])
+                    item["case"] = {k: detail.get(k) for k in ("case_id", "title", "duration_seconds", "platform", "status", "source_url")}
+                    item["case"]["cover_url"] = f"/api/cases/{item['case_id']}/cover" if case_cover_path(settings, item["case_id"]) else None
+                    item["classification"] = classification_state(settings, item["case_id"])
+                except CanonicalOperationError as exc:
+                    if exc.code != "CASE_NOT_FOUND":
+                        item["message"] = exc.message
+                        item["error_code"] = exc.code
+        return group
+
+    @app.post("/api/case-intake/groups")
+    def create_intake_group(payload: CaseIntakeGroupRequest,
+                            session: SessionContext = Depends(require_console_access),
+                            x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")):
+        require_csrf(session, x_csrf_token)
+        try:
+            group_id = create_group(settings.database_path, client_request_id=payload.client_request_id,
+                                    user_id=int(session.user["id"]), raw=payload.text,
+                                    resolve=resolve_douyin_source_input, source_upload_id=payload.source_upload_id)
+        except SourceInputError as exc:
+            raise HTTPException(422, detail=error_detail(exc.code, exc.message, exc.message)) from exc
+        dispatch_intake()
+        return intake_group_projection(group_id)
+
+    @app.get("/api/case-intake/groups")
+    def intake_groups(_: SessionContext = Depends(require_console_access)):
+        return {"groups": list_groups(settings.database_path)}
+
+    @app.get("/api/case-intake/groups/{group_id}")
+    def intake_group(group_id: str, _: SessionContext = Depends(require_console_access)):
+        return intake_group_projection(group_id)
+
+    @app.get("/api/cases/{case_id}/classification")
+    def case_classification(case_id: str, _: SessionContext = Depends(require_console_access)):
+        return classification_state(settings, case_id)
+
+    @app.get("/api/cases/{case_id}/cover")
+    def case_cover(case_id: str, _: SessionContext = Depends(require_console_access)):
+        path = case_cover_path(settings, case_id)
+        if path is None:
+            raise HTTPException(404, detail="没有可用封面。")
+        return FileResponse(path, headers={"Cache-Control": "private, no-store"})
+
+    @app.post("/api/cases/{case_id}/classification")
+    def confirm_case_classification(case_id: str, payload: CaseClassificationRequest,
+                                    session: SessionContext = Depends(require_console_access),
+                                    x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")):
+        require_csrf(session, x_csrf_token)
+        return locked_authority_call("case", case_id, confirm_classification, settings, case_id,
+                                     **payload.model_dump(), actor_user_id=int(session.user["id"]),
+                                     actor_phone=str(session.user["phone"]))
+
     @app.get("/api/cases/{case_id}")
     def case_detail(
         case_id: str,
@@ -2804,6 +2906,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     ) -> dict[str, Any]:
         detail = get_case_detail(settings, case_id)
         detail["submitted_by"] = original_task_actor(settings.database_path, "case_analysis", case_id)
+        detail["classification"] = classification_summary(settings, case_id)
+        intake_task = get_task(settings.database_path, str(detail["review"].get("attempt_id") or ""))
+        detail["classification_required"] = bool(intake_task and not intake_task["payload"].get("operator_profile_hint")
+            and not intake_task["payload"].get("profile") and not detail["review"].get("approved"))
         return detail
 
     @app.get("/api/cases/{case_id}/media")
@@ -2897,15 +3003,6 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             reanalysis_hint = payload.operator_profile_hint or case_reanalysis_hint(settings.database_path, case_id)
             if reanalysis_hint is None:
                 reanalysis_hint = reanalysis_detail.get("operator_profile_hint")
-            if reanalysis_hint is None:
-                raise HTTPException(
-                    status_code=422,
-                    detail=error_detail(
-                        "CASE_OPERATOR_PROFILE_HINT_REQUIRED",
-                        "历史案例没有提交时的结构类型记录。",
-                        "请先明确选择视频结构类型，再重新分析。",
-                    ),
-                )
             reanalysis_source_url = reanalysis_detail.get("source_url")
             if not reanalysis_source_url:
                 raise HTTPException(422, detail=error_detail(
@@ -2924,6 +3021,19 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 ))
         reviewer = str(session.user["phone"])
         if payload.decision == "approve":
+            def approve_classified_candidate(settings, case_id, **kwargs):
+                with transaction(settings.database_path) as connection:
+                    latest = connection.execute("SELECT task_id FROM tasks WHERE task_type='case_analysis' AND subject_ref=? ORDER BY created_at DESC,task_id DESC LIMIT 1", (case_id,)).fetchone()
+                latest_task = get_task(settings.database_path, latest["task_id"]) if latest else None
+                if latest_task and not (latest_task["payload"].get("operator_profile_hint") or latest_task["payload"].get("profile")):
+                    current = get_case_detail(settings, case_id)
+                    intake_task = get_task(settings.database_path, str(current["review"].get("attempt_id") or ""))
+                    if (intake_task and not intake_task["payload"].get("operator_profile_hint")
+                            and not intake_task["payload"].get("profile")
+                            and not current["review"].get("approval_recovery_required")
+                            and classification_state(settings, case_id)["status"] != "confirmed"):
+                        raise HTTPException(409, detail=error_detail("CASE_CLASSIFICATION_REQUIRED", "请先检查并确认分类。", "确认分类后继续案例审核；分类确认不会批准入库。"))
+                return approve_case_candidate(settings, case_id, **kwargs)
             approval_kwargs: dict[str, Any] = {
                 "reviewer": reviewer,
                 "note": reason or "人工已对照原视频完成结构研究审核。",
@@ -2934,7 +3044,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             detail = locked_authority_call(
                 "case",
                 case_id,
-                approve_case_candidate,
+                approve_classified_candidate,
                 settings,
                 case_id,
                 **approval_kwargs,
@@ -3014,6 +3124,47 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             if task["task_type"] == "case_analysis"
             and projected_task.get("current_case_status") != "approved" else None,
         }
+
+    @app.post("/api/tasks/{task_id}/retry")
+    def retry_case_task(task_id: str, session: SessionContext = Depends(require_console_access),
+                        x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")):
+        require_csrf(session, x_csrf_token)
+        task = get_task(settings.database_path, task_id)
+        if task is None or task["task_type"] != "case_analysis":
+            raise HTTPException(404, detail=error_detail("TASK_NOT_FOUND", "没有找到案例解析任务。", "请返回任务列表。"))
+        with authority_operation_lock(settings, "case", str(task["subject_ref"])):
+            duplicate = resolve_case_source_duplicate(settings, str(task["payload"]["source_url"]))
+            if duplicate and duplicate.get("state") in {"approved", "rejected", "awaiting_review"}:
+                raise HTTPException(409, detail=error_detail("CASE_RETRY_BLOCKED", "这条视频已有审核结果。", "请查看已有案例。"))
+            active = find_active_case_task(settings.database_path, str(task["subject_ref"]))
+            if active:
+                return {"task": active}
+            with transaction(settings.database_path, immediate=True) as connection:
+                row = connection.execute("SELECT status,payload_json,created_by_user_id FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+                latest = connection.execute("SELECT task_id FROM tasks WHERE task_type='case_analysis' AND subject_ref=? ORDER BY created_at DESC,task_id DESC LIMIT 1", (task["subject_ref"],)).fetchone()
+                if latest["task_id"] != task_id:
+                    raise HTTPException(409, detail=error_detail("CASE_RETRY_SUPERSEDED", "已有更新的分析记录。", "请恢复最新任务。"))
+                if row["status"] != "failed":
+                    raise HTTPException(409, detail=error_detail("CASE_RETRY_BLOCKED", "任务状态已变化。", "刷新后查看当前任务。"))
+                if pending_boundary_review(settings, task):
+                    raise HTTPException(409, detail=error_detail("CASE_BOUNDARY_REVIEW_REQUIRED", "请先确认待判断的分镜。", "进入任务详情确认分镜后继续。"))
+                ensure_task_capacity(connection, queue_max=settings.task_queue_max,
+                                     gpu_pending_per_user_max=settings.gpu_pending_per_user_max,
+                                     execution_lane=task["execution_lane"], created_by_user_id=row["created_by_user_id"])
+                payload = json.loads(row["payload_json"])
+                if len(payload.get("retry_actions", [])) >= 3:
+                    raise HTTPException(409, detail=error_detail(
+                        "CASE_RETRY_LIMIT_REACHED", "这条任务已达到 3 次人工重试上限。",
+                        "请联系管理员检查失败原因；不要反复提交以重新付费获取或分析。"))
+                payload.setdefault("retry_actions", []).append({"user_id": int(session.user["id"]),
+                    "phone": str(session.user["phone"]), "at": datetime.now(timezone.utc).isoformat()})
+                connection.execute(
+                    """UPDATE tasks SET status='queued',stage='等待继续解析',error_code=NULL,error_message=NULL,
+                       payload_json=?,worker_id=NULL,heartbeat_at=NULL,lease_expires_at=NULL,updated_at=?
+                       WHERE task_id=? AND status='failed'""",
+                    (json.dumps(payload, ensure_ascii=False), datetime.now(timezone.utc).isoformat(), task_id))
+        task_runner.schedule(task_id)
+        return {"task": get_task(settings.database_path, task_id)}
 
     @app.post("/api/tasks/{task_id}/boundary-review")
     def review_case_boundaries(
