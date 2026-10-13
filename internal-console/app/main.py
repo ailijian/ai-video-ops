@@ -59,8 +59,13 @@ from .customer_gateway import (
     prepare_customer_gap_supplement_request,
     prepare_customer_onboarding_request,
     prepare_customer_reanalysis_request,
+    prepare_saved_source_recovery,
     recheck_customer_readiness,
     review_customer_facts,
+    record_speaker_discovery_intent,
+    prepare_speaker_discovery_retry,
+    customer_review_context,
+    validate_customer_review_context,
 )
 from .customer_task_service import (
     CustomerTaskRunner,
@@ -84,6 +89,7 @@ from .task_service import (
     find_active_case_task,
     get_task,
     list_tasks,
+    latest_subject_task,
     mark_task_reviewed,
     TaskSubmissionError,
 )
@@ -97,6 +103,7 @@ from .speaker_gateway import (
     record_speaker_auto_handoff_status,
     review_speaker_facts,
     recheck_speaker_readiness,
+    revalidate_speaker_business,
     speaker_attention_count,
 )
 
@@ -287,18 +294,12 @@ class CaseBoundaryReviewRequest(BaseModel):
 
 
 class CustomerAnalysisRequest(BaseModel):
-    customer_name: str = Field(
-        min_length=1,
-        max_length=200,
-    )
-    industry: str = Field(
-        min_length=1,
-        max_length=120,
-    )
-    materials: str = Field(
-        min_length=1,
-        max_length=50000,
-    )
+    customer_name: str = Field(min_length=1, max_length=200)
+    industry: str | None = Field(default=None, max_length=120)
+    materials: str = Field(default="", max_length=50000)
+    save_only: bool = False
+    create_separate: bool = False
+    submission_key: str | None = Field(default=None, min_length=8, max_length=64)
 
 
 class SpeakerGapSupplementRequest(BaseModel):
@@ -312,6 +313,12 @@ class CustomerGapAnswer(BaseModel):
 
 class CustomerGapSupplementRequest(BaseModel):
     answers: list[CustomerGapAnswer] = Field(min_length=1, max_length=8)
+
+
+class CustomerSavedSourceRecoveryRequest(BaseModel):
+    source_intake_id: str = Field(pattern=r"^intake_\d{4}$")
+    targets: list[str] = Field(min_length=1, max_length=5)
+    execution_identity: str = Field(min_length=8, max_length=64)
 
 
 class CustomerFactDecision(BaseModel):
@@ -344,8 +351,25 @@ class SpeakerDiscoveryConfirmation(BaseModel):
     ] | None = None
 
 
+class SpeakerDiscoveryConfirmRequest(BaseModel):
+    decisions: list[SpeakerDiscoveryConfirmation] = Field(
+        default_factory=list, max_length=5
+    )
+
+
+class SpeakerRevalidationRequest(BaseModel):
+    confirmed: bool
+    business_sha256: str = Field(pattern="^[a-f0-9]{64}$")
+    speaker_sha256: str = Field(pattern="^[a-f0-9]{64}$")
+    note: str = Field(default="", max_length=2000)
+
+
 class CustomerFactReviewRequest(BaseModel):
+    review_context: str | None = Field(default=None, max_length=8192)
+    resume_review: bool = False
     decisions: list[CustomerFactDecision]
+    constraint_decisions: list[dict[str, Any]] = Field(default_factory=list, max_length=30)
+    industry_review: dict[str, Any] | None = None
     speaker_confirmations: list[SpeakerDiscoveryConfirmation] = Field(
         default_factory=list,
         max_length=5,
@@ -775,7 +799,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     async def canonical_error_handler(
         _: Request, exc: CanonicalOperationError
     ) -> JSONResponse:
-        status_code = 403 if exc.code == "NOVEL_NEWS_NOT_AVAILABLE" else 409 if exc.code in {
+        status_code = 403 if exc.code in {"NOVEL_NEWS_NOT_AVAILABLE", "REVIEW_ACTOR_MISMATCH"} else 409 if exc.code in {
+            "REVIEW_CONTEXT_STALE", "REVIEW_CONTEXT_REQUIRED", "REVIEW_REPLAY_CONFLICT", "INVALID_REVIEW_CONTEXT",
             "OPERATION_IN_PROGRESS",
             "AUTHORITY_CHANGED_REFRESH_REQUIRED",
             "CONFIGURED_CUSTOMER_NOT_FOUND",
@@ -1032,21 +1057,14 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             business_id,
         )
 
-        tasks_by_speaker = {
-            task["subject_ref"]: task
-            for task in list_tasks(
-                settings.database_path,
-                limit=100,
-            )
-            if (
-                task["task_type"] == "speaker_analysis"
-                and (task.get("payload", {}).get("business_id") == business_id)
-            )
-        }
-
         for speaker in speakers:
-            speaker["submitted_by"] = original_task_actor(settings.database_path, "speaker_analysis", speaker["speaker_id"])
-            task = tasks_by_speaker.get(speaker["speaker_id"])
+            speaker["submitted_by"] = original_task_actor(settings.database_path, "speaker_analysis", speaker["speaker_id"]) or speaker.get("submitted_by")
+            task = latest_subject_task(
+                settings.database_path,
+                "speaker_analysis",
+                speaker["speaker_id"],
+                intake_id=speaker.get("latest_intake_id"),
+            )
 
             if task is None:
                 continue
@@ -1099,6 +1117,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             speaker_type=(payload.speaker_type),
             materials=(payload.materials),
             forbidden_claims=(payload.forbidden_claims),
+            created_by={"user_id": int(session.user["id"]), "phone": str(session.user["phone"])},
         )
 
         speaker_id = prepared["speaker_id"]
@@ -1247,24 +1266,16 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             business_id,
             speaker_id,
         )
-        detail["submitted_by"] = original_task_actor(settings.database_path, "speaker_analysis", speaker_id)
+        detail["submitted_by"] = original_task_actor(settings.database_path, "speaker_analysis", speaker_id) or detail.get("submitted_by")
         detail["reviewed_by"] = ({"phone": str(detail["fact_review"]["reviewer"])}
             if (detail.get("fact_review") or {}).get("reviewer") else None)
         detail["approved_by"] = persona_approval_actor(settings.pipeline_root, detail.get("speaker_persona"))
 
-        latest_task = next(
-            (
-                task
-                for task in list_tasks(
-                    settings.database_path,
-                    limit=100,
-                )
-                if (
-                    task["task_type"] == "speaker_analysis"
-                    and task["subject_ref"] == speaker_id
-                )
-            ),
-            None,
+        latest_task = latest_subject_task(
+            settings.database_path,
+            "speaker_analysis",
+            speaker_id,
+            intake_id=detail.get("latest_intake_id"),
         )
 
         if latest_task is not None:
@@ -1283,6 +1294,16 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 detail["status"] = "failed"
 
         return detail
+
+    @app.post("/api/customers/{business_id}/speakers/{speaker_id}/revalidation/review")
+    def review_speaker_business_update(business_id: str, speaker_id: str, payload: SpeakerRevalidationRequest,
+        x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+        session: SessionContext = Depends(require_console_access)) -> dict[str, Any]:
+        require_csrf(session, x_csrf_token)
+        return locked_authority_call("persona", f"{business_id}:{speaker_id}", revalidate_speaker_business, settings,
+            business_id=business_id, speaker_id=speaker_id, confirmed=payload.confirmed,
+            business_sha256=payload.business_sha256, speaker_sha256=payload.speaker_sha256,
+            reviewer=str(session.user["phone"]), note=payload.note)
 
     @app.post("/api/customers/{business_id}/speakers/{speaker_id}/facts/review")
     def review_speaker_fact_candidates(
@@ -2060,18 +2081,14 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     ) -> dict[str, Any]:
         projected = list_customers(settings)
 
-        customer_tasks = {
-            task["subject_ref"]: task
-            for task in list_tasks(
-                settings.database_path,
-                limit=100,
-            )
-            if (task["task_type"] == "customer_analysis")
-        }
-
         for customer in projected:
-            customer["submitted_by"] = original_task_actor(settings.database_path, "customer_analysis", customer["business_id"])
-            task = customer_tasks.get(customer["business_id"])
+            customer["submitted_by"] = original_task_actor(settings.database_path, "customer_analysis", customer["business_id"]) or customer.get("submitted_by")
+            task = latest_subject_task(
+                settings.database_path,
+                "customer_analysis",
+                customer["business_id"],
+                intake_id=customer.get("latest_intake_id"),
+            )
 
             if task is None:
                 continue
@@ -2082,7 +2099,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 "queued",
                 "running",
             }:
-                customer["status"] = "analyzing"
+                if not task["payload"].get("discovery_retry_request"):
+                    customer["status"] = "analyzing"
 
             elif (
                 task["status"] == "failed" and customer["status"] == "analysis_pending"
@@ -2109,15 +2127,25 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
         prepared = locked_authority_call(
             "business",
-            payload.customer_name.strip().casefold(),
+            "customer-intake-admission",
             prepare_customer_onboarding_request,
             settings,
             customer_name=(payload.customer_name),
             industry=payload.industry,
             materials=payload.materials,
+            save_only=payload.save_only, create_separate=payload.create_separate,
+            submission_key=payload.submission_key,
+            created_by_user_id=int(session.user["id"]),
+            created_by_phone=str(session.user["phone"]),
         )
 
         business_id = prepared["business_id"]
+
+        if payload.save_only:
+            return {"saved_only": True, "duplicate": prepared.get("duplicate", False),
+                "business_id": business_id, "state": (prepared.get("existing_customer") or {}).get("status", "draft")}
+        if prepared.get("existing_customer_check_required") and prepared.get("input_differs"):
+            return {**prepared, "state": prepared["existing_customer"]["status"]}
 
         active = find_active_customer_task(
             settings.database_path,
@@ -2209,40 +2237,58 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
         require_csrf(session, x_csrf_token)
-        active = find_active_customer_task(settings.database_path, business_id)
-        if active is not None:
-            return {
-                "supplemented": False,
-                "existing_task": active,
-            }
-        prepared = locked_authority_call(
-            "business",
-            business_id,
-            prepare_customer_gap_supplement_request,
-            settings,
-            business_id=business_id,
-            answers=[item.model_dump() for item in payload.answers],
-            created_by_user_id=int(session.user["id"]),
-            created_by_phone=str(session.user["phone"]),
-        )
-        task = create_customer_task(
-            settings.database_path,
-            business_id=business_id,
-            intake_id=prepared["intake_id"],
-            request_path=prepared["request_path"],
-            customer_name=prepared["customer_name"],
-            industry=prepared["industry"],
-            created_by_user_id=int(session.user["id"]),
-            queue_max=settings.task_queue_max,
-        )
-        customer_task_runner.schedule(task["task_id"])
-        return {
-            "supplemented": True,
-            "business_id": business_id,
-            "intake_id": prepared["intake_id"],
-            "target_gaps": prepared["target_gaps"],
-            "task": task,
-        }
+        def submit_supplement():
+            active = find_active_customer_task(settings.database_path, business_id)
+            if active is not None:
+                return {"supplemented": False, "existing_task": active}
+            detail = get_customer_detail(settings, business_id)
+            request_path = settings.pipeline_root / "data/customer_intakes" / business_id / str(detail.get("latest_intake_id")) / "customer_onboarding_request_v1.json"
+            existing = json.loads(request_path.read_text(encoding="utf-8")) if request_path.is_file() else {}
+            answers = [item.model_dump() for item in payload.answers]
+            if detail["status"] == "analysis_pending" and existing.get("intake_type") == "gap_supplement" and existing.get("gap_answers") == answers:
+                prepared = {**existing, "request_path": str(request_path.resolve())}
+            else:
+                prepared = prepare_customer_gap_supplement_request(settings,
+                    business_id=business_id, answers=answers,
+                    created_by_user_id=int(session.user["id"]), created_by_phone=str(session.user["phone"]))
+            task = create_customer_task(settings.database_path, business_id=business_id,
+                intake_id=prepared["intake_id"], request_path=prepared["request_path"],
+                customer_name=prepared["customer_name"], industry=prepared["industry"],
+                created_by_user_id=int(session.user["id"]), queue_max=settings.task_queue_max)
+            return {"supplemented": True, "business_id": business_id,
+                "intake_id": prepared["intake_id"], "target_gaps": prepared["target_gaps"], "task": task}
+        result = locked_authority_call("business", business_id, submit_supplement)
+        if result.get("task"):
+            customer_task_runner.schedule(result["task"]["task_id"])
+        return result
+
+    @app.post("/api/customers/{business_id}/intake/recover")
+    def recover_saved_customer_source(business_id: str, payload: CustomerSavedSourceRecoveryRequest,
+        x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+        session: SessionContext = Depends(require_console_access)) -> dict[str, Any]:
+        require_csrf(session, x_csrf_token)
+        def admit_recovery():
+            active = find_active_customer_task(settings.database_path, business_id)
+            if active is not None:
+                return {"recovered": False, "existing_task": active}
+            prepared = prepare_saved_source_recovery(settings, business_id=business_id,
+                source_intake_id=payload.source_intake_id, targets=payload.targets,
+                execution_identity=payload.execution_identity, created_by_user_id=int(session.user["id"]),
+                created_by_phone=str(session.user["phone"]))
+            if prepared["replayed"]:
+                previous = latest_subject_task(settings.database_path, "customer_analysis", business_id,
+                    intake_id=prepared["intake_id"])
+                if previous is not None:
+                    return {"recovered": False, "replayed": True, "existing_task": previous}
+            task = create_customer_task(settings.database_path, business_id=business_id,
+                intake_id=prepared["intake_id"], request_path=prepared["request_path"],
+                customer_name=prepared["customer_name"], industry=prepared["industry"],
+                created_by_user_id=int(session.user["id"]), queue_max=settings.task_queue_max)
+            return {"recovered": True, "intake_id": prepared["intake_id"], "task": task}
+        result = locked_authority_call("business", business_id, admit_recovery)
+        if result.get("task"):
+            customer_task_runner.schedule(result["task"]["task_id"])
+        return result
 
     @app.post("/api/customers/{business_id}/reanalyze")
     def reanalyze_customer(
@@ -2259,52 +2305,22 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             x_csrf_token,
         )
 
-        active = find_active_customer_task(
-            settings.database_path,
-            business_id,
-        )
-
-        if active is not None:
-            return {
-                "reanalyze": False,
-                "existing_task": active,
-            }
-
-        prepared = locked_authority_call(
-            "business",
-            business_id,
-            prepare_customer_reanalysis_request,
-            settings,
-            business_id=business_id,
-            customer_name=(payload.customer_name),
-            industry=(payload.industry),
-            materials=(payload.materials),
-        )
-
-        task = create_customer_task(
-            settings.database_path,
-            business_id=business_id,
-            intake_id=prepared["intake_id"],
-            request_path=prepared["request_path"],
-            customer_name=(prepared["customer_name"]),
-            industry=prepared["industry"],
-            created_by_user_id=int(session.user["id"]),
-            queue_max=settings.task_queue_max,
-        )
-
-        customer_task_runner.schedule(task["task_id"])
-
-        return {
-            "reanalyze": True,
-            "new_intake": (
-                not prepared.get(
-                    "same_input",
-                    False,
-                )
-            ),
-            "intake_id": (prepared["intake_id"]),
-            "task": task,
-        }
+        def admit():
+            active = find_active_customer_task(settings.database_path, business_id)
+            if active is not None:
+                return {"reanalyze": False, "existing_task": active}
+            prepared = prepare_customer_reanalysis_request(settings, business_id=business_id,
+                customer_name=payload.customer_name, industry=payload.industry, materials=payload.materials)
+            task = create_customer_task(settings.database_path, business_id=business_id,
+                intake_id=prepared["intake_id"], request_path=prepared["request_path"],
+                customer_name=prepared["customer_name"], industry=prepared["industry"],
+                created_by_user_id=int(session.user["id"]), queue_max=settings.task_queue_max)
+            return {"reanalyze": True, "new_intake": not prepared.get("same_input", False),
+                "intake_id": prepared["intake_id"], "task": task}
+        result = locked_authority_call("business", business_id, admit)
+        if result.get("task"):
+            customer_task_runner.schedule(result["task"]["task_id"])
+        return result
 
     @app.post("/api/customers/{business_id}/retry")
     def retry_customer_analysis(
@@ -2320,39 +2336,22 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             x_csrf_token,
         )
 
-        active = find_active_customer_task(
-            settings.database_path,
-            business_id,
-        )
-
-        if active is not None:
-            return {
-                "resumed": False,
-                "existing_task": active,
-            }
-
-        source = get_customer_input(
-            settings,
-            business_id,
-        )
-
-        task = create_customer_task(
-            settings.database_path,
-            business_id=business_id,
-            intake_id=source["intake_id"],
-            request_path=source["request_path"],
-            customer_name=source["customer_name"],
-            industry=source["industry"],
-            created_by_user_id=int(session.user["id"]),
-            queue_max=settings.task_queue_max,
-        )
-
-        customer_task_runner.schedule(task["task_id"])
-
-        return {
-            "resumed": True,
-            "task": task,
-        }
+        def admit():
+            active = find_active_customer_task(settings.database_path, business_id)
+            if active is not None:
+                return {"resumed": False, "existing_task": active}
+            source = get_customer_input(settings, business_id)
+            if not str(source.get("materials") or "").strip():
+                raise CanonicalOperationError("CUSTOMER_MATERIALS_REQUIRED", "客户已保存，尚未提供资料。", "请先填写客户资料，再开始整理。")
+            task = create_customer_task(settings.database_path, business_id=business_id,
+                intake_id=source["intake_id"], request_path=source["request_path"],
+                customer_name=source["customer_name"], industry=source["industry"],
+                created_by_user_id=int(session.user["id"]), queue_max=settings.task_queue_max)
+            return {"resumed": True, "task": task}
+        result = locked_authority_call("business", business_id, admit)
+        if result.get("task"):
+            customer_task_runner.schedule(result["task"]["task_id"])
+        return result
 
     @app.get("/api/customers/{business_id}/input")
     def customer_input(
@@ -2385,30 +2384,22 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/customers/{business_id}")
     def customer_detail(
         business_id: str,
-        _: SessionContext = Depends(require_console_access),
+        session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
         detail = get_customer_detail(
             settings,
             business_id,
         )
-        detail["submitted_by"] = original_task_actor(settings.database_path, "customer_analysis", business_id)
+        detail["submitted_by"] = original_task_actor(settings.database_path, "customer_analysis", business_id) or detail.get("submitted_by")
         detail["reviewed_by"] = ({"phone": str(detail["fact_review"]["reviewer"])}
             if (detail.get("fact_review") or {}).get("reviewer") else None)
         detail["approved_by"] = persona_approval_actor(settings.pipeline_root, detail.get("business_persona"))
 
-        latest_task = next(
-            (
-                task
-                for task in list_tasks(
-                    settings.database_path,
-                    limit=100,
-                )
-                if (
-                    task["task_type"] == "customer_analysis"
-                    and task["subject_ref"] == business_id
-                )
-            ),
-            None,
+        latest_task = latest_subject_task(
+            settings.database_path,
+            "customer_analysis",
+            business_id,
+            intake_id=detail.get("latest_intake_id"),
         )
 
         if latest_task is not None:
@@ -2418,7 +2409,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 "queued",
                 "running",
             }:
-                detail["status"] = "analyzing"
+                if not latest_task["payload"].get("discovery_retry_request"):
+                    detail["status"] = "analyzing"
 
             elif (
                 latest_task["status"] == "failed"
@@ -2437,38 +2429,92 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             business_id,
         )
 
-        tasks_by_speaker: dict[str, dict[str, Any]] = {}
-        for task in list_tasks(settings.database_path, limit=100):
-            if (
-                task["task_type"] == "speaker_analysis"
-                and (task.get("payload") or {}).get("business_id")
-                == business_id
-            ):
-                # list_tasks is newest-first; keep the current task when
-                # historical attempts exist for the same Speaker.
-                tasks_by_speaker.setdefault(task["subject_ref"], task)
         for speaker in speakers:
-            task = tasks_by_speaker.get(speaker["speaker_id"])
+            task = latest_subject_task(
+                settings.database_path,
+                "speaker_analysis",
+                speaker["speaker_id"],
+                intake_id=speaker.get("latest_intake_id"),
+            )
             if task is None:
                 continue
             speaker["task"] = task
-            if task["status"] in {"queued", "running"}:
+            if task["status"] in {
+                "queued",
+                "running",
+            }:
                 speaker["status"] = "analyzing"
-            elif (
-                task["status"] == "failed"
-                and speaker["status"] == "analysis_pending"
-            ):
+
+            elif task["status"] == "failed" and speaker["status"] == "analysis_pending":
                 speaker["status"] = "failed"
 
         detail["speakers"] = speakers
 
-        detail["creation_entry_ready"] = business_persona_approved and any(
+        detail["creation_entry_ready"] = not detail.get("production_constraint_blocked", False) and bool((detail.get("current_business_persona") or business_persona).get("approved")) and any(
             speaker.get("status") == "approved" for speaker in speakers
         )
 
         detail["media_rights_established"] = False
+        detail["review_context"] = customer_review_context(settings, business_id,
+            int(session.user["id"]), str(session.user["phone"]))
 
         return detail
+
+    def confirm_discovery_step(business_id, decisions, session):
+        try:
+            return locked_authority_call(
+                "business",
+                business_id,
+                confirm_speaker_discovery,
+                settings,
+                business_id=business_id,
+                decisions=[item.model_dump(exclude_none=True) for item in decisions],
+                confirmed_by_user_id=int(session.user["id"]),
+                confirmed_by_phone=str(session.user["phone"]),
+            )
+        except (CanonicalOperationError, OSError) as exc:
+            return {
+                "status": "failed",
+                "retry_required": True,
+                "error_code": getattr(exc, "code", "SPEAKER_CONFIRMATION_UNAVAILABLE"),
+                "message": "客户信息已保存。出镜人资料暂未建立成功，可以继续处理。",
+                "drafts": [],
+            }
+
+    @app.post("/api/customers/{business_id}/speaker-discovery/retry")
+    def retry_person_discovery(business_id: str,
+        x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+        session: SessionContext = Depends(require_console_access)) -> dict[str, Any]:
+        require_csrf(session, x_csrf_token)
+        def admit():
+            active = find_active_customer_task(settings.database_path, business_id,
+                include_awaiting_review=False)
+            if active is not None:
+                return {"existing_task": active}
+            prepared = prepare_speaker_discovery_retry(settings, business_id, actor=str(session.user["phone"]))
+            if prepared.get("already_available"):
+                return prepared
+            task = create_customer_task(settings.database_path, **prepared,
+                created_by_user_id=int(session.user["id"]), queue_max=settings.task_queue_max)
+            return {"task": task}
+        result = locked_authority_call("business", business_id, admit)
+        if result.get("task"):
+            customer_task_runner.schedule(result["task"]["task_id"])
+        return result
+
+    @app.post("/api/customers/{business_id}/speaker-discovery/confirm")
+    def retry_speaker_discovery_confirmation(
+        business_id: str,
+        payload: SpeakerDiscoveryConfirmRequest,
+        x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_csrf(session, x_csrf_token)
+        return {
+            "speaker_confirmation": confirm_discovery_step(
+                business_id, payload.decisions, session
+            )
+        }
 
     @app.post("/api/customers/{business_id}/facts/review")
     def review_customer_fact_candidates(
@@ -2480,29 +2526,19 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         ),
         session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
-        require_csrf(
-            session,
-            x_csrf_token,
-        )
+        require_csrf(session, x_csrf_token)
 
-        result = locked_authority_call(
-            "business",
-            business_id,
-            review_customer_facts,
-            settings,
-            business_id=business_id,
-            decisions=[
-                item.model_dump(exclude_none=True) for item in (payload.decisions)
-            ],
-            reviewer=str(session.user["phone"]),
-            note=payload.note,
-        )
-
-        try:
-            speaker_confirmation = locked_authority_call(
-                "speaker-discovery",
-                business_id,
-                confirm_speaker_discovery,
+        def save_customer_step():
+            submission = None
+            if payload.review_context:
+                submission = validate_customer_review_context(settings, business_id,
+                    payload.review_context, int(session.user["id"]), str(session.user["phone"]),
+                    payload.model_dump(exclude_none=True, exclude={"review_context"}))
+            else:
+                directory = settings.pipeline_root / "data" / "customer_intakes" / business_id
+                if any(directory.glob("*/review_progress/*.json")):
+                    raise CanonicalOperationError("REVIEW_CONTEXT_REQUIRED", "请使用当前审核页面提交。", "请刷新后重新核对。")
+            record_speaker_discovery_intent(
                 settings,
                 business_id=business_id,
                 decisions=[
@@ -2512,19 +2548,40 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 confirmed_by_user_id=int(session.user["id"]),
                 confirmed_by_phone=str(session.user["phone"]),
             )
-        except CanonicalOperationError as exc:
-            # Speaker Discovery is a parallel convenience flow. Customer
-            # Fact Review remains successful even when Draft creation needs
-            # a later retry.
-            speaker_confirmation = {
-                "status": "failed",
-                "error_code": exc.code,
-                "drafts": [],
-            }
+            try:
+                result = review_customer_facts(
+                    settings,
+                    business_id=business_id,
+                    decisions=[item.model_dump(exclude_none=True) for item in payload.decisions],
+                    reviewer=str(session.user["phone"]),
+                    note=payload.note,
+                    industry_review=payload.industry_review,
+                    constraint_decisions=payload.constraint_decisions,
+                    submission=submission,
+                )
+            except (CanonicalOperationError, OSError) as exc:
+                if not submission:
+                    raise
+                from customer_fact_review_v1 import read_review_progress
+                state = read_review_progress(settings.pipeline_root / "data/customer_intakes" / business_id / submission["intake_id"])
+                if not state["receipts"] or (submission.get("operation_id") and not any(v["operation_id"] == submission["operation_id"] for v in state["receipts"])):
+                    raise
+                return {"status": "review_completion_interrupted", "authority": {"fact_review_completed": False, "persona_approved": False},
+                    "saved_count": len(state["decisions"]) + len(state["constraint_decisions"]),
+                    "pending_count": len(state["pending_ids"]) + len(state["pending_constraint_ids"]),
+                    "recovery_required": True, "error_code": getattr(exc, "code", "REVIEW_COMPLETION_INTERRUPTED")}
+            if result.get("authority", {}).get("fact_review_completed") is True:
+                mark_customer_task_reviewed(settings.database_path, business_id)
+            return result
 
-        mark_customer_task_reviewed(
-            settings.database_path,
+        result = locked_authority_call(
+            "business",
             business_id,
+            save_customer_step,
+        )
+
+        speaker_confirmation = confirm_discovery_step(
+            business_id, payload.speaker_confirmations, session
         )
 
         return {
@@ -2548,7 +2605,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         )
 
         detail = locked_authority_call(
-            "persona",
+            "business",
             business_id,
             approve_business_persona,
             settings,

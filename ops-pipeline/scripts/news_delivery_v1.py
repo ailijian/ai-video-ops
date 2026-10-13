@@ -703,6 +703,9 @@ def _latest_approved_persona(
         )
     )
     _, path, persona = candidates[-1]
+    if scope == "business":
+        from customer_constraints_v1 import assert_production_allowed
+        assert_production_allowed(persona, path, consumer="news_repurpose")
     return (
         path.resolve(),
         persona,

@@ -41,6 +41,7 @@ Runtime artifact paths in the Authority Map and Artifact Lifecycle are relative 
 | Privacy projection and remote-model boundary | [Privacy Projection](../../ops-pipeline/scripts/privacy_projection_v1.py) |
 | Console persistence and feature availability | [Migrations](../../internal-console/migrations), [Settings](../../internal-console/app/config.py), [Novel News rollout](../../internal-console/app/novel_news_rollout.py) |
 | Smart Case intake groups and independent classification labels | Console [intake admission](../../internal-console/app/case_intake_service.py), [classification companion](../../internal-console/app/case_classification.py), and [usage/API boundaries](../../internal-console/README.md#case-smart-intake); canonical analysis and approval retain their existing owners |
+| Customer intake identity, additive Business revisions and explicit Speaker revalidation | [Console contracts and recovery](../../internal-console/README.md#customer-and-speaker-smart-intake), [Customer review writer](../../ops-pipeline/scripts/customer_fact_review_v1.py), [Speaker review writer](../../ops-pipeline/scripts/speaker_fact_review_v1.py); existing Persona builder, resolver and approval remain Authority owners |
 | Shared Authority release provenance and checksums | [Authority release](../../deploy/creative-authority/authority_release.py) |
 
 ## History and evidence

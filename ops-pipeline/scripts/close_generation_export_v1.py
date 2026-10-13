@@ -450,6 +450,8 @@ def close_generation_export(
         "Speaker Persona",
     )
     persona = read_json(persona_path)
+    from customer_constraints_v1 import assert_production_allowed
+    assert_production_allowed(persona, persona_path)
     speaker = read_json(speaker_path)
 
     if (

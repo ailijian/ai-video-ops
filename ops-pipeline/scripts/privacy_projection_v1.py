@@ -21,6 +21,8 @@ REPLACEMENTS = {
     "order_id": "[订单号]",
     "waybill_id": "[运单号]",
     "private_account_id": "[账号]",
+    "birth_date": "[出生信息已隐藏]",
+    "sensitive_personal": "[私人资料已隐藏]",
 }
 
 PUBLIC_CONTACT_MARKERS = (
@@ -66,6 +68,14 @@ PRIVATE_ACCOUNT_PATTERN = re.compile(
     r"(?:私人账号|个人账号|账户ID|用户ID|会员号)\s*[:：#]?\s*"
     r"(?P<value>[A-Za-z0-9_-]{5,40})",
     re.IGNORECASE,
+)
+BIRTH_PATTERN = re.compile(
+    r"(?:出生年月|出生日期|生日|出生时间)\s*[:：]\s*"
+    r"(?P<value>\d{4}\s*(?:年|[-/.])\s*\d{1,2}(?:\s*(?:月|[-/.])\s*\d{1,2}日?)?月?)"
+)
+SENSITIVE_PERSONAL_PATTERN = re.compile(
+    r"(?:私人经历|敏感个人经历|病史|健康记录|证件信息|第三方个人资料|未经授权的个人信息)\s*[:：]\s*"
+    r"(?P<value>[^\n]+)"
 )
 
 
@@ -163,12 +173,16 @@ def detect_sensitive_spans(value: Any) -> list[dict[str, Any]]:
         candidates.append(_span("id_card", match.start(), match.end()))
 
     for kind, pattern in (
+        ("birth_date", BIRTH_PATTERN),
+        ("sensitive_personal", SENSITIVE_PERSONAL_PATTERN),
         ("bank_card", BANK_CARD_PATTERN),
         ("order_id", ORDER_ID_PATTERN),
         ("waybill_id", WAYBILL_ID_PATTERN),
         ("private_account_id", PRIVATE_ACCOUNT_PATTERN),
     ):
         for match in pattern.finditer(text):
+            if match.group("value") == REPLACEMENTS[kind]:
+                continue
             candidates.append(
                 _span(kind, match.start("value"), match.end("value"))
             )
@@ -233,6 +247,22 @@ def project_safe_semantic(value: Any) -> str:
         return "订单标签包含收件信息（个人信息已隐藏）"
     if kinds <= {"phone", "email_private", "private_account_id"}:
         return "文本包含联系信息（个人信息已隐藏）"
+    return safe
+
+
+def project_task_materials(value: Any, *, task: str) -> str:
+    """Preserve business sentences; redact only unnecessary personal spans.
+
+    General visual-label semantics remain unchanged. Customer/Speaker intake
+    must not collapse a complete form just because one contact is present.
+    """
+    if task not in {"customer", "speaker"}:
+        raise ValueError("Unknown material privacy task.")
+    safe = project_safe_verbatim(value)
+    # Contact-context heuristics used by visual evidence do not authorize
+    # contact details in business or personal semantic analysis.
+    safe = MOBILE_PATTERN.sub("[电话]", safe)
+    safe = LANDLINE_PATTERN.sub("[电话]", safe)
     return safe
 
 

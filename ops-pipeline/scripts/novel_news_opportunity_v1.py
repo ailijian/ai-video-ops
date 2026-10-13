@@ -87,6 +87,8 @@ def project_novel_news_opportunities(
     business = resolve_current_persona(pipeline_root, business_id, "business")
     speaker = resolve_speaker_persona(pipeline_root, business, speaker_id)
     persona = business["artifact"]
+    from customer_constraints_v1 import assert_production_allowed
+    assert_production_allowed(persona, business["path"], consumer="novel_news")
     safe_fields = set(safe_persona_projection(persona)["facts"])
     atoms = build_fact_atom_catalog(persona, sha256_file(business["path"]), safe_fields)
     ledger_path = pipeline_root / "data/content_ledgers" / business_id / "content_ledger_v1.json"

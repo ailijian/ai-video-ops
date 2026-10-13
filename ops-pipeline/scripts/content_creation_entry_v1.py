@@ -492,6 +492,11 @@ def build_content_creation_entry(
             business_id,
             "business",
         )
+        from customer_constraints_v1 import assert_production_allowed
+        try:
+            assert_production_allowed(business["artifact"], business["path"], consumer="mix" if profile == "mix" else "news")
+        except RuntimeError as exc:
+            raise ContentCreationEntryError("BUSINESS_CONSTRAINT_BLOCKED", str(exc)) from exc
 
         speaker = resolve_speaker_persona(
             pipeline_root,

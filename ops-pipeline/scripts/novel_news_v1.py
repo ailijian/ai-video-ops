@@ -167,6 +167,8 @@ def _source_context(root: Path, request_id: str) -> dict[str, Any]:
         if not path.is_file() or sha256_file(path) != ref.get("file_sha256"):
             raise NovelNewsError("NEWS_NOVEL_PERSONA_LINEAGE_INVALID", "Approved Persona changed after Request creation.")
     persona = _read(persona_path)
+    from customer_constraints_v1 import assert_production_allowed
+    assert_production_allowed(persona, persona_path, consumer="novel_news")
     speaker = _read(speaker_path)
     safe_business = safe_persona_projection(persona)
     safe_speaker = safe_speaker_projection(speaker)

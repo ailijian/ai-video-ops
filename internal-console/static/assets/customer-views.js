@@ -5,19 +5,19 @@ import {
   customerStatusPill,
   editableFactValue,
   parseEditedFactValue,
-} from "./customer-components.js?v=productized-stage2-3";
+} from "./customer-components.js?v=customer-speaker-v1";
 import {
   speakerCard,
-} from "./speaker-components.js?v=productized-stage2-3";
+} from "./speaker-components.js?v=customer-speaker-v1";
 
 import { escapeHtml } from "./case-components.js";
 import {
-  bindDecisionControls,
   ProfileRow,
   ProfileSection,
   ProfileSummary,
   ProfileTabs,
-  ReviewList,
+  EvidenceDisclosure,
+  formatProfileValue,
 } from "./profile-components.js?v=productized-stage2-3";
 import { startTaskPolling } from "./task-progress.js";
 import { ContentOperationsPanel } from "./content-operations-views.js?v=productized-stage3-3";
@@ -74,8 +74,190 @@ const CUSTOMER_PROFILE_GROUPS = [
   },
 ];
 
+import { CASE_INDUSTRIES as CUSTOMER_INDUSTRIES } from "./case-industry.mjs?v=industry-2";
+export { CUSTOMER_INDUSTRIES };
+
+export function intakeSteps(active) {
+  return `<ol class="intake-steps" aria-label="资料整理步骤">${["提供资料", "AI 自动整理", "检查并确认"].map((label, index) => `<li ${active === index + 1 ? 'aria-current="step"' : ""}><span>${index + 1}</span>${label}</li>`).join("")}</ol>`;
+}
+
+function auditNote(detail) {
+  const reviewer = detail.reviewed_by?.phone;
+  const time = detail.fact_review?.created_at || detail.fact_review?.reviewed_at;
+  return reviewer ? `<p class="field-hint">信息审核：${escapeHtml(reviewer)}${time ? ` · ${escapeHtml(time)}` : ""}。客户与出镜人分别确认，素材使用权仍须单独检查。</p>` : "";
+}
+
+export function customerReviewGroups(items) {
+  const groups = [
+    ["客户是谁", ["public_display_name", "company_short_name", "industry", "years_in_business", "service_area", "location_public_area"]],
+    ["主要产品与服务", ["primary_products_or_services", "secondary_products_or_services", "product_or_service_facts", "pricing_facts", "included_service_facts"]],
+    ["客户通常遇到什么问题", ["core_audience", "customer_use_cases", "customer_pains", "selection_reasons"]],
+    ["真实业务信息", ["differentiators", "brand_story", "founder_or_operator_story", "important_turning_points", "process_facts", "service_process", "service_time_facts", "business_volume_fact", "time_efficiency_fact", "authorized_customer_cases_or_feedback"]],
+    ["重要限制", ["values", "business_principles", "beliefs", "tone_preferences"]],
+  ];
+  const assigned = new Set(groups.flatMap(([, fields]) => fields));
+  groups.push(["其他待确认信息", items.filter(item => !assigned.has(item.field)).map(item => item.field)]);
+  return groups.map(([title, fields]) => {
+    const members = items.filter(item => fields.includes(item.field));
+    return members.length ? `<section class="customer-review-group"><h3>${title}</h3>${members.map(item => `
+      <article class="customer-fact-card ${item.default_review_selection ? "" : "is-exception"}" data-review-row="${escapeHtml(item.candidate_id)}" data-decision="${item.default_review_selection || ""}">
+        <div class="customer-fact-heading"><h4>${escapeHtml(customerFieldLabel(item.field))}</h4><span data-fact-status>${item.default_review_selection ? "待统一确认" : "需要重点核对"}</span></div>
+        <div class="customer-fact-value" data-fact-value>${formatProfileValue(item.value)}</div>
+        ${item.review_exception_reason ? `<p class="field-hint">${escapeHtml(item.review_exception_reason)}</p>` : ""}
+        ${EvidenceDisclosure(item.source_excerpt)}
+        <div class="customer-fact-actions">
+          <button type="button" class="btn btn-secondary" data-review-choice="edit">修改</button>
+          <button type="button" class="btn btn-secondary" data-review-choice="reject">不采用</button>
+          <button type="button" class="btn btn-text" data-review-choice="approve" ${item.default_review_selection ? "hidden" : ""}>采用此信息</button>
+          <button type="button" class="btn btn-text" data-review-choice="">暂不处理</button>
+        </div>
+        <div class="review-edit-panel" hidden><label>修改后的信息<textarea aria-label="修改${escapeHtml(customerFieldLabel(item.field))}" rows="3">${escapeHtml(editableFactValue(item.value))}</textarea></label><p class="field-hint">修改后的内容将在下方预览，提交后形成真实人审记录。</p></div>
+      </article>`).join("")}</section>` : "";
+  }).join("");
+}
+
+const CONSTRAINT_PRESENTATION = {
+  publication_prohibition: ["宣传禁用", "确认后，相关表述会持续限制后续内容。"],
+  unverified_claim: ["待核实宣传", "未经核实的宣传不能用于内容，可以明确排除或保留待核实。"],
+  identity_conflict: ["身份与主体冲突", "涉及客户主体，需要准确来源和明确核对结果才能解除。"],
+  conditional_fact: ["适用条件", "确认后，后续内容需保留原有适用条件。"],
+};
+const CONSTRAINT_DEFAULTS = {publication_prohibition: "confirm", unverified_claim: "defer", identity_conflict: "defer", conditional_fact: "confirm"};
+const CONSTRAINT_ACTION_LABELS = {confirm: "按上述限制使用内容", exclude: "明确排除此项宣传", defer: "需要进一步核实，相关内容暂不使用", dismiss: "纠正识别", resolve: "补充核实资料，解决此项冲突"};
+
+export function customerConstraintReview(detail) {
+  const candidates = detail.constraint_candidates || [];
+  const pendingCount = candidates.filter(item => !item.human_review).length;
+  if (!candidates.length) return "";
+  return `<section class="work-surface review-surface customer-constraint-surface">
+    <div class="review-surface-heading">
+      <h2>重要限制与待核实内容 <span class="customer-section-count">${pendingCount} 项待核对 · ${candidates.length - pendingCount} 项已保存</span></h2>
+      <p>${pendingCount ? "以下是 AI 的待提交建议，请重点核对。" : "以下限制已从保存的人审记录重新读取。"}暂不宣传不代表宣传主张已经核实。</p>
+    </div>
+    <div class="customer-constraint-list">
+      ${candidates.map((item, index) => {
+        const [title, hint] = CONSTRAINT_PRESENTATION[item.constraint_type] || ["待核实内容", "请核对原文并选择处理方式。"];
+        const id = `constraint-${index}`;
+        const targets = (detail.constraint_resolution_targets || []).filter(target => target.constraint_type === item.constraint_type);
+        if (item.human_review) return `<article class="customer-constraint-card is-reviewed"><h3>${title} · 已保存</h3><p>${escapeHtml(item.source.evidence_quote)}</p><p>${escapeHtml(CONSTRAINT_ACTION_LABELS[item.human_review.decision])}</p>${item.human_review.amendment ? `<p>当前禁用：${escapeHtml((item.blocked_terms || []).join("、"))}；条件：${escapeHtml(item.condition || "无")}</p>` : ""}<p class="field-hint">${escapeHtml(item.human_review.reviewer)} · ${escapeHtml(item.human_review.reviewed_at)}。已保存决定不能由新的批量提交覆盖。</p></article>`;
+        const defaultAction = CONSTRAINT_DEFAULTS[item.constraint_type] || "";
+        return `<article class="customer-constraint-card ${item.constraint_type === "identity_conflict" ? "is-critical" : ""}" data-constraint-id="${escapeHtml(item.constraint_id)}">
+          <div class="customer-constraint-heading">
+            <h3><span class="customer-constraint-number" aria-hidden="true">${String(index + 1).padStart(2, "0")}</span>${title}</h3>
+            <span class="customer-constraint-status" data-constraint-status>AI 建议，待统一确认</span>
+          </div>
+          <div class="customer-constraint-body">
+            <div class="customer-constraint-source"><span>资料中的原文</span><p>${escapeHtml(item.source.evidence_quote)}</p></div>
+            <div class="field customer-constraint-action">
+              <label for="${id}-action">处理方式</label>
+              <select id="${id}-action" aria-label="限制审核决定" aria-describedby="${id}-hint" data-constraint-action>
+                <option value="">本次暂不处理</option><option value="confirm" ${defaultAction === "confirm" ? "selected" : ""}>${item.constraint_type === "publication_prohibition" ? "禁止使用相关宣传" : item.constraint_type === "conditional_fact" ? "仅在原条件下使用" : "按原限制使用内容"}</option>
+                ${item.constraint_type === "unverified_claim" ? '<option value="exclude">明确排除此项宣传，不用于内容</option>' : ""}
+                <option value="defer" ${defaultAction === "defer" ? "selected" : ""}>${item.constraint_type === "unverified_claim" ? "暂不宣传，继续待核实" : "相关内容暂不能使用，继续核实"}</option><option value="dismiss">纠正识别</option><option value="resolve">补充核实资料，解决此项冲突</option>
+              </select>
+              <span class="field-hint" id="${id}-hint">${hint}</span>
+              <p class="field-hint">受影响范围：${item.scope === "business" ? "客户主体与核心真实性（未解决仍会阻断）" : "相关宣传主张"}${item.condition ? `；成立条件：${escapeHtml(item.condition)}` : ""}。</p>
+            </div>
+          </div>
+          ${["publication_prohibition", "conditional_fact"].includes(item.constraint_type) ? `<details class="customer-constraint-amendment"><summary>修改建议（需要来源依据）</summary><label><input type="checkbox" data-amend-enabled> 本次提交有来源的限制修订</label><div class="field"><label>禁用词（每行一个）<textarea data-amend-terms rows="3">${escapeHtml((item.blocked_terms || []).join("\n"))}</textarea></label></div><div class="field"><label>成立条件<input data-amend-condition value="${escapeHtml(item.condition || "")}"></label></div><div class="field"><label>影响的业务信息<select data-amend-fields multiple>${[...new Set([...(item.affected_fields || []), ...(detail.fact_candidates || []).map(v => v.field)])].map(field => `<option value="${escapeHtml(field)}" ${(item.affected_fields || []).includes(field) ? "selected" : ""}>${escapeHtml(customerFieldLabel(field))}</option>`).join("")}</select></label></div><div class="field"><label>准确原文<textarea data-amend-quote rows="3">${escapeHtml(item.source.evidence_quote)}</textarea></label></div><div class="field"><label>修改依据<textarea data-amend-reason rows="2"></textarea></label></div><div class="field"><label>对内容使用的影响<textarea data-amend-impact rows="2"></textarea></label></div><p class="field-hint">原候选永久保留。缩小禁用范围需要新的准确证据，成立条件不得丢失。</p></details>` : ""}
+          <div class="customer-constraint-evidence" data-constraint-evidence-panel hidden>
+            <h4>补充核对依据</h4><p>请引用准确原文，并说明核对结果。原记录会继续保留。</p>
+            <div class="customer-constraint-evidence-fields">
+              <div class="field"><label for="${id}-evidence">本轮已保存资料中的准确原文</label><textarea id="${id}-evidence" data-constraint-evidence rows="3" placeholder="引用本轮资料中的准确原文"></textarea></div>
+              <div class="field"><label for="${id}-note">核对说明</label><textarea id="${id}-note" data-constraint-note rows="3" placeholder="说明误识别或冲突解决的核对结果"></textarea></div>
+              <div class="field customer-constraint-target" ${targets.length ? "" : "hidden"}><label for="${id}-target">同时解决的历史条目（可选）</label><select id="${id}-target" data-constraint-target><option value="">仅处理本轮条目</option>${targets.map(target => `<option value="${escapeHtml([target.constraint_id, target.source_intake_id || "", target.constraint_sha256].join("|"))}">${escapeHtml(target.evidence_quote)}${target.source_intake_id ? `（历史资料 ${escapeHtml(target.source_intake_id.slice(-4))}）` : ""}</option>`).join("")}</select></div>
+            </div>
+          </div>
+        </article>`;
+      }).join("")}
+    </div>
+    ${pendingCount ? `<p class="customer-constraint-progress" data-constraint-progress aria-live="polite">处理方式已选择 0 / ${pendingCount}，提交后保存核对结果。</p>` : ""}
+  </section>`;
+}
+
+export function bindCustomerConstraintControls(root = document) {
+  const rows = [...root.querySelectorAll("[data-constraint-id]")];
+  if (!rows.length) return;
+  const progress = root.querySelector("[data-constraint-progress]");
+  const update = () => {
+    let selected = 0;
+    rows.forEach(row => {
+      const value = row.querySelector("[data-constraint-action]").value;
+      selected += value ? 1 : 0;
+      row.querySelector("[data-constraint-evidence-panel]").hidden = !["dismiss", "resolve"].includes(value);
+      row.querySelector("[data-constraint-status]").textContent = value ? "待统一确认" : "本次暂不处理";
+      row.classList.toggle("has-selection", Boolean(value));
+    });
+    if (progress) progress.textContent = `处理方式已选择 ${selected} / ${rows.length}，提交后保存核对结果。`;
+  };
+  rows.forEach(row => row.querySelector("[data-constraint-action]").addEventListener("change", update));
+  update();
+}
+
+export function customerSubmissionSummary(factChoices, constraintChoices) {
+  const count = value => factChoices.filter(v => v === value).length;
+  return {adopted: count("approve") + count("edit"), edited: count("edit"), rejected: count("reject"),
+    pending: count("") + constraintChoices.filter(v => !v.decision).length,
+    deferred: constraintChoices.filter(v => v.decision === "defer").length,
+    conflicts: constraintChoices.filter(v => v.type === "identity_conflict" && !["resolve", "dismiss"].includes(v.decision)).length};
+}
+
+export function bindCustomerReviewControls(detail, root = document) {
+  const rows = [...root.querySelectorAll("[data-review-row]")];
+  const controls = [...root.querySelectorAll("[data-constraint-id]")];
+  const update = () => {
+    const choices = controls.map(row => ({decision: row.querySelector("[data-constraint-action]").value,
+      type: detail.constraint_candidates.find(v => v.constraint_id === row.dataset.constraintId)?.constraint_type}));
+    const counts = customerSubmissionSummary(rows.map(row => row.dataset.decision || ""), choices);
+    counts.conflicts = (detail.constraint_candidates || []).filter(v => v.constraint_type === "identity_conflict" && v.state !== "resolved").length;
+    counts.edited += controls.filter(row => row.querySelector("[data-amend-enabled]")?.checked).length;
+    const summary = root.querySelector("[data-review-progress]");
+    if (summary) summary.textContent = `将采用 ${counts.adopted} 项 · 已修改 ${counts.edited} 项 · 不采用 ${counts.rejected} 项 · 待核实 ${counts.deferred} 项 · 暂未处理 ${counts.pending} 项 · 关键冲突 ${counts.conflicts} 项`;
+    const important = root.querySelector("[data-important-submissions]");
+    if (important) important.innerHTML = controls.map((row, index) => `<li><strong>${escapeHtml(CONSTRAINT_PRESENTATION[choices[index].type]?.[0] || "重要事项")}</strong>：${escapeHtml(CONSTRAINT_ACTION_LABELS[choices[index].decision] || "本次暂不处理")}<small>${escapeHtml(detail.constraint_candidates.find(v => v.constraint_id === row.dataset.constraintId)?.source.evidence_quote || "")}</small>${row.querySelector("[data-amend-enabled]")?.checked ? `<p>本次修订：禁用 ${escapeHtml(row.querySelector("[data-amend-terms]").value || "无")}；条件 ${escapeHtml(row.querySelector("[data-amend-condition]").value || "无")}；影响信息 ${escapeHtml([...row.querySelector("[data-amend-fields]").selectedOptions].map(v => customerFieldLabel(v.value)).join("、") || "原宣传范围")}。</p><small>修订依据：${escapeHtml(row.querySelector("[data-amend-quote]").value)}；说明：${escapeHtml(row.querySelector("[data-amend-reason]").value)}；生产影响：${escapeHtml(row.querySelector("[data-amend-impact]").value)}</small>` : ""}</li>`).join("");
+    const button = root.querySelector("#submit-fact-review");
+    if (button) button.disabled = !rows.some(row => row.dataset.decision) && !choices.some(v => v.decision) && !root.querySelector("#human-industry")?.value && !detail.review_progress?.completion_retry_required && !(detail.speaker_candidates || []).some(v => !v.confirmed);
+  };
+  rows.forEach(row => {
+    row.querySelectorAll("[data-review-choice]").forEach(button => button.addEventListener("click", () => {
+      row.dataset.decision = button.dataset.reviewChoice;
+      const candidate = detail.fact_candidates.find(v => v.candidate_id === row.dataset.reviewRow);
+      try { row.querySelector("[data-fact-value]").innerHTML = formatProfileValue(row.dataset.decision === "edit"
+        ? parseEditedFactValue(candidate.value, row.querySelector("textarea").value) : candidate.value); }
+      catch { row.querySelector("[data-fact-value]").textContent = "请检查修改内容"; }
+      row.classList.toggle("is-rejected", row.dataset.decision === "reject");
+      row.querySelector("[data-fact-status]").textContent = {approve: "待统一确认", edit: "已修改，待统一确认", reject: "不采用，待保存"}[row.dataset.decision] || "本次暂不处理";
+      row.querySelector(".review-edit-panel").hidden = row.dataset.decision !== "edit";
+      row.querySelector('[data-review-choice="approve"]').hidden = row.dataset.decision === "approve";
+      if (row.dataset.decision === "edit") row.querySelector("textarea").focus();
+      window.__customerReviewDirty = true;
+      update();
+    }));
+    row.querySelector("textarea").addEventListener("input", () => {
+      const candidate = detail.fact_candidates.find(v => v.candidate_id === row.dataset.reviewRow);
+      try { row.querySelector("[data-fact-value]").innerHTML = formatProfileValue(parseEditedFactValue(candidate.value, row.querySelector("textarea").value)); }
+      catch { row.querySelector("[data-fact-status]").textContent = "请检查修改内容"; }
+      window.__customerReviewDirty = true;
+      update();
+    });
+  });
+  root.querySelectorAll(".customer-review-page input, .customer-review-page textarea, .customer-review-page select").forEach(input => {
+    for (const event of ["input", "change"]) input.addEventListener(event, () => {window.__customerReviewDirty = true; update();});
+  });
+  update();
+  return update;
+}
+
+function discoveryPanel(detail) {
+  const candidates = (detail.speaker_candidates || []).filter(item => !item.confirmed);
+  if (candidates.length) return speakerDiscoverySection(candidates);
+  if ((detail.speakers || []).length) return "";
+  if (detail.speaker_discovery_status === "failed") return `<section class="work-surface customer-discovery-status"><h2>人物发现暂未完成</h2><p>客户信息仍然保留，可以单独重试查找人物，也可以手动添加。</p><div class="customer-recovery-actions"><button class="btn btn-secondary" data-retry-person-discovery>重试查找出镜人</button><a class="btn btn-secondary" href="/customers/${encodeURIComponent(detail.business_id)}/speakers/new" data-route>手动添加出镜人</a></div><div data-person-discovery-progress></div></section>`;
+  return `<section class="work-surface customer-discovery-status"><h2>${(detail.speaker_candidates || []).length ? "已保存所选出镜人" : (detail.speaker_count ? "本次资料未发现新增人物" : "暂未找到明确的出镜人")}</h2><p>人物资料与客户资料分别审核。可以继续处理已保存人物，或补充新的本人资料。</p><div class="customer-recovery-actions">${detail.speaker_discovery_status === "completed" && !(detail.speaker_candidates || []).length ? '<button class="btn btn-secondary" data-retry-person-discovery>重新查找出镜人</button>' : ""}<a class="btn btn-secondary" href="/customers/${encodeURIComponent(detail.business_id)}/speakers/new" data-route>添加出镜人</a></div><div data-person-discovery-progress></div></section>`;
+}
+
 const SPEAKER_TYPE_OPTIONS = [
-  ["owner_founder", "创始人 / 老板"],
+  ["owner_founder", "老板 / 创始人"],
   ["frontline_expert", "一线专业人员"],
   ["brand", "品牌代表"],
   ["generic", "其他出镜人"],
@@ -86,36 +268,43 @@ function speakerDiscoverySection(candidates = []) {
   return `
     <section class="work-surface speaker-discovery-surface">
       <div class="review-surface-heading">
-        <h2>识别到的出镜人</h2>
-        <p>只会为你明确选择的人保存资料，之后仍需单独确认人物档案。</p>
+        <h2>发现可能的出镜人 <span class="customer-section-count">${candidates.length} 位</span></h2>
+        <p>请检查选中的人；确认后保存资料，之后仍需单独确认人物档案。</p>
       </div>
       <div class="speaker-discovery-list">
         ${candidates.map((candidate) => {
           const candidateId = escapeHtml(candidate.candidate_id);
           const explicit = candidate.candidate_status === "explicit_speaker";
-          const selected = explicit && !candidate.confirmed;
-          const speakerType = candidate.speaker_type_hint || "generic";
+          // UI preselection never grants permission or saves a Human decision.
+          // Preserve an explicit previous rejection when resuming confirmation.
+          const selected = !candidate.confirmed && (
+            typeof candidate.confirmation?.selected === "boolean"
+              ? candidate.confirmation.selected
+              : true
+          );
+          const speakerType = candidate.confirmation?.speaker_type ?? candidate.speaker_type_hint ?? null;
           return `
             <article class="speaker-discovery-card" data-speaker-candidate="${candidateId}">
               <label class="speaker-discovery-toggle">
                 <input type="checkbox" data-speaker-select ${selected ? "checked" : ""}>
                 <span>
-                  <strong>同时建立出镜人资料</strong>
+                  <strong>选择为出镜人</strong>
                   <small>${explicit ? "资料明确提到会出镜" : "可能代表客户出镜"}</small>
                 </span>
               </label>
               <div class="speaker-discovery-fields">
                 <div class="field">
                   <label>姓名</label>
-                  <input data-speaker-name maxlength="200" value="${escapeHtml(candidate.name || "")}" placeholder="请补充姓名">
+                  <input data-speaker-name maxlength="200" value="${escapeHtml(candidate.confirmation?.speaker_name || candidate.name || "")}" placeholder="请补充姓名">
                 </div>
                 <div class="field">
                   <label>公开身份</label>
-                  <input data-speaker-role maxlength="200" value="${escapeHtml(candidate.public_role || "")}" placeholder="请补充公开身份">
+                  <input data-speaker-role maxlength="200" value="${escapeHtml(candidate.confirmation?.public_role || candidate.public_role || "")}" placeholder="请补充公开身份">
                 </div>
                 <div class="field">
                   <label>出镜人类型</label>
                   <select data-speaker-type>
+                    <option value="" ${speakerType === null ? "selected" : ""}>暂时无法判断，请选择</option>
                     ${SPEAKER_TYPE_OPTIONS.map(([value, label]) => `<option value="${value}" ${value === speakerType ? "selected" : ""}>${label}</option>`).join("")}
                   </select>
                 </div>
@@ -206,22 +395,9 @@ export function createCustomerViews({
       onDone(next) {
         const current = document.querySelector("[data-customer-progress]");
         if (!current) return;
-
-        current.innerHTML = customerProgressPanel(next);
-
-        if (next.status === "awaiting_review") {
-          current.insertAdjacentHTML(
-            "beforeend",
-            `
-              <div class="progress-complete-actions">
-                <p>客户信息已经整理好，可以开始确认。</p>
-                <a class="btn btn-primary" href="/customers/${encodeURIComponent(businessId)}" data-route>确认客户信息</a>
-                <a class="btn btn-secondary" href="/customers" data-route>返回客户</a>
-              </div>`,
-          );
-
-          bindCommonActions();
-        }
+        // Re-read canonical state on completion. This opens Human review;
+        // it never submits a fact decision or grants Persona approval.
+        void renderCustomerDetail(businessId);
       },
     });
   }
@@ -275,146 +451,70 @@ export function createCustomerViews({
 
   function renderCustomerNew() {
     stopTaskPolling();
-
-    app.innerHTML = shell(
-      "新建客户",
-      `
-        <main class="page page-form profile-mutation-page">
-          ${pageHeading(
-            "",
-            "新建客户",
-            "把你已经知道的客户资料放进来。",
-          )}
-
-          <section class="work-surface profile-form-surface" data-customer-new-surface>
-              <form id="customer-new-form" novalidate>
-                <div class="field">
-                  <label for="customer-name">客户名称</label>
-                  <input
-                    id="customer-name"
-                    autocomplete="off"
-                    maxlength="200"
-                    placeholder="例如：小爪宠物店"
-                    required
-                  >
-                </div>
-
-                <div class="field">
-                  <label for="customer-industry">行业</label>
-                  <input
-                    id="customer-industry"
-                    autocomplete="off"
-                    maxlength="120"
-                    placeholder="例如：宠物服务"
-                    required
-                  >
-                </div>
-
-                <div class="field">
-                  <label for="customer-materials">已有资料</label>
-                  <textarea
-                    id="customer-materials"
-                    rows="12"
-                    maxlength="50000"
-                    placeholder="把你现在已经知道的客户情况粘贴进来。采访记录、门店介绍、服务流程、价格、顾客问题都可以。"
-                    required
-                  ></textarea>
-                  <span class="field-hint">
-                    门店介绍、采访记录、服务流程、价格和顾客问题都可以直接粘贴。
-                    如果已经确定谁会出镜，也可以直接把他的姓名、身份、本人经历和职责一起写进资料里，系统会自动整理。
-                  </span>
-                </div>
-
-                <div id="customer-form-error" class="form-error" role="alert"></div>
-                <div class="profile-form-actions">
-                  <button class="btn btn-primary btn-wide" type="submit">
-                    分析客户信息
-                  </button>
-                </div>
-                <p class="governance-copy">系统会先整理资料，之后仍需要你确认。</p>
-              </form>
-          </section>
-        </main>`,
-    );
-
+    app.innerHTML = shell("添加客户", `
+      <main class="page page-form profile-mutation-page smart-profile-page customer-intake-page">
+        ${pageHeading("", "添加客户", "把客户提供的资料粘贴进来，系统会整理业务信息，并找出可能的出镜人。")}
+        ${intakeSteps(1)}
+        <section class="work-surface profile-form-surface">
+          <form id="customer-new-form" novalidate>
+            <div class="field"><label for="customer-name">客户名称 <span class="customer-field-note">必填</span></label>
+              <input id="customer-name" maxlength="200" autocomplete="organization" placeholder="填写客户或门店名称" required></div>
+            <div class="field"><label for="customer-materials">客户资料</label>
+              <textarea id="customer-materials" rows="10" maxlength="50000" placeholder="粘贴客户介绍、采访记录、产品与服务、顾客问题。人物的姓名、身份和本人经历也可以写在同一份资料里。"></textarea>
+              <span class="field-hint">无需提前判断行业。系统整理后，由你分别确认客户信息和出镜人信息。</span></div>
+            <div id="customer-form-error" class="form-error" role="alert"></div>
+            <div class="profile-form-actions">
+              <button class="btn btn-primary" type="submit">开始整理资料</button>
+              <button class="btn btn-secondary" type="button" data-save-customer>先保存，稍后补充</button>
+            </div>
+            <p class="governance-copy">只填写名称也可以先保存；没有资料时不会启动分析。系统建议仍需人工审核。</p>
+            <div data-duplicate-customer></div>
+          </form>
+        </section>
+      </main>`);
     bindCommonActions();
-
-    document
-      .querySelector("#customer-new-form")
-      .addEventListener("submit", async (event) => {
-        event.preventDefault();
-
-        const button = event.currentTarget.querySelector(
-          "button[type=submit]",
-        );
-
-        const errorBox = document.querySelector("#customer-form-error");
-        const surface = document.querySelector("[data-customer-new-surface]");
-
-        errorBox.classList.remove("visible");
-
-        button.disabled = true;
-        button.textContent = "正在提交…";
-
-        const payload = {
-          customer_name: document.querySelector("#customer-name").value,
-          industry: document.querySelector("#customer-industry").value,
-          materials: document.querySelector("#customer-materials").value,
-        };
-
-        try {
-          const result = await api("/api/customers/analyze", {
-            method: "POST",
-            body: JSON.stringify(payload),
-          });
-
-          if (result.duplicate) {
-            if (
-              result.existing_task &&
-              ["queued", "running"].includes(result.existing_task.status)
-            ) {
-              surface.innerHTML = `<div data-customer-progress></div>`;
-              bindCustomerProgress(
-                result.existing_task,
-                result.business_id,
-              );
-              return;
-            }
-
-            surface.innerHTML = `
-              <div class="result-banner">
-                <h3>这个客户已经存在</h3>
-                <p>无需重新建立，可以直接继续现有流程。</p>
-                <a
-                  class="btn btn-secondary speaker-add-button"
-                  href="/customers/${encodeURIComponent(result.business_id)}"
-                  data-route
-                >
-                  查看现有客户
-                </a>
-              </div>`;
-
-            bindCommonActions();
-            return;
-          }
-
-          surface.innerHTML = `<div data-customer-progress></div>`;
-          bindCustomerProgress(result.task, result.business_id);
-        } catch (error) {
-          errorBox.textContent =
-            error.detail?.next_action || error.message;
-
-          errorBox.classList.add("visible");
-        } finally {
-          button.disabled = false;
-          button.textContent = "分析客户信息";
+    let submissionKey = crypto.randomUUID();
+    let lastInput = "";
+    let pending = false;
+    const submit = async (saveOnly, createSeparate = false) => {
+      if (pending) return;
+      const name = document.querySelector("#customer-name").value.trim();
+      const materials = document.querySelector("#customer-materials").value.trim();
+      const errorBox = document.querySelector("#customer-form-error");
+      errorBox.classList.remove("visible");
+      const message = !name ? "请填写客户名称。" : !saveOnly && !materials ? "请粘贴客户资料，或选择先保存客户。" : "";
+      if (message) { errorBox.textContent = message; errorBox.classList.add("visible"); return; }
+      const signature = JSON.stringify([name, materials, saveOnly]);
+      if (lastInput && lastInput !== signature) submissionKey = crypto.randomUUID();
+      lastInput = signature;
+      pending = true;
+      document.querySelectorAll("#customer-new-form button").forEach(button => button.disabled = true);
+      try {
+        const result = await api("/api/customers/analyze", {method: "POST", body: JSON.stringify({
+          customer_name: name, materials, save_only: saveOnly, create_separate: createSeparate, submission_key: submissionKey,
+        })});
+        if (result.existing_customer_check_required) {
+          document.querySelector("[data-duplicate-customer]").innerHTML = `
+            <aside class="result-banner"><h2>已有同名客户，请先检查</h2>
+              <p>如果属于同一个客户，请打开现有记录补充资料。</p>
+              <a class="btn btn-secondary" href="/customers/${encodeURIComponent(result.business_id)}" data-route>查看已有客户</a>
+              <button type="button" class="btn btn-secondary" data-separate-customer>确认为不同客户，单独建立</button></aside>`;
+          bindCommonActions();
+          document.querySelector("[data-separate-customer]").addEventListener("click", () => submit(saveOnly, true));
+          return;
         }
-      });
+        showToast(result.saved_only ? "客户已保存，可以稍后补充资料。" : "资料已提交，可以离开页面后继续查看。");
+        navigate(`/customers/${encodeURIComponent(result.business_id)}`);
+      } catch (error) { errorBox.textContent = error.detail?.next_action || error.message; errorBox.classList.add("visible"); }
+      finally { pending = false; document.querySelectorAll("#customer-new-form button").forEach(button => button.disabled = false); }
+    };
+    document.querySelector("#customer-new-form").addEventListener("submit", event => {event.preventDefault(); void submit(false);});
+    document.querySelector("[data-save-customer]").addEventListener("click", () => submit(true));
   }
 
   function renderFactReview(detail) {
     const supplement = detail.latest_intake_type === "gap_supplement";
-    const reviewTitle = supplement ? "确认刚补充的信息" : "确认客户信息";
+    const reviewTitle = "检查 AI 整理的客户资料";
     const candidates = detail.fact_candidates || [];
     const known = candidates.filter(
       (item) => item.state === "known_candidate",
@@ -443,7 +543,7 @@ export function createCustomerViews({
     app.innerHTML = shell(
       reviewTitle,
       `
-        <main class="page page-form customer-review-page profile-review-page">
+        <main class="page page-form customer-review-page profile-review-page customer-intake-page">
           <div class="case-review-heading">
             <a class="back-link" href="/customers" data-route>
               ← 返回客户
@@ -456,52 +556,98 @@ export function createCustomerViews({
             reviewTitle,
             supplement
               ? "只检查本轮新增事实；之前已经确认的信息会继续保留。"
-              : `请检查“${detail.display_name}”的待确认信息。确认后的信息将用于后续视频内容。`,
+              : "AI 已帮你整理好内容。请快速核对，发现不准确的地方可以直接修改。",
           )}
 
+          ${intakeSteps(3)}
+          <div class="customer-review-overview"><span>普通业务信息 <strong>${needsReview.filter(v => v.default_review_selection).length}</strong></span><span>重要限制与待核实 <strong>${(detail.constraint_candidates || []).filter(v => !v.human_review).length}</strong></span><span>重点核对的异常 <strong>${needsReview.filter(v => !v.default_review_selection).length + (detail.constraint_candidates || []).filter(v => v.constraint_type === "identity_conflict" && v.state !== "resolved").length}</strong></span></div>
+          ${detail.review_progress?.saved_count ? `<p class="result-banner">已保存 ${detail.review_progress.saved_count} 项审核决定，${detail.review_progress.pending_count} 项仍待处理。已保存记录保留，不需要重复核对。${detail.review_progress.completion_retry_required ? "审核决定已保存，后续整理中断，请继续完成保存。" : ""}</p>` : ""}
           ${knownHtml}
 
           <section class="work-surface review-surface">
             <div class="review-surface-heading">
-              <h2>需要你确认</h2>
-              <p>逐项选择不采用、修改或确认。</p>
+              <h2>客户业务信息 ${needsReview.length ? `<span class="customer-section-count">${needsReview.length} 项待确认</span>` : ""}</h2>
+              <p>普通信息已加入待统一确认清单。请浏览内容，必要时修改、不采用或暂不处理；异常需要明确选择。</p>
             </div>
-            ${ReviewList({
-              items: needsReview,
-              labelFor: customerFieldLabel,
-              namespace: "customer",
-              editableValueFor: editableFactValue,
-            })}
+            ${customerReviewGroups(needsReview)}
+            ${!candidates.some(item => item.field === "industry") && (!detail.industry || detail.industry === "待确认") ? `<div class="field customer-industry-field"><label for="human-industry">所属行业</label><select id="human-industry"><option value="">保留待判断（未提供人工判断）</option><option value="__uncertain__">暂不确定</option>${CUSTOMER_INDUSTRIES.map(value => `<option>${escapeHtml(value)}</option>`).join("")}</select><span class="field-hint">系统暂时无法准确判断。可以根据真实资料选择行业；留待判断不会阻止保存或其他审核。</span></div>` : ""}
           </section>
 
-          ${speakerDiscoverySection(detail.speaker_candidates || [])}
+          ${customerConstraintReview(detail)}
 
+          ${discoveryPanel(detail)}
+
+          <section class="work-surface customer-submit-summary"><h2>本次提交范围</h2><p data-review-progress></p><ul data-important-submissions></ul><p class="field-hint">点击下方按钮才形成逐项人工审核决定。保存事实不等于批准客户档案；关键冲突仍会限制批准及内容使用。</p></section>
           <div class="sticky-action review-submit-bar">
-            <span data-review-progress>已确认 0 / ${needsReview.length}</span>
             <button
               id="submit-fact-review"
               class="btn btn-primary"
               type="button"
             >
-              确认这些信息
+              确认并保存已核对的信息
             </button>
           </div>
         </main>`,
     );
 
     bindCommonActions();
-    bindDecisionControls({ submitSelector: "#submit-fact-review" });
+    bindCustomerConstraintControls();
+    const updateSummary = bindCustomerReviewControls(detail);
+    document.querySelectorAll('[data-review-row]').forEach(row => {
+      const item = needsReview.find(candidate => candidate.candidate_id === row.dataset.reviewRow);
+      if (item?.field === "industry") {
+        const reject = row.querySelector('[data-review-choice="reject"]');
+        reject.textContent = "暂不确定";
+        const input = row.querySelector("textarea");
+        const select = document.createElement("select");
+        select.setAttribute("aria-label", "修改行业");
+        select.innerHTML = CUSTOMER_INDUSTRIES.map(value => `<option ${value === item.value ? "selected" : ""}>${escapeHtml(value)}</option>`).join("");
+        input.hidden = true;
+        input.value = select.value;
+        select.addEventListener("change", () => {input.value = select.value; input.dispatchEvent(new Event("input")); updateSummary();});
+        input.before(select);
+      }
+    });
+    bindDiscoveryRetry(detail);
 
     document
       .querySelector("#submit-fact-review")
       .addEventListener("click", async () => {
         const decisions = [];
+        const constraintDecisions = [];
+        for (const item of detail.constraint_candidates || []) {
+          if (item.human_review) continue;
+          const action = document.querySelector(`[data-constraint-id="${CSS.escape(item.constraint_id)}"] select`)?.value;
+          if (!action) continue;
+          const row = document.querySelector(`[data-constraint-id="${CSS.escape(item.constraint_id)}"]`);
+          const decision = {constraint_id: item.constraint_id, decision: action};
+          if (row.querySelector("[data-amend-enabled]")?.checked) {
+            decision.amendment = {schema_version: "restriction-amendment-v1.0", original_constraint_sha256: item.original_constraint_sha256,
+              candidate_sha256: detail.review_context.candidate_sha256,
+              control: {scope: item.scope, affected_fields: [...row.querySelector("[data-amend-fields]").selectedOptions].map(v => v.value),
+                blocked_terms: row.querySelector("[data-amend-terms]").value.split("\n").map(v => v.trim()).filter(Boolean), condition: row.querySelector("[data-amend-condition]").value.trim() || null},
+              evidence_quote: row.querySelector("[data-amend-quote]").value.trim(), reason: row.querySelector("[data-amend-reason]").value.trim(), production_impact: row.querySelector("[data-amend-impact]").value.trim()};
+            if (!decision.amendment.reason || !decision.amendment.production_impact || !decision.amendment.evidence_quote) {showToast("请填写限制修订的准确来源、依据及对内容使用的影响。"); return;}
+          }
+          if (["dismiss", "resolve"].includes(action)) {
+            decision.resolution_quote = row.querySelector("[data-constraint-evidence]").value.trim();
+            decision.note = row.querySelector("[data-constraint-note]").value.trim();
+            if (!decision.resolution_quote || !decision.note) { showToast("请引用本轮已保存资料中的准确原文，并填写核对说明。"); return; }
+            const target = (detail.constraint_resolution_targets || []).find(value => [value.constraint_id, value.source_intake_id || "", value.constraint_sha256].join("|") === row.querySelector("[data-constraint-target]").value);
+            if (target && action === "resolve") {
+              decision.resolution_target = {constraint_id: target.constraint_id, constraint_sha256: target.constraint_sha256,
+                ...(target.source_intake_id ? {source_intake_id: target.source_intake_id, raw_answers_sha256: target.raw_answers_sha256} : {})};
+            }
+          }
+          constraintDecisions.push(decision);
+        }
 
         for (const candidate of needsReview) {
           const row = document.querySelector(
             `[data-review-row="${CSS.escape(candidate.candidate_id)}"]`,
           );
           const decision = row?.dataset.decision;
+          if (!decision) continue;
 
           const value = {
             candidate_id: candidate.candidate_id,
@@ -526,10 +672,11 @@ export function createCustomerViews({
             }
           }
 
+          if (candidate.field === "industry" && decision === "reject") value.note = "运营明确选择行业暂不确定，不采用本次系统建议。";
           decisions.push(value);
         }
 
-        const speakerConfirmations = (detail.speaker_candidates || []).map(
+        const speakerConfirmations = (detail.speaker_candidates || []).filter(candidate => !candidate.confirmed).map(
           (candidate) => {
             const row = document.querySelector(
               `[data-speaker-candidate="${CSS.escape(candidate.candidate_id)}"]`,
@@ -539,23 +686,27 @@ export function createCustomerViews({
               selected: row?.querySelector("[data-speaker-select]")?.checked === true,
               speaker_name: row?.querySelector("[data-speaker-name]")?.value.trim() || null,
               public_role: row?.querySelector("[data-speaker-role]")?.value.trim() || null,
-              speaker_type: row?.querySelector("[data-speaker-type]")?.value || "generic",
+              speaker_type: row?.querySelector("[data-speaker-type]")?.value || null,
             };
           },
         );
-        const incompleteSpeaker = speakerConfirmations.find(
-          (item) => item.selected && (!item.speaker_name || !item.public_role),
-        );
-        if (incompleteSpeaker) {
-          showToast("请先补充已选择出镜人的姓名和公开身份，或取消选择。");
-          return;
-        }
-
         const button = document.querySelector("#submit-fact-review");
         button.disabled = true;
         button.textContent = "正在保存…";
 
         try {
+          // Preserve the independent, existing Speaker Draft save path when no
+          // Customer decision is selected. Never create an empty Fact Review.
+          if (!decisions.length && !constraintDecisions.length && !document.querySelector("#human-industry")?.value && !detail.review_progress?.completion_retry_required && speakerConfirmations.length) {
+            const result = await api(`/api/customers/${encodeURIComponent(detail.business_id)}/speaker-discovery/confirm`, {
+              method: "POST", body: JSON.stringify({decisions: speakerConfirmations}),
+            });
+            showToast(result.speaker_confirmation?.retry_required ? "出镜人资料暂未保存成功，可以稍后继续。"
+              : "出镜人选择已保存。客户事实尚未提交审核，客户档案尚未批准。");
+            window.__customerReviewDirty = false;
+            renderCustomerDetail(detail.business_id);
+            return;
+          }
           const result = await api(
             `/api/customers/${encodeURIComponent(
               detail.business_id,
@@ -563,30 +714,33 @@ export function createCustomerViews({
             {
               method: "POST",
               body: JSON.stringify({
+                ...(detail.review_progress?.completion_retry_required ? {resume_review: true} : {}),
                 decisions,
+                review_context: detail.review_context?.token,
+                constraint_decisions: constraintDecisions,
                 speaker_confirmations: speakerConfirmations,
+                ...(document.querySelector("#human-industry")?.value ? {industry_review: {
+                  decision: document.querySelector("#human-industry").value === "__uncertain__" ? "uncertain" : "confirm",
+                  value: document.querySelector("#human-industry").value === "__uncertain__" ? null : document.querySelector("#human-industry").value,
+                }} : {}),
                 note: "Internal Console customer information review completed.",
               }),
             },
           );
 
-          if (
-            result.review.status === "completed_persona_blocked"
-          ) {
-            showToast("已保存，仍需补充一些关键信息。");
-          } else {
-            showToast("客户信息已确认，接下来请确认完整档案。");
-          }
-
-          if ((result.speaker_confirmation?.drafts || []).length) {
-            showToast("客户信息已确认，出镜人资料也已保存。");
-          }
+          const blocked = result.review.status === "completed_persona_blocked";
+          const partial = result.review.status === "review_progress_saved";
+          const peopleSaved = (result.speaker_confirmation?.drafts || []).some(item => item.speaker_id);
+          showToast(result.review.recovery_required ? `已保存 ${result.review.saved_count} 项审核决定，后续整理中断。请继续保存，已保存项不会重复写入。` : result.speaker_confirmation?.retry_required
+            ? "客户事实已保存，出镜人资料暂未保存成功，可以稍后继续。"
+            : `${peopleSaved ? "客户已核对的信息和出镜人资料均已保存。" : "客户事实已保存。"}${partial ? `已保存审核进度，仍有 ${result.review.pending_count} 项待处理。` : blocked ? "本次事实审核已完成，仍有信息需要处理；客户档案尚未批准。" : "本次事实审核已完成，可以继续确认客户档案。"}`);
+          window.__customerReviewDirty = false;
 
           renderCustomerDetail(detail.business_id);
         } catch (error) {
-          showToast(error.detail?.next_action || error.message);
+          showToast([error.detail?.message || error.message, error.detail?.next_action].filter(Boolean).join(" "));
           button.disabled = false;
-          button.textContent = "确认这些信息";
+          button.textContent = "确认并保存已核对的信息";
         }
       });
   }
@@ -614,9 +768,13 @@ export function createCustomerViews({
             "请整体检查这些信息，确认后会用于后续内容创作。",
           )}
 
+          ${intakeSteps(3)}
+          ${detail.current_business_persona?.approved ? '<p class="result-banner">新资料正在确认。原有已批准版本继续有效；确认本页后才启用新版本，出镜人将需要独立复核。</p>' : ""}
+          ${auditNote(detail)}
           <div class="work-surface profile-document">
             ${customerProfileSections(facts)}
           </div>
+          ${customerConstraintReview(detail)}
 
           <div class="sticky-action profile-approval-bar">
             <p>确认后的客户信息将用于后续视频内容。</p>
@@ -684,6 +842,10 @@ export function createCustomerViews({
     skeletonPage("修改客户资料");
 
     try {
+        const detail = await api(`/api/customers/${encodeURIComponent(businessId)}`);
+        if (detail.current_business_persona?.approved || detail.business_persona?.approved) {
+          return navigate(`/customers/${encodeURIComponent(businessId)}/supplement`, true);
+        }
         const payload = await api(
         `/api/customers/${encodeURIComponent(
             businessId,
@@ -720,7 +882,7 @@ export function createCustomerViews({
                     id="customer-industry"
                     maxlength="120"
                     value="${escapeHtml(source.industry || "")}"
-                    required
+                    placeholder="可留空，稍后根据资料确认"
                     >
                 </div>
 
@@ -832,7 +994,8 @@ export function createCustomerViews({
       );
       const requestedGap = new URLSearchParams(location.search).get("gap");
       const productionSupplement = requestedGap === "process_material";
-      if (detail.status !== "needs_more_info" && !(productionSupplement && detail.status === "approved")) {
+      const approvedSupplement = detail.status === "approved";
+      if (detail.status !== "needs_more_info" && !approvedSupplement) {
         return navigate(`/customers/${encodeURIComponent(businessId)}`, true);
       }
       const gaps = productionSupplement
@@ -841,9 +1004,9 @@ export function createCustomerViews({
             label: "真实服务流程",
             question: "这项服务从开始到结束通常如何完成？请只填写已经确认的真实步骤，以及出镜人本人实际参与的部分。",
           }]
-        : detail.readiness_gaps || [];
+        : approvedSupplement ? [{gap_id: "additional_materials", label: "新增客户资料", question: "粘贴本次新增的真实业务资料。原有已批准事实保留，新事实需要单独审核；实质更正不会静默覆盖。"}] : detail.readiness_gaps || [];
       app.innerHTML = shell(
-        productionSupplement ? "补充真实服务流程" : "补充缺失信息",
+        productionSupplement ? "补充真实服务流程" : approvedSupplement ? "补充客户资料" : "补充缺失信息",
         `
           <main class="page page-form profile-mutation-page customer-gap-page">
             <div class="case-review-heading">
@@ -852,8 +1015,8 @@ export function createCustomerViews({
             </div>
             ${pageHeading(
               productionSupplement ? "可选的创作解锁路径" : "客户已创建",
-              productionSupplement ? "补充真实服务流程" : "补充缺失信息",
-              productionSupplement
+              productionSupplement ? "补充真实服务流程" : approvedSupplement ? "补充客户资料" : "补充缺失信息",
+              productionSupplement || approvedSupplement
                 ? `这不会改变当前客户档案的完整性判断；补充内容仍需人工审核，并形成“${detail.display_name}”的新档案版本。`
                 : `还差 ${gaps.length} 类信息，就可以确认“${detail.display_name}”的客户档案。`,
             )}
@@ -870,12 +1033,12 @@ export function createCustomerViews({
                 <div id="customer-gap-error" class="form-error" role="alert"></div>
                 <div class="profile-form-actions">
                   <button class="btn btn-primary btn-wide" type="submit">补充并继续</button>
-                  ${productionSupplement
+                  ${approvedSupplement && !productionSupplement ? `<a class="btn btn-secondary" href="/customers/${encodeURIComponent(businessId)}" data-route>返回客户</a>` : productionSupplement
                     ? `<a class="btn btn-secondary" href="/create?business_id=${encodeURIComponent(businessId)}" data-route>返回创作</a>`
                     : `<a class="btn btn-secondary" href="/customers/${encodeURIComponent(businessId)}/speakers/new" data-route>先添加出镜人资料</a>`}
                 </div>
                 <div class="secondary-link-row">
-                  <a href="/customers/${encodeURIComponent(businessId)}/edit" data-route>编辑完整资料</a>
+                  ${!approvedSupplement ? `<a href="/customers/${encodeURIComponent(businessId)}/edit" data-route>编辑完整资料</a>` : ""}
                   <a href="/customers" data-route>稍后处理</a>
                 </div>
               </form>
@@ -912,17 +1075,7 @@ export function createCustomerViews({
                 body: JSON.stringify({ answers }),
               },
             );
-            const task = result.task || result.existing_task;
-            app.innerHTML = shell(
-              "客户信息分析",
-              `<main class="page">${pageHeading(
-                "客户",
-                detail.display_name,
-                "正在整理本次补充的信息，之前确认的内容不会重新审核。",
-              )}<div data-customer-progress></div></main>`,
-            );
-            bindCommonActions();
-            bindCustomerProgress(task, businessId);
+            navigate(`/customers/${encodeURIComponent(businessId)}`);
           } catch (error) {
             errorBox.textContent = error.detail?.next_action || error.message;
             errorBox.classList.add("visible");
@@ -940,7 +1093,7 @@ export function createCustomerViews({
     app.innerHTML = shell(
         "客户信息分析失败",
         `
-        <main class="page">
+        <main class="page page-form customer-intake-page customer-failed-page">
             <div class="case-review-heading">
             <a class="back-link" href="/customers" data-route>
                 ← 返回客户列表
@@ -953,6 +1106,7 @@ export function createCustomerViews({
             detail.display_name,
             "上一次客户信息分析没有完成，已经录入的资料仍然保留。",
             )}
+            ${intakeSteps(2)}
 
             <section class="panel needs-info-state">
             <h2>分析没有完成</h2>
@@ -1018,12 +1172,13 @@ export function createCustomerViews({
             app.innerHTML = shell(
             "客户信息分析",
             `
-                <main class="page">
+            <main class="page page-form customer-intake-page customer-progress-page">
                 ${pageHeading(
                     "客户",
                     detail.display_name,
                     "正在继续分析已有客户资料。",
                 )}
+                ${intakeSteps(2)}
                 <div data-customer-progress></div>
                 </main>`,
             );
@@ -1070,6 +1225,7 @@ export function createCustomerViews({
       (fact) => fact.state === "known",
     );
     const speakers = detail.speakers || [];
+    const revalidationRequired = speakers.some(speaker => speaker.status === "revalidation_required");
     const approvedSpeakers = speakers.filter(
       (speaker) => speaker.status === "approved",
     );
@@ -1093,7 +1249,7 @@ export function createCustomerViews({
       ? requestedTab
       : "overview";
     const primaryAction = detail.creation_entry_ready
-      ? `<a class="btn btn-primary" href="/create?business_id=${encodeURIComponent(detail.business_id)}" data-route>开始创作</a>`
+      ? `<a class="btn btn-primary" href="/create?business_id=${encodeURIComponent(detail.business_id)}" data-route>去创作</a>`
       : !speakers.length
         ? `<a class="btn btn-primary" href="/customers/${encodeURIComponent(detail.business_id)}/speakers/new" data-route>添加出镜人</a>`
         : analyzingSpeakers.length === 1
@@ -1101,7 +1257,7 @@ export function createCustomerViews({
         : analyzingSpeakers.length > 1
           ? `<a class="btn btn-primary" href="#speakers" data-customer-tab="speakers">查看出镜人</a>`
         : pendingSpeaker
-          ? `<a class="btn btn-primary" href="/customers/${encodeURIComponent(detail.business_id)}/speakers/${encodeURIComponent(pendingSpeaker.speaker_id)}" data-route>确认出镜人信息</a>`
+          ? `<a class="btn btn-primary" href="/customers/${encodeURIComponent(detail.business_id)}/speakers/${encodeURIComponent(pendingSpeaker.speaker_id)}" data-route>${pendingSpeaker.status === "revalidation_required" ? "确认出镜人关联" : "确认出镜人信息"}</a>`
           : `<a class="btn btn-primary" href="/customers/${encodeURIComponent(detail.business_id)}/speakers/new" data-route>添加出镜人</a>`;
     const speakerContent = speakers.length
       ? `<div class="speaker-list">${speakers
@@ -1131,9 +1287,9 @@ export function createCustomerViews({
           },
           {
             label: "创作状态",
-            value: detail.creation_entry_ready ? "可以开始" : "尚未就绪",
+            value: detail.creation_entry_ready ? "可以检查创作内容" : "尚未就绪",
             note: detail.creation_entry_ready
-              ? "选择出镜人后进入创作"
+              ? "仍需检查内容机会与可行性"
               : "需要至少一位已确认出镜人",
           },
         ])}
@@ -1151,7 +1307,7 @@ export function createCustomerViews({
                   ? "添加第一位出镜人"
                   : "完成出镜人信息确认"
             }</h2>
-            <p>${retrySpeaker ? "客户档案已确认，出镜人信息需要继续处理。" : "系统只会在客户和出镜人信息满足条件后开放创作。"}</p>
+            <p>${revalidationRequired ? "出镜人需要确认更新后的客户信息。完成独立复核与档案确认后，再检查创作条件。" : retrySpeaker ? "客户档案已确认，出镜人信息需要继续处理。" : "系统只会在客户和出镜人信息满足条件后开放创作。"}</p>
           </div>
         </section>`,
       profile: `<div class="work-surface profile-document">${customerProfileSections(facts)}</div>`,
@@ -1188,9 +1344,10 @@ export function createCustomerViews({
             "",
             detail.display_name,
             detail.industry,
-            `<div class="page-heading-actions">${primaryAction}<a class="btn btn-secondary" href="/customers/${encodeURIComponent(detail.business_id)}/edit" data-route>编辑资料</a></div>`,
+            `<div class="page-heading-actions">${primaryAction}<a class="btn btn-secondary" href="/customers/${encodeURIComponent(detail.business_id)}/supplement" data-route>补充客户资料</a></div>`,
           )}
 
+          ${auditNote(detail)}
           ${ProfileTabs(tabs, activeTab)}
           <div class="profile-tab-panel" data-active-profile-tab="${escapeHtml(activeTab)}">
             ${tabContent[activeTab]}
@@ -1220,7 +1377,7 @@ export function createCustomerViews({
     );
 
     app.innerHTML = shell(
-      "客户信息待补充",
+      "客户信息待处理",
       `
         <main class="page customer-needs-info-page">
           <div class="case-review-heading">
@@ -1233,16 +1390,16 @@ export function createCustomerViews({
           ${pageHeading(
             "客户已创建",
             detail.display_name,
-            `${detail.industry} · 资料待补充`,
+            `${detail.industry} · 信息待处理`,
           )}
           ${ProfileSummary([
             {
               label: "当前状态",
-              value: "资料待补充",
-              note: "客户记录已经保存",
+              value: "客户事实已保存",
+              note: "客户档案尚未批准",
             },
             {
-              label: "还缺少",
+              label: "待处理信息",
               value: `${gaps.length} 类`,
               note: "补充后继续确认档案",
             },
@@ -1254,26 +1411,27 @@ export function createCustomerViews({
             {
               label: "出镜人资料",
               value: `${speakers.length} 位`,
-              note: speakers.length ? "已保存，待客户档案确认" : "可以先并行添加",
+              note: speakers.length ? "查看下方人物资料" : "可以先并行添加",
             },
           ])}
           <section class="panel needs-info-state">
             <span class="state-icon state-icon-warning" aria-hidden="true">!</span>
             <div>
-              <h2>还缺少一些关键信息</h2>
-              <p>缺什么，只补什么；之前已经确认的信息会继续保留。</p>
-              <p class="muted-copy">完成客户档案确认，并确认至少一位出镜人后即可开始创作。</p>
+              <h2>客户事实已保存，仍有信息需要处理</h2>
+              <p>请按下方原因处理；之前已经核对的信息会继续保留。</p>
+              <p class="muted-copy">完成客户档案确认，并确认至少一位出镜人后，可以进入创作检查。仍需检查内容机会与可行性。</p>
               <div class="needs-info-list">
-                <span>缺少：</span>
-                <ul>${gaps.map((gap) => `<li>${escapeHtml(gap.label)}</li>`).join("")}</ul>
+                <span>需要处理：</span>
+                <ul>${gaps.map((gap) => `<li><strong>${escapeHtml(gap.label)}</strong><p>${escapeHtml(gap.explanation || "请核实资料来源及审核状态。")}</p></li>`).join("")}</ul>
               </div>
               <div class="needs-info-actions">
-                <a class="btn btn-primary" href="/customers/${encodeURIComponent(detail.business_id)}/supplement" data-route>补充缺失信息</a>
+                ${detail.saved_source_recovery?.available ? '<button class="btn btn-secondary" type="button" data-recover-saved-source>使用已保存资料补齐识别</button>' : ""}
+                <a class="btn btn-primary" href="/customers/${encodeURIComponent(detail.business_id)}/supplement" data-route>补充真实资料</a>
                 <a class="btn btn-secondary" href="/customers/${encodeURIComponent(detail.business_id)}/speakers/new" data-route>添加出镜人资料</a>
                 ${detail.legacy_readiness_recheck_available ? '<button class="btn btn-secondary" type="button" data-needs-info-action="recheck-readiness">重新检查现有资料</button>' : ""}
               </div>
               <div class="secondary-link-row">
-                <a href="/customers/${encodeURIComponent(detail.business_id)}/edit" data-route>编辑完整资料</a>
+                <a href="/customers/${encodeURIComponent(detail.business_id)}/edit" data-route>查看已保存原文</a>
                 <a href="/customers" data-route>稍后处理</a>
               </div>
             </div>
@@ -1310,6 +1468,68 @@ export function createCustomerViews({
           button.textContent = "重新检查现有资料";
         }
       });
+    document.querySelector("[data-recover-saved-source]")?.addEventListener("click", async event => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      const source = detail.saved_source_recovery;
+      try {
+        const result = await api(`/api/customers/${encodeURIComponent(detail.business_id)}/intake/recover`, {
+          method: "POST", body: JSON.stringify({source_intake_id: source.source_intake_id,
+            targets: source.targets, execution_identity: `saved-source-${source.raw_sha256.slice(0,32)}`}),
+        });
+        const task = result.task || result.existing_task;
+        showToast(result.replayed ? "此份资料已发起补齐识别，请查看原任务。" : "正在补齐识别已有资料；新增信息仍需人工核对。");
+        if (task && ["queued", "running"].includes(task.status)) {
+          stopPolling = startTaskPolling({api, taskId: task.task_id, onUpdate() {}, onDone() {renderCustomerDetail(detail.business_id);}});
+        }
+        renderCustomerDetail(detail.business_id);
+      } catch (error) {showToast(error.detail?.next_action || error.message); button.disabled = false;}
+    });
+  }
+
+  function bindDiscoveryRetry(detail) {
+    document.querySelector("[data-retry-person-discovery]")?.addEventListener("click", async event => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      try {
+        const result = await api(`/api/customers/${encodeURIComponent(detail.business_id)}/speaker-discovery/retry`, {method: "POST"});
+        const task = result.task || result.existing_task;
+        if (!task) return renderCustomerDetail(detail.business_id);
+        const host = document.querySelector("[data-person-discovery-progress]");
+        if (host) host.innerHTML = '<p>正在查找可能的出镜人；客户事实不会重新整理。可以离开后继续查看。</p>';
+        stopPolling = startTaskPolling({api, taskId: task.task_id, onUpdate() {}, onDone() {renderCustomerDetail(detail.business_id);}});
+      } catch(error) {showToast(error.message); button.disabled = false;}
+    });
+  }
+
+  function renderDiscoveryRecovery(detail) {
+    if (!detail.speaker_discovery_status && !detail.speaker_confirmation?.retry_required) return;
+    const page = document.querySelector("main");
+    page?.insertAdjacentHTML("beforeend", `
+      <section class="work-surface" data-discovery-recovery>
+        ${detail.speaker_confirmation?.retry_required ? '<h2>客户信息已保存</h2><p>出镜人资料暂未建立成功，可以继续处理。</p>' : ""}
+        ${discoveryPanel(detail)}
+        ${(detail.speaker_candidates || []).some(item => !item.confirmed) ? '<button class="btn btn-secondary" data-retry-discovery>继续添加出镜人</button>' : ""}
+      </section>`);
+    bindDiscoveryRetry(detail);
+    document.querySelector("[data-retry-discovery]")?.addEventListener("click", async event => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      const decisions = (detail.speaker_candidates || []).filter(item => !item.confirmed).map(candidate => {
+        const row = document.querySelector(`[data-speaker-candidate="${CSS.escape(candidate.candidate_id)}"]`);
+        return { candidate_id: candidate.candidate_id,
+          selected: row?.querySelector("[data-speaker-select]")?.checked === true,
+          speaker_name: row?.querySelector("[data-speaker-name]")?.value.trim() || null,
+          public_role: row?.querySelector("[data-speaker-role]")?.value.trim() || null,
+          speaker_type: row?.querySelector("[data-speaker-type]")?.value || null };
+      });
+      try {
+        const result = await api(`/api/customers/${encodeURIComponent(detail.business_id)}/speaker-discovery/confirm`,
+          {method: "POST", body: JSON.stringify({decisions})});
+        showToast(result.speaker_confirmation.retry_required ? "仍需补充出镜人身份或稍后重试。" : "出镜人资料已保存。仍需独立审核本人经历。");
+        renderCustomerDetail(detail.business_id);
+      } catch(error) { showToast(error.message); button.disabled = false; }
+    });
   }
 
   async function renderCustomerDetail(businessId) {
@@ -1328,12 +1548,14 @@ export function createCustomerViews({
         app.innerHTML = shell(
           "客户信息分析",
           `
-            <main class="page">
+            <main class="page page-form customer-intake-page customer-progress-page">
               ${pageHeading(
                 "客户",
                 detail.display_name,
                 "正在把已有资料整理成待确认事实。",
               )}
+              ${intakeSteps(2)}
+              ${detail.current_business_persona?.approved ? '<p class="result-banner">新资料正在整理；原有已批准客户资料继续有效。</p>' : ""}
               <div data-customer-progress></div>
             </main>`,
         );
@@ -1351,15 +1573,30 @@ export function createCustomerViews({
       }
 
       if (detail.status === "persona_review_required") {
-        return renderPersonaReview(detail);
+        renderPersonaReview(detail);
+        renderDiscoveryRecovery(detail);
+        return;
       }
 
       if (detail.status === "approved") {
-        return renderApprovedCustomer(detail);
+        renderApprovedCustomer(detail);
+        renderDiscoveryRecovery(detail);
+        return;
       }
 
       if (detail.status === "needs_more_info") {
-        return renderNeedsMoreInfo(detail);
+        renderNeedsMoreInfo(detail);
+        renderDiscoveryRecovery(detail);
+        return;
+      }
+
+      if (detail.status === "draft") {
+        app.innerHTML = shell("客户已保存", `<main class="page page-form smart-profile-page">${intakeSteps(1)}
+          ${pageHeading("客户已保存", detail.display_name, "尚未提交可分析资料，可以稍后继续。")}
+          <section class="work-surface"><p>行业暂不确定，没有资料时不会启动分析。</p>
+          <a class="btn btn-primary" href="/customers/${encodeURIComponent(businessId)}/edit" data-route>继续填写资料</a>
+          <a class="btn btn-secondary" href="/customers/${encodeURIComponent(businessId)}/speakers/new" data-route>先保存出镜人资料</a></section></main>`);
+        bindCommonActions(); return;
       }
 
       app.innerHTML = shell(
@@ -1392,12 +1629,13 @@ export function createCustomerViews({
     app.innerHTML = shell(
       "任务进度",
       `
-        <main class="page task-detail-page">
+        <main class="page page-form task-detail-page customer-intake-page customer-progress-page">
           ${pageHeading(
             "任务进度",
             task.payload?.customer_name || "客户信息分析",
             "正在从已有客户资料中提取待确认事实。你可以离开这个页面。",
           )}
+          ${intakeSteps(2)}
           <div data-customer-progress>
             ${customerProgressPanel(task)}
           </div>

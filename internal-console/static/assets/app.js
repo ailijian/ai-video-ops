@@ -1,18 +1,18 @@
-import { createApiClient } from "./api-client.js?v=productized-stage3-3";
+import { createApiClient } from "./api-client.js?v=customer-speaker-v1";
 import { createCaseViews } from "./case-views.js?v=smart-intake-1.1-r1";
-import { createCustomerViews } from "./customer-views.js?v=productized-stage3-3";
+import { createCustomerViews } from "./customer-views.js?v=customer-speaker-v1";
 import { progressPanel } from "./case-components.js?v=smart-intake-1.1";
 import { startTaskPolling } from "./task-progress.js?v=mobile-reliability-1";
 import { CUSTOM_INDUSTRY, industryOptions, industryValue as readIndustryValue, setIndustryValue, syncCustomIndustry } from "./case-industry.mjs?v=industry-2";
-import { customerProgressPanel } from "./customer-components.js?v=productized-stage2-3";
+import { customerProgressPanel } from "./customer-components.js?v=customer-speaker-v1";
 import { matchWorkflowRoute } from "./routes.js";
 import {
   createSpeakerViews,
-} from "./speaker-views.js?v=productized-stage2-3";
+} from "./speaker-views.js?v=customer-speaker-v1";
 
 import {
   speakerProgressPanel,
-} from "./speaker-components.js?v=productized-stage2-3";
+} from "./speaker-components.js?v=customer-speaker-v1";
 
 import {
   createContentViews,
@@ -88,11 +88,16 @@ const api = createApiClient({
 });
 
 function navigate(path, replace = false) {
+  if (window.__customerReviewDirty && !window.confirm("本页有尚未保存的审核修改，离开后需要重新核对。确定离开？")) return;
+  window.__customerReviewDirty = false;
   if (replace) history.replaceState({}, "", path);
   else history.pushState({}, "", path);
   window.scrollTo({ top: 0, behavior: "instant" });
   renderRoute();
 }
+window.addEventListener("beforeunload", event => {
+  if (window.__customerReviewDirty) { event.preventDefault(); event.returnValue = ""; }
+});
 
 function routeIsActive(path, target) {
   if (target === "/workbench") return path === target;
@@ -706,7 +711,9 @@ async function renderTaskDetail(taskId) {
   }
 }
 
+let renderedRoutePath = location.pathname;
 async function renderRoute() {
+  renderedRoutePath = location.pathname;
   const path = location.pathname.replace(/\/+$/, "") || "/";
   caseViews.dispose();
   customerViews.stopTaskPolling();
@@ -801,5 +808,12 @@ async function bootstrap() {
   await renderRoute();
 }
 
-window.addEventListener("popstate", renderRoute);
+window.addEventListener("popstate", () => {
+  if (window.__customerReviewDirty && !window.confirm("本页有尚未保存的审核修改，离开后需要重新核对。确定离开？")) {
+    history.pushState({}, "", renderedRoutePath);
+    return;
+  }
+  window.__customerReviewDirty = false;
+  renderRoute();
+});
 bootstrap();

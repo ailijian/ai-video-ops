@@ -17,7 +17,6 @@ from .config import Settings
 from .database import connect, transaction
 from .subprocess_env import pipeline_subprocess_env
 
-
 GPU_HEAVY = "GPU_HEAVY"
 STANDARD_BACKGROUND = "STANDARD_BACKGROUND"
 
@@ -176,6 +175,33 @@ def list_tasks(database_path: Path, limit: int = 50) -> list[dict[str, Any]]:
     finally:
         connection.close()
     return [_row_to_task(row) for row in rows]
+
+
+def latest_subject_task(
+    database_path: Path,
+    task_type: str,
+    subject_ref: str,
+    *,
+    intake_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Read a subject's execution identity, independent of global pagination.
+
+    Creation order wins over a late heartbeat/update on a historical attempt.
+    When canonical intake identity is available, never overlay an older intake.
+    """
+    connection = connect(database_path)
+    try:
+        row = connection.execute(
+            f"""SELECT {TASK_COLUMNS} FROM tasks AS t
+            LEFT JOIN users AS u ON u.id = t.created_by_user_id
+            WHERE t.task_type = ? AND t.subject_ref = ?
+              AND (? IS NULL OR json_extract(t.payload_json, '$.intake_id') = ?)
+            ORDER BY t.rowid DESC LIMIT 1""",
+            (task_type, subject_ref, intake_id, intake_id),
+        ).fetchone()
+    finally:
+        connection.close()
+    return _row_to_task(row) if row is not None else None
 
 
 def get_task(database_path: Path, task_id: str) -> dict[str, Any] | None:

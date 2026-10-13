@@ -610,6 +610,11 @@ def safe_persona_projection(
     fact_fields: tuple[str, ...] = GENERATION_FACT_FIELDS,
     guardrail_fields: tuple[str, ...] = GUARDRAIL_FACT_FIELDS,
 ) -> dict[str, Any]:
+    business_rules = None
+    if persona.get("persona_scope", "business") == "business":
+        from customer_constraints_v1 import truth_projection, production_policy
+        business_rules = production_policy(persona)
+        persona = truth_projection(persona)
     facts: dict[str, Any] = {}
     for field in fact_fields:
         if field in NEVER_EGRESS_FACT_FIELDS or not is_known(persona, field):
@@ -628,6 +633,8 @@ def safe_persona_projection(
         "omitted_private_or_review_fields": sorted(NEVER_EGRESS_FACT_FIELDS),
         "fact_authority": "known_only",
     }
+    if business_rules and business_rules["derived_authority_constraints"]:
+        projection["business_restrictions"] = project_value(business_rules, "safe_verbatim")
     assert_safe_for_external_model(
         json.dumps(projection, ensure_ascii=False, sort_keys=True)
     )
@@ -730,6 +737,10 @@ def validate_generation_inputs(
         raise RuntimeError("Mix Generation requires an Approved Persona.")
     if persona.get("persona_scope", "business") != "business":
         raise RuntimeError("Mix Generation --persona must be a Business Persona.")
+    from customer_constraints_v1 import assert_production_allowed
+    rules = assert_production_allowed(persona, resolved["persona"])
+    if rules["derived_authority_constraints"]:
+        persona["_production_constraints"] = rules["derived_authority_constraints"]
     speaker_persona: dict[str, Any] | None = None
     if speaker_persona_path is not None:
         speaker_path = speaker_persona_path.expanduser().resolve()
@@ -2504,10 +2515,13 @@ def apply_metadata_fact_lineage_fix(
 
 
 def requires_review_blocked_terms(persona: dict[str, Any]) -> list[str]:
+    terms: list[str] = []
+    if persona.get("persona_scope", "business") == "business":
+        from customer_constraints_v1 import production_policy
+        terms.extend(production_policy(persona)["blocked_terms"])
     fact = persona.get("facts", {}).get("information_requiring_human_review", {})
     if fact.get("state") != "requires_review":
-        return []
-    terms: list[str] = []
+        return sorted(set(terms))
 
     def visit(value: Any) -> None:
         if isinstance(value, dict):
@@ -2618,6 +2632,18 @@ def validate_generated_item(
     if not refs and not speaker_refs:
         errors.append("persona_and_speaker_fact_refs_used_empty")
     combined = f"{title}\n{narration}"
+    rules = safe_persona.get("business_restrictions") or {}
+    for term in rules.get("blocked_terms", []):
+        if term in combined:
+            errors.append("business_restriction_forbidden_claim:" + term)
+    for restriction in rules.get("conditions", []):
+        # Without a semantic proof that the conditional fact was unused, retain
+        # its exact condition whenever a generated item is validated.
+        affected = bool(set(refs) & set(restriction["affected_fields"])) or any(
+            term in combined or any(term in str(safe_persona.get("facts", {}).get(ref, "")) for ref in refs)
+            for term in restriction["blocked_terms"])
+        if affected and restriction["condition"] not in combined:
+            errors.append("business_restriction_condition_missing:" + restriction["constraint_id"])
     if "[" in combined or "]" in combined or "【" in combined or "】" in combined:
         errors.append("placeholder_detected")
     if re.search(r"(?:XX+|某某|待补充|placeholder)", combined, re.IGNORECASE):
@@ -3027,6 +3053,10 @@ def load_approved_persona_for_review(batch: dict[str, Any]) -> dict[str, Any]:
     lifecycle = persona.get("lifecycle", {})
     if lifecycle.get("status") != "approved" or lifecycle.get("approved") is not True:
         raise RuntimeError("Review Pack requires the lineaged Approved Persona.")
+    from customer_constraints_v1 import assert_production_allowed
+    rules = assert_production_allowed(persona, path)
+    if rules["derived_authority_constraints"]:
+        persona["_production_constraints"] = rules["derived_authority_constraints"]
     return persona
 
 

@@ -140,7 +140,7 @@ def _parse_failure(
         ):
             return (
                 str(value.get("code") or ("SPEAKER_ANALYSIS_FAILED")),
-                str(value.get("message") or "出镜人信息分析没有完成。"),
+                "出镜人信息分析没有完成，可从已保存的资料继续分析。",
             )
 
     return (

@@ -171,6 +171,13 @@ def validate_approved_persona(
             "PERSONA_HUMAN_GATE_REQUIRED",
             f"Approved Persona does not preserve its Human Gate: {persona_path}",
         )
+    if expected_scope == "business" and ("persona_control_layer" in persona or "critical_constraints" in persona):
+        from build_persona_v1 import persona_content_hash, validate_required_fact_authority
+        if persona_content_hash(persona) != (persona.get("provenance") or {}).get("content_sha256"):
+            raise AuthorityResolutionError("LINEAGE_HASH_MISMATCH", "Business Persona content hash mismatch.")
+        errors = validate_required_fact_authority(persona)
+        if errors:
+            raise AuthorityResolutionError("BUSINESS_CONSTRAINT_INVALID", "; ".join(errors))
     return {
         "persona_id": expected_id,
         "revision": revision,
@@ -251,7 +258,14 @@ def resolve_current_persona(
                 "LINEAGE_HASH_MISMATCH",
                 "Persona previous-approved lineage content SHA-256 does not match.",
             )
-    return by_revision[ordered_revisions[-1]][0]
+    current = by_revision[ordered_revisions[-1]][0]
+    if expected_scope == "business":
+        from customer_constraints_v1 import production_policy
+        try:
+            current["production_constraints"] = production_policy(current["artifact"], current["path"])
+        except RuntimeError as exc:
+            raise AuthorityResolutionError("BUSINESS_CONSTRAINT_INVALID", str(exc)) from exc
+    return current
 
 
 def resolve_speaker_persona(
@@ -1382,6 +1396,8 @@ def build_customer_status(
     pipeline_root = pipeline_root.expanduser().resolve()
     business_id = require_id(business_id, "business_id")
     business = resolve_current_persona(pipeline_root, business_id, "business")
+    if (business.get("production_constraints") or {}).get("blockers"):
+        raise AuthorityResolutionError("BUSINESS_CONSTRAINT_BLOCKED", "Current approval is retained; unresolved Business restrictions temporarily block production.")
     speaker = resolve_speaker_persona(pipeline_root, business, speaker_id)
     ledger = load_content_ledger(pipeline_root, business_id)
     batches = resolve_batches(pipeline_root, business_id, ledger, batch_id)

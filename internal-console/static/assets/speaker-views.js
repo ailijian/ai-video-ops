@@ -2,15 +2,16 @@ import { escapeHtml } from "./case-components.js";
 
 import {
   editableFactValue,
+  customerFieldLabel,
   parseEditedFactValue,
-} from "./customer-components.js?v=productized-stage2-3";
+} from "./customer-components.js?v=customer-speaker-v1";
 
 import {
   speakerFieldLabel,
   speakerProgressPanel,
   speakerStatusPill,
   speakerTypeLabel,
-} from "./speaker-components.js?v=productized-stage2-3";
+} from "./speaker-components.js?v=customer-speaker-v1";
 
 import {
   bindDecisionControls,
@@ -357,49 +358,8 @@ export function createSpeakerViews({
                 },
               );
 
-              if (result.draft_saved) {
-                showToast("出镜人资料已保存，客户档案确认后可以继续。");
-                return navigate(
-                  `/customers/${encodeURIComponent(businessId)}`,
-                );
-              }
-
-              if (result.duplicate) {
-                if (
-                  result.existing_task &&
-                  ["queued", "running"].includes(
-                    result.existing_task.status,
-                  )
-                ) {
-                  surface.innerHTML =
-                    `<div data-speaker-progress></div>`;
-
-                  bindSpeakerProgress(
-                    result.existing_task,
-                    businessId,
-                    result.speaker_id,
-                  );
-
-                  return;
-                }
-
-                return navigate(
-                  `/customers/${encodeURIComponent(
-                    businessId,
-                  )}/speakers/${encodeURIComponent(
-                    result.speaker_id,
-                  )}`,
-                );
-              }
-
-              surface.innerHTML =
-                `<div data-speaker-progress></div>`;
-
-              bindSpeakerProgress(
-                result.task,
-                businessId,
-                result.speaker_id,
-              );
+              showToast(result.draft_saved ? "出镜人资料已保存，客户档案确认后可以继续。" : "出镜人资料已提交。");
+              navigate(`/customers/${encodeURIComponent(businessId)}/speakers/${encodeURIComponent(result.speaker_id)}`);
             } catch (error) {
               errorBox.textContent =
                 error.detail?.next_action ||
@@ -928,13 +888,22 @@ export function createSpeakerViews({
             </p>
 
             <p>
-              当前 V1 不会删除失败记录。可以返回客户详情后重新进入出镜人流程。
+              已保存资料和失败记录会保留，可以从中断处继续分析。
             </p>
+            <button id="retry-speaker-analysis" class="btn btn-primary" type="button">继续分析</button>
           </section>
         </main>`,
     );
 
     bindCommonActions();
+    document.querySelector("#retry-speaker-analysis")?.addEventListener("click", async event => {
+      const button = event.currentTarget;
+      button.disabled = true;
+      try {
+        await api(`/api/customers/${encodeURIComponent(businessId)}/speakers/${encodeURIComponent(detail.speaker_id)}/analyze`, {method: "POST"});
+        renderSpeakerDetail(businessId, detail.speaker_id);
+      } catch(error) { showToast(error.message); button.disabled = false; }
+    });
   }
 
   async function renderSpeakerSupplement(
@@ -1093,6 +1062,31 @@ export function createSpeakerViews({
     );
   }
 
+  function renderSpeakerRevalidation(detail, businessId) {
+    const evidence = detail.revalidation_evidence;
+    const businessFacts = Object.entries(evidence.business_facts || {}).map(([field, value]) => ({field, ...value}));
+    app.innerHTML = shell("确认出镜人关联", `<main class="page page-form profile-review-page smart-profile-page">
+      ${pageHeading("客户资料已更新", "确认出镜人关联", "客户资料已更新，需要确认出镜人信息是否仍然适用。旧版经历与批准记录保留。")}
+      <section class="work-surface"><h2>原有本人事实与表达范围</h2>${speakerProfileSections(detail.speaker_persona?.facts || [])}</section>
+      <details class="work-surface"><summary>检查更新后的客户资料</summary>${businessFacts.filter(item => item.state === "known").map(item => ProfileRow({label: customerFieldLabel(item.field), value: item.value, labelFor: customerFieldLabel})).join("")}</details>
+      <p>请对照检查职责、本人经历、允许主题与禁止表达。公司新增事实不会自动成为本人经历。</p>
+      <p class="field-hint">如果本人事实已变化，请保留当前状态并先核对新增证据，不要确认仍然适用。</p>
+      <div class="sticky-action profile-approval-bar"><button class="btn btn-primary" data-confirm-revalidation>已检查，本人事实与表达范围仍适用</button></div>
+      <a class="btn btn-secondary" href="/customers/${encodeURIComponent(businessId)}#speakers" data-route>稍后处理</a>
+      </main>`);
+    bindCommonActions();
+    document.querySelector("[data-confirm-revalidation]").addEventListener("click", async event => {
+      const button = event.currentTarget;
+      const decision = await openModal({title: "确认本人信息仍然适用？", description: "这会建立待确认的新版出镜人档案。仍需单独确认档案后才能用于更新后的客户。", confirmLabel: "确认复核"});
+      if (!decision.confirmed) return;
+      button.disabled = true;
+      try {
+        await api(`/api/customers/${encodeURIComponent(businessId)}/speakers/${encodeURIComponent(detail.speaker_id)}/revalidation/review`, {method: "POST", body: JSON.stringify({confirmed: true, business_sha256: evidence.business_sha256, speaker_sha256: evidence.speaker_sha256, note: "已对照更新后的客户资料独立检查本人事实和表达边界。"})});
+        renderSpeakerDetail(businessId, detail.speaker_id);
+      } catch(error) {showToast(error.detail?.next_action || error.message); button.disabled = false;}
+    });
+  }
+
   async function renderSpeakerDetail(
     businessId,
     speakerId,
@@ -1154,6 +1148,10 @@ export function createSpeakerViews({
           detail,
           businessId,
         );
+      }
+
+      if (detail.status === "revalidation_required") {
+        return renderSpeakerRevalidation(detail, businessId);
       }
 
       if (detail.status === "approved") {

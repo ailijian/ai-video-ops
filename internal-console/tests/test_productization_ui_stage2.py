@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -30,9 +31,16 @@ def test_customer_and_speaker_use_shared_profile_primitives():
 
     assert 'from "./profile-components.js?v=productized-stage2-3"' in customer
     assert 'from "./profile-components.js?v=productized-stage2-3"' in speaker
-    assert "ReviewList({" in customer
+    # The approved E2-UX amendment replaces Customer's per-row confirmation
+    # while retaining shared display/source primitives and Speaker's own gate.
+    for name in ("ProfileSection({", "ProfileRow({", "EvidenceDisclosure("):
+        assert name in customer
+    assert "customerReviewGroups(needsReview)" in customer
+    assert "bindCustomerReviewControls(detail)" in customer
+    assert 'data-review-choice="reject"' in customer
+    assert 'data-review-choice="edit"' in customer
+    assert "待统一确认" in customer
     assert "ReviewList({" in speaker
-    assert "bindDecisionControls" in customer
     assert "bindDecisionControls" in speaker
 
 
@@ -49,7 +57,8 @@ def test_customer_list_and_detail_are_product_management_surfaces():
     assert "customerProfileSections(facts)" in customer
     assert "return formatProfileValue(value" in customer_components
     assert 'class="fact-json"' not in customer_components
-    assert "开始创作" in customer
+    assert "去创作" in customer
+    assert "仍需检查内容机会与可行性" in customer
     assert "添加出镜人" in customer
 
 
@@ -143,10 +152,10 @@ def test_stage2_forms_and_rights_copy_are_single_continuous_surfaces():
 
     assert 'class="work-surface profile-form-surface"' in customer
     assert 'class="work-surface profile-form-surface"' in speaker
-    assert "系统会先整理资料，之后仍需要你确认。" in customer
+    assert "系统整理后，由你分别确认客户信息和出镜人信息。" in customer
     rights_copy = "确认出镜人档案，不会自动获得照片、视频或肖像素材使用权。"
     assert speaker.count(rights_copy) == 1
-    assert "data-customer-new-surface" in customer
+    assert 'id="customer-new-form"' in customer
     assert "data-speaker-new-surface" in speaker
 
 
@@ -166,3 +175,15 @@ def test_stage2_responsive_components_do_not_hide_horizontal_overflow():
     assert "grid-template-columns: 1fr 1fr;" in css
     assert ".decision-confirm { grid-column: 1 / -1; grid-row: 1; }" in css
     assert "overflow-x: hidden" not in css
+
+
+def test_shared_profile_spacing_and_palette_variables_are_defined():
+    """Undefined design tokens silently discard padding and colour in browsers."""
+    css = read_asset("styles.css")
+    definitions = set(re.findall(r"(--[\w-]+)\s*:", css))
+    # These common design tokens are static. References with a fallback are
+    # deliberately excluded; media geometry can have separate runtime owners.
+    references = set(re.findall(
+        r"var\((--(?:space-\d+|brand|forest[\w-]*|ink[\w-]*|line[\w-]*))\s*\)", css
+    ))
+    assert references <= definitions, sorted(references - definitions)
