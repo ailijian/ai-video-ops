@@ -193,6 +193,22 @@ class ExecutionTests(unittest.TestCase):
         self.assertEqual(result["status"], "passed")
         self.assertEqual(result["counts"]["tests"], 1)
 
+    def test_child_temporary_files_and_import_cache_stay_in_job_directory(self):
+        with patch.dict(os.environ, {"TEMP": "E:/outside", "TMP": "E:/outside",
+                                     "TMPDIR": "E:/outside", "PYTHONPYCACHEPREFIX": "E:/outside"}):
+            result = self.execute_test(
+                "import os,sys,tempfile,unittest\nfrom pathlib import Path\n"
+                "class TestStorage(unittest.TestCase):\n"
+                " def test_storage(self):\n"
+                "  work=Path(os.environ['AIVO_VERIFICATION_ARTIFACTS']).resolve()\n"
+                "  self.assertTrue(Path(tempfile.gettempdir()).resolve().is_relative_to(work))\n"
+                "  self.assertTrue(Path(sys.pycache_prefix).resolve().is_relative_to(work))\n"
+                "  with tempfile.TemporaryDirectory() as directory:\n"
+                "   self.assertTrue(Path(directory).resolve().is_relative_to(work))\n"
+            )
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(result["counts"]["tests"], 1)
+
     @unittest.skipUnless(os.name == "nt", "Windows PowerShell environment regression")
     def test_native_powershell_security_module_loads_with_parent_core_path(self):
         powershell = shutil.which("powershell.exe")

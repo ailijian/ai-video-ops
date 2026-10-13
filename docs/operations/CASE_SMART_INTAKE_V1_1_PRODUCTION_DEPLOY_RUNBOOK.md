@@ -179,8 +179,9 @@ LIJIAN. Existing exact-commit Git bundle fallback:
 
 ```powershell
 # Development host ONLY, after committed regression PASS:
-git bundle create E:\csi-r1-release\case-smart-intake.bundle main
-git bundle verify E:\csi-r1-release\case-smart-intake.bundle
+$releaseEvidence = Join-Path (git rev-parse --show-toplevel) '.local/evidence/legacy-e-drive/csi-r1-release'
+git bundle create "$releaseEvidence/case-smart-intake.bundle" main
+git bundle verify "$releaseEvidence/case-smart-intake.bundle"
 # Transfer bundle + identity through the approved transport; verify SHA-256.
 # Runtime substitute for fetch/merge above (do not run both alternatives):
 # git -C $Repo bundle verify <transferred-bundle>
@@ -404,11 +405,14 @@ Case approval, Compatibility, media rights or customer facts.
 
 ## 8. CSI-R1 evidence and remaining gates
 
-Development evidence is stored outside Git in `E:\csi-r1-release` and
-`E:\csi-r1-migration`. The release identity pins the committed code and migration;
+Development evidence is retained outside Git, inside the project directory at
+`.local/evidence/legacy-e-drive/csi-r1-release` and
+`.local/evidence/legacy-e-drive/csi-r1-migration`. These directories were moved
+from the E drive root during the 2026-10-11 development cleanup; historical
+receipts retain their original paths. The release identity pins the committed code and migration;
 the post-commit root verifier supplies the final regression result. Earlier
 V1.1 integrated browser/ten-item/recovery evidence is under
-`E:\csi-v1-1-runtime`; it uses the complete new ASGI/auth/static stack and an
+`.local/evidence/legacy-e-drive/csi-v1-1-runtime`; it uses the complete new ASGI/auth/static stack and an
 isolated database with a serial fixture driver, no Qiyun/models/GPU.
 
 Remaining gates: actual 4090 host/service/DB/schema/backup and old-commit rollback

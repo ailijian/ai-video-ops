@@ -60,6 +60,18 @@ does not mean disposable; follow the
   checks require an explicit root and remain read-only; do not repoint ordinary
   mutation tests at production data.
 
+## Development storage
+
+- Develop only inside this project directory. Keep temporary tests and caches
+  in `.verify/`, local evidence and retained snapshots in `.local/`, and any
+  necessary additional worktrees in `.worktrees/`; do not create development
+  directories at a drive root or elsewhere outside the project.
+- Follow [Development storage](tools/README.md#development-storage) for manual
+  commands and output paths. Preserve uncommitted work and historical evidence
+  during cleanup. Production configuration, Authority releases, models, services
+  and backups follow their operating references; a development cleanup does not
+  authorize relocating them.
+
 ## Governance maintenance
 
 Change this guide only when explicitly authorized to update repository

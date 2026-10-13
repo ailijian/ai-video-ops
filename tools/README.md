@@ -1,5 +1,47 @@
 # Repository verification
 
+## Development storage
+
+All development for this repository stays inside the project directory, including
+one-off scripts, browser harnesses, test databases, screenshots, source snapshots
+and additional Git worktrees. Do not create short-path test folders at `E:\`.
+
+| Local output | Location relative to the project root |
+|---|---|
+| Test runs, temporary files and disposable caches | `.verify/<run>/` |
+| Browser/audit evidence and source snapshots worth retaining | `.local/evidence/<task>/` |
+| Cleanup inventory and relocation receipts | `.local/cleanup/<date>/` |
+| Additional worktrees, only when needed | `.worktrees/<task>/` |
+
+These directories are ignored by Git. Ignored does not mean disposable: retain
+useful evidence and all uncommitted work. Move registered worktrees with
+`git worktree move` so their Git metadata stays valid; moved virtual environments
+may need recreation before their installed entry points can be used.
+
+The canonical runner below sets each child's `TEMP`, `TMP`, `TMPDIR` and Python
+bytecode cache inside its job directory. For manual commands, initialize a local
+session from the project root (these settings affect only that shell and its
+children):
+
+```powershell
+$devStorageRoot = Join-Path (Get-Location).Path '.verify/manual'
+New-Item -ItemType Directory -Force -Path "$devStorageRoot/tmp" | Out-Null
+$env:TEMP = "$devStorageRoot/tmp"
+$env:TMP = $env:TEMP
+$env:TMPDIR = $env:TEMP
+$env:PYTHONPYCACHEPREFIX = "$devStorageRoot/pycache"
+# Use a fresh run name for concurrent or separate runs.
+python -m pytest --basetemp "$devStorageRoot/tests" -o "cache_dir=$devStorageRoot/cache"
+```
+
+Run package tests from their package directory after initializing the session.
+Always pass project-local output/workdir paths to manual scripts and browser
+harnesses. Production configuration, Authority releases, models, services and
+backup destinations keep their separate deployment contracts. Changing those
+locations requires an explicit runtime migration, not a development cleanup.
+
+## Verification commands
+
 Run from the repository root with Python 3.12+. Install the two existing test
 environments: `ops-pipeline/requirements-dev.txt` in the Pipeline venv and
 `internal-console[dev]` in the Console venv. Console verification also requires

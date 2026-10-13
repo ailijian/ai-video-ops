@@ -195,10 +195,14 @@ def make_jobs(root: Path, selection: dict, jobs: int, timings: dict) -> list[Job
 
 
 def child_environment(work: Path) -> dict[str, str]:
+    temporary = work / "tmp"
+    temporary.mkdir(parents=True, exist_ok=True)
     env = {k: v for k, v in os.environ.items() if not k.upper().startswith("AIVO_") and
            k.upper() not in {"PYTEST_ADDOPTS", "PYTEST_PLUGINS", "PYTHONPATH", "PSMODULEPATH"}}
     env.update({
         "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8",
+        "TEMP": str(temporary), "TMP": str(temporary), "TMPDIR": str(temporary),
+        "PYTHONPYCACHEPREFIX": str(work / "pycache"),
         "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
         "AIVO_CONSOLE_DB": str(work / "import.sqlite3"),
         "AIVO_CASE_ANALYSIS_WORKER": "0", "AIVO_CUSTOMER_ANALYSIS_WORKER": "0",
