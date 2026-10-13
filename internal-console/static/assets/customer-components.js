@@ -2,9 +2,10 @@ import { escapeHtml } from "./case-components.js";
 import { formatProfileValue } from "./profile-components.js?v=productized-stage2-3";
 
 export const CUSTOMER_PROGRESS_STAGES = [
-  ["保存客户资料", 20],
-  ["整理公开信息", 35],
-  ["提取客户信息", 75],
+  ["保存客户原始资料", 20],
+  ["隐私检查", 35],
+  ["正在整理客户业务信息", 68],
+  ["正在查找可能的出镜人", 82],
   ["检查信息完整度", 90],
   ["准备确认内容", 99],
 ];
@@ -148,15 +149,8 @@ export function customerProgressPanel(task, { compact = false } = {}) {
           <h2>${title}</h2>
           <p>${escapeHtml(task.stage || "等待开始")}</p>
         </div>
-        <strong>${Number(task.progress || 0)}%</strong>
       </div>
-
-      <div class="progress-track">
-        <span style="width:${Math.max(
-          0,
-          Math.min(100, Number(task.progress || 0)),
-        )}%"></span>
-      </div>
+      <p class="field-hint">按已保存的处理阶段显示，不预估剩余时间。</p>
 
       <ol class="progress-steps">${stages}</ol>
       ${footer}
@@ -230,7 +224,7 @@ export function customerCard(customer) {
         </div>
       </div>
       <div class="customer-row-end">
-        <span class="customer-speaker-count">${Number(customer.speaker_count || 0)} 位出镜人</span>
+        <span class="customer-speaker-count">已确认出镜人 ${Number(customer.speaker_count || 0)} 位</span>
         ${customerStatusPill(customer.status)}
         <span class="case-chevron" aria-hidden="true">›</span>
       </div>

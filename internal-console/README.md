@@ -204,6 +204,52 @@ Review V2 and export/Ledger closure, and the narrow News repurpose flow.
 Their canonical entries and recovery boundaries are in the
 [RUNBOOK](../docs/operations/RUNBOOK.md).
 
+## Customer and Speaker smart intake
+
+`POST /api/customers/analyze` accepts a required `customer_name`, optional
+`industry`, and `materials`. Analysis requires nonempty materials; `save_only`
+saves a recoverable name-only intake without a model call or task. New identities
+are generated once, independently of name/industry. Historical IDs are unchanged.
+`submission_key` makes initial submission replayable; same-name records require
+an explicit existing-customer check or `create_separate`, never automatic merging.
+
+Fact review keeps the original AI candidates and individual Human decisions.
+Optional `industry_review` distinguishes absent judgment, explicit `uncertain`,
+and a confirmed value from the existing industry taxonomy. It does not add a
+readiness requirement. Discovery candidates start unselected. Customer review
+and Speaker confirmation use separate business-lock operations: a draft failure
+returns recoverable partial success, preserving the completed Customer review.
+`POST /api/customers/{business_id}/speaker-discovery/confirm` resumes saved
+selection intent independently. `/speaker-discovery/retry` runs only discovery
+from the saved privacy projection using the existing analysis task/runner.
+
+`POST /api/customers/{business_id}/gaps/supplement` retains reviewed evidence.
+For an approved customer, additive facts form the next unapproved Business
+revision through the existing builder. The approved revision remains effective
+until independent Persona approval. Empty additions do not create a revision;
+conflicting scalar facts preserve conflict evidence and require a new explicit
+decision. Approved bytes, receipts, historical Requests and business-wide Ledger
+remain unchanged.
+
+After a new Business approval, a Speaker bound to the old revision is projected
+as `revalidation_required` and excluded from creation readiness. Human review at
+`POST /api/customers/{business_id}/speakers/{speaker_id}/revalidation/review`
+requires the exact current Business/Speaker file hashes and an explicit
+confirmation that personal facts and expression limits still apply. The record
+under `data/speaker_revalidations/<speaker_id>/business_revision_NNNN/` creates an
+unapproved Speaker revision through the existing builder. Separate Speaker
+Persona approval remains required. Changed personal facts require new evidence
+and Human handling; this unchanged-evidence action must not be used to approve
+them. Speaker gap answers still require all current gaps in one submission.
+
+Manual browser acceptance can use `tests/browser_customer_speaker_intake_v1.py`
+with a new external `--workdir` and loopback `--port` (never 8000). It runs current
+ASGI/static/auth/migrations/locks against isolated artifacts and serial synthetic
+extraction only. `--resume` requires its fixture manifest. Close that node after
+acceptance; fixtures do not establish model quality or Production PASS. Evidence
+for this implementation is in the
+[implementation report](../docs/design/CUSTOMER_SPEAKER_SMART_INTAKE_V1_IMPLEMENTATION_REPORT.md).
+
 [Novel News](../docs/operations/RUNBOOK.md#new_novel_news) is a separate
 implemented flow with rollout defaulting to `off`. Its controlled access,
 supported opportunities and additional Scene Contrast validation gate do not

@@ -71,8 +71,8 @@ def test_console_branding_and_favicon_contract():
     assert 'href="/assets/brand/favicon-32x32.png?v=transparent-1"' in index
     assert 'href="/assets/brand/favicon-16x16.png?v=transparent-1"' in index
     assert 'href="/assets/brand/apple-touch-icon.png?v=transparent-1"' in index
-    assert 'styles.css?v=smart-intake-1.1' in index
-    assert 'app.js?v=smart-intake-1.1' in index
+    assert 'styles.css?v=customer-speaker-v1' in index
+    assert 'app.js?v=customer-speaker-v1' in index
     assert 'case-views.js?v=smart-intake-1.1' in app
     assert 'src="/assets/brand/logo.png?v=transparent-1"' in app
     assert "鲸汤AI视频代运营工作台" in app

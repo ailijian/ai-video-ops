@@ -63,6 +63,11 @@
     generic
     null
 
+    原文明确“创始人”“老板”“店主”等本人关系时，可建议 owner_founder，
+    evidence_quotes 必须包含对应身份原文。公开身份与类型分别输出。
+    没有类型依据时保留 null；generic 只用于有依据的其他出镜人，不能作为缺省。
+    类型建议不表示出镜同意、本人经历批准或媒体使用权。
+
 12. 不得生成：
     first_person_allowed_topics
     Speaker Persona
@@ -97,16 +102,16 @@
 {
   "speaker_candidates": [
     {
-      "name": "杜建青",
+      "name": "虚构人物甲",
       "public_role": "创始人",
       "speaker_type_hint": "owner_founder",
       "candidate_status": "potential_representative",
       "evidence_quotes": [
-        "我的名字：杜建青",
+        "我的名字：虚构人物甲",
         "角色：创始人"
       ],
       "personal_material_quotes": [
-        "经营年限：深耕餐饮三十余年，创立菁蓓荟品牌至今"
+        "我亲自参与虚构小馆的菜单试菜，并记录了食材处理方法。"
       ],
       "explicit_forbidden_claims": []
     }

@@ -57,6 +57,12 @@ def approve_persona(
     ):
         errors.append("Persona must be review_required and not approved.")
     errors.extend(validate_required_fact_authority(persona))
+    if persona.get("persona_scope", "business") == "business":
+        from customer_constraints_v1 import assert_production_allowed
+        try:
+            assert_production_allowed(persona, persona_path)
+        except RuntimeError as exc:
+            errors.append(str(exc))
     recorded_content_sha = str(
         persona.get("provenance", {}).get("content_sha256") or ""
     )

@@ -882,10 +882,13 @@ def list_creation_options(
     customers: list[dict[str, Any]] = []
 
     for customer in list_customers(settings):
-        if customer.get("status") != "approved":
+        if customer.get("status") != "approved" and not (customer.get("current_business_persona") or {}).get("approved"):
             continue
 
         business_id = str(customer["business_id"])
+        from .persona_authority import resolve_persona_authority
+        business = resolve_persona_authority(settings, business_id, "business").current
+        restriction_blocked = bool(business and (business.get("production_constraints") or {}).get("blockers"))
 
         try:
             speakers = list_speakers(
@@ -922,8 +925,8 @@ def list_creation_options(
                 "industry": (customer.get("industry")),
                 "business_persona_status": ("approved"),
                 "speakers": (approved_speakers),
-                "creation_ready": bool(approved_speakers),
-                "authority_blocker": (authority_blocker),
+                "creation_ready": bool(approved_speakers) and not restriction_blocked,
+                "authority_blocker": ({"code": "BUSINESS_CONSTRAINT_BLOCKED", "message": "客户存在尚未处理的重要限制。", "next_action": "核对客户限制。"} if restriction_blocked else authority_blocker),
             }
         )
 

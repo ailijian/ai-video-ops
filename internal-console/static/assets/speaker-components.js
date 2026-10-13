@@ -36,6 +36,7 @@ export function speakerTypeLabel(type) {
 export function speakerStatusPill(status) {
   const values = {
     approved: ["已确认", "pill-approved"],
+    revalidation_required: ["需复核关联", "pill-review"],
     fact_review_required: ["信息待确认", "pill-review"],
     persona_review_required: ["档案待确认", "pill-review"],
     analyzing: ["分析中", "pill-review"],
@@ -122,15 +123,8 @@ export function speakerProgressPanel(task, { compact = false } = {}) {
           <h2>${title}</h2>
           <p>${escapeHtml(task.stage || "等待开始")}</p>
         </div>
-        <strong>${Number(task.progress || 0)}%</strong>
       </div>
-
-      <div class="progress-track">
-        <span style="width:${Math.max(
-          0,
-          Math.min(100, Number(task.progress || 0)),
-        )}%"></span>
-      </div>
+      <p class="field-hint">按已保存的处理阶段显示，不预估剩余时间。</p>
 
       <ol class="progress-steps">${stages}</ol>
       ${footer}

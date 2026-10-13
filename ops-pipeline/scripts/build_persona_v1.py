@@ -210,6 +210,14 @@ def _specific_production_value(value: Any) -> bool:
     return False
 
 
+def recovery_target_fields() -> dict[str, set[str]]:
+    """Canonical capability-to-field mapping, without provider dependencies."""
+    return {"business_identity": set(BUSINESS_OFFERING_FIELDS),
+        "customer_use_context": set(CUSTOMER_USE_CONTEXT_FIELDS),
+        "production_bearing_facts": set(PRODUCTION_BEARING_FIELDS),
+        "industry": {"industry"}, "critical_constraints": set()}
+
+
 def assess_business_persona_capabilities(
     facts: dict[str, Any],
     *,
@@ -373,11 +381,19 @@ def validate_required_fact_authority(persona: dict[str, Any]) -> list[str]:
         if not isinstance(persona.get("business_persona_ref"), dict):
             errors.append("Speaker Persona requires an Approved Business Persona reference.")
         return errors
-    readiness = assess_business_persona_capabilities(persona.get("facts") or {})
-    return [
+    readiness = assess_business_persona_capabilities(persona.get("facts") or {},
+        critical_constraints=persona.get("critical_constraints") or [])
+    errors = [
         f"{group} capability must be satisfied before approval."
         for group in readiness["blockers"]
     ]
+    from customer_constraints_v1 import validate_control_layer
+    try:
+        if validate_control_layer(persona)["blockers"]:
+            errors.append("Business restrictions require Human resolution before approval.")
+    except RuntimeError as exc:
+        errors.append(str(exc))
+    return errors
 
 
 def persona_content_hash(persona: dict[str, Any]) -> str:
@@ -594,7 +610,7 @@ def build_persona(
     timestamp = created_at or now_iso()
     persona_control_layer = source.get("persona_control_layer")
     if persona_control_layer is not None:
-        if persona_scope != "speaker" or not isinstance(persona_control_layer, dict):
+        if not isinstance(persona_control_layer, dict):
             raise RuntimeError(
                 "persona_control_layer is an optional Speaker Persona control extension."
             )
@@ -603,6 +619,9 @@ def build_persona(
             raise RuntimeError(
                 "Speaker persona_control_layer requires derived_authority_constraints."
             )
+        if persona_scope == "business":
+            from customer_constraints_v1 import validate_control_layer
+            validate_control_layer(source)
     persona: dict[str, Any] = {
         "schema_version": SCHEMA_VERSION,
         "persona_id": persona_id,
@@ -671,7 +690,7 @@ def build_persona(
         persona["persona_control_layer"] = copy.deepcopy(persona_control_layer)
     critical_constraints = source.get("critical_constraints") or []
     if critical_constraints:
-        if persona_scope != "speaker" or not isinstance(critical_constraints, list):
+        if not isinstance(critical_constraints, list):
             raise RuntimeError(
                 "critical_constraints is an optional Speaker Persona authority extension."
             )

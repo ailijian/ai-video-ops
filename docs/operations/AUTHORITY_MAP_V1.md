@@ -5,7 +5,64 @@
 
 This map records existing owners and consumers. It introduces no new business authority.
 
+## Customer restriction contract amendment — 2026-10-10
+
+Founder / Architecture verdict: `E2_A_CONTRACT_AMENDMENT_APPROVED_FOR_IMPLEMENTATION`.
+Machine owner: `ops-pipeline/scripts/customer_constraints_v1.py`, contract
+`business-restriction-v1.0`. Existing Intake / Fact Candidate
+`derived_authority_constraints` / Human Review / Persona control layer own the
+records; this shared validator/resolver writes no parallel Authority.
+
+Types: `publication_prohibition`, `unverified_claim`, `identity_conflict`,
+`conditional_fact`. Typed Human actions: `confirm`, `exclude`, `defer`,
+`dismiss`, `resolve`. Ordinary fact `approve/edit/reject` cannot review a
+restriction. Exact raw answer SHA/quote, candidate SHA, authenticated actor,
+time and immutable review intent bind each decision. Resolution quotes are
+mapped locally into full source references; original records never change.
+
+Unknown type/scope/source fail closed. Identity conflicts have business scope;
+claim restrictions cannot downgrade them. Excluded unverified claims remain
+outside Known Truth while independent facts may pass approval. Pending or
+deferred restrictions block approval; confirmed prohibitions and conditions
+remain production controls. A new critical Intake temporarily restricts current
+production without revoking or rewriting Approved R1. Resolution targets bind
+one exact ID/hash/source; unrelated Known supplements resolve nothing.
+Legacy IDs may repeat across Intakes: resolution matches the ID, Intake ID,
+Raw Answers SHA and constraint SHA together, never the ID alone.
+
+Consumers: Business builder/approval/current resolver; Console creation options
+and entry; canonical creation/capacity; Fact Atoms; source matching; Mix plan,
+generation/revision/review/export/closure. Mix omits excluded facts, rejects
+blocked claims and requires applicable original conditions. Novel News preview,
+generation/review/export and News repurpose are explicitly blocked when this
+new control contract is present until their validators support it. Legacy
+Speaker controls and legacy Persona hash serialization remain unchanged.
+
 Runtime artifact paths below are relative to `ops-pipeline/`. The [Knowledge Index](README.md) routes human intent and [machine sources](README.md#machine-sources) by scope. Writers listed here identify current implementation and compatible historical paths; their fields and validation remain owned by the code. Formal writes on a running production node use the Console gateways and locks described in the [RUNBOOK](RUNBOOK.md).
+
+### Customer exception review amendment — 2026-10-10
+
+Founder / Architecture verdict: `CS_E2_UX_UX1_CONTRACT_APPROVED_FOR_IMPLEMENTATION`.
+`customer_constraints_v1.py` owns `restriction-amendment-v1.0` inside the existing
+typed Human Decision. Original candidate/control/source SHA stays immutable;
+source-backed effective control is derived by the same collector and production
+policy. Core conflicts still require the explicit resolution gate. Unsupported
+fields, missing evidence and unsupported weakening are rejected.
+
+`customer_fact_review_v1.py` owns `customer-fact-review-progress-v1.0` receipts
+under the same Intake's `review_progress/`. Each immutable increment binds exact
+candidate/source SHA, actor/time, operation identity and parent receipt SHA.
+Unsubmitted candidates remain Pending; the merged projection is canonical,
+not SQLite. Complete Fact Review still requires full coverage and is distinct
+from Persona Approval. Historical complete-review files retain their old format
+and SHA; a new batch cannot overwrite an existing decision.
+
+Console `customer_gateway.py` signs actor/node-bound review contexts and validates
+the current candidate/review/constraint/Persona snapshot inside the Business lock.
+Exact committed replay is allowed; stale or borrowed contexts are rejected.
+Durable receipt recovery resumes subsequent derived writes without claiming a
+multi-file atomic transaction. UI preselection is pending selection only, and
+Speaker Human Review, shared-customer access and News fail-closed remain unchanged.
 
 ## Authority domains
 
@@ -36,6 +93,7 @@ Runtime artifact paths below are relative to `ops-pipeline/`. The [Knowledge Ind
 ## Non-authorities
 
 - Raw intake, Fact Candidate, AI extraction, Case facts, operator hints, capture missions, and status read-model output do not own Customer Truth.
+- Customer save-only identity, industry suggestions, and Speaker discovery intent are intake records, not approved facts. Additive Business updates retain the previous approved revision until a separate approval of the new candidate. `data/speaker_revalidations/<speaker_id>/business_revision_NNNN/speaker_revalidation_review_v1.json` records explicit Human reuse of unchanged personal evidence against an exact new Business SHA; it does not approve the resulting Speaker revision or grant media rights. [Console contracts](../../internal-console/README.md#customer-and-speaker-smart-intake) route these writers and recovery actions.
 - Approval receipts prove that a gate occurred; they do not replace the approved artifact.
 - Operational Controls own only whether an operator action is paused. They do not own Persona, Content, Batch, Footage, Rights, or Proof lifecycle.
 - Internal Console tasks own execution status only. `queued`, `running`, `awaiting_review`, and `failed` never replace Case lifecycle or Human approval.

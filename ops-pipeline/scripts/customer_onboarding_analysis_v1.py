@@ -11,6 +11,8 @@ from pathlib import Path
 from typing import Any, Callable
 
 from openai import OpenAI
+from customer_constraints_v1 import extract_constraints
+from build_persona_v1 import recovery_target_fields
 
 from customer_intake_v1 import (
     INITIAL_TOPIC_MAP,
@@ -40,7 +42,10 @@ ENV_PATH = Path(__file__).resolve().parents[1] / ".env"
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,127}$")
 
+CUSTOMER_INDUSTRIES = ("餐饮", "本地生活", "零售", "烘焙甜品", "美容", "教培", "服装", "饰品", "通用行业")
+
 AI_BUSINESS_TOPICS = {
+    "industry",
     "primary_service",
     "core_audience",
     "customer_use_case",
@@ -61,6 +66,45 @@ class CustomerOnboardingError(RuntimeError):
 
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def validate_saved_source_recovery(request: dict[str, Any], pipeline_root: Path) -> None:
+    lineage = request.get("source_lineage") or {}
+    if lineage.get("operation") != "saved_source_recovery":
+        return
+    source_id = str(lineage.get("source_intake_id") or "")
+    targets = lineage.get("recovery_targets")
+    if (request["intake_type"] != "gap_supplement" or not re.fullmatch(r"intake_\d{4}", source_id)
+            or source_id == request["intake_id"] or not isinstance(targets, list) or not targets
+            or set(targets) - set(recovery_target_fields()) or not lineage.get("execution_identity")):
+        raise CustomerOnboardingError("RECOVERY_SOURCE_INVALID", "Recovery identity or targets are invalid.")
+    source = pipeline_root / "data/customer_intakes" / request["business_id"] / source_id
+    raw_path = source / "customer_intake_v1.json"
+    projection_path = source / "customer_intake_privacy_projection_v1.json"
+    original_path = source / "customer_onboarding_request_v1.json"
+    if not all(p.is_file() for p in (raw_path, projection_path, original_path)):
+        raise CustomerOnboardingError("RECOVERY_SOURCE_MISSING", "Immutable saved source is unavailable.")
+    raw = read_json(raw_path)
+    source_projection = read_json(projection_path)
+    original_materials = str(read_json(original_path).get("materials") or "").strip()
+    raw_sha = sha256_json(raw.get("raw_answers") or [])
+    expected = sha256_json({"source_intake_id": source_id,
+        "raw_sha256": hashlib.sha256(raw_path.read_bytes()).hexdigest(),
+        "projection_sha256": hashlib.sha256(projection_path.read_bytes()).hexdigest(),
+        "targets": sorted(set(targets)), "execution_identity": lineage["execution_identity"]})
+    if (raw.get("provisional_business_id") != request["business_id"] or raw.get("intake_id") != source_id
+            or raw_sha != raw.get("raw_input_contract", {}).get("raw_answers_sha256")
+            or raw_sha != lineage.get("source_raw_answers_sha256")
+            or hashlib.sha256(raw_path.read_bytes()).hexdigest() != lineage.get("source_raw_sha256")
+            or hashlib.sha256(projection_path.read_bytes()).hexdigest() != lineage.get("source_projection_sha256")
+            or source_projection.get("business_id") != request["business_id"]
+            or source_projection.get("intake_id") != source_id
+            or source_projection.get("source", {}).get("raw_materials_sha256") != sha256_text(original_materials)
+            or not any(v.get("topic") == "freeform_customer_materials" and v.get("answer_text") == original_materials
+                for v in raw.get("raw_answers") or [])
+            or expected != lineage.get("recovery_identity")
+            or request["materials"] != original_materials):
+        raise CustomerOnboardingError("RECOVERY_SOURCE_SHA_MISMATCH", "Saved source lineage changed; extraction was not performed.")
 
 
 def sha256_text(value: str) -> str:
@@ -186,12 +230,6 @@ def validate_request(request: dict[str, Any]) -> dict[str, Any]:
             "Customer name is required.",
         )
 
-    if not industry:
-        raise CustomerOnboardingError(
-            "INDUSTRY_REQUIRED",
-            "Industry is required.",
-        )
-
     if not materials:
         raise CustomerOnboardingError(
             "CUSTOMER_MATERIALS_REQUIRED",
@@ -231,6 +269,7 @@ def build_raw_answers(
     intake_id = request["intake_id"]
 
     if request["intake_type"] == "gap_supplement":
+        recovery = (request.get("source_lineage") or {}).get("operation") == "saved_source_recovery"
         return [
             {
                 "answer_id": f"{intake_id}_gap_{index:02d}",
@@ -238,16 +277,16 @@ def build_raw_answers(
                 "target_gap": item["target_gap"],
                 "answer_text": item["raw_answer"],
                 "input_actor": "operator",
-                "source_type": "operator_entered_gap_supplement",
+                "source_type": "saved_source_extraction_recovery" if recovery else "operator_entered_gap_supplement",
                 "source_ref": (
                     f"{business_id}:{intake_id}:gap:{item['target_gap']}"
                 ),
-                "confirmation_basis": "operator_explicit_input",
+                "confirmation_basis": "operator_requested_saved_source_recovery" if recovery else "operator_explicit_input",
             }
             for index, item in enumerate(request["gap_answers"], start=1)
         ]
 
-    return [
+    answers = [
         {
             "answer_id": f"{intake_id}_business_name",
             "topic": "business_name",
@@ -278,6 +317,8 @@ def build_raw_answers(
             "confirmation_basis": "raw_customer_materials",
         },
     ]
+    return [item for item in answers if str(item.get("answer_text") or "").strip()]
+
 
 
 def build_privacy_projection(
@@ -286,15 +327,16 @@ def build_privacy_projection(
     created_at: str,
 ) -> dict[str, Any]:
     raw_materials = request["materials"]
-    safe_materials = project_safe_semantic(raw_materials)
+    from privacy_projection_v1 import project_task_materials
+    safe_materials = project_task_materials(raw_materials, task="customer")
 
     annotations = detect_sensitive_spans(raw_materials)
 
     safe_context = {
-        str(field): project_safe_semantic(
+        str(field): project_task_materials(
             json.dumps(value, ensure_ascii=False)
             if not isinstance(value, str)
-            else value
+            else value, task="customer"
         )
         for field, value in request.get("reviewed_context", {}).items()
     }
@@ -314,6 +356,7 @@ def build_privacy_projection(
         "business_id": request["business_id"],
         "intake_id": request["intake_id"],
         "intake_type": request["intake_type"],
+        "recovery_targets": (request.get("source_lineage") or {}).get("recovery_targets", []),
         "target_gaps": [
             item["target_gap"] for item in request.get("gap_answers", [])
         ],
@@ -342,7 +385,19 @@ def build_prompt(
     privacy_projection: dict[str, Any],
 ) -> str:
     projection = privacy_projection["projection"]
+    restriction_contract = """
+同时提取有逐字来源的重要限制，在 constraints 数组中返回。限制不是可宣传事实，绝不能重复写入 facts。
+constraint_type 仅允许 publication_prohibition（明确宣传禁用）、unverified_claim（未核实主张）、identity_conflict（主体/核心身份冲突）、conditional_fact（附条件事实）。
+scope：identity_conflict 必须为 business，其余为 claim。
+每项包含 evidence_quote、affected_fields（正式事实字段数组）、blocked_terms（原文中不得使用的短语数组）、related_fact_refs（关联事实引用数组）、condition（附条件事实的逐字条件，其余 null）。
+无法可靠指向来源/作用对象时不要创造限制或事实；所有限制仍需独立人工检查，不能将待核实奖项作为已获奖事实。
+另外返回 source_coverage 数组，逐项引用资料中明确覆盖的能力组及逐字 evidence_quote。
+capability_group 仅允许 business_identity、customer_use_context、production_bearing_facts、critical_constraints。
+这是来源覆盖观察，不能批准事实。没有逐字来源就不输出该组，不能凭空断定客户未提供资料。
+""".strip()
 
+    if privacy_projection.get("recovery_targets"):
+        restriction_contract += "\n此次为已保存历史资料的遗漏恢复，不是客户新增回答。只提取这些未覆盖领域：" + ", ".join(privacy_projection["recovery_targets"]) + "。已审核字段不得重复生成候选。"
     if privacy_projection.get("intake_type") == "gap_supplement":
         return f"""
 你是 Customer Truth 补充信息提取器。
@@ -357,9 +412,11 @@ def build_prompt(
 4. 不得补全常识、推测画像或创造价格、流程、痛点。
 5. 这里只生成 Fact Candidate，仍需 Human Review。
 6. 不提取 Speaker 第一人称事实。
+{restriction_contract}
 
 只允许以下 topic：
 
+- industry（只在资料足够时推荐；使用正式行业选项：餐饮、本地生活、零售、烘焙甜品、美容、教培、服装、饰品、通用行业；不足时不要输出）
 - primary_service
 - core_audience
 - customer_use_case
@@ -417,9 +474,11 @@ def build_prompt(
 8. 所有结果都必须等待 Human Review。
 9. 不提取 Speaker 第一人称事实。
 10. evidence_quote 必须来自下面提供的隐私安全资料，尽量短。
+{restriction_contract}
 
 只允许以下 topic：
 
+- industry（只在资料足够时推荐；使用正式行业选项：餐饮、本地生活、零售、烘焙甜品、美容、教培、服装、饰品、通用行业；不足时不要输出）
 - primary_service
 - core_audience
 - customer_use_case
@@ -593,6 +652,8 @@ def extract_remote_facts(
 
     return {
         "facts": facts,
+        "constraints": payload.get("constraints", []),
+        "source_coverage": payload.get("source_coverage", []),
         "model": model,
         "usage": {
             "prompt_tokens": getattr(
@@ -674,6 +735,8 @@ def validate_model_fact(
         return None
 
     value = fact.get("value")
+    if topic == "industry" and value not in CUSTOMER_INDUSTRIES:
+        return None
 
     if value in (None, "", []):
         return None
@@ -707,6 +770,13 @@ def build_ai_candidates(
         )
 
     existing_fields = {str(item.get("target_field") or "") for item in candidates}
+    recovery = (intake.get("source_lineage") or {}).get("operation") == "saved_source_recovery"
+    allowed_fields = None
+    if recovery:
+        targets = intake["source_lineage"]["recovery_targets"]
+        mapping = recovery_target_fields()
+        allowed_fields = set().union(*(mapping[target] for target in targets))
+        existing_fields.update(intake["source_lineage"].get("already_reviewed_fields", []))
 
     candidate_number = len(candidates) + 1
 
@@ -717,6 +787,10 @@ def build_ai_candidates(
             continue
 
         target_field, value, safe_quote = validated
+        if allowed_fields is not None and target_field not in allowed_fields:
+            continue
+        if target_field == "industry" and (not safe_quote or safe_quote not in safe_materials):
+            continue
 
         # One initial candidate per target field keeps Human Review simple.
         if target_field in existing_fields:
@@ -782,11 +856,29 @@ def build_ai_candidates(
         existing_fields.add(target_field)
         candidate_number += 1
 
-    return build_fact_candidate_artifact(
+    artifact = build_fact_candidate_artifact(
         intake,
         candidates,
         created_at=str(intake.get("created_at") or now_iso()),
+        derived_authority_constraints=extract_constraints(
+            intake, extracted if not recovery or "critical_constraints" in targets else {"constraints": []}, safe_materials),
     )
+    coverage = extracted.get("source_coverage") or []
+    if not isinstance(coverage, list) or len(coverage) > 8:
+        raise CustomerOnboardingError("SOURCE_COVERAGE_INVALID", "Source observations must be a bounded list.")
+    observations = []
+    for item in coverage:
+        group = item.get("capability_group") if isinstance(item, dict) else None
+        quote = str(item.get("evidence_quote") or "") if isinstance(item, dict) else ""
+        answer = next((v for v in source_answers if quote and quote in v["answer_text"]), None)
+        if group not in recovery_target_fields() or group == "industry" or not quote or quote not in safe_materials or answer is None:
+            raise CustomerOnboardingError("SOURCE_COVERAGE_INVALID", "Source observation lacks exact safe evidence.")
+        observations.append({"capability_group": group, "evidence_quote": quote,
+            "raw_answer_ref": answer["answer_id"], "raw_answers_sha256": intake["raw_input_contract"]["raw_answers_sha256"],
+            "observation_is_human_approval": False})
+    if observations:
+        artifact["source_coverage"] = observations
+    return artifact
 
 
 def analyze_customer_onboarding(
@@ -806,6 +898,8 @@ def analyze_customer_onboarding(
     created_at: str | None = None,
 ) -> dict[str, Any]:
     request = validate_request(request)
+
+    validate_saved_source_recovery(request, pipeline_root)
 
     root = (
         pipeline_root
@@ -1063,7 +1157,10 @@ def analyze_customer_onboarding(
             )
     else:
         try:
-            if speaker_discovery_extractor is not None:
+            if (request.get("source_lineage") or {}).get("operation") == "saved_source_recovery":
+                # Business recovery preserves existing Speaker discovery and Drafts.
+                speaker_extracted = {"speaker_candidates": [], "model": "saved-source-business-recovery", "usage": {}}
+            elif speaker_discovery_extractor is not None:
                 speaker_extracted = speaker_discovery_extractor(privacy)
             elif extractor is None:
                 speaker_extracted = extract_remote_speaker_candidates(privacy)
@@ -1223,6 +1320,40 @@ def analyze_customer_onboarding(
     return summary
 
 
+def retry_speaker_discovery(*, request_path: Path, pipeline_root: Path, extractor=None) -> dict[str, Any]:
+    """Retry only fail-soft person discovery from the saved safe projection.
+
+    Each admitted retry has immutable request/result artifacts. Customer facts,
+    readiness, original discovery and Human decisions are never rewritten.
+    """
+    retry = read_json(request_path)
+    business_id, intake_id = retry["business_id"], retry["intake_id"]
+    if not ID_RE.fullmatch(business_id) or not re.fullmatch(r"intake_\d{4}", intake_id):
+        raise CustomerOnboardingError("INVALID_DISCOVERY_RETRY", "Invalid intake identity.")
+    intake = pipeline_root / "data/customer_intakes" / business_id / intake_id
+    expected_root = intake / "speaker_discovery_retries"
+    if request_path.resolve().parent.parent != expected_root.resolve():
+        raise CustomerOnboardingError("INVALID_DISCOVERY_RETRY", "Retry must belong to the intake.")
+    output = request_path.parent / "speaker_discovery_candidates_v1.json"
+    if output.is_file():
+        return read_json(output)
+    privacy_path = intake / "customer_intake_privacy_projection_v1.json"
+    privacy = read_json(privacy_path)
+    # This is the same privacy-projected extraction and candidate validator as
+    # the original pipeline; no new Customer fact extractor is invoked.
+    try:
+        extracted = (extractor or extract_remote_speaker_candidates)(privacy)
+        artifact = build_speaker_discovery_artifact(business_id=business_id, intake_id=intake_id,
+            created_at=now_iso(), extracted=extracted, privacy_projection=privacy,
+            customer_intake_path=intake / "customer_intake_v1.json", privacy_projection_path=privacy_path)
+    except Exception as exc:
+        artifact = build_failed_speaker_discovery_artifact(business_id=business_id, intake_id=intake_id,
+            created_at=now_iso(), failure_code=str(getattr(exc, "code", "SPEAKER_DISCOVERY_FAILED")),
+            customer_intake_path=intake / "customer_intake_v1.json", privacy_projection_path=privacy_path)
+    write_new_or_same(output, artifact)
+    return artifact
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
@@ -1242,6 +1373,7 @@ def main() -> None:
         default=None,
     )
 
+    parser.add_argument("--discovery-retry", action="store_true")
     args = parser.parse_args()
 
     pipeline_root = (
@@ -1249,6 +1381,12 @@ def main() -> None:
         if args.pipeline_root
         else Path(__file__).resolve().parents[1]
     )
+
+    if args.discovery_retry:
+        artifact = retry_speaker_discovery(request_path=Path(args.request).expanduser().resolve(), pipeline_root=pipeline_root)
+        ok = artifact.get("speaker_discovery_status") != "failed"
+        print(json.dumps({"ok": ok, "code": "SPEAKER_DISCOVERY_FAILED" if not ok else "OK", "message": "人物发现暂未完成，请稍后重试。" if not ok else "人物发现已完成。"}, ensure_ascii=False))
+        raise SystemExit(0 if ok else 2)
 
     request = read_json(Path(args.request).expanduser().resolve())
 

@@ -86,6 +86,10 @@ def load_approved_persona(
     content_sha = persona_content_hash(persona)
     if persona.get("provenance", {}).get("content_sha256") != content_sha:
         raise RuntimeError("Approved Persona content changed without a new revision.")
+    from customer_constraints_v1 import assert_production_allowed
+    rules = assert_production_allowed(persona, path)
+    if rules.get("derived_authority_constraints"):
+        persona["_production_constraints"] = rules["derived_authority_constraints"]
     return persona, sha256_file(path)
 
 

@@ -2018,6 +2018,9 @@ def build_fact_atom_catalog(
     persona_sha256: str,
     allowed_fact_fields: set[str] | None = None,
 ) -> list[dict[str, Any]]:
+    if persona.get("persona_scope", "business") == "business":
+        from customer_constraints_v1 import truth_projection
+        persona = truth_projection(persona)
     atoms: list[dict[str, Any]] = []
     for field in sorted(persona.get("facts") or {}):
         if allowed_fact_fields is not None and field not in allowed_fact_fields:
@@ -3916,6 +3919,12 @@ def approved_persona_ref(
         raise RuntimeError("Persona approval receipt identity mismatch.")
     if receipt.get("persona_sha256_after_approval") != persona_sha:
         raise RuntimeError("Approved Persona SHA does not match its approval receipt.")
+    if expected_scope == "business":
+        from customer_constraints_v1 import assert_production_allowed, truth_projection
+        rules = assert_production_allowed(persona, persona_path)
+        if rules["derived_authority_constraints"]:
+            persona["_production_constraints"] = rules["derived_authority_constraints"]
+            persona = truth_projection(persona, path=persona_path)
     return persona, {
         "persona_id": persona.get("persona_id"),
         "revision": persona.get("revision"),
