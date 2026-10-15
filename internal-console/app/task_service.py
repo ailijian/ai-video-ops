@@ -159,7 +159,8 @@ def _row_to_task(row: Any) -> dict[str, Any]:
     }
 
 
-def list_tasks(database_path: Path, limit: int = 50) -> list[dict[str, Any]]:
+def list_tasks(database_path: Path, limit: int = 50, *, case_actor_user_id: int | None = None,
+               case_reviewer: bool = False) -> list[dict[str, Any]]:
     connection = connect(database_path)
     try:
         rows = connection.execute(
@@ -167,10 +168,11 @@ def list_tasks(database_path: Path, limit: int = 50) -> list[dict[str, Any]]:
             SELECT {columns}
             FROM tasks AS t
             LEFT JOIN users AS u ON u.id = t.created_by_user_id
-            ORDER BY t.updated_at DESC
+            WHERE (? IS NULL OR ? = 1 OR t.task_type != 'case_analysis' OR t.created_by_user_id = ?)
+            ORDER BY t.updated_at DESC, t.task_id DESC
             LIMIT ?
             """.format(columns=TASK_COLUMNS),
-            (max(1, min(limit, 500)),),
+            (case_actor_user_id, int(case_reviewer), case_actor_user_id, max(1, min(limit, 500))),
         ).fetchall()
     finally:
         connection.close()

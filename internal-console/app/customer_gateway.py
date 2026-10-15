@@ -644,6 +644,8 @@ def _project_persona(
 def _customer_projection(
     settings: Settings,
     business_id: str,
+    *,
+    approved_speaker_count: int | None = None,
 ) -> dict[str, Any]:
     intake_dir = _latest_intake_dir(
         settings,
@@ -766,7 +768,7 @@ def _customer_projection(
         "industry": str(industry),
         "industry_classification": industry_classification,
         "status": status,
-        "speaker_count": (
+        "speaker_count": approved_speaker_count if approved_speaker_count is not None else (
             _approved_speaker_count(
                 settings,
                 business_id,

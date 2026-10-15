@@ -22,6 +22,7 @@ This is a reading route, not a global precedence rule. The Baseline owns system 
 | Production profiles, creative coverage and structural matching intent | [Production Profile & Creative Coverage](../design/Production%20Profile%20&%20Creative%20Coverage%20V1｜产品与工程冻结框架.md) | Frozen design intent; dated coverage claims are historical, while current coverage comes from validated runtime artifacts |
 | Console interaction, Human Gates, auth and business-data boundaries | [Internal Console UX & Interaction](../design/AI%20Video%20Ops%20MVP%20V1｜Internal%20Console%20UX%20&%20Interaction%20Freeze%20V1.0.md) | Current interaction/boundary reference; presentation clauses are partially superseded by the next row |
 | Console presentation, navigation, language, layout and responsive rules | [Productized UI & Information Architecture](../design/鲸汤%20AI%20视频代运营工作台｜Productized%20UI%20&%20Information%20Architecture%20Freeze%20V1.0.md) | Frozen design target for this scope; does not prove implementation or replace business/security boundaries |
+| Customer-centric creation navigation and customer operations list | [NAV-1 / CUSTOMER-LIST-1 implementation](../design/NAV1_CUSTOMER_LIST1_IMPLEMENTATION_REPORT.md) | Founder-authorized presentation amendment and dated offline implementation evidence; supersedes applicable navigation/list/global-create presentation only, retains Authority boundaries, and awaits independent Product Review / production validation |
 | Business artifacts and their writers/consumers | [Authority Map](AUTHORITY_MAP_V1.md) | Current ownership route; artifact fields and validation belong to the linked machine sources |
 | Runtime, rollout, recovery and deployment | [RUNBOOK](RUNBOOK.md), [Console](../../internal-console/README.md), [Local Node](../../deploy/local-node/README.md) | Current operating references; implementation, availability and validation evidence remain separate |
 | Case Smart Intake V1.1 controlled deployment | [CSI production deploy procedure](CASE_SMART_INTAKE_V1_1_PRODUCTION_DEPLOY_RUNBOOK.md) | Exact-commit promotion, migration/backup, preflight and real-validation gates; preparation does not establish Production PASS |
@@ -29,6 +30,10 @@ This is a reading route, not a global precedence rule. The Baseline owns system 
 | Verification execution, isolation and live Authority smoke | [Repository verification](../../tools/README.md), [Pipeline test layers](../../ops-pipeline/tests/README.md), [Console test configuration](../../internal-console/pyproject.toml) | The root runner owns full/affected execution; package configuration owns its checks. Fixtures and test results remain evidence, not production Authority |
 
 ## Machine sources
+
+DASH-1's [Brand Operations Home read contract](../design/DASH1_BRAND_OPERATIONS_HOME.md)
+routes the homepage aggregation, action identities and unknown completion metric.
+It combines existing owners without changing Authority or granting permissions.
 
 Runtime artifact paths in the Authority Map and Artifact Lifecycle are relative to `ops-pipeline/`. Resolve their approval and SHA lineage; do not substitute a fixture or select a file by mtime.
 
@@ -43,6 +48,7 @@ Runtime artifact paths in the Authority Map and Artifact Lifecycle are relative 
 | Smart Case intake groups and independent classification labels | Console [intake admission](../../internal-console/app/case_intake_service.py), [classification companion](../../internal-console/app/case_classification.py), and [usage/API boundaries](../../internal-console/README.md#case-smart-intake); canonical analysis and approval retain their existing owners |
 | Customer intake identity, additive Business revisions and explicit Speaker revalidation | [Console contracts and recovery](../../internal-console/README.md#customer-and-speaker-smart-intake), [Customer review writer](../../ops-pipeline/scripts/customer_fact_review_v1.py), [Speaker review writer](../../ops-pipeline/scripts/speaker_fact_review_v1.py); existing Persona builder, resolver and approval remain Authority owners |
 | Shared Authority release provenance and checksums | [Authority release](../../deploy/creative-authority/authority_release.py) |
+| Case publication, reviewer grants and private submission access | [Case Library Access V1](../design/CASE_LIBRARY_ACCESS_V1.md), [display receipt/projection owner](../../internal-console/app/case_shared_display.py), [principal/access adapter](../../internal-console/app/case_library_access.py), [independent Approval authorization owner](../../ops-pipeline/scripts/case_console_authorization_v1.py); approved Case and production Authority retain their existing owners |
 
 ## History and evidence
 

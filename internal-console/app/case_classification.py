@@ -32,8 +32,8 @@ AUTHORITY = {
 }
 
 
-def _context(settings: Settings, case_id: str):
-    case_path, attempt = _find_case_path(settings, case_id)
+def _context(settings: Settings, case_id: str, *, attempt_id: str | None = None):
+    case_path, attempt = _find_case_path(settings, case_id,attempt_id=attempt_id)
     case = _read_json(case_path)
     attempt_id = str((attempt or {}).get("attempt_id") or (case.get("analysis_lineage") or {}).get("attempt_id") or "")
     path = None
@@ -123,8 +123,8 @@ def recommend_classification(case: dict, digest: str, narration: list | None = N
     }
 
 
-def classification_state(settings: Settings, case_id: str) -> dict:
-    case_path, case, attempt_id, path = _context(settings, case_id)
+def classification_state(settings: Settings, case_id: str, *, attempt_id: str | None = None) -> dict:
+    case_path, case, attempt_id, path = _context(settings, case_id,attempt_id=attempt_id)
     digest = _sha256(case_path)
     suggestion = recommend_classification(case, digest, _narration_from_bound_storyboard(settings, case))
     record = _read_json(path) if path and path.is_file() else None
@@ -151,8 +151,8 @@ def classification_state(settings: Settings, case_id: str) -> dict:
     }
 
 
-def classification_summary(settings: Settings, case_id: str) -> dict:
-    state = classification_state(settings, case_id)
+def classification_summary(settings: Settings, case_id: str, *, attempt_id: str | None = None) -> dict:
+    state = classification_state(settings, case_id,attempt_id=attempt_id)
     human = state["human"] or {}
     return {"status": state["status"], "industry": human.get("industry"), "profile": human.get("profile"),
             "confirmed_by": {"phone": human["confirmed_by_phone"]} if human else None,

@@ -822,6 +822,7 @@ def _project_export_closure(
 def get_content_delivery_state(
     settings: Settings,
     request_id: str,
+    *, include_actors: bool = True,
 ) -> dict[str, Any]:
     request_id = _validate_request_id(
         request_id
@@ -904,7 +905,7 @@ def get_content_delivery_state(
         "created_by": request_actor(request),
         "reviewed_by": approval_actor,
         "approved_by": approval_actor if review["approved"] else None,
-        "exported_by": completed_operation_actor(settings.database_path, request_id, "mix_export") if export["completed"] else None,
+        "exported_by": completed_operation_actor(settings.database_path, request_id, "mix_export") if include_actors and export["completed"] else None,
         "request_id": request_id,
         "business_id": (
             request.get("persona_id")

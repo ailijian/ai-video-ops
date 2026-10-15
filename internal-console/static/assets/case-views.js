@@ -1,3 +1,4 @@
+import { formatConsoleTime } from "./ui-format.mjs?v=ui-1";
 import { boundaryReviewPanel, caseCard, caseReviewContent, escapeHtml, progressPanel } from "./case-components.js?v=smart-intake-1";
 import { bindCaseMediaPreview } from "./case-media-preview.mjs?v=case-media-fit-1";
 import { caseTaskResumeDestination } from "./case-submit-state.mjs?v=mobile-reliability-2";
@@ -6,6 +7,7 @@ import { detectCaseSourceInput, extractCaseSourceUrls } from "./case-source-dete
 import { uploadCaseFile, validateCaseFile } from "./case-file-upload.mjs?v=source-upload-ui-2";
 import { intakeCounts, intakeItemState, intakeStage, UNCERTAIN_INDUSTRY, classificationDraft, classificationSubmittable, classificationDiffers, batchConfirmableItems, confirmedClassificationLabel } from "./case-batch-submit.mjs?v=smart-intake-1.1-r1";
 import { CASE_INDUSTRIES, industryOptions, industryValue, syncCustomIndustry } from "./case-industry.mjs?v=industry-2";
+import { caseListCard, caseStateLabels, formatCaseDuration, listEmpty, listSkeleton, searchIcon } from "./list-ui.mjs?v=brand-ui-1";
 
 export function caseAcquisitionWarning(acquisition, { hasFile = false, unavailable = false } = {}) {
   if (hasFile || (acquisition?.mode === "qiyun" && acquisition.configured)) return "";
@@ -19,30 +21,92 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
   let stopPolling = null;
   let stopMediaPreview = null;
   let stopUpload = null;
+  let renderVersion = 0;
   const stopTaskPolling = () => { stopPolling?.(); stopPolling = null; };
-  const dispose = () => { stopTaskPolling(); stopMediaPreview?.(); stopMediaPreview = null; stopUpload?.(); stopUpload = null; };
+  const dispose = () => { renderVersion++; stopTaskPolling(); stopMediaPreview?.(); stopMediaPreview = null; stopUpload?.(); stopUpload = null; };
 
   async function renderCases() {
     dispose();
-    skeletonPage("案例");
+    const version = renderVersion;
+    app.innerHTML = shell("案例", `<main class="page page-standard brand-list-page case-library-page">${pageHeading("", "案例", "找到值得参考的视频，也关注自己的每一次投稿。")}${listSkeleton()}</main>`);
+    bindCommonActions();
     try {
-      const [data, groups] = await Promise.all([api("/api/cases"), api("/api/case-intake/groups")]);
-      const cases = data.cases;
-      const content = cases.length ? `<div class="filter-row" role="group" aria-label="案例状态筛选">
-          <button class="filter-chip active" data-filter="all" type="button">全部 ${cases.length}</button>
-          <button class="filter-chip" data-filter="awaiting_review" type="button">待审核 ${cases.filter((item) => item.status === "awaiting_review").length}</button>
-          <button class="filter-chip" data-filter="approved" type="button">已入库 ${cases.filter((item) => item.status === "approved").length}</button>
-        </div><div class="case-list">${cases.map((item) => caseCard(item, statusPill)).join("")}</div>` :
-        `<section class="state-panel empty-state"><h2>还没有案例</h2><p>添加一个抖音视频，分析完成后即可审核。</p></section>`;
-      app.innerHTML = shell("案例", `<main class="page page-standard case-library-page">${pageHeading("", "案例", "浏览和审核团队已经分析的视频案例。", '<a class="btn btn-primary" href="/cases/new" data-route>+ 添加案例</a>')}${(groups.groups || []).length ? `<section class="intake-recent-groups" aria-label="最近解析批次">${groups.groups.slice(0, 5).map(g => `<a class="btn btn-secondary" href="/case-intake/${g.group_id}" data-route>恢复本批解析 · ${escapeHtml(new Date(g.created_at).toLocaleString("zh-CN"))}</a>`).join("")}</section>` : ""}${content}</main>`);
+      const params = new URLSearchParams(location.search);
+      const view = ["shared", "mine", "review"].includes(params.get("view")) ? params.get("view") : "shared";
+      const query = new URLSearchParams({view, search:params.get("search") || "", industry:params.get("industry") || "", video_type:params.get("video_type") || "", status:params.get("status") || "", page:String(Math.max(1, Number(params.get("page")) || 1))});
+      const data = await api(`/api/cases?${query}`);
+      if (version !== renderVersion || location.pathname !== "/cases") return;
+      const link = patch => `/cases?${new URLSearchParams({...Object.fromEntries(query), ...patch})}`;
+      const returnPath = `/cases?${query}`;
+      const views = [["shared", "共享案例库"], ["mine", "我的投稿"], ...(data.capabilities?.case_library_reviewer ? [["review", "审核工作"]] : [])];
+      const tabs = `<nav class="list-view-tabs" aria-label="案例视图">${views.map(([value,label])=>`<a href="/cases?view=${value}" data-route class="${value===view?"active":""}" ${value===view?'aria-current="page"':""}>${label}</a>`).join("")}</nav>`;
+      const search = query.get("search"), industry = query.get("industry"), status = query.get("status");
+      const filters = view === "shared"
+        ? `<label class="list-select-label">行业<select id="case-industry-filter" aria-label="行业"><option value="">全部行业</option>${(data.industries || []).map(value=>`<option ${value===industry?"selected":""} value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join("")}</select></label>${data.video_types?.length ? `<label class="list-select-label">视频类型<select id="case-type-filter" aria-label="视频类型"><option value="">全部类型</option>${data.video_types.map(value=>`<option>${escapeHtml(value)}</option>`).join("")}</select></label>` : ""}`
+        : `<label class="list-select-label">状态<select id="case-status-filter" aria-label="状态"><option value="">全部状态</option>${Object.keys(data.status_counts || {}).map(value=>`<option value="${escapeHtml(value)}" ${value===status?"selected":""}>${caseStateLabels[value] || "待处理"}</option>`).join("")}</select></label>`;
+      const toolbar = `<form class="list-toolbar" id="case-search-form"><div class="list-search">${searchIcon}<label class="sr-only" for="case-search">搜索视频标题</label><input id="case-search" type="search" maxlength="120" placeholder="搜索视频标题" value="${escapeHtml(search)}"><button class="btn btn-secondary btn-compact" type="submit">搜索</button></div>${filters}</form>`;
+      const emptyTitle = search || industry || status ? "没有找到符合条件的视频" : view === "shared" ? "优秀案例，等待下一次分享" : view === "mine" ? "从第一条视频投稿开始" : "暂时没有待处理案例";
+      const emptyText = search || industry || status ? "试试其他关键词，或调整筛选条件。" : view === "shared" ? "正式获准共享的视频会出现在这里。" : view === "mine" ? "提交视频后，可以在这里继续解析、核对和查看审核进度。" : "新案例完成解析后，会进入审核工作。";
+      const cards = data.cases.length ? `<div class="case-library-list">${data.cases.map(item=>caseListCard(item,statusPill,returnPath)).join("")}</div>` : listEmpty(emptyTitle,emptyText);
+      const page = Number(data.page), pages = Math.max(1, Math.ceil(data.total / data.page_size));
+      const pagination = pages > 1 ? `<nav class="list-pagination" aria-label="案例分页">${page>1?`<a class="btn btn-secondary" href="${escapeHtml(link({page:String(page-1)}))}" data-route>上一页</a>`:""}<span>${page} / ${pages}</span>${page<pages?`<a class="btn btn-secondary" href="${escapeHtml(link({page:String(page+1)}))}" data-route>下一页</a>`:""}</nav>` : "";
+      app.innerHTML = shell("案例", `<main class="page page-standard brand-list-page case-library-page">${pageHeading("", "案例", view === "shared" ? "值得参考的结构，来自正式获准共享的视频。" : view === "mine" ? "每一条投稿，都有清楚的进度和下一步。" : "核对证据、正式收录，再独立决定共享展示。", '<a class="btn btn-primary" href="/cases/new" data-route>提交视频</a>')}${tabs}${toolbar}<p class="list-result-count">${data.total} 条${view === "mine" ? "投稿" : "案例"}</p>${cards}${pagination}</main>`);
       bindCommonActions();
-      document.querySelectorAll("[data-filter]").forEach((button) => button.addEventListener("click", () => {
-        document.querySelectorAll("[data-filter]").forEach((item) => item.classList.toggle("active", item === button));
-        document.querySelectorAll("[data-case-status]").forEach((card) => {
-          card.hidden = button.dataset.filter !== "all" && card.dataset.caseStatus !== button.dataset.filter;
-        });
-      }));
-    } catch (error) { renderLoadError("案例库暂时无法读取", error); }
+      document.querySelector("#case-search-form")?.addEventListener("submit", event=>{event.preventDefault();navigate(link({search:document.querySelector("#case-search").value.trim(),page:"1"}));});
+      document.querySelector("#case-industry-filter")?.addEventListener("change", event=>navigate(link({industry:event.target.value,page:"1"})));
+      document.querySelector("#case-status-filter")?.addEventListener("change", event=>navigate(link({status:event.target.value,page:"1"})));
+      document.querySelector("#case-type-filter")?.addEventListener("change", event=>navigate(link({video_type:event.target.value,page:"1"})));
+      bindCardCovers();
+    } catch (error) { if(version===renderVersion) error.status===404 ? renderCaseRestricted("无法访问这个案例视图") : renderLoadError("案例暂时无法读取", error); }
+  }
+
+  function renderCaseRestricted(title="无法访问这个案例") {
+    app.innerHTML=shell("案例",`<main class="page page-standard brand-list-page">${listEmpty(title,"记录不存在或当前账号没有查看权限。请返回案例列表。")}<p><a class="btn btn-secondary" href="/cases" data-route>返回案例列表</a></p></main>`);
+    bindCommonActions();
+  }
+
+  function bindCardCovers() {
+    app.querySelectorAll(".case-card-cover img").forEach(img=>{
+      const fallback=()=>{img.hidden=true;img.parentElement.querySelector(".case-cover-placeholder").hidden=false;};
+      img.addEventListener("error",fallback,{once:true});
+      if(img.complete && !img.naturalWidth) fallback();
+    });
+  }
+
+  function caseReturnPath() {
+    const path=new URLSearchParams(location.search).get("return") || "/cases";
+    return /^\/cases(?:\?|$)/.test(path) ? path : "/cases";
+  }
+
+  function publicationPanel(detail) {
+    const context=detail.publication_context;
+    if(!detail.permissions?.can_publish || !context?.available) return "";
+    return `<details class="publication-panel"><summary>共享展示管理 <span>${context.published?"当前已共享":"尚未共享"}</span></summary><form id="case-publication-form">
+      <p>案例收录与共享展示分别确认。仅发布下列已核对的展示内容。</p>
+      <div class="field"><label for="display-title">共享标题</label><input id="display-title" maxlength="120" required value="${escapeHtml(detail.shared_display?.title || detail.title)}"></div>
+      <div class="field"><label for="display-summary">结构参考（选填）</label><textarea id="display-summary" maxlength="1000" rows="3" placeholder="只整理合法的结构启发，不包含私人转写或客户资料。">${escapeHtml(detail.shared_display?.structure_summary || "")}</textarea></div>
+      ${context.cover_available ? '<label class="publication-check"><input id="share-cover" type="checkbox">同时展示已有封面，单独确认展示许可</label><div class="publication-cover-fields" hidden><div class="field"><label for="cover-reference">展示许可证据</label><input id="cover-reference" maxlength="1000" placeholder="对应原案例与封面的授权证据引用"></div><div class="field"><label for="cover-statement">许可范围说明</label><textarea id="cover-statement" maxlength="1000" rows="2"></textarea></div></div>' : '<p class="field-hint">暂无可核对的封面，共享卡片会显示统一占位。</p>'}
+      <label class="publication-check"><input id="display-confirmed" type="checkbox" required>已核对标题、分类与参考内容，确认不含未获准公开的信息</label>
+      <div class="publication-actions"><button class="btn btn-primary" type="submit">确认共享展示</button>${context.published?'<button class="btn btn-secondary" type="button" data-withdraw-display>撤回共享</button>':""}</div><p class="form-error" data-publication-error role="alert"></p>
+    </form></details>`;
+  }
+
+  function bindPublication(detail,caseId) {
+    const form=app.querySelector("#case-publication-form");if(!form)return;
+    const cover=app.querySelector("#share-cover");
+    cover?.addEventListener("change",()=>{app.querySelector(".publication-cover-fields").hidden=!cover.checked;});
+    const submit=async(action)=>{
+      const context=detail.publication_context;
+      const payload={action,title:app.querySelector("#display-title").value,structure_summary:app.querySelector("#display-summary").value,
+        approved_case_sha256:context.approved_case_sha256,approval_receipt_sha256:context.approval_receipt_sha256,
+        expected_display_receipt_sha256:context.display_receipt_sha256};
+      if(action==="publish" && cover?.checked)payload.cover_evidence={reference:app.querySelector("#cover-reference").value,statement:app.querySelector("#cover-statement").value,display_rights_confirmed:true};
+      form.querySelectorAll("button").forEach(button=>button.disabled=true);
+      try{await api(`/api/cases/${encodeURIComponent(caseId)}/publication`,{method:"POST",body:JSON.stringify(payload)});showToast(action==="publish"?"共享展示已发布":"共享展示已撤回");await renderCaseDetail(caseId);}
+      catch(error){const host=form.querySelector("[data-publication-error]");host.textContent=error.detail?.message || error.message;host.classList.add("visible");form.querySelectorAll("button").forEach(button=>button.disabled=false);}
+    };
+    form.addEventListener("submit",event=>{event.preventDefault();if(form.reportValidity())submit("publish");});
+    app.querySelector("[data-withdraw-display]")?.addEventListener("click",async()=>{const decision=await openModal({title:"撤回共享展示？",description:"普通浏览用户将不能继续读取此案例的共享内容和封面，原收录记录会保留。",confirmLabel:"撤回共享"});if(decision.confirmed)submit("withdraw");});
   }
 
   function bindTaskProgress(task, onLifecycleChange = () => {}, boundaryReview = null) {
@@ -92,7 +156,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
     const fileInput = form.querySelector("#case-video-file"), button = form.querySelector('[type="submit"]');
     const errorBox = form.querySelector("#case-form-error"), result = form.querySelector("#case-result");
     let busy=false, retryTask=null, reviewCase=null, requestId=crypto.randomUUID(), requestText=null;
-    let uploaded=null, uploadedFile=null, uploadedText=null;
+    let uploaded=null, uploadedFile=null, uploadedText=null, reviewCanReview=false;
     const update=()=>{form.querySelector("#source-detection").textContent=detectCaseSourceInput(input.value).label;};
     input.addEventListener("input",update);
     fileInput.addEventListener("change",()=>{form.querySelector("#case-file-selected").textContent=fileInput.files[0]?.name||"未选择文件";});
@@ -117,9 +181,10 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
     }
     if(params.get("reanalyze_case")){
       reviewCase=params.get("reanalyze_case");
-      const detail=await api(`/api/cases/${encodeURIComponent(reviewCase)}`);
+      const detail=await api(`/api/cases/${encodeURIComponent(reviewCase)}${params.get("attempt_id")?`?attempt_id=${encodeURIComponent(params.get("attempt_id"))}`:""}`);
       if(!form.isConnected)return;
       input.value=detail.source_url||"";
+      reviewCanReview=Boolean(detail.permissions?.can_review);
       result.innerHTML='<p class="warning">重新分析需要说明原因，原有审核记录会保留。</p>';
     }
     if(params.get("source"))input.value=params.get("source");
@@ -145,7 +210,8 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
         if(reviewCase){
           const decision=await openModal({title:"重新分析这个案例？",description:"新尝试保留独立记录。",confirmLabel:"重新分析",reasonRequired:true,reasonLabel:"重新分析原因"});
           if(!decision.confirmed)return;
-          await api(`/api/cases/${encodeURIComponent(reviewCase)}/review`,{method:"POST",body:JSON.stringify({decision:"reanalyze",reason:decision.reason,...(file?{source_upload_id:uploaded.upload_id}:{})})});
+          if(reviewCanReview)await api(`/api/cases/${encodeURIComponent(reviewCase)}/review`,{method:"POST",body:JSON.stringify({decision:"reanalyze",reason:decision.reason,...(file?{source_upload_id:uploaded.upload_id}:{})})});
+          else await api("/api/cases/analyze",{method:"POST",body:JSON.stringify({url:input.value.trim(),reanalyze:true,reason:decision.reason,...(file?{source_upload_id:uploaded.upload_id}:{})})});
         }else if(retryTask){
           if(file)await api("/api/cases/analyze",{method:"POST",body:JSON.stringify({url:uploaded.canonical_url,source_upload_id:uploaded.upload_id,reanalyze:true})});
           else await api(`/api/tasks/${encodeURIComponent(retryTask.task_id)}/retry`,{method:"POST"});
@@ -193,7 +259,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
         if(state==="input_duplicate")body+="<p>当前输入中重复的视频，已合并处理，不会重复获取或分析。</p>";
         else if(state==="approved")body+=`<p>该视频已经添加过</p><a class="btn btn-secondary" href="/cases/${item.case_id}" data-route>查看已有案例</a>`;
         else if(rec&&state!=="failed"){
-          if(state==="confirmed")body+=`<div class="intake-confirmed"><p><strong>${confirmedClassificationLabel(human)}</strong></p><p>${escapeHtml(human.industry||"行业暂不确定")} · ${profileLabels[human.profile]}</p><small>操作人 ${escapeHtml(String(human.confirmed_by_phone).replace(/^(\d{3})\d+(\d{4})$/,"$1****$2"))} · ${escapeHtml(new Date(human.confirmed_at).toLocaleString("zh-CN"))}</small></div>`;
+          if(state==="confirmed")body+=`<div class="intake-confirmed"><p><strong>${confirmedClassificationLabel(human)}</strong></p><p>${escapeHtml(human.industry||"行业暂不确定")} · ${profileLabels[human.profile]}</p><small>操作人 ${escapeHtml(String(human.confirmed_by_phone).replace(/^(\d{3})\d+(\d{4})$/,"$1****$2"))} · ${escapeHtml(formatConsoleTime(human.confirmed_at))}</small></div>`;
           else body+=`<div class="intake-recommendation"><p><strong>系统推荐</strong> ${escapeHtml(rec.industry||"行业暂不确定")} · ${profileLabels[rec.observed_source_profile]||"暂不确定"}</p><p>${escapeHtml(rec.profile_reason)}</p></div>`;
           body+=`<details class="intake-evidence"><summary>查看推荐依据与来源</summary><p>系统建议：${escapeHtml(rec.industry||"行业暂不确定")} · ${profileLabels[rec.observed_source_profile]||"暂不确定"}</p><p>${escapeHtml(rec.industry_reason)}</p><p>${escapeHtml(rec.profile_reason)}</p>${rec.shot_refs?.length?`<p>对应画面：${escapeHtml(rec.shot_refs.join("、"))}</p>`:""}<p>${escapeHtml(item.source_url||"")}</p></details>`;
           if(item.classification.can_confirm&&(state!=="confirmed"||editing.has(item.position)))body+=`<form data-classify="${item.position}" class="intake-classify-form"><div class="intake-selects">
@@ -201,8 +267,8 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
             <div class="field"><label for="intake-profile-${item.position}">视频结构</label><select id="intake-profile-${item.position}" data-profile><option value="">请选择</option>${Object.entries(profileLabels).map(([v,label])=>`<option value="${v}" ${draft.profile===v?"selected":""}>${label}</option>`).join("")}</select></div></div>
             ${batchMode&&state==="needs_confirmation"?`<label class="intake-check"><input type="checkbox" data-checked ${draft.checked?"checked":""} ${classificationSubmittable(draft,{batch:true})?"":"disabled"}>已逐条检查，加入批量确认</label>`:""}
             <button class="btn ${state==="confirmed"?"btn-secondary":"btn-primary"}" type="submit">${state==="confirmed"?"保存分类修改":"确认分类"}</button>${state==="confirmed"?'<button class="btn btn-text" type="button" data-cancel-edit>取消修改</button>':""}</form>`;
-          if(state==="confirmed")body+=`<div class="intake-card-actions"><a class="btn btn-primary" href="/cases/${item.case_id}" data-route>继续案例审核</a>${!editing.has(item.position)&&item.classification.can_confirm?`<button class="btn btn-text" type="button" data-edit-classify="${item.position}">修改分类</button>`:""}</div>`;
-          else if(!item.classification.can_confirm)body+=`<a class="btn btn-secondary" href="/cases/${item.case_id}" data-route>继续案例审核</a>`;
+          if(state==="confirmed")body+=`<div class="intake-card-actions"><a class="btn btn-primary" href="/cases/${item.case_id}" data-route>查看投稿详情</a>${!editing.has(item.position)&&item.classification.can_confirm?`<button class="btn btn-text" type="button" data-edit-classify="${item.position}">修改分类</button>`:""}</div>`;
+          else if(!item.classification.can_confirm)body+=`<a class="btn btn-secondary" href="/cases/${item.case_id}" data-route>查看投稿详情</a>`;
         }else if(state==="failed"){
           body+=`<p class="warning">${escapeHtml(item.message||item.task?.error_message||"解析未完成，请检查来源后重试。")}</p>`;
           if(item.task)body+=`<div class="intake-card-actions"><button class="btn btn-secondary" type="button" data-retry="${item.task.task_id}">${item.task.error_code==="SOURCE_ACQUISITION_FAILED"?"重试获取":"重试失败阶段"}</button><a class="btn btn-secondary" href="/cases/new?retry_task=${encodeURIComponent(item.task.task_id)}" data-route>上传本地视频</a><a class="inline-link" href="/tasks/${encodeURIComponent(item.task.task_id)}" data-route>查看任务详情</a></div>`;
@@ -210,7 +276,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
         }else body+='<p class="field-hint">状态来自后台任务；按队列顺序处理，不会同时启动多个高负载模型任务。</p>';
         return `<article class="panel intake-result-card" data-intake-state="${state}"><div class="intake-card-heading">${item.case?.cover_url?`<img class="intake-cover" src="${escapeHtml(item.case.cover_url)}" alt="视频来源封面" loading="lazy">`:'<div class="intake-cover-placeholder" aria-label="没有可用封面">视频</div>'}<div><h2>${escapeHtml(title)}</h2><p>${item.case_id?"抖音":"来源待核对"} · ${duration}</p><span class="status-pill">${intakeStage(item)}</span></div></div>${body}</article>`;
       }).join("");
-      app.innerHTML=shell("案例解析",`<main class="page page-standard intake-results-page">${pageHeading("",counts.analyzing?"案例解析中":counts.needs_confirmation?"请确认系统推荐的分类":counts.confirmed?(counts.total===1?confirmedClassificationLabel(last.items.find(item=>intakeItemState(item)==="confirmed").classification.human):"分类已确认"):"案例解析结果",counts.analyzing?"正在分析视频内容":counts.needs_confirmation?"分类确认后，继续逐条审核案例。":counts.confirmed?"分类结果已保存，继续完成案例审核。":"查看解析结果，失败项目可单独重试。")}
+      app.innerHTML=shell("案例解析",`<main class="page page-standard intake-results-page">${pageHeading("",counts.analyzing?"案例解析中":counts.needs_confirmation?"请确认系统推荐的分类":counts.confirmed?(counts.total===1?confirmedClassificationLabel(last.items.find(item=>intakeItemState(item)==="confirmed").classification.human):"分类已确认"):"案例解析结果",counts.analyzing?"正在分析视频内容":counts.needs_confirmation?"分类核对后，由指定审核人决定是否收录。":counts.confirmed?"分类结果已保存，等待指定审核人处理。":"查看解析结果，失败项目可单独重试。")}
         ${intakeSteps(counts.analyzing?1:2)}<section class="intake-overview panel"><div class="intake-counts">${[["本批总数",counts.total],["分析中",counts.analyzing],["待确认",counts.needs_confirmation],["已确认",counts.confirmed],["失败",counts.failed],["已入库",counts.approved],...(counts.completed?[["任务已结束",counts.completed]]:[])].map(([label,n])=>`<div><strong>${n}</strong><span>${label}</span></div>`).join("")}</div><p>可以离开当前页面，解析任务会继续进行。</p>${counts.duplicates?`<p>另有 ${counts.duplicates} 条输入内重复链接，已合并处理。</p>`:""}</section>
         <div class="intake-toolbar"><div class="filter-row">${[["all","全部"],["needs_confirmation","待确认"],["confirmed","已确认"],["failed","失败"]].map(([value,label])=>`<button class="filter-chip ${filter===value?"active":""}" type="button" data-intake-filter="${value}">${label}</button>`).join("")}</div><button class="btn btn-secondary" type="button" data-confirm-checked hidden disabled>批量确认已检查的分类</button></div>
         <p class="field-hint">分类确认不会批准案例入库，也不会授予创作可用资格；未确定分类请逐条确认。</p><div class="intake-result-grid">${cards||'<section class="panel"><p>此分类下暂无视频。</p></section>'}</div></main>`);
@@ -232,7 +298,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
           event.preventDefault();capture();if(submitting)return;
           if(!classificationSubmittable(draft))return showToast("请选择行业和视频结构；无法判断时可以选择暂不确定。");
           submitting=true;clearTimeout(timer);form.querySelector("button").disabled=true;
-          try{await save(item,draft);editing.delete(position);drafts.delete(position);revision=null;showToast(`${confirmedClassificationLabel(draft)}，可以继续案例审核。`);}
+          try{await save(item,draft);editing.delete(position);drafts.delete(position);revision=null;showToast(`${confirmedClassificationLabel(draft)}，可以查看投稿详情。`);}
           catch(error){showToast(error.detail?.next_action||error.message);form.querySelector("button").disabled=false;}
           finally{submitting=false;revision=null;await refresh();}
         });
@@ -242,7 +308,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
         const checked=batchConfirmableItems(last.items,drafts);
         if(!checked.length)return showToast("请先逐条检查并勾选分类。");
         submitting=true;clearTimeout(timer);event.currentTarget.disabled=true;let saved=0;
-        try{for(const item of checked){await save(item,drafts.get(item.position));drafts.delete(item.position);saved++;}showToast(`已确认 ${saved} 条分类，可以继续逐条审核案例。`);}
+        try{for(const item of checked){await save(item,drafts.get(item.position));drafts.delete(item.position);saved++;}showToast(`已确认 ${saved} 条分类，等待指定审核人处理。`);}
         catch(error){showToast(`已确认 ${saved} 条；${error.detail?.next_action||error.message}`);}
         finally{submitting=false;revision=null;await refresh();}
       });
@@ -258,11 +324,24 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
 
   async function renderCaseDetail(caseId) {
     dispose(); skeletonPage("案例审核");
+    const version=renderVersion;
     try {
-      const detail = await api(`/api/cases/${encodeURIComponent(caseId)}`);
-      app.innerHTML = shell("案例审核", caseReviewContent(detail, statusPill));
+      const params=new URLSearchParams(location.search);
+      const detail = await api(params.get("shared")==="1" ? `/api/case-library/${encodeURIComponent(caseId)}` : `/api/cases/${encodeURIComponent(caseId)}${params.get("attempt_id")?`?attempt_id=${encodeURIComponent(params.get("attempt_id"))}`:""}`);
+      if(version!==renderVersion)return;
+      const back=`<a class="list-back" href="${escapeHtml(caseReturnPath())}" data-route>‹ 返回案例列表</a>`;
+      if(detail.visibility==="shared"){
+        const duration=formatCaseDuration(detail.duration_seconds);
+        app.innerHTML=shell("案例",`<main class="page page-standard brand-list-page shared-case-detail">${back}${pageHeading("",detail.title,"已获准共享的创作结构参考")}
+          <section class="shared-case-surface"><div class="case-card-cover shared-case-cover">${detail.cover_url?`<img src="${escapeHtml(detail.cover_url)}" alt="" decoding="async">`:""}<span class="case-cover-placeholder" ${detail.cover_url?"hidden":""}><small>暂无封面</small></span></div>
+          <div class="shared-case-copy"><p class="case-card-tags"><span>${escapeHtml(detail.industry || "行业待确认")}</span><span>视频类型暂未标注</span>${duration?`<span>${duration}</span>`:""}</p><h2>结构参考</h2><p>${escapeHtml(detail.structure_summary || "暂未补充结构参考。")}</p><p class="shared-case-rights">案例用于结构参考。原视频素材使用须另外确认授权。</p></div></section></main>`);
+        bindCommonActions();bindCardCovers();return;
+      }
+      app.innerHTML = shell(detail.permissions?.can_review ? "案例审核" : "我的投稿", caseReviewContent(detail, statusPill).replace('<a class="back-link" href="/cases" data-route>← 案例</a>', "").replace("</main>",`${publicationPanel(detail)}</main>`));
+      app.querySelector("main")?.insertAdjacentHTML("afterbegin",back);
       stopMediaPreview = bindCaseMediaPreview(app);
       bindCommonActions();
+      bindPublication(detail,caseId);
       document.querySelector("[data-profile-annotation]")?.addEventListener("click", async (event) => {
         const button = event.currentTarget;
         const decision = await openModal({
@@ -384,7 +463,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
           document.querySelectorAll("[data-review-action]").forEach((item) => { item.disabled = false; });
         }
       }));
-    } catch (error) { renderLoadError("案例暂时无法读取", error); }
+    } catch (error) { error.status===404 ? renderCaseRestricted() : renderLoadError("案例暂时无法读取", error); }
   }
 
   async function renderTaskDetail(taskId) {

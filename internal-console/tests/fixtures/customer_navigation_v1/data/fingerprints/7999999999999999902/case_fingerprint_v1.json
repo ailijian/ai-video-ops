@@ -1,0 +1,31 @@
+{
+  "schema_version": "case-fingerprint-v1.0",
+  "case_id": "7999999999999999902",
+  "fixture_only": true,
+  "source_case": {
+    "status": "approved",
+    "approved": true,
+    "sha256": "7fb4d4f57e43d60277162bed259ac0d382a2fc06203ca83adbcbc8a7ddacb2d7"
+  },
+  "identity": {
+    "industry": "restaurant"
+  },
+  "narration_features": {
+    "speech_to_video_ratio": 0.8
+  },
+  "visual_shot_features": {
+    "shot_count": 5,
+    "primary_role_counts": {
+      "action": 3,
+      "context": 1,
+      "product": 1,
+      "persona": 0
+    }
+  },
+  "structure_features": {
+    "audio_role": "narration semantic spine"
+  },
+  "pattern_mining_contract": {
+    "this_artifact_is_not_a_pattern": true
+  }
+}

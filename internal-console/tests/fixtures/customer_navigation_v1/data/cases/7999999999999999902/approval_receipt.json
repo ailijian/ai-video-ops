@@ -1,0 +1,10 @@
+{
+  "schema_version": "case-approval-receipt-v1.0",
+  "case_id": "7999999999999999902",
+  "case_sha256": "7fb4d4f57e43d60277162bed259ac0d382a2fc06203ca83adbcbc8a7ddacb2d7",
+  "decision": "approved",
+  "human_gate": true,
+  "reviewer": "fictional-reference-reviewer",
+  "reviewed_at": "2026-10-01T00:00:00+00:00",
+  "fixture_only": true
+}

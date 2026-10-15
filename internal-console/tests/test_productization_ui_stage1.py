@@ -16,12 +16,14 @@ def test_shell_navigation_is_calm_equal_weight_and_in_frozen_order():
         '{ path: "/workbench", label: "工作台"',
         '{ path: "/cases", label: "案例"',
         '{ path: "/customers", label: "客户"',
-        '{ path: "/create", label: "创作"',
         '{ path: "/tasks", label: "任务"',
     ]
     assert [app.index(value) for value in expected] == sorted(
         app.index(value) for value in expected
     )
+    # NAV-1 explicitly supersedes only the primary-navigation presentation.
+    assert '{ path: "/create", label: "创作"' not in app
+    assert 'if (path === "/create") return contentViews.renderCreate();' in app
     assert "create-link" not in app
     assert "create-bottom" not in app
     assert "create-orb" not in app
@@ -33,22 +35,21 @@ def test_workbench_and_case_library_use_compact_product_surfaces():
     case_components = read_asset("case-components.js")
     case_views = read_asset("case-views.js")
 
-    assert 'class="action-list"' in app
-    assert 'class="action-row"' in app
-    assert 'class="quick-actions"' in app
-    assert 'class="workbench-overview"' in app
-    assert 'class="workbench-recent"' in app
-    assert 'api("/api/workbench?projection=productized-stage3-3")' in app
-    assert 'api("/api/customers")' in app
-    assert 'api("/api/cases")' in app
-    assert "const hasCustomers = customers.length > 0" in app
-    assert "const customerCount = customers.length" in app
-    assert "const caseCount = cases.length" in app
+    # DASH-1 supersedes the homepage; one permission-scoped read replaces
+    # client-side counting of multiple lists. The old API remains compatible.
+    dashboard = read_asset("dashboard-view.mjs")
+    assert 'api(`/api/dashboard?section=${section}&page=${page}`)' in app
+    assert 'class="dash-metrics"' in dashboard
+    assert 'class="dash-work-row"' in dashboard
+    assert 'class="dash-shortcut"' in dashboard
+    assert 'data.metrics' in dashboard
+    assert 'class="workbench-overview"' not in app
     assert 'cache: method === "GET" || method === "HEAD" ? "no-store"' in read_asset("api-client.js")
     assert "attention-card" not in app
     assert "customer-snapshot" not in app
-    assert 'class="case-row"' in case_components
-    assert "case-card" not in case_components
+    assert "caseListCard" in case_components
+    assert 'class="case-library-card"' in read_asset("list-ui.mjs")
+    assert "list-skeleton" in read_asset("list-ui.mjs")
     assert "caseItem.profile" not in case_components
     assert "caseItem.summary" not in case_components
     assert 'pageHeading("", "案例"' in case_views
@@ -95,9 +96,10 @@ def test_case_review_is_evidence_first_and_uses_accessible_modal():
 def test_foundation_tokens_and_create_overflow_fix_are_explicit():
     css = read_asset("styles.css")
 
-    assert "--paper: #f6f7f4;" in css
-    assert "--surface: #ffffff;" in css
-    assert "--forest: #214c3d;" in css
+    for token in ("--brand-green: #125A47;", "--deep-ink: #1B3029;", "--soft-sage: #E9F3ED;", "--canvas: #F6F8F6;", "--border: #E5ECE7;", "--white: #FFFFFF;"):
+        assert token in css
+    assert "--forest: var(--brand-green);" in css
+    assert "--surface: var(--white);" in css
     assert "--radius-lg: 16px;" in css
     assert "--radius-md: 12px;" in css
     assert ".card, .panel, .work-surface" in css

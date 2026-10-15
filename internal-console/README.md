@@ -1,5 +1,22 @@
 # AI Video Ops Internal Console
 
+The [DASH-1 homepage read contract](../docs/design/DASH1_BRAND_OPERATIONS_HOME.md)
+documents `/api/dashboard`, scoped metrics, actionable work and unavailable
+completion statistics. The previous `/api/workbench` endpoint stays compatible.
+
+The shared presentation foundation is owned by `static/assets/styles.css`;
+list and dashboard layouts retain `brand-lists.css` and `dashboard.css`.
+`ui-format.mjs` formats recorded times in Asia/Shanghai and masks displayed
+account numbers without changing audit records. `task-list-view.mjs` renders
+the existing scoped Task/activity responses, distinguishing execution from
+Human Approval and unavailable sources from empty lists. Task tabs support
+keyboard navigation and `?view=activity`; all recovery remains in the original
+Task route. This UI layer adds no Authority, API, permission or lifecycle.
+Unknown-title Case submissions use a friendly label in the existing read
+projection while retaining exact Case/Attempt identity and original titles.
+Shared controls have visible keyboard focus and mobile text/touch sizing;
+the shell keeps four primary destinations and customer-scoped creation.
+
 Mobile-first internal operations surface over the existing canonical pipeline.
 The console stores only account, session, and asynchronous task projection data
 in SQLite. Customer Truth, Cases, Persona, Content Ledger, Capacity, Batch,
@@ -92,8 +109,10 @@ that execution ended; the UI re-reads the canonical delivery resolver before
 presenting business completion. Browser refresh and re-login recover work from
 the shared task list and request lineage.
 
-All operators see the same shared task list. `created_by_user_id` records the
-authenticated submitter for auditability and is not an access-control boundary.
+Customer and content tasks retain their existing internal collaboration scope.
+Case Tasks, Groups, raw detail, evidence and source media are scoped to the exact
+authenticated submitter/Attempt or an explicitly granted Case reviewer; missing
+ownership is never inferred. Shared browsing uses a separate safe projection.
 
 ## Backup and Windows boundary
 
@@ -108,13 +127,45 @@ install services or modify Windows power/update settings.
 
 ## Current capability boundary
 
+### Case library access and shared display
+
+See [Case Library Access V1](../docs/design/CASE_LIBRARY_ACCESS_V1.md) for the
+versioned machine contract. Migration 005 creates a stable node namespace and
+append-only reviewer capability events, with no automatic grants. Trusted local
+maintenance uses `scripts/manage_case_reviewer.py --user-id <stable-local-id>
+--action grant|revoke --reason <explicit-reason>` against an explicitly configured
+node during the existing permitted maintenance window. There is no HTTP grant
+endpoint. A changed password, submitter role, phone or historical reviewer string
+does not grant approval authority. HTTP and Pipeline Approval Owner revalidate
+server-derived principal/capability; the unflagged CLI remains trusted offline
+maintenance and is never chosen by untrusted HTTP.
+
+`GET /api/cases?view=shared|mine|review` scopes before search, facets, totals and
+pagination (default 20, maximum 50). Shared is the default; review requires explicit
+capability. `GET /api/case-library/<id>` returns whitelist display fields only.
+`POST /api/cases/<id>/publication` requires reviewer, CSRF, Case lock, exact Case
+and approval SHA and expected display receipt SHA. Append-only publish/withdraw
+receipts preserve original Case/Receipt/Pattern/Compatibility. Old approvals have
+no implicit publication. Covers require separate explicit display evidence and
+exact source/file SHA; original video access and production rights remain separate.
+Shared list/detail/cover revalidate current receipts without a permission TTL cache;
+withdrawn, invalid or unknown records return uniform 404. Responses are private,
+no-store. Historical missing-owner records remain reviewer-only.
+
+The application reuses existing authorized cover bytes; it neither generates nor
+fetches remote thumbnails. Absent/invalid covers use a common vector placeholder.
+No independent confirmed video-type dictionary exists: the slot remains 暂未标注,
+and the type filter is absent until an approved taxonomy exists. Mix/News remains
+a distinct production profile. Brand list styling is owned by `brand-lists.css`;
+`styles.css` owns shared tokens and retained shell/creation components.
+
 ### Case Smart Intake
 
 `/cases/new` extracts Douyin URLs from share text and admits at most ten distinct,
 resolved video identities per UI group. `POST /api/case-intake/groups` accepts
 `text`, a stable `client_request_id`, and an optional single-source upload ID.
 SQLite groups reference existing Case tasks; they own navigation only. Pending
-items enter the original gateway as capacity becomes available. Shared group
+items enter the original gateway as capacity becomes available. Owner/reviewer-scoped group
 GET routes recover state across sessions/devices without submitting new work.
 
 Missing `operator_profile_hint` means no operator judgment was supplied. The

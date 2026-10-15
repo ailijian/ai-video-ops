@@ -514,7 +514,8 @@ def test_console_authority_routes_return_409_for_simultaneous_same_entity(
         route = "/api/customers/fixture_business/persona/approve"
         body = {"note": "approve"}
     else:
-        def fake_case(settings, case_id, *, reviewer, note):
+        def fake_case(settings, case_id, *, reviewer, note, approval_principal):
+            assert approval_principal == {"user_id": 1, "namespace": approval_principal["namespace"]}
             calls.append(reviewer)
             entered.set()
             release.wait(timeout=2)
@@ -527,6 +528,9 @@ def test_console_authority_routes_return_409_for_simultaneous_same_entity(
     with TestClient(app) as first_client, TestClient(app) as second_client:
         provision_user(settings.database_path, "13800000000")
         first_csrf = login_and_change_password(first_client)
+        if entity == "case":
+            from app.case_library_access import manage_reviewer
+            manage_reviewer(settings, 1, action="grant", operator="fixture", reason="Explicit lock-test reviewer")
         second_login = second_client.post(
             "/api/auth/login",
             json={"phone": "13800000000", "password": "ReviewConsole2026!"},
@@ -695,7 +699,7 @@ def test_secure_cookie_and_authenticated_task_actor_cannot_be_spoofed(
         assert response.json()["task"]["created_by"]["user_id"] != 999999
 
 
-def test_three_fake_users_can_submit_and_read_shared_tasks_without_db_lock(
+def test_three_fake_users_can_submit_and_read_own_case_tasks_without_db_lock(
     settings: Settings,
 ):
     app = main_module.build_app(settings)
@@ -736,8 +740,15 @@ def test_three_fake_users_can_submit_and_read_shared_tasks_without_db_lock(
             statuses = list(executor.map(submit, range(3)))
         assert statuses == [200, 200, 200]
         tasks = client.get("/api/tasks").json()["tasks"]
-        assert len(tasks) == 3
-        assert {item["created_by"]["phone"] for item in tasks} == set(phones)
+        assert len(tasks) == 1
+        assert {item["created_by"]["phone"] for item in tasks} == {phones[-1]}
+        own_task = tasks[0]["task_id"]
+        for phone in phones[:-1]:
+            assert client.post("/api/auth/login", json={"phone": phone, "password": f"Hardening-{phone}!"}).status_code == 200
+            scoped = client.get("/api/tasks").json()["tasks"]
+            assert len(scoped) == 1
+            assert scoped[0]["created_by"]["phone"] == phone
+            assert client.get(f"/api/tasks/{own_task}").status_code == 404
 
 
 def test_production_templates_never_trust_forwarded_wildcard():

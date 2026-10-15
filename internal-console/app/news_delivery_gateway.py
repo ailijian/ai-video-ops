@@ -973,6 +973,7 @@ def _project_export(
 def get_news_delivery_state(
     settings: Settings,
     request_id: str,
+    *, include_actors: bool = True,
 ) -> dict[str, Any]:
     paths = _paths(
         settings,
@@ -1050,7 +1051,7 @@ def get_news_delivery_state(
         "created_by": request_actor(request),
         "reviewed_by": {"phone": str(review["reviewer"])} if review.get("reviewer") else None,
         "approved_by": {"phone": str(review["reviewer"])} if review.get("approved") and review.get("reviewer") else None,
-        "exported_by": completed_operation_actor(settings.database_path, request_id, "news_export") if export["completed"] else None,
+        "exported_by": completed_operation_actor(settings.database_path, request_id, "news_export") if include_actors and export["completed"] else None,
         "request_id": request_id,
         "business_id": (
             request.get(

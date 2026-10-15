@@ -1,4 +1,6 @@
 import { DOUYIN_PLAYER_VIEWPORTS } from "./case-media-preview.mjs?v=case-media-fit-1";
+import { escapeHtml, caseListCard } from "./list-ui.mjs?v=brand-ui-1";
+export { escapeHtml };
 
 export const CASE_PROGRESS_STAGES = [
   ["acquire", "获取视频", 12],
@@ -7,15 +9,6 @@ export const CASE_PROGRESS_STAGES = [
   ["structure", "理解内容结构", 84],
   ["review", "生成审核结果", 100],
 ];
-
-export function escapeHtml(value) {
-  return String(value ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-}
 
 function currentStageIndex(task) {
   const labels = CASE_PROGRESS_STAGES.map(([, label]) => label);
@@ -144,14 +137,8 @@ function caseIndustryMetadata(item) {
 }
 
 export function caseCard(caseItem, statusPill) {
-  const duration = caseItem.duration_seconds == null ? "时长未知" : `${Math.round(caseItem.duration_seconds)} 秒`;
-  const source = caseItem.platform === "douyin" ? "抖音" : "视频来源";
-  const optionalMeta = `<span>${escapeHtml(caseIndustryMetadata(caseItem))}</span>`;
-  const profileMeta = caseProfileMetadata(caseItem).map((text) => `<span>${escapeHtml(text)}</span>`).join("");
-  return `<a class="case-row" href="/cases/${encodeURIComponent(caseItem.case_id)}" data-route data-case-status="${escapeHtml(caseItem.status)}">
-    <span class="case-row-main"><strong>${escapeHtml(caseItem.title)}</strong><span class="case-meta"><span>${source} · ${escapeHtml(duration)}</span>${optionalMeta}${profileMeta}</span></span>
-    <span class="case-row-end">${statusPill(caseItem.status)}<span class="case-chevron" aria-hidden="true">›</span></span>
-  </a>`;
+  const industry=caseItem.industry_annotation?.industry || (caseItem.classification?.status === "confirmed" ? caseItem.classification.industry : caseItem.industry);
+  return caseListCard({...caseItem,industry},statusPill);
 }
 
 function paragraphList(values) {
@@ -215,6 +202,10 @@ export function caseReviewContent(detail, statusPill) {
     : "";
   const reviewDecision = detail.review?.approved
     ? `<div class="approved-message"><strong>已加入正式案例库</strong><p>这个案例已经完成审核。</p></div>`
+    : !detail.permissions?.can_review
+      ? detail.classification_required && detail.classification?.status !== "confirmed"
+        ? `<p>先核对分类，再交由指定审核人处理。</p><a class="btn btn-primary" href="/cases/${detail.case_id}/classification" data-route>核对分类</a>`
+        : `<p>投稿已整理，等待指定审核人完成审核。</p>`
     : detail.classification_required && detail.classification?.status !== "confirmed"
       ? `<p>请先检查系统推荐的行业与视频结构，确认后继续审核。</p><a class="btn btn-primary" href="/cases/${detail.case_id}/classification" data-route>确认分类</a>`
     : detail.review?.approval_recovery_required

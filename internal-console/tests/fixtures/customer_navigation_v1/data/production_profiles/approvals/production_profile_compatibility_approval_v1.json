@@ -1,0 +1,98 @@
+{
+  "schema_version": "production-profile-compatibility-approval-v1.0",
+  "status": "approved",
+  "fixture_only": true,
+  "reviewer": "李健",
+  "source_registry_ref": {
+    "path": "data/production_profiles/production_profile_registry_v1.json",
+    "sha256": "449feefa3a0bd6ea70b480bea40a05b459d359a3c59d921ced2c188937544049"
+  },
+  "source_coverage_report_ref": {
+    "path": "data/creative_coverage/creative_coverage_report_v1.json",
+    "sha256": "9f6461a67326620dd5100a70abeb9d26997b4cda93a20e3ed15124d4d585e29d"
+  },
+  "case_profile_compatibility_approvals": [
+    {
+      "case_id": "7680512578585870322",
+      "observed_source_profile": "mix",
+      "approved_compatible_generation_profiles": [
+        "mix"
+      ],
+      "news_compatibility": "not_approved",
+      "decision": "approved_mix_only",
+      "source_approved_case_ref": {
+        "path": "fictional_historical_placeholder",
+        "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "fingerprint_ref": {
+        "path": "fictional_historical_placeholder",
+        "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "storyboard_ref": {
+        "path": "fictional_historical_placeholder",
+        "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      }
+    },
+    {
+      "case_id": "7683027343636542565",
+      "observed_source_profile": "mix",
+      "approved_compatible_generation_profiles": [
+        "mix"
+      ],
+      "news_compatibility": "not_approved",
+      "decision": "approved_mix_only",
+      "source_approved_case_ref": {
+        "path": "fictional_historical_placeholder",
+        "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "fingerprint_ref": {
+        "path": "fictional_historical_placeholder",
+        "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "storyboard_ref": {
+        "path": "fictional_historical_placeholder",
+        "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      }
+    },
+    {
+      "case_id": "7650056203686530319",
+      "observed_source_profile": "mix",
+      "approved_compatible_generation_profiles": [
+        "mix"
+      ],
+      "news_compatibility": "not_approved",
+      "decision": "approved_mix_only",
+      "source_approved_case_ref": {
+        "path": "fictional_historical_placeholder",
+        "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "fingerprint_ref": {
+        "path": "fictional_historical_placeholder",
+        "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      },
+      "storyboard_ref": {
+        "path": "fictional_historical_placeholder",
+        "sha256": "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+      }
+    }
+  ],
+  "pattern_profile_compatibility_approval": {
+    "pattern_id": "pcv1_narration_led_process_projection",
+    "compatible_profiles": [
+      "mix"
+    ],
+    "news_compatibility": "not_approved",
+    "effectiveness": "unvalidated"
+  },
+  "creative_coverage_baseline_approval": {
+    "decision": "approve_as_current_coverage_baseline"
+  },
+  "authority": {
+    "case_lifecycle_changed": false,
+    "pattern_lifecycle_changed": false,
+    "coverage_report_granted_approval_authority": false,
+    "privacy_authority_changed": false,
+    "proof_authority_changed": false,
+    "remote_model_called": false
+  }
+}

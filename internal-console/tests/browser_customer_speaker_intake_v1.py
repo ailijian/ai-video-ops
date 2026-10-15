@@ -422,14 +422,18 @@ def main():
     parser.add_argument("--workdir", type=Path, required=True)
     parser.add_argument("--port", type=int, default=18010)
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument("--navigation-fixture", action="store_true", help="Stage fictional pre-existing creation references, only in a new root")
     parser.add_argument("--stage-delay", type=float, default=3)
     args = parser.parse_args()
     root = args.workdir.resolve()
     repo = Path(__file__).resolve().parents[2]
-    if root.is_relative_to(repo) or args.port == 8000:
-        parser.error("Use isolated external root and port.")
+    project = repo.parent.parent if repo.parent.name == ".worktrees" else repo
+    if not any(root.is_relative_to(project / folder) for folder in (".local", ".verify")) or args.port == 8000:
+        parser.error("Use isolated project-local .local/.verify root and a non-production port.")
     manifest = root / "browser_manifest.json"
     if args.resume:
+        if args.navigation_fixture:
+            parser.error("Navigation reference fixtures may only initialize a new isolated root")
         if (
             not manifest.is_file()
             or not json.loads(manifest.read_text())["fixture_only"]
@@ -455,6 +459,8 @@ def main():
             repo / "ops-pipeline/speaker_prompt.md",
             settings.pipeline_root / "speaker_prompt.md",
         )
+        if args.navigation_fixture:
+            shutil.copytree(repo / "internal-console/tests/fixtures/customer_navigation_v1/data", settings.pipeline_root / "data", dirs_exist_ok=True)
     settings = replace(
         settings,
         pipeline_python_executable=str(repo / "ops-pipeline/.venv/Scripts/python.exe"),
@@ -483,12 +489,13 @@ def main():
             json.dumps(
                 {
                     "fixture_only": True,
-                    "source_commit": "f10f3992433ab81df38ae90f9379ce1061a7afac",
+                    "source_commit": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo, text=True).strip(),
                     "current_worktree": str(repo),
                     "url": f"http://127.0.0.1:{args.port}",
                     "accounts": PHONES,
                     "database": str(settings.database_path),
                     "model_boundary": "synthetic outputs only; no external calls",
+                    "navigation_reference_fixture": args.navigation_fixture,
                 },
                 indent=2,
             ),

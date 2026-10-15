@@ -44,7 +44,10 @@ def test_create_mix_and_news_share_creation_primitives():
 def test_create_entry_is_business_language_and_progressively_collapses():
     create = read_asset("content-views.js")
 
-    assert "选择客户、出镜人和内容类型" in create
+    # NAV-1 supplies the customer context before opening the existing form.
+    assert "选择出镜人与内容类型，系统会重新核对当前创作条件。" in create
+    assert "customer_context" in create
+    assert "先选择一个客户" in create
     assert "素材混剪" in create
     assert "新闻体" in create
     assert "计划生成" in create

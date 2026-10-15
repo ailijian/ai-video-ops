@@ -11,6 +11,8 @@ import {
 } from "./speaker-components.js?v=customer-speaker-v1";
 
 import { escapeHtml } from "./case-components.js";
+import { formatConsoleTime, accountLabel } from "./ui-format.mjs?v=ui-1";
+import { listEmpty, searchIcon, listSkeleton } from "./list-ui.mjs?v=brand-ui-1";
 import {
   ProfileRow,
   ProfileSection,
@@ -82,8 +84,8 @@ export function intakeSteps(active) {
 }
 
 function auditNote(detail) {
-  const reviewer = detail.reviewed_by?.phone;
-  const time = detail.fact_review?.created_at || detail.fact_review?.reviewed_at;
+  const reviewer = accountLabel(detail.reviewed_by?.phone);
+  const time = formatConsoleTime(detail.fact_review?.created_at || detail.fact_review?.reviewed_at);
   return reviewer ? `<p class="field-hint">信息审核：${escapeHtml(reviewer)}${time ? ` · ${escapeHtml(time)}` : ""}。客户与出镜人分别确认，素材使用权仍须单独检查。</p>` : "";
 }
 
@@ -139,7 +141,7 @@ export function customerConstraintReview(detail) {
         const [title, hint] = CONSTRAINT_PRESENTATION[item.constraint_type] || ["待核实内容", "请核对原文并选择处理方式。"];
         const id = `constraint-${index}`;
         const targets = (detail.constraint_resolution_targets || []).filter(target => target.constraint_type === item.constraint_type);
-        if (item.human_review) return `<article class="customer-constraint-card is-reviewed"><h3>${title} · 已保存</h3><p>${escapeHtml(item.source.evidence_quote)}</p><p>${escapeHtml(CONSTRAINT_ACTION_LABELS[item.human_review.decision])}</p>${item.human_review.amendment ? `<p>当前禁用：${escapeHtml((item.blocked_terms || []).join("、"))}；条件：${escapeHtml(item.condition || "无")}</p>` : ""}<p class="field-hint">${escapeHtml(item.human_review.reviewer)} · ${escapeHtml(item.human_review.reviewed_at)}。已保存决定不能由新的批量提交覆盖。</p></article>`;
+        if (item.human_review) return `<article class="customer-constraint-card is-reviewed"><h3>${title} · 已保存</h3><p>${escapeHtml(item.source.evidence_quote)}</p><p>${escapeHtml(CONSTRAINT_ACTION_LABELS[item.human_review.decision])}</p>${item.human_review.amendment ? `<p>当前禁用：${escapeHtml((item.blocked_terms || []).join("、"))}；条件：${escapeHtml(item.condition || "无")}</p>` : ""}<p class="field-hint">${escapeHtml(accountLabel(item.human_review.reviewer))} · ${escapeHtml(formatConsoleTime(item.human_review.reviewed_at))}。已保存决定不能由新的批量提交覆盖。</p></article>`;
         const defaultAction = CONSTRAINT_DEFAULTS[item.constraint_type] || "";
         return `<article class="customer-constraint-card ${item.constraint_type === "identity_conflict" ? "is-critical" : ""}" data-constraint-id="${escapeHtml(item.constraint_id)}">
           <div class="customer-constraint-heading">
@@ -403,32 +405,39 @@ export function createCustomerViews({
   }
 
   async function renderCustomers() {
+    const route = window.location.href;
     stopTaskPolling();
-    skeletonPage("客户");
+    app.innerHTML=shell("客户",`<main class="page page-standard brand-list-page customer-list-page">${pageHeading("","客户","客户、人物与创作进展，清楚地放在一起。")}${listSkeleton()}</main>`);
+    bindCommonActions();
 
     try {
-      const data = await api("/api/customers");
+      const params = new URLSearchParams(window.location.search);
+      const search = params.get("search") || "";
+      const filter = ["all", "pending", "ready"].includes(params.get("filter_by")) ? params.get("filter_by") : "all";
+      const sort = params.get("sort_by") === "updated" ? "updated" : "action";
+      const page = Math.max(1, Number(params.get("page")) || 1);
+      const query = new URLSearchParams({search, filter_by: filter, sort_by: sort, page: String(page)});
+      const data = await api(`/api/customers/operations?${query}`);
+      if (window.location.href !== route) return;
       const customers = data.customers || [];
+      const link = (patch) => `/customers?${new URLSearchParams({...Object.fromEntries(query), ...patch})}`;
+      const controls = `<form class="customer-list-toolbar" id="customer-search-form">
+        <div class="customer-search"><label class="sr-only" for="customer-search">搜索客户、已确认行业或地区</label>${searchIcon}<input id="customer-search" type="search" name="search" maxlength="100" placeholder="搜索客户、行业或地区" value="${escapeHtml(search)}"><button class="btn btn-secondary btn-compact" type="submit">搜索</button></div>
+        <label class="customer-list-sort">排序<select id="customer-sort" aria-label="排序"><option value="action" ${sort === "action" ? "selected" : ""}>待处理优先</option><option value="updated" ${sort === "updated" ? "selected" : ""}>最近更新</option></select></label>
+      </form><nav class="customer-list-filters" aria-label="客户筛选">${[["all","全部"],["pending","待处理"],["ready","可创作"]].map(([value,label]) => `<a class="customer-filter ${filter === value ? "active" : ""}" href="${escapeHtml(link({filter_by:value,page:"1"}))}" data-route ${filter === value ? 'aria-current="page"' : ""}>${label}<span>${data.filter_counts?.[value] ?? "—"}</span></a>`).join("")}</nav>`;
 
       const content = customers.length
         ? `
-          <div class="customer-list">
+          <div class="customer-operations-list">
             ${customers.map(customerCard).join("")}
           </div>`
-        : `
-          <section class="state-panel empty-state">
-            <span class="empty-icon" aria-hidden="true">＋</span>
-            <h2>还没有客户</h2>
-            <p>把已有介绍、采访记录和服务信息放进来，建立第一个客户档案。</p>
-            <a class="btn btn-primary" href="/customers/new" data-route>
-              新建客户
-            </a>
-          </section>`;
+        : listEmpty(search || filter !== "all" || page > 1 ? "没有符合条件的客户" : "从第一位客户开始",
+                    search || filter !== "all" || page > 1 ? "调整搜索或筛选条件，查看其他客户。" : "添加客户资料，让人物、创作与下一步工作有清楚的归属。");
 
       app.innerHTML = shell(
         "客户",
         `
-          <main class="page page-standard customer-list-page">
+          <main class="page page-standard brand-list-page customer-list-page">
             ${pageHeading(
               "",
               "客户",
@@ -439,12 +448,18 @@ export function createCustomerViews({
                 </a>`,
             )}
 
+            ${controls}
+            <p class="customer-list-count">${data.total} 位客户 <span>· 筛选数量基于全部搜索匹配</span></p>
             ${content}
+            <nav class="customer-list-pagination" aria-label="客户列表分页">${page > 1 ? `<a class="btn btn-secondary" href="${escapeHtml(link({page:String(page-1)}))}" data-route>上一页</a>` : ""}<span>第 ${page} 页</span>${page * data.page_size < data.total ? `<a class="btn btn-secondary" href="${escapeHtml(link({page:String(page+1)}))}" data-route>下一页</a>` : ""}</nav>
           </main>`,
       );
 
       bindCommonActions();
+      document.querySelector("#customer-search-form").addEventListener("submit", event => {event.preventDefault(); navigate(link({search:document.querySelector("#customer-search").value.trim(),page:"1"}));});
+      document.querySelector("#customer-sort").addEventListener("change", event => navigate(link({sort_by:event.target.value,page:"1"})));
     } catch (error) {
+      if (window.location.href !== route) return;
       renderLoadError("客户列表暂时无法读取", error);
     }
   }
@@ -460,7 +475,7 @@ export function createCustomerViews({
             <div class="field"><label for="customer-name">客户名称 <span class="customer-field-note">必填</span></label>
               <input id="customer-name" maxlength="200" autocomplete="organization" placeholder="填写客户或门店名称" required></div>
             <div class="field"><label for="customer-materials">客户资料</label>
-              <textarea id="customer-materials" rows="10" maxlength="50000" placeholder="粘贴客户介绍、采访记录、产品与服务、顾客问题。人物的姓名、身份和本人经历也可以写在同一份资料里。"></textarea>
+          <textarea id="customer-materials" rows="7" maxlength="50000" placeholder="粘贴客户介绍、采访记录、产品与服务、顾客问题。人物的姓名、身份和本人经历也可以写在同一份资料里。"></textarea>
               <span class="field-hint">无需提前判断行业。系统整理后，由你分别确认客户信息和出镜人信息。</span></div>
             <div id="customer-form-error" class="form-error" role="alert"></div>
             <div class="profile-form-actions">
@@ -890,7 +905,7 @@ export function createCustomerViews({
                     <label for="customer-materials">已有资料</label>
                     <textarea
                     id="customer-materials"
-                    rows="14"
+                    rows="8"
                     maxlength="50000"
                     required
                     >${escapeHtml(source.materials || "")}</textarea>

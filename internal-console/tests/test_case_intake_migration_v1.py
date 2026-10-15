@@ -1,4 +1,4 @@
-"""Migration 004 safety checks, including a read-only online-backup audit CLI."""
+"""Migration safety checks, including a read-only online-backup audit CLI."""
 from __future__ import annotations
 
 import argparse
@@ -66,7 +66,8 @@ def test_migration_preserves_populated_backup_and_detects_repeated_start(tmp_pat
         if table != "schema_migrations":
             assert first[table] == rows
     assert get_task(copy, task["task_id"])["payload"]["profile"] == "mix"
-    assert len(first["schema_migrations"]) == len(before["schema_migrations"]) + 1
+    assert len(first["schema_migrations"]) == len(before["schema_migrations"]) + 2
+    assert first['case_capability_events']==[]  # Migration never grants any account.
     with transaction(copy) as db:
         db.execute("INSERT INTO case_intake_groups VALUES ('historical-group','request','digest',1,'2026-10-09')")
         db.execute("INSERT INTO case_intake_items(group_id,position,source_url,task_id,state) VALUES (?,?,?,?,?)",
@@ -99,8 +100,59 @@ def test_concurrent_initializers_apply_migration_once(tmp_path):
     with ThreadPoolExecutor(max_workers=2) as pool:
         list(pool.map(lambda _: apply_migrations(source, MIGRATIONS), range(2)))
     after = snapshot(source)
-    assert len(after["schema_migrations"]) == 4
+    assert len(after["schema_migrations"]) == 5
     assert after["users"] == before["users"] and after["tasks"] == before["tasks"]
+
+
+def populated_004_database(root):
+    path, task = legacy_database(root)
+    migrations = root / "migrations"
+    shutil.copy2(MIGRATIONS / "004_case_intake_groups.sql", migrations)
+    apply_migrations(path, migrations)
+    with transaction(path) as db:
+        db.execute("INSERT INTO case_intake_groups VALUES ('existing-group','existing-request','digest',1,'2026-10-15')")
+        db.execute("INSERT INTO case_intake_items(group_id,position,source_url,task_id,state) VALUES (?,?,?,?,?)",
+                   ("existing-group", 0, task["payload"]["source_url"], task["task_id"], "linked"))
+    return path
+
+
+def test_005_preserves_populated_004_and_never_grants_a_reviewer(tmp_path):
+    path = populated_004_database(tmp_path / "existing")
+    before = snapshot(path)
+    apply_migrations(path, MIGRATIONS)
+    after = snapshot(path)
+    for table, rows in before.items():
+        if table != "schema_migrations":
+            assert after[table] == rows
+    assert len(after["console_principal_namespace"]) == 1
+    namespace = after["console_principal_namespace"][0][1]
+    assert len(namespace) == 32 and all(c in "0123456789abcdef" for c in namespace)
+    assert after["case_capability_events"] == []
+    for statement in ("UPDATE console_principal_namespace SET namespace='replacement'",
+                      "DELETE FROM console_principal_namespace"):
+        with pytest.raises(sqlite3.IntegrityError, match="immutable"):
+            with transaction(path) as db:
+                db.execute(statement)
+    apply_migrations(path, MIGRATIONS)
+    assert snapshot(path) == after
+    assert integrity(path) == {"integrity_check": "ok", "foreign_key_errors": 0}
+
+
+def test_005_failure_rolls_back_namespace_events_and_migration_marker(tmp_path):
+    path = populated_004_database(tmp_path / "existing")
+    before = snapshot(path)
+    broken = tmp_path / "broken-migrations"
+    shutil.copytree(MIGRATIONS, broken)
+    migration = broken / "005_case_library_access.sql"
+    migration.write_text(migration.read_text() + "\nINSERT INTO nonexistent_table VALUES (1);\n")
+    with pytest.raises(sqlite3.OperationalError):
+        apply_migrations(path, broken)
+    assert snapshot(path) == before
+    with closing(sqlite3.connect(path)) as db:
+        assert not db.execute("SELECT name FROM sqlite_master WHERE name LIKE 'case_capability%' OR name LIKE 'console_namespace%'").fetchall()
+    apply_migrations(path, MIGRATIONS)
+    assert snapshot(path)["case_capability_events"] == []
+    assert integrity(path) == {"integrity_check": "ok", "foreign_key_errors": 0}
 
 
 def audit_existing_database(source: Path, output: Path):

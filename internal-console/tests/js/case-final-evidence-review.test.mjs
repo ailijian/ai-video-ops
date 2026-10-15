@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { caseReviewContent } from "../../static/assets/case-components.js";
 
 const base = {
+  permissions: { can_review: true },
   case_id: "7624492255264509193", status: "awaiting_review", title: "测试案例",
   platform: "douyin", review: { can_review: true },
   review_media: { source_url: "https://www.douyin.com/video/7624492255264509193" },
@@ -16,6 +17,9 @@ assert.match(html, /入库前确认/);
 assert.match(html, /确认保留原识别/);
 assert.match(html, /确认保留当前分镜/);
 assert.match(html, /确认并批准入库/);
+const ownerHtml = caseReviewContent({...base, permissions: {can_review: false}, evidence_review: pending}, () => "");
+assert.doesNotMatch(ownerHtml, /data-review-action=/);
+assert.match(ownerHtml, /等待指定审核人/);
 assert.doesNotMatch(html, /模型建议修正/);
 const unavailable = caseReviewContent({ ...base, evidence_review: { required: true, available: false } }, () => "");
 assert.match(unavailable, /disabled/);

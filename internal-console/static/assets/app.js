@@ -1,18 +1,15 @@
+import { dashboardMarkup, dashboardSkeleton } from "./dashboard-view.mjs?v=dash-1";
+import { taskListRows, taskSourceResults, taskReadFailure, taskActivityRows } from "./task-list-view.mjs?v=ui-1";
 import { createApiClient } from "./api-client.js?v=customer-speaker-v1";
-import { createCaseViews } from "./case-views.js?v=smart-intake-1.1-r1";
-import { createCustomerViews } from "./customer-views.js?v=customer-speaker-v1";
+import { createCaseViews } from "./case-views.js?v=ui-1";
+import { createCustomerViews } from "./customer-views.js?v=ui-1";
 import { progressPanel } from "./case-components.js?v=smart-intake-1.1";
 import { startTaskPolling } from "./task-progress.js?v=mobile-reliability-1";
 import { CUSTOM_INDUSTRY, industryOptions, industryValue as readIndustryValue, setIndustryValue, syncCustomIndustry } from "./case-industry.mjs?v=industry-2";
-import { customerProgressPanel } from "./customer-components.js?v=customer-speaker-v1";
 import { matchWorkflowRoute } from "./routes.js";
 import {
   createSpeakerViews,
-} from "./speaker-views.js?v=customer-speaker-v1";
-
-import {
-  speakerProgressPanel,
-} from "./speaker-components.js?v=customer-speaker-v1";
+} from "./speaker-views.js?v=ui-1";
 
 import {
   createContentViews,
@@ -49,7 +46,6 @@ const navItems = [
   { path: "/workbench", label: "工作台", icon: "home" },
   { path: "/cases", label: "案例", icon: "cases" },
   { path: "/customers", label: "客户", icon: "customers" },
-  { path: "/create", label: "创作", icon: "create" },
   { path: "/tasks", label: "任务", icon: "tasks" },
 ];
 
@@ -101,6 +97,8 @@ window.addEventListener("beforeunload", event => {
 
 function routeIsActive(path, target) {
   if (target === "/workbench") return path === target;
+  if (target === "/cases" && path.startsWith("/case-intake/")) return true;
+  if (target === "/customers" && (path === "/create" || path.startsWith("/create/"))) return true;
   return path === target || path.startsWith(`${target}/`);
 }
 
@@ -108,27 +106,28 @@ function shell(title, body) {
   const path = location.pathname;
   const sideLinks = navItems.map((item) => `
     <a class="nav-link ${routeIsActive(path, item.path) ? "active" : ""}"
-      href="${item.path}" data-route>
+      href="${item.path}" ${routeIsActive(path,item.path) ? 'aria-current="page"' : ""} data-route>
       ${icons[item.icon]}<span>${item.label}</span>
     </a>`).join("");
   const bottomLinks = navItems.map((item) => `
-    <a class="bottom-link ${routeIsActive(path, item.path) ? "active" : ""}" href="${item.path}" data-route>
+    <a class="bottom-link ${routeIsActive(path, item.path) ? "active" : ""}" href="${item.path}" ${routeIsActive(path,item.path) ? 'aria-current="page"' : ""} data-route>
       ${icons[item.icon]}<span>${item.label}</span>
     </a>`).join("");
   return `
     <div class="app-shell">
+      <a class="skip-link" href="#main-content">跳到主要内容</a>
       <aside class="sidebar">
         <div class="sidebar-brand">${brandMark()}<div><strong>鲸汤AI视频</strong><small>代运营工作台</small></div></div>
         <nav class="side-nav" aria-label="主导航">${sideLinks}</nav>
       </aside>
       <div class="main-column">
         <header class="topbar">
-          <div class="mobile-brand">${brandMark()}<span class="topbar-title">${escapeHtml(title)}</span></div>
-          <span class="topbar-title desktop-only">${escapeHtml(title)}</span>
+          <div class="mobile-brand">${brandMark()}<span class="topbar-title" title="${escapeHtml(title)}">${escapeHtml(title)}</span></div>
+          <span class="topbar-title desktop-only" title="${escapeHtml(title)}">${escapeHtml(title)}</span>
           <div class="account-actions">
             <span class="account-phone">${escapeHtml(maskPhone(state.user?.phone))}</span>
             <button class="icon-button" type="button" data-action="change-password" aria-label="修改密码" title="修改密码">${icons.user}</button>
-            <button class="icon-button desktop-only" type="button" data-action="logout" aria-label="退出登录" title="退出登录">${icons.logout}</button>
+            <button class="icon-button" type="button" data-action="logout" aria-label="退出登录" title="退出登录">${icons.logout}</button>
           </div>
         </header>
         ${body}
@@ -138,8 +137,16 @@ function shell(title, body) {
 }
 
 function bindCommonActions() {
+  const main = app.querySelector("main");
+  if (main) { main.id = "main-content"; main.tabIndex = -1; }
+  app.querySelector(".skip-link")?.addEventListener("click", event => {
+    event.preventDefault();
+    main?.focus({preventScroll:true});
+    main?.scrollIntoView({block:"start"});
+  });
   document.querySelectorAll("[data-route]").forEach((link) => {
     link.addEventListener("click", (event) => {
+      if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || link.target === "_blank") return;
       event.preventDefault();
       navigate(link.getAttribute("href"));
     });
@@ -157,7 +164,7 @@ function pageHeading(eyebrow, title, description, action = "") {
 }
 
 function skeletonPage(title) {
-  app.innerHTML = shell(title, `<main class="page"><section class="state-panel state-loading" aria-label="正在加载"><span class="loading-indicator" aria-hidden="true"></span><h1>正在加载</h1><p>请稍候，内容马上就好。</p></section></main>`);
+  app.innerHTML = shell(title, `<main class="page" aria-busy="true"><section class="state-panel state-loading" aria-label="正在加载"><span class="loading-indicator" aria-hidden="true"></span><h1>正在加载</h1><p>请稍候，内容马上就好。</p></section></main>`);
   bindCommonActions();
 }
 
@@ -401,158 +408,67 @@ function renderChangePassword() {
 }
 
 async function renderWorkbench() {
-  skeletonPage("工作台");
+  app.innerHTML = shell("工作台", dashboardSkeleton());
+  bindCommonActions();
+  const requestedPath = location.pathname + location.search;
+  const query = new URLSearchParams(location.search);
+  const section = ["attention", "materials", "running", "recent"].includes(query.get("section")) ? query.get("section") : "overview";
+  const page = Math.max(1, Number(query.get("page")) || 1);
   try {
-    const [data, customerData, caseData, creationOptions] = await Promise.all([
-      api("/api/workbench?projection=productized-stage3-3"),
-      api("/api/customers"),
-      api("/api/cases"),
-      api("/api/create/options").catch(() => null),
-    ]);
-    const customers = customerData?.customers || data.customers || [];
-    const cases = caseData?.cases || [];
-    const selectedBusinessId = data.customer_selection?.selected_business_id || null;
-    const status = selectedBusinessId || customers.length === 1
-      ? data.status || null
-      : null;
-    const hasCustomers = customers.length > 0;
-    const attention = data.attention || {};
-    const attentionItems = [
-      [Number(attention.case_reviews || 0), "个案例待审核", "/cases", "去审核"],
-      [Number(attention.persona_reviews || 0), "个客户或出镜人信息待确认", "/customers", "去确认"],
-      [Number(attention.content_reviews || 0), "个内容批次待审核", "/tasks", "去审核"],
-      [Number(attention.running_tasks || 0), "个任务正在运行", "/tasks", "查看"],
-    ].filter(([number]) => number > 0);
-    const attentionTotal = attentionItems.reduce((total, [number]) => total + number, 0);
-    const attentionList = attentionItems.length
-      ? attentionItems.map(([number, label, path, action]) => `<a class="action-row" href="${path}" data-route><span><strong>${number}</strong> ${label}</span><span class="action-row-link">${action}${icons.arrow}</span></a>`).join("")
-      : `<div class="attention-empty"><span class="status-dot status-success"></span><span>当前没有需要处理的事项。</span></div>`;
-    const contentCreation = data.capabilities?.content_creation || {};
-    const summary = data.summary || {};
-    const customerCount = customers.length;
-    const approvedCustomerCount = Number(
-      customers.filter((customer) => customer.status === "approved").length,
-    );
-    const caseCount = cases.length;
-    const approvedCaseCount = Number(
-      cases.filter((item) => item.status === "approved").length,
-    );
-    const readyCustomerCount = Number(
-      creationOptions?.ready_customer_count
-        ?? summary.ready_customer_count
-        ?? contentCreation.ready_customer_count
-        ?? 0,
-    );
-    const overviewRows = [
-      ["客户", customerCount, `${approvedCustomerCount} 个已确认`, "/customers"],
-      ["案例", caseCount, `${approvedCaseCount} 个已入库`, "/cases"],
-      ["可创作客户", readyCustomerCount, readyCustomerCount ? "可以开始新的内容创作" : "仍需确认客户与出镜人", readyCustomerCount ? "/create" : "/customers"],
-    ].map(([label, value, note, path]) => `
-      <a class="workbench-overview-row" href="${path}" data-route>
-        <span><strong>${escapeHtml(label)}</strong><small>${escapeHtml(note)}</small></span>
-        <span class="workbench-overview-value">${Number(value)}</span>
-        ${icons.arrow}
-      </a>`).join("");
-    const recentTasks = (data.recent_tasks || []).slice(0, 4);
-    const recentWork = recentTasks.length
-      ? recentTasks.map((task) => {
-        const caseApproved = task.task_type === "case_analysis" && task.current_case_status === "approved";
-        const note = task.current_active_task_id ? "已有新的分析任务"
-          : caseApproved && task.status === "failed" ? "这次分析未完成 · 案例已入库"
-          : caseApproved && task.status === "awaiting_review" ? "案例已入库 · 本次结果待核对"
-          : task.payload?.customer_name || task.payload?.case_title || "查看最新进度";
-        const displayedStatus = caseApproved && task.status === "awaiting_review" ? "needs_check"
-          : task.status === "failed" && (caseApproved || task.current_active_task_id) ? "historical_failed"
-          : task.status;
-        return `
-        <a class="workbench-recent-row" href="/tasks/${encodeURIComponent(task.task_id)}" data-route>
-          <span><strong>${escapeHtml(humanTaskType(task.task_type))}</strong><small>${escapeHtml(note)}</small></span>
-          ${statusPill(displayedStatus)}
-          ${icons.arrow}
-        </a>`;
-      }).join("")
-      : `<div class="attention-empty"><span class="status-dot status-success"></span><span>还没有最近任务。</span></div>`;
-    const creationAvailable = creationOptions
-      ? readyCustomerCount > 0
-      : contentCreation.available;
-    const creationCard = creationAvailable
-      ? `<a class="quick-action" href="/create" data-route><span class="quick-icon">${icons.create}</span><span><strong>开始创作</strong><small>选择客户与出镜人</small></span>${icons.arrow}</a>`
-      : `<div class="quick-action quick-action-disabled" aria-disabled="true"><span class="quick-icon">${icons.create}</span><span><strong>开始创作</strong><small>需要已确认的客户与出镜人</small></span></div>`;
-    const hold = status?.operational_hold;
-    const holdNotice = hasCustomers && hold?.active ? `<div class="notice notice-warning"><span class="notice-icon">!</span><div><strong>客户联系已暂停</strong><p>解除暂停前，相关补拍工作不会继续。下一步：${escapeHtml(displayNextAction(status.primary_next_action))}</p></div></div>` : "";
-    const emptyCustomerNote = !hasCustomers ? `<div class="notice notice-info"><span class="notice-icon">i</span><div><strong>还没有客户</strong><p>从添加案例或建立第一个客户开始。</p></div></div>` : "";
-    const headingDescription = attentionTotal ? `今天有 ${attentionTotal} 件事需要处理。` : "当前没有需要处理的事项。";
-
-    const body = `
-      <main class="page page-standard workbench-page">
-        ${pageHeading("", "工作台", headingDescription)}
-        ${holdNotice}${emptyCustomerNote}
-        <section class="workbench-section">
-          <div class="section-head"><h2>需要你处理</h2></div>
-          <div class="action-list" aria-label="待处理事项">${attentionList}</div>
-        </section>
-        <section class="workbench-section">
-          <div class="section-head"><h2>当前概览</h2></div>
-          <div class="workbench-overview" aria-label="当前业务数据">${overviewRows}</div>
-        </section>
-        <section class="workbench-section">
-          <div class="section-head"><h2>快捷开始</h2></div>
-          <div class="quick-actions">
-            <a class="quick-action" href="/cases/new" data-route><span class="quick-icon">${icons.link}</span><span><strong>添加案例</strong><small>粘贴抖音分享内容或链接</small></span>${icons.arrow}</a>
-            <a class="quick-action" href="/customers/new" data-route><span class="quick-icon">${icons.customers}</span><span><strong>新建客户</strong><small>整理客户资料</small></span>${icons.arrow}</a>
-            ${creationCard}
-          </div>
-        </section>
-        <section class="workbench-section">
-          <div class="section-head"><h2>最近记录</h2><a class="section-link" href="/tasks" data-route>查看全部</a></div>
-          <div class="workbench-recent" aria-label="最近任务">${recentWork}</div>
-        </section>
-      </main>`;
-    app.innerHTML = shell("工作台", body);
+    const data = await api(`/api/dashboard?section=${section}&page=${page}`);
+    if (location.pathname + location.search !== requestedPath) return;
+    app.innerHTML = shell("工作台", dashboardMarkup(data, { escapeHtml, icons }));
     bindCommonActions();
+    document.querySelector("[data-dashboard-refresh]")?.addEventListener("click", renderWorkbench);
   } catch (error) {
-    renderLoadError("工作台暂时无法读取", error);
+    if (location.pathname + location.search === requestedPath) renderLoadError("工作台暂时无法读取", error);
   }
 }
 
 async function renderTasks() {
+  const requestedPath = location.pathname + location.search;
   skeletonPage("任务记录");
-  try {
-    const [data, activity] = await Promise.all([api("/api/tasks"), api("/api/tasks/activity")]);
-    const content = data.tasks.length ? `<div class="task-list">${data.tasks.map((task) => `
-      <article class="task-list-item">${
-    task.task_type === "customer_analysis"
-      ? customerProgressPanel(task, {
-          compact: true,
-        })
-      : task.task_type === "speaker_analysis"
-        ? speakerProgressPanel(task, {
-            compact: true,
-          })
-        : progressPanel(task, {
-            compact: true,
-          })
-}${task.created_by?.phone ? `<p class="task-operator">提交人：${escapeHtml(maskPhone(task.created_by.phone))}</p>` : ""}<a class="inline-link" href="/tasks/${encodeURIComponent(task.task_id)}" data-route><span>查看任务</span><span aria-hidden="true">›</span></a></article>`).join("")}</div>` : `
-      <section class="card empty-state"><div class="empty-icon">${icons.tasks}</div><h2>暂时没有任务</h2><p>案例分析、客户信息分析、出镜人分析和视频创作都会出现在这里。</p><a class="btn btn-secondary" href="/cases/new" data-route>添加案例</a></section>`;
-    const activityStatus = { queued: "排队中", running: "进行中", awaiting_review: "待审核", completed: "已完成", failed: "失败", approved: "已确认", created: "已创建", rejected: "未采用" };
-    const activityRows = (events) => events.length ? `<div class="operator-activity-list">${events.map((event) => `<div class="operator-activity-row"><time>${escapeHtml(event.at ? new Date(event.at).toLocaleString("zh-CN") : "时间未记录")}</time><span>${escapeHtml(event.actor?.phone_masked || "历史记录 / 未记录")}</span><strong>${escapeHtml(event.kind)}</strong><span>${escapeHtml(event.subject)}</span><span>${escapeHtml(activityStatus[event.status] || "已记录")}</span></div>`).join("")}</div>` : `<section class="state-panel"><h2>暂无操作记录</h2><p>提交、审核和导出操作会出现在这里。</p></section>`;
-    const accounts = activity.accounts || [];
-    app.innerHTML = shell("任务记录", `<main class="page">${pageHeading("任务", "任务记录", "这里可以查看执行进度和团队操作记录。")}
-      <div class="profile-tabs" role="tablist" aria-label="任务视图"><button class="profile-tab active" type="button" data-task-tab="tasks" role="tab" aria-selected="true">任务</button><button class="profile-tab" type="button" data-task-tab="activity" role="tab" aria-selected="false">操作记录</button></div>
-      <div data-task-panel="tasks">${content}</div><div data-task-panel="activity" hidden><div class="activity-filter"><label for="activity-account">操作账号</label><select id="activity-account"><option value="">全部账号</option>${accounts.map((account) => `<option value="${account.user_id}">${escapeHtml(account.phone_masked)}</option>`).join("")}</select></div><div data-activity-rows>${activityRows(activity.events || [])}</div></div></main>`);
-    bindCommonActions();
-    document.querySelectorAll("[data-task-tab]").forEach((tab) => tab.addEventListener("click", () => {
-      document.querySelectorAll("[data-task-tab]").forEach((item) => { item.classList.toggle("active", item === tab); item.setAttribute("aria-selected", String(item === tab)); });
-      document.querySelectorAll("[data-task-panel]").forEach((panel) => { panel.hidden = panel.dataset.taskPanel !== tab.dataset.taskTab; });
-    }));
-    document.querySelector("#activity-account").addEventListener("change", async (event) => {
-      const selected = event.target.value;
-      const filtered = selected ? await api(`/api/tasks/activity?user_id=${encodeURIComponent(selected)}`) : activity;
-      document.querySelector("[data-activity-rows]").innerHTML = activityRows(filtered.events || []);
+  const results = await Promise.allSettled([api("/api/tasks"), api("/api/tasks/activity")]);
+  if (location.pathname + location.search !== requestedPath) return;
+  const sources = taskSourceResults(results);
+  const activity = sources.activity;
+  const content = sources.tasks === null ? taskReadFailure("任务记录") : sources.tasks.length
+    ? `<div class="task-list">${taskListRows(sources.tasks,{escapeHtml,icons,humanTaskType})}</div>`
+    : `<section class="state-panel empty-state"><div class="empty-icon">${icons.tasks}</div><h2>暂时没有任务</h2><p>案例分析、客户资料整理和创作执行记录会出现在这里。</p><a class="btn btn-secondary" href="/customers" data-route>管理客户</a></section>`;
+  const activityContent = activity ? `<div class="activity-filter"><label for="activity-account">操作账号</label><select id="activity-account"><option value="">全部账号</option>${(activity.accounts || []).map(account=>`<option value="${account.user_id}">${escapeHtml(account.phone_masked)}</option>`).join("")}</select></div><div data-activity-rows>${taskActivityRows(activity.events,{escapeHtml})}</div>` : taskReadFailure("操作记录");
+  app.innerHTML = shell("任务记录",`<main class="page page-standard task-list-page">${pageHeading("","任务记录","查看最近执行状态，从原任务继续处理。")}
+    <div class="profile-tabs" role="tablist" aria-label="任务视图"><button class="profile-tab" id="task-tab-tasks" type="button" data-task-tab="tasks" role="tab" aria-controls="task-panel-tasks">执行任务</button><button class="profile-tab" id="task-tab-activity" type="button" data-task-tab="activity" role="tab" aria-controls="task-panel-activity">操作记录</button></div>
+    <div id="task-panel-tasks" role="tabpanel" aria-labelledby="task-tab-tasks" data-task-panel="tasks">${content}</div><div id="task-panel-activity" role="tabpanel" aria-labelledby="task-tab-activity" data-task-panel="activity">${activityContent}</div></main>`);
+  bindCommonActions();
+  const tabs = [...app.querySelectorAll("[data-task-tab]")];
+  const activate = (name, persist = true) => {
+    tabs.forEach(tab=>{const active=tab.dataset.taskTab===name;tab.classList.toggle("active",active);tab.setAttribute("aria-selected",String(active));tab.tabIndex=active?0:-1;});
+    app.querySelectorAll("[data-task-panel]").forEach(panel=>{panel.hidden=panel.dataset.taskPanel!==name;});
+    if(persist) history.replaceState({},"",name==="activity"?"/tasks?view=activity":"/tasks");
+  };
+  activate(new URLSearchParams(location.search).get("view")==="activity"?"activity":"tasks",false);
+  tabs.forEach((tab,index)=>{
+    tab.addEventListener("click",()=>activate(tab.dataset.taskTab));
+    tab.addEventListener("keydown",event=>{
+      if(!["ArrowLeft","ArrowRight","Home","End"].includes(event.key))return;
+      event.preventDefault();const next=event.key==="Home"?0:event.key==="End"?tabs.length-1:(index+(event.key==="ArrowRight"?1:-1)+tabs.length)%tabs.length;
+      tabs[next].focus();activate(tabs[next].dataset.taskTab);
     });
-  } catch (error) {
-    renderLoadError("任务暂时无法读取", error);
-  }
+  });
+  app.querySelectorAll("[data-task-refresh]").forEach(button=>button.addEventListener("click",renderTasks));
+  let filterVersion=0;
+  app.querySelector("#activity-account")?.addEventListener("change",async event=>{
+    const select=event.currentTarget;const version=++filterVersion;
+    try {
+      const filtered=select.value?await api(`/api/tasks/activity?user_id=${encodeURIComponent(select.value)}`):activity;
+      if(location.pathname!=="/tasks" || !app.contains(select) || version!==filterVersion)return;
+      app.querySelector("[data-activity-rows]").innerHTML=taskActivityRows(filtered.events || [],{escapeHtml});
+    } catch {
+      if(location.pathname!=="/tasks" || !app.contains(select) || version!==filterVersion)return;
+      app.querySelector("[data-activity-rows]").innerHTML=taskReadFailure("操作记录");
+      app.querySelector("[data-task-refresh]")?.addEventListener("click",renderTasks);
+    }
+  });
 }
 
 function renderPlaceholder(type) {
@@ -654,6 +570,7 @@ const contentOperationsViews =
     renderLoadError,
   });
 
+let stopContentTaskPolling = null;
 async function renderTaskDetail(taskId) {
   skeletonPage("任务进度");
 
@@ -681,19 +598,21 @@ async function renderTaskDetail(taskId) {
     }
 
     if (["content_generation", "excel_export"].includes(payload.task.task_type)) {
+      if (location.pathname !== `/tasks/${taskId}`) return;
       const render = (task) => {
+        if (location.pathname !== `/tasks/${taskId}`) return;
         app.innerHTML = shell(
           "任务进度",
           `<main class="page task-detail-page">${pageHeading(
             "后台任务",
             humanTaskType(task.task_type),
             "任务完成后，页面会重新读取业务结果确认最终状态。",
-          )}<div data-live-progress>${progressPanel(task)}</div><a class="btn btn-secondary btn-wide" href="/tasks" data-route>返回任务记录</a></main>`,
+          )}<div data-live-progress>${progressPanel(task)}</div>${task.payload?.request_id ? `<a class="btn btn-primary" href="/create?request_id=${encodeURIComponent(task.payload.request_id)}${String(task.payload.operation || "").startsWith("novel_news") ? "&profile=news&news_mode=novel_content" : String(task.payload.operation || "").startsWith("news_") ? "&profile=news&news_mode=cross_profile_repurpose" : ""}" data-route>查看原创作与审核</a>` : ""}<a class="btn btn-secondary btn-wide" href="/tasks" data-route>返回任务记录</a></main>`,
         );
         bindCommonActions();
       };
       render(payload.task);
-      startTaskPolling({
+      stopContentTaskPolling = startTaskPolling({
         api,
         taskId,
         onUpdate: render,
@@ -715,6 +634,8 @@ let renderedRoutePath = location.pathname;
 async function renderRoute() {
   renderedRoutePath = location.pathname;
   const path = location.pathname.replace(/\/+$/, "") || "/";
+  stopContentTaskPolling?.();
+  stopContentTaskPolling = null;
   caseViews.dispose();
   customerViews.stopTaskPolling();
   speakerViews.stopTaskPolling();
@@ -794,6 +715,8 @@ if (path === "/customers/new") return customerViews.renderCustomerNew();
   if (workflowRoute?.name === "task-detail") {
     return renderTaskDetail(workflowRoute.value);
   }
+  app.innerHTML = shell("页面未找到", `<main class="page page-form"><section class="state-panel"><span class="empty-icon">${icons.inbox}</span><h1>没有找到这个页面</h1><p>链接可能已变更，请返回工作台继续。</p><a class="btn btn-primary" href="/workbench" data-route>返回工作台</a></section></main>`);
+  bindCommonActions();
 }
 
 async function bootstrap() {

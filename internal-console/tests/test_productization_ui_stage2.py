@@ -48,7 +48,11 @@ def test_customer_list_and_detail_are_product_management_surfaces():
     customer_components = read_asset("customer-components.js")
     customer = read_asset("customer-views.js")
 
-    assert 'class="customer-row"' in customer_components
+    # CUSTOMER-LIST-1 supersedes the directory row with a read-only operations card.
+    assert 'class="customer-operation-card"' in customer_components
+    for label in ("已批准出镜人", "创作记录", "待处理", "查看作品记录"):
+        assert label in customer_components
+    assert "/api/customers/operations" in customer
     assert 'class="card customer-card"' not in customer_components
     assert 'id: "overview", label: "概览"' in customer
     assert 'id: "profile", label: "客户资料"' in customer

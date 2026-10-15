@@ -1,0 +1,20 @@
+{
+  "schema_version": "case-profile-compatibility-approval-v1.0",
+  "case_id": "7999999999999999902",
+  "status": "approved",
+  "fixture_only": true,
+  "human_gate": true,
+  "reviewer": "fictional-reference-reviewer",
+  "approved_compatible_generation_profiles": [
+    "mix"
+  ],
+  "source_approved_case_ref": {
+    "path": "data/cases/7999999999999999902/case_v1.json",
+    "sha256": "7fb4d4f57e43d60277162bed259ac0d382a2fc06203ca83adbcbc8a7ddacb2d7"
+  },
+  "fingerprint_ref": {
+    "path": "data/fingerprints/7999999999999999902/case_fingerprint_v1.json",
+    "sha256": "53e91962fc117fa92aeca5809ec5a89d018ef1cdbe4a3f1b0a54e34b8bac6c16"
+  },
+  "media_rights_established": false
+}

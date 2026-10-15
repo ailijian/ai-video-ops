@@ -333,7 +333,7 @@ def test_cover_requires_bound_local_asset_and_authenticated_access(client, setti
     assert client.get(f"/api/cases/{ID}/cover").status_code == 404
 
 
-def test_colleague_recovers_shared_group_without_new_attempt(client, settings):
+def test_only_designated_reviewer_recovers_another_submitters_group_without_new_attempt(client, settings):
     csrf = login_and_change_password(client)
     batch = group(client, csrf).json()
     task = batch["items"][0]["task"]
@@ -344,6 +344,9 @@ def test_colleague_recovers_shared_group_without_new_attempt(client, settings):
         changed = colleague.post("/api/auth/change-password", headers={"X-CSRF-Token":login.json()["csrf_token"]}, json={
             "current_password":"123456", "new_password":"ReviewConsole2026!", "confirm_password":"ReviewConsole2026!"})
         assert changed.status_code == 200
+        assert colleague.get(f"/api/case-intake/groups/{batch['group_id']}").status_code==404
+        from app.case_library_access import manage_reviewer
+        manage_reviewer(settings,2,action="grant",operator="isolated-test-operator",reason="Explicit colleague reviewer")
         restored = colleague.get(f"/api/case-intake/groups/{batch['group_id']}").json()
         assert restored["items"][0]["task"]["task_id"] == task["task_id"]
         assert restored["items"][0]["classification"]["status"] == "needs_confirmation"

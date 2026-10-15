@@ -337,8 +337,6 @@ def _latest_candidate(
 
 def list_cases(settings: Settings) -> list[dict[str, Any]]:
     cases_root = settings.pipeline_root / "data" / "cases"
-    if not cases_root.exists():
-        return []
     projections: list[CaseProjection] = [
         _project_case(case_path)
         for case_path in cases_root.glob("*/case_v1.json")
@@ -544,13 +542,29 @@ def source_case_id(url: str) -> str:
 
 
 def _find_case_path(
-    settings: Settings, case_id: str
+    settings: Settings, case_id: str, *, attempt_id: str | None = None
 ) -> tuple[Path, dict[str, Any] | None]:
     if not re.fullmatch(r"\d{10,24}", str(case_id or "")):
         raise CanonicalOperationError(
             "CASE_NOT_FOUND", "没有找到这个案例。", "请返回案例库后重新选择。"
         )
     canonical = settings.pipeline_root / "data" / "cases" / case_id / "case_v1.json"
+    if attempt_id is not None:
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{7,127}", attempt_id):
+            raise CanonicalOperationError("CASE_NOT_FOUND", "没有找到这个案例。", "请返回案例库。")
+        if canonical.is_file() and (_read_json(canonical).get("analysis_lineage") or {}).get("attempt_id") == attempt_id:
+            return canonical, None
+        root = settings.pipeline_root / "data/case_analysis_attempts" / case_id / attempt_id
+        state_path = root / "case_analysis_attempt_v1.json"
+        try:
+            state = _read_json(state_path)
+            candidate = resolve_within(root, str((state.get("artifacts") or {}).get("case_candidate_v1") or ""))
+            if (state.get("case_id") != case_id or state.get("attempt_id") != attempt_id
+                    or not candidate.is_file() or _read_json(candidate).get("case_id") != case_id):
+                raise ValueError("Attempt mismatch")
+            return candidate, state
+        except (CanonicalOperationError, ValueError) as exc:
+            raise CanonicalOperationError("CASE_NOT_FOUND", "没有找到这个案例。", "请返回案例库。") from exc
     if canonical.is_file():
         return canonical, None
     candidate = _latest_candidate(settings, case_id)
@@ -665,12 +679,12 @@ def _partial_approval_state(
     return None
 
 
-def get_case_detail(settings: Settings, case_id: str) -> dict[str, Any]:
+def get_case_detail(settings: Settings, case_id: str, *, attempt_id: str | None = None) -> dict[str, Any]:
     if not re.fullmatch(r"\d{10,24}", case_id):
         raise CanonicalOperationError(
             "CASE_NOT_FOUND", "没有找到这个案例。", "请返回案例库后重新选择。"
         )
-    case_path, attempt = _find_case_path(settings, case_id)
+    case_path, attempt = _find_case_path(settings, case_id, attempt_id=attempt_id)
     case = _read_json(case_path)
     recovery_state = _partial_approval_state(settings, case_id, case)
     projection = _project_case(
@@ -727,7 +741,7 @@ def get_case_detail(settings: Settings, case_id: str) -> dict[str, Any]:
     except ValueError:
         review_source_url = None
     try:
-        case_media_path(settings, case_id)
+        case_media_path(settings, case_id, attempt_id=attempt_id)
         local_media_available = True
     except CanonicalOperationError:
         local_media_available = False
@@ -783,8 +797,8 @@ def get_case_detail(settings: Settings, case_id: str) -> dict[str, Any]:
             "shots": shots,
         },
         "review": {
-            "can_review": lifecycle.get("status") == "review_required"
-            or recovery_state is not None,
+            "can_review": (lifecycle.get("status") == "review_required"
+            and (attempt is None or attempt.get("status") == "awaiting_review")) or recovery_state is not None,
             "approved": lifecycle.get("status") == "approved"
             and lifecycle.get("approved") is True
             and recovery_state is None,
@@ -800,7 +814,7 @@ def get_case_detail(settings: Settings, case_id: str) -> dict[str, Any]:
             "operator_uploaded": (case.get("source_provenance") or {}).get("acquisition_mode") == "operator_uploaded_file",
             "local_available": local_media_available,
             "local_url": (
-                f"/api/cases/{case_id}/media" if local_media_available else None
+                f"/api/cases/{case_id}/media" + (f"?attempt_id={attempt_id}" if attempt_id else "") if local_media_available else None
             ),
             "remote_embed_url": (
                 f"https://open.douyin.com/player/video?vid={case_id}"
@@ -835,8 +849,8 @@ def approved_case_attempt_id(settings: Settings, case_id: str) -> str | None:
     return str(attempt_id) if attempt_id else None
 
 
-def case_cover_path(settings: Settings, case_id: str) -> Path | None:
-    case_path, _ = _find_case_path(settings, case_id)
+def case_cover_path(settings: Settings, case_id: str, *, attempt_id: str | None = None) -> Path | None:
+    case_path, _ = _find_case_path(settings, case_id, attempt_id=attempt_id)
     ref = (_read_json(case_path).get("source_evidence") or {}).get("cover") or {}
     if not ref.get("path") or not ref.get("sha256"):
         return None
@@ -852,8 +866,8 @@ def case_cover_path(settings: Settings, case_id: str) -> Path | None:
     return path
 
 
-def case_media_path(settings: Settings, case_id: str) -> Path:
-    case_path, _ = _find_case_path(settings, case_id)
+def case_media_path(settings: Settings, case_id: str, *, attempt_id: str | None = None) -> Path:
+    case_path, _ = _find_case_path(settings, case_id, attempt_id=attempt_id)
     case = _read_json(case_path)
     video = Path(
         str(
@@ -1693,7 +1707,23 @@ def approve_case_candidate(
     note: str,
     evidence_review: dict[str, Any] | None = None,
     reviewer_user_id: int | None = None,
+    approval_principal: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    # A missing context is the existing trusted offline maintenance interface.
+    # Every HTTP caller supplies a Session-derived context, independently checked here.
+    if approval_principal is not None:
+        from .case_library_access import reviewer_authorization, reviewer_lock
+        with reviewer_lock(settings, approval_principal):
+            reviewer_authorization(settings, approval_principal, reviewer)
+            return _approve_case_candidate(settings, case_id, reviewer=reviewer, note=note,
+                evidence_review=evidence_review, reviewer_user_id=reviewer_user_id,
+                approval_principal=approval_principal)
+    return _approve_case_candidate(settings,case_id,reviewer=reviewer,note=note,
+        evidence_review=evidence_review,reviewer_user_id=reviewer_user_id)
+
+
+def _approve_case_candidate(settings, case_id, *, reviewer, note,
+                            evidence_review=None, reviewer_user_id=None, approval_principal=None):
     candidate = _approval_candidate(settings, case_id)
     canonical_dir = settings.pipeline_root / "data" / "cases" / case_id
     canonical_path = canonical_dir / "case_v1.json"
@@ -1766,6 +1796,10 @@ def approve_case_candidate(
     ]
     if legacy_policy_required:
         command.extend(["--governance-policy", str(policy)])
+    if approval_principal is not None:
+        command.extend(["--console-authority-db", str(settings.database_path),
+                        "--console-user-id", str(approval_principal["user_id"]),
+                        "--console-principal-namespace", approval_principal["namespace"]])
     if evidence_receipt_path is not None:
         command.extend(["--evidence-review-receipt", str(evidence_receipt_path)])
     try:
@@ -1802,6 +1836,11 @@ def approve_case_candidate(
         staged_receipt = _read_json(staged_receipt_path)
         staged_receipt["case_path"] = str(canonical_path)
         _write_atomic(staged_receipt_path, staged_receipt)
+        staged_authorization_path = staged_case_path.parent / "console_authorization_receipt_v1.json"
+        if staged_authorization_path.is_file():
+            authorization_receipt = _read_json(staged_authorization_path)
+            authorization_receipt["approval_receipt_sha256"] = _sha256(staged_receipt_path)
+            _write_atomic(staged_authorization_path, authorization_receipt)
         _validate_approved_case_artifacts(
             staged_case_path,
             expected_case_id=case_id,
@@ -1854,7 +1893,17 @@ def record_case_review_decision(
     reviewer: str,
     decision: str,
     reason: str,
+    review_principal: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    if review_principal is not None:
+        from .case_library_access import reviewer_authorization, reviewer_lock
+        with reviewer_lock(settings, review_principal):
+            reviewer_authorization(settings, review_principal, reviewer)
+            return _record_case_review_decision(settings,case_id,reviewer=reviewer,decision=decision,reason=reason)
+    return _record_case_review_decision(settings,case_id,reviewer=reviewer,decision=decision,reason=reason)
+
+
+def _record_case_review_decision(settings,case_id,*,reviewer,decision,reason):
     candidate = _latest_candidate(settings, case_id)
     if candidate is None:
         raise CanonicalOperationError(

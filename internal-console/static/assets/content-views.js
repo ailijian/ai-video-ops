@@ -55,7 +55,7 @@ export function createContentViews({
     const quantity = document.querySelector("#create-quantity");
     const profile = selectedProfileValue();
     return [
-      { label: "客户", value: business?.selectedOptions?.[0]?.textContent?.trim() || "" },
+      { label: "客户", value: selectedCustomer(business?.value)?.display_name || business?.selectedOptions?.[0]?.textContent?.trim() || "" },
       { label: "出镜人", value: speaker?.selectedOptions?.[0]?.textContent?.trim() || "" },
       { label: "内容类型", value: profile === "news" ? "新闻体" : "素材混剪" },
       ...(profile === "news" ? [{ label: "创作模式", value: selectedNewsModeValue() === "novel_content" ? "创作新内容" : "重新表达已有内容" }] : []),
@@ -619,14 +619,17 @@ export function createContentViews({
   function renderForm(data) {
     options = data;
     const customers = (data.customers || []).filter((customer) => customer.creation_ready);
+    const context = data.customer_context;
+    const back = context ? `<a class="back-link" href="/customers/${encodeURIComponent(context.business_id)}" data-route>← 返回 ${escapeHtml(context.display_name)}</a>` : `<a class="back-link" href="/customers" data-route>← 返回客户列表</a>`;
     if (!customers.length) {
       app.innerHTML = shell("创作", `
         <main class="page page-form">
-          ${pageHeading("", "创作", "选择客户、出镜人和内容类型，开始一次新的内容创作。")}
+          ${back}
+          ${pageHeading("", context ? `${context.display_name} · 创作` : "创作", "进入创作前仍需核对正式档案和当前创作条件。")}
           <section class="state-panel state-empty">
             <h2>还没有可用于创作的客户</h2>
-            <p>请先确认客户档案，并确认至少一位出镜人。</p>
-            <a class="btn btn-primary" href="/customers" data-route>查看客户</a>
+            <p>${escapeHtml((data.customers || [])[0]?.authority_blocker?.message || "请先完成客户档案与适用出镜人的独立审核。")}</p>
+            <a class="btn btn-primary" href="${context ? `/customers/${encodeURIComponent(context.business_id)}` : "/customers"}" data-route>查看客户资料</a>
           </section>
         </main>`);
       bindCommonActions();
@@ -634,21 +637,23 @@ export function createContentViews({
     }
 
     const params = new URLSearchParams(window.location.search);
-    const initialCustomer = customers.find((customer) => customer.business_id === params.get("business_id")) || customers[0];
+    const initialCustomer = customers.find((customer) => customer.business_id === params.get("business_id"));
+    if (!initialCustomer) throw new Error("指定客户当前无法安全进入创作，请返回客户核对。");
     const speakers = approvedSpeakers(initialCustomer);
     const initialSpeaker = speakers.find((speaker) => speaker.speaker_id === params.get("speaker_id")) || speakers[0];
 
     app.innerHTML = shell("创作", `
       <main class="page create-entry-page">
-        ${pageHeading("", "创作", "选择客户、出镜人和内容类型，开始一次新的内容创作。")}
+        ${back}
+        ${pageHeading("", `${initialCustomer.display_name} · 创作`, "选择出镜人与内容类型，系统会重新核对当前创作条件。")}
         <div class="create-workflow">
           <section class="work-surface create-entry-card">
             <form id="content-entry-form" novalidate>
               <div class="creation-entry-fields">
-                <div class="field">
+                <div class="field" hidden>
                   <label for="create-business">客户</label>
                   <select id="create-business" required>
-                    ${customers.map((customer) => `<option value="${escapeHtml(customer.business_id)}" ${customer.business_id === initialCustomer.business_id ? "selected" : ""}>${escapeHtml(customer.display_name)}</option>`).join("")}
+                    <option value="${escapeHtml(initialCustomer.business_id)}" selected>${escapeHtml(initialCustomer.display_name)}</option>
                   </select>
                 </div>
                 <div class="field">
@@ -707,6 +712,13 @@ export function createContentViews({
       </main>`);
 
     bindCommonActions();
+    const profileHint = params.get("profile");
+    if (profileHint === "news") {
+      document.querySelector('input[name="create-profile"][value="news"]').checked = true;
+      document.querySelectorAll(".profile-choice").forEach(label => label.classList.toggle("selected", label.querySelector("input").checked));
+      const newsMode = document.querySelector(`input[name="create-news-mode"][value="${params.get("news_mode") === "novel_content" ? "novel_content" : "cross_profile_repurpose"}"]`);
+      if (newsMode) newsMode.checked = true;
+    }
     syncProfileSpecificUi();
     const business = document.querySelector("#create-business");
     const speaker = document.querySelector("#create-speaker");
@@ -812,14 +824,42 @@ export function createContentViews({
   }
 
   async function renderCreate() {
+    const route = window.location.href;
     skeletonPage("创作");
     try {
-      const data = await api("/api/create/options");
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("request_id")) {
+        const requestedMode = params.get("profile") === "news" ? params.get("news_mode") === "novel_content" ? "novel" : "repurpose" : params.has("profile") ? "mix" : null;
+        const query = new URLSearchParams({request_id:params.get("request_id")});
+        if (requestedMode) query.set("mode", requestedMode);
+        if (params.has("business_id")) query.set("business_id", params.get("business_id"));
+        const context = await api(`/api/create/request-context?${query}`);
+        if (window.location.href !== route) return;
+        const mode = context.mode;
+        app.innerHTML = shell("创作记录", `<main class="page create-entry-page"><a class="back-link" href="/customers/${encodeURIComponent(context.business_id)}/content" data-route>← 返回 ${escapeHtml(context.display_name)} 的作品记录</a>${pageHeading("", `${context.display_name} · 创作记录`, "恢复原请求和审核结果；不会自动创建新任务。")}<div id="capacity-preview-result"><div id="content-delivery-host"></div></div></main>`);
+        bindCommonActions();
+        if (["abandoned", "cancelled", "completed"].includes(context.status)) {
+          document.querySelector("#capacity-preview-result").innerHTML = CreationState({title:"本次创作已结束", body:"原请求和历史结果仍然保留；不会重新启动已结束的任务。"});
+          return;
+        }
+        if (mode === "repurpose") await newsDeliveryViews.restore(context.request_id, document.querySelector("#capacity-preview-result"));
+        else if (mode === "novel") await novelNewsViews.restore(context.request_id, document.querySelector("#capacity-preview-result"));
+        else await deliveryViews.restore(context.request_id);
+        return;
+      }
+      if (!params.get("business_id")) {
+        app.innerHTML = shell("选择创作客户", `<main class="page page-form">${pageHeading("", "先选择一个客户", "从客户进入新的创作，历史请求可以从任务或客户作品记录继续。")}<a class="btn btn-primary" href="/customers" data-route>去客户列表</a><a class="btn btn-secondary" href="/tasks" data-route>查看已有任务</a></main>`);
+        bindCommonActions();
+        return;
+      }
+      const data = await api(`/api/create/options?business_id=${encodeURIComponent(params.get("business_id"))}`);
+      if (window.location.href !== route) return;
       renderForm(data);
       if (!document.querySelector("#content-entry-form")) return;
       lockEntryForm("正在检查现有创作…");
       await restoreSelectedProfileRequest();
     } catch (error) {
+      if (window.location.href !== route) return;
       renderLoadError("创作入口暂时无法读取", error);
     }
   }

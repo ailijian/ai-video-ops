@@ -128,9 +128,9 @@ def get_group(database_path, group_id: str) -> dict | None:
     return {**dict(group), "items": items}
 
 
-def list_groups(database_path) -> list[dict]:
+def list_groups(database_path, *, user_id=None, reviewer=False) -> list[dict]:
     conn = connect(database_path)
     try:
-        return [dict(r) for r in conn.execute("SELECT group_id,created_at FROM case_intake_groups ORDER BY created_at DESC LIMIT 50")]
+        return [dict(r) for r in conn.execute("SELECT group_id,created_at FROM case_intake_groups WHERE (? IS NULL OR ?=1 OR created_by_user_id=?) ORDER BY created_at DESC,group_id DESC LIMIT 50",(user_id,int(reviewer),user_id))]
     finally:
         conn.close()

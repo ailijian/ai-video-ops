@@ -272,7 +272,17 @@ def main() -> None:
         default=None,
         help="Explicit final human confirmation bound to a provisional Case candidate and its evidence hashes.",
     )
+    parser.add_argument("--console-authority-db", help="Console entry only: trusted local authorization database")
+    parser.add_argument("--console-user-id", type=int)
+    parser.add_argument("--console-principal-namespace")
     args = parser.parse_args()
+    console_authorization = None
+    console_fields = (args.console_authority_db, args.console_user_id, args.console_principal_namespace)
+    if any(value is not None for value in console_fields):
+        if any(value is None for value in console_fields):
+            parser.error("Console authorization context must be complete")
+        from case_console_authorization_v1 import validate_console_reviewer
+        console_authorization = validate_console_reviewer(*console_fields, reviewer=args.reviewer)
 
     case_path = Path(args.case).expanduser().resolve()
     if not case_path.exists():
@@ -553,6 +563,16 @@ def main() -> None:
 
     receipt_path = case_path.parent / "approval_receipt.json"
     write_atomic_json(receipt_path, receipt)
+    if console_authorization is not None:
+        # Additive authorization evidence; never change the existing receipt schema.
+        write_atomic_json(case_path.parent / "console_authorization_receipt_v1.json", {
+            "schema_version": "case-console-authorization-v1.0",
+            "case_id": case.get("case_id"), "candidate_sha256": original_sha256,
+            "approved_case_sha256": approved_sha256,
+            "approval_receipt_sha256": sha256_file(receipt_path),
+            "authorized_principal": console_authorization, "at": approved_at,
+            "production_media_rights_granted": False,
+        })
 
     print()
     print("CASE APPROVAL PASS")

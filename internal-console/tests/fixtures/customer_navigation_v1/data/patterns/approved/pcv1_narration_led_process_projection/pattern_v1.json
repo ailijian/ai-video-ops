@@ -1,0 +1,29 @@
+{
+  "schema_version": "pattern-v1.0",
+  "pattern_id": "pcv1_narration_led_process_projection",
+  "status": "approved",
+  "fixture_only": true,
+  "compatible_profiles": [
+    "mix"
+  ],
+  "profile_compatibility": {
+    "status": "human_approved"
+  },
+  "effectiveness": {
+    "status": "unvalidated",
+    "performance_data_used": false
+  },
+  "scope": {
+    "supported_case_ids": [
+      "7999999999999999902"
+    ]
+  },
+  "lineage": {
+    "case_refs": [
+      {
+        "path": "data/cases/7999999999999999902/case_v1.json",
+        "sha256": "7fb4d4f57e43d60277162bed259ac0d382a2fc06203ca83adbcbc8a7ddacb2d7"
+      }
+    ]
+  }
+}

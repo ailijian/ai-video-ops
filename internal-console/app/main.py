@@ -10,6 +10,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Any
+from fastapi import Query
 from typing import Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request, Response
@@ -76,6 +77,14 @@ from .customer_task_service import (
 from .config import Settings
 from .case_classification import classification_state, classification_summary, confirm_classification
 from .case_intake_service import create_group, dispatch_groups, get_group, list_groups
+from .case_library_access import (
+    principal as case_principal, reviewer_authorization, is_reviewer, can_read_task,
+    can_read_private_case, can_read_group, require_private_case, require_task,
+    not_visible, record_submission, safe_case_task,
+)
+from .case_shared_display import shared_projection, shared_cover_path, publication_context, change_publication
+from .case_list_projection import case_cards
+from .dashboard_projection import dashboard
 from .database import transaction
 from .douyin_source_input import DouyinSourceInput
 from .database import apply_migrations
@@ -115,6 +124,7 @@ from .speaker_task_service import (
 )
 
 from .content_operations_gateway import get_content_operations_view
+from .customer_operations_projection import list_customer_operations, creation_record_index, request_navigation_context
 
 from .content_gateway import (
     abandon_generation_request,
@@ -274,6 +284,22 @@ class CaseProfileAnnotationRequest(BaseModel):
     approved_case_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     expected_annotation_sha256: str | None = Field(..., pattern=r"^[0-9a-f]{64}$")
     note: str = Field(default="", max_length=1000)
+
+
+class CaseCoverClearanceRequest(BaseModel):
+    reference: str = Field(min_length=1,max_length=1000)
+    statement: str = Field(min_length=1,max_length=1000)
+    display_rights_confirmed: Literal[True]
+
+
+class CasePublicationRequest(BaseModel):
+    action: Literal["publish","withdraw"]
+    title: str = Field(default="",max_length=120)
+    structure_summary: str = Field(default="",max_length=1000)
+    approved_case_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    approval_receipt_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    expected_display_receipt_sha256: str | None = Field(default=None,pattern=r"^[a-f0-9]{64}$")
+    cover_evidence: CaseCoverClearanceRequest | None = None
 
 
 class CaseIndustryAnnotationRequest(BaseModel):
@@ -799,7 +825,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     async def canonical_error_handler(
         _: Request, exc: CanonicalOperationError
     ) -> JSONResponse:
-        status_code = 403 if exc.code in {"NOVEL_NEWS_NOT_AVAILABLE", "REVIEW_ACTOR_MISMATCH"} else 409 if exc.code in {
+        status_code = 404 if exc.code == "CASE_OBJECT_NOT_FOUND" else 403 if exc.code in {"CASE_REVIEWER_REQUIRED", "NOVEL_NEWS_NOT_AVAILABLE", "REVIEW_ACTOR_MISMATCH"} else 409 if exc.code in {
+            "CASE_DISPLAY_CONFLICT",
             "REVIEW_CONTEXT_STALE", "REVIEW_CONTEXT_REQUIRED", "REVIEW_REPLAY_CONFLICT", "INVALID_REVIEW_CONTEXT",
             "OPERATION_IN_PROGRESS",
             "AUTHORITY_CHANGED_REFRESH_REQUIRED",
@@ -897,6 +924,24 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     ) -> Any:
         with authority_operation_lock(settings, scope, identity, timeout_seconds=0.0):
             return operation(*args, **kwargs)
+
+    def visible_case_task(task, user_id):
+        """Private Case scope and duplicate/current-attempt links never bypass access."""
+        result=safe_case_task(settings,user_id,project_case_task_statuses([task])[0])
+        active=result.get("current_active_task_id")
+        if active and not can_read_task(settings,user_id,get_task(settings.database_path,active)):
+            result.pop("current_active_task_id",None)
+        if result.get("task_type")=="case_analysis":
+            result={**result,"payload":dict(result.get("payload") or {})}
+            if not (can_read_private_case(settings,user_id,str(result.get("subject_ref") or ""))
+                    or shared_projection(settings,str(result.get("subject_ref") or ""))):
+                result.pop("current_case_status",None)
+        return result
+
+    def visible_tasks(user_id,limit=50):
+        rows=list_tasks(settings.database_path,limit=limit,case_actor_user_id=user_id,
+                        case_reviewer=is_reviewer(settings,user_id))
+        return [visible_case_task(task,user_id) for task in rows if can_read_task(settings,user_id,task)]
 
     def set_session_cookie(response: Response, token: str) -> None:
         response.set_cookie(
@@ -1438,8 +1483,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/create/options")
     def creation_options(
         session: SessionContext = Depends(require_console_access),
+        business_id: str | None = None,
     ) -> dict[str, Any]:
-        projection = list_creation_options(settings)
+        projection = list_creation_options(settings, business_id=business_id) if business_id else list_creation_options(settings)
         projection["novel_news"] = {
             "available": novel_news_available(settings, str(session.user["phone"])),
             "verification_badge": settings.novel_news_rollout == "validation",
@@ -1457,6 +1503,16 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 return {"active_request": None, "novel_news_unavailable": True}
             return get_active_generation_request(settings, business_id, profile)
         return get_active_generation_request(settings, business_id)
+
+    @app.get("/api/create/request-context")
+    def creation_request_context(
+        request_id: str,
+        mode: Literal["mix", "repurpose", "novel"] | None = None,
+        business_id: str | None = None,
+        session: SessionContext = Depends(require_console_access),
+    ) -> dict[str, Any]:
+        require_if_novel_request(settings, request_id, str(session.user["phone"]))
+        return request_navigation_context(settings, request_id, mode, business_id)
 
     @app.post("/api/create/novel-news/preview")
     def novel_news_preview_route(
@@ -1945,9 +2001,18 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             ),
         )
 
+    @app.get("/api/dashboard")
+    def operations_home(
+        session: SessionContext = Depends(require_console_access),
+        section: Literal["overview", "attention", "materials", "running", "recent"] = "overview",
+        page: int = Query(1, ge=1),
+        page_size: int = Query(20, ge=1, le=50),
+    ) -> dict[str, Any]:
+        return dashboard(settings, int(session.user["id"]), section=section, page=page, page_size=page_size)
+
     @app.get("/api/workbench")
     def workbench(
-        _: SessionContext = Depends(require_console_access),
+        session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
         customers = list_customers(settings)
         configured_business_id = settings.default_business_id
@@ -1995,8 +2060,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                     exc.next_action,
                 )
 
-        cases = list_cases(settings)
-        tasks = project_case_task_statuses(list_tasks(settings.database_path, limit=10))
+        user_id=int(session.user["id"])
+        case_query = case_cards(settings,user_id,view="review" if is_reviewer(settings,user_id) else "shared",page_size=50)
+        tasks = visible_tasks(user_id,limit=10)
         try:
             creation_options = list_creation_options(settings)
             ready_customer_count = int(
@@ -2019,10 +2085,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 "approved_customer_count": sum(
                     customer.get("status") == "approved" for customer in customers
                 ),
-                "case_count": len(cases),
-                "approved_case_count": sum(
-                    case.get("status") == "approved" for case in cases
-                ),
+                "case_count": case_query["total"],
+                "approved_case_count": case_query["status_counts"].get("approved", 0),
                 "ready_customer_count": ready_customer_count,
             },
             "customer_selection": {
@@ -2032,9 +2096,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 "error": selection_error,
             },
             "attention": {
-                "case_reviews": sum(
-                    case["status"] == "awaiting_review" for case in cases
-                ),
+                "case_reviews": case_query["status_counts"].get("awaiting_review", 0),
                 "persona_reviews": (
                     sum(
                         customer.get("status")
@@ -2074,6 +2136,32 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 },
             },
         }
+
+    @app.get("/api/customers/operations")
+    def customer_operations(
+        session: SessionContext = Depends(require_console_access),
+        search: str = Query("", max_length=100),
+        filter_by: Literal["all", "pending", "ready"] = "all",
+        sort_by: Literal["action", "updated"] = "action",
+        page: int = Query(1, ge=1),
+        page_size: int = Query(20, ge=1, le=50),
+    ) -> dict[str, Any]:
+        return list_customer_operations(settings, search=search, filter_by=filter_by, sort_by=sort_by, page=page, page_size=page_size, actor_phone=str(session.user["phone"]))
+
+    @app.get("/api/customers/{business_id}/creation-records")
+    def customer_creation_records(
+        business_id: str,
+        _: SessionContext = Depends(require_console_access),
+        page: int = Query(1, ge=1),
+        page_size: int = Query(20, ge=1, le=50),
+    ) -> dict[str, Any]:
+        customer = get_customer_detail(settings, business_id)
+        try:
+            rows = creation_record_index(settings).get(business_id, [])
+        except (ValueError, OSError, RuntimeError) as exc:
+            raise CanonicalOperationError("CREATION_HISTORY_UNAVAILABLE", "创作记录暂时无法可靠读取。", "请查看任务或恢复原记录后重试。") from exc
+        return {"customer": {"business_id": business_id, "display_name": customer["display_name"]},
+                "records": rows[(page-1)*page_size:page*page_size], "total": len(rows), "page": page, "page_size": page_size}
 
     @app.get("/api/customers")
     def customers(
@@ -2642,13 +2730,40 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/cases")
     def cases(
-        _: SessionContext = Depends(require_console_access),
+        session: SessionContext = Depends(require_console_access),
+        view: Literal["shared","mine","review"] = "shared",
+        search: str = Query("",max_length=120),
+        industry: str = Query("",max_length=30),
+        video_type: str = Query("",max_length=30),
+        status: str = Query("",max_length=40),
+        page: int = Query(1,ge=1),
+        page_size: int = Query(20,ge=1,le=50),
     ) -> dict[str, Any]:
-        projected = list_cases(settings)
-        for case in projected:
-            case["submitted_by"] = original_task_actor(settings.database_path, "case_analysis", case["case_id"])
-            case["classification"] = classification_summary(settings, case["case_id"])
-        return {"cases": projected, "analysis": case_capability()}
+        return {**case_cards(settings,int(session.user["id"]),view=view,search=search,industry=industry,
+            video_type=video_type,status=status,page=page,page_size=page_size),"analysis":case_capability()}
+
+    @app.get("/api/case-library/{case_id}")
+    def shared_case_detail(case_id: str, _: SessionContext = Depends(require_console_access)):
+        row=shared_projection(settings,case_id)
+        if row is None: not_visible()
+        return row
+
+    @app.get("/api/case-library/{case_id}/cover")
+    def shared_case_cover(case_id: str, _: SessionContext = Depends(require_console_access)):
+        if shared_projection(settings,case_id) is None: not_visible()
+        path=shared_cover_path(settings,case_id)
+        if path is None: not_visible()
+        return FileResponse(path,headers={"Cache-Control":"private, no-store"})
+
+    @app.post("/api/cases/{case_id}/publication")
+    def publish_case(case_id: str,payload: CasePublicationRequest,
+                     session: SessionContext = Depends(require_console_access),
+                     x_csrf_token: str | None = Header(default=None,alias="X-CSRF-Token")):
+        require_csrf(session,x_csrf_token)
+        actor=case_principal(settings,int(session.user["id"]))
+        reviewer_authorization(settings,actor)
+        return locked_authority_call("case",case_id,change_publication,settings,case_id,
+                                     actor=actor,**payload.model_dump())
 
     @app.post("/api/cases/source-files")
     async def upload_case_source(
@@ -2716,6 +2831,15 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         # The task table owns progress and navigation. An older attempt file may
         # still say "running" while a newer task for the same source is active.
         active = find_active_case_task(settings.database_path, case_id)
+        if active is not None and not can_read_task(settings,actor_user_id,active):
+            return {"duplicate":True,"case_id":case_id,"state":"submitted","message":"投稿已记录，无需重复创建解析任务。"}
+        if duplicate is not None and not is_reviewer(settings,actor_user_id):
+            prior=get_task(settings.database_path,str(duplicate.get("attempt_id") or ""))
+            permitted=can_read_private_case(settings,actor_user_id,case_id) or can_read_task(settings,actor_user_id,prior)
+            if not permitted:
+                shared=shared_projection(settings,case_id)
+                return {"duplicate":True,"case_id":case_id,"state":"approved" if shared else "submitted",
+                        "message":"投稿已记录，无需重复创建解析任务。",**({"existing_case":shared} if shared else {})}
         if active is not None and (duplicate is None or duplicate.get("state") != "approved"):
             awaiting_review = active["status"] == "awaiting_review"
             return {
@@ -2740,6 +2864,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                     (case_id,),
                 ).fetchone()
             if previous and previous["status"] == "failed":
+                if not can_read_task(settings,actor_user_id,get_task(settings.database_path,previous["task_id"])):
+                    return {"duplicate":True,"case_id":case_id,"state":"submitted","message":"投稿已记录，无需重复创建解析任务。"}
                 duplicate = {"duplicate": True, "state": "failed", "case_id": case_id,
                              "attempt_id": previous["task_id"], "message": "这个视频已有失败任务，请恢复原任务。"}
 
@@ -2845,6 +2971,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             )
             task_runner.schedule(task["task_id"])
 
+            record_submission(settings,actor_user_id,task=task)
+
             return {
                 "duplicate": False,
                 "reanalyze": True,
@@ -2868,6 +2996,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             gpu_pending_per_user_max=settings.gpu_pending_per_user_max,
         )
         task_runner.schedule(task["task_id"])
+
+        record_submission(settings,actor_user_id,task=task)
 
         return {
             "duplicate": False,
@@ -2893,20 +3023,27 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     task_runner.intake_dispatch = dispatch_intake
     app.state.intake_dispatch = dispatch_intake
 
-    def intake_group_projection(group_id):
+    def intake_group_projection(group_id,user_id):
         group = get_group(settings.database_path, group_id)
-        if group is None:
-            raise HTTPException(404, detail=error_detail("CASE_GROUP_NOT_FOUND", "没有找到这批解析记录。", "请从案例列表重新进入。"))
+        if not can_read_group(settings,user_id,group): not_visible()
         for item in group["items"]:
             if item["task"]:
-                item["task"] = project_case_task_statuses([item["task"]])[0]
+                if not can_read_task(settings,user_id,item["task"]):
+                    item["task"],item["task_id"]=None,None
+                    item["message"]="投稿已记录，无需重复创建解析任务。"
+                    item["error_code"]=None
+                else: item["task"] = visible_case_task(item["task"],user_id)
             item["case"] = None
             item["classification"] = None
             if item["case_id"] and item["state"] != "input_duplicate":
                 try:
-                    detail = get_case_detail(settings, item["case_id"])
+                    attempt_id=item.get("task_id")
+                    if not can_read_private_case(settings,user_id,item["case_id"],attempt_id):
+                        item["case"]=shared_projection(settings,item["case_id"])
+                        continue
+                    detail = get_case_detail(settings, item["case_id"],attempt_id=attempt_id)
                     item["case"] = {k: detail.get(k) for k in ("case_id", "title", "duration_seconds", "platform", "status", "source_url")}
-                    item["case"]["cover_url"] = f"/api/cases/{item['case_id']}/cover" if case_cover_path(settings, item["case_id"]) else None
+                    item["case"]["cover_url"] = (f"/api/cases/{item['case_id']}/cover" + (f"?attempt_id={attempt_id}" if attempt_id else "")) if case_cover_path(settings, item["case_id"],attempt_id=attempt_id) else None
                     item["classification"] = classification_state(settings, item["case_id"])
                 except CanonicalOperationError as exc:
                     if exc.code != "CASE_NOT_FOUND":
@@ -2925,24 +3062,32 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                                     resolve=resolve_douyin_source_input, source_upload_id=payload.source_upload_id)
         except SourceInputError as exc:
             raise HTTPException(422, detail=error_detail(exc.code, exc.message, exc.message)) from exc
+        record_submission(settings,int(session.user["id"]),group=get_group(settings.database_path,group_id))
         dispatch_intake()
-        return intake_group_projection(group_id)
+        return intake_group_projection(group_id,int(session.user["id"]))
 
     @app.get("/api/case-intake/groups")
-    def intake_groups(_: SessionContext = Depends(require_console_access)):
-        return {"groups": list_groups(settings.database_path)}
+    def intake_groups(session: SessionContext = Depends(require_console_access)):
+        user_id=int(session.user["id"])
+        return {"groups":[row for row in list_groups(settings.database_path,user_id=user_id,
+            reviewer=is_reviewer(settings,user_id)) if can_read_group(settings,user_id,get_group(settings.database_path,row["group_id"]))]}
 
     @app.get("/api/case-intake/groups/{group_id}")
-    def intake_group(group_id: str, _: SessionContext = Depends(require_console_access)):
-        return intake_group_projection(group_id)
+    def intake_group(group_id: str, session: SessionContext = Depends(require_console_access)):
+        return intake_group_projection(group_id,int(session.user["id"]))
 
     @app.get("/api/cases/{case_id}/classification")
-    def case_classification(case_id: str, _: SessionContext = Depends(require_console_access)):
+    def case_classification(case_id: str, session: SessionContext = Depends(require_console_access)):
+        require_private_case(settings,int(session.user["id"]),case_id)
         return classification_state(settings, case_id)
 
     @app.get("/api/cases/{case_id}/cover")
-    def case_cover(case_id: str, _: SessionContext = Depends(require_console_access)):
-        path = case_cover_path(settings, case_id)
+    def case_cover(case_id: str, session: SessionContext = Depends(require_console_access),attempt_id: str | None = None):
+        user_id=int(session.user["id"])
+        if not can_read_private_case(settings,user_id,case_id,attempt_id):
+            if attempt_id is not None or shared_projection(settings,case_id) is None: not_visible()
+            path=shared_cover_path(settings,case_id)
+        else: path = case_cover_path(settings, case_id,attempt_id=attempt_id)
         if path is None:
             raise HTTPException(404, detail="没有可用封面。")
         return FileResponse(path, headers={"Cache-Control": "private, no-store"})
@@ -2952,6 +3097,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                                     session: SessionContext = Depends(require_console_access),
                                     x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")):
         require_csrf(session, x_csrf_token)
+        require_private_case(settings,int(session.user["id"]),case_id)
         return locked_authority_call("case", case_id, confirm_classification, settings, case_id,
                                      **payload.model_dump(), actor_user_id=int(session.user["id"]),
                                      actor_phone=str(session.user["phone"]))
@@ -2959,22 +3105,39 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/cases/{case_id}")
     def case_detail(
         case_id: str,
-        _: SessionContext = Depends(require_console_access),
+        session: SessionContext = Depends(require_console_access),
+        attempt_id: str | None = None,
     ) -> dict[str, Any]:
-        detail = get_case_detail(settings, case_id)
-        detail["submitted_by"] = original_task_actor(settings.database_path, "case_analysis", case_id)
-        detail["classification"] = classification_summary(settings, case_id)
+        user_id=int(session.user["id"])
+        if not can_read_private_case(settings,user_id,case_id,attempt_id):
+            shared=shared_projection(settings,case_id) if attempt_id is None else None
+            if shared is None: not_visible()
+            return shared
+        detail = get_case_detail(settings, case_id,attempt_id=attempt_id)
         intake_task = get_task(settings.database_path, str(detail["review"].get("attempt_id") or ""))
+        detail["submitted_by"] = intake_task.get("created_by") if intake_task else None
+        detail["classification"] = classification_summary(settings, case_id,attempt_id=attempt_id)
         detail["classification_required"] = bool(intake_task and not intake_task["payload"].get("operator_profile_hint")
             and not intake_task["payload"].get("profile") and not detail["review"].get("approved"))
+        reviewer=is_reviewer(settings,user_id)
+        detail["review"]["can_review"] = detail["review"]["can_review"] and reviewer
+        detail["can_annotate_profile"] = bool(detail.get("can_annotate_profile") and reviewer)
+        detail["can_annotate_industry"] = bool(detail.get("can_annotate_industry") and reviewer)
+        detail["permissions"]={"can_review":reviewer,"can_publish":reviewer and detail["review"]["approved"]}
+        if reviewer and detail["review"]["approved"]:
+            detail["publication_context"]=publication_context(settings,case_id)
+            detail["shared_display"]=shared_projection(settings,case_id)
+        detail["visibility"]="private"
         return detail
 
     @app.get("/api/cases/{case_id}/media")
     def case_media(
         case_id: str,
-        _: SessionContext = Depends(require_console_access),
+        session: SessionContext = Depends(require_console_access),
+        attempt_id: str | None = None,
     ) -> FileResponse:
-        path = case_media_path(settings, case_id)
+        require_private_case(settings,int(session.user["id"]),case_id,attempt_id)
+        path = case_media_path(settings, case_id,attempt_id=attempt_id)
         return FileResponse(
             path,
             media_type="video/webm" if path.suffix.lower() == ".webm" else "video/mp4",
@@ -2989,6 +3152,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
         require_csrf(session, x_csrf_token)
+        reviewer_authorization(settings,case_principal(settings,int(session.user["id"])))
         return {"case": locked_authority_call(
             "case", case_id, annotate_case_profile, settings, case_id,
             operator_profile_hint=payload.operator_profile_hint,
@@ -3007,6 +3171,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
         require_csrf(session, x_csrf_token)
+        reviewer_authorization(settings,case_principal(settings,int(session.user["id"])))
         return {"case": locked_authority_call(
             "case", case_id, annotate_case_industry, settings, case_id,
             industry=payload.industry,
@@ -3025,6 +3190,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
         require_csrf(session, x_csrf_token)
+        reviewer_authorization(settings,case_principal(settings,int(session.user["id"])))
         if payload.source_upload_id:
             if payload.decision != "reanalyze":
                 raise HTTPException(422, detail="只有重新分析可以提交新视频文件。")
@@ -3094,6 +3260,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             approval_kwargs: dict[str, Any] = {
                 "reviewer": reviewer,
                 "note": reason or "人工已对照原视频完成结构研究审核。",
+                "approval_principal":case_principal(settings,int(session.user["id"])),
             }
             if payload.evidence_review is not None:
                 approval_kwargs["evidence_review"] = payload.evidence_review.model_dump()
@@ -3120,6 +3287,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             reviewer=reviewer,
             decision=payload.decision,
             reason=reason,
+            review_principal=case_principal(settings,int(session.user["id"])),
         )
         if payload.decision == "reject":
             mark_task_reviewed(
@@ -3146,25 +3314,34 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             gpu_pending_per_user_max=settings.gpu_pending_per_user_max,
         )
         task_runner.schedule(task["task_id"])
+        record_submission(settings,int(session.user["id"]),task=task)
         return {"decision": "reanalyze", "task": task}
 
     @app.get("/api/tasks")
     def tasks(
-        _: SessionContext = Depends(require_console_access),
+        session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
-        return {"tasks": project_case_task_statuses(list_tasks(settings.database_path))}
+        return {"tasks":visible_tasks(int(session.user["id"]))}
 
     @app.get("/api/tasks/activity")
     def task_activity(
         user_id: int | None = None,
-        _: SessionContext = Depends(require_console_access),
+        session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
-        return operator_activity(settings.database_path, settings.pipeline_root, user_id)
+        actor_id=int(session.user["id"])
+        def activity_case_access(case_id,attempt_id):
+            if is_reviewer(settings,actor_id): return True
+            if attempt_id:
+                task=get_task(settings.database_path,attempt_id)
+                return bool(task and task["subject_ref"]==case_id and can_read_task(settings,actor_id,task))
+            return can_read_private_case(settings,actor_id,case_id)
+        return operator_activity(settings.database_path, settings.pipeline_root, user_id,
+            case_access=activity_case_access)
 
     @app.get("/api/tasks/{task_id}")
     def task_detail(
         task_id: str,
-        _: SessionContext = Depends(require_console_access),
+        session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
         task = get_task(settings.database_path, task_id)
         if task is None:
@@ -3174,7 +3351,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                     "TASK_NOT_FOUND", "没有找到这个任务。", "请返回任务记录重新选择。"
                 ),
             )
-        projected_task = project_case_task_statuses([task])[0]
+        projected_task = visible_case_task(task,int(session.user["id"]))
         return {
             "task": projected_task,
             "boundary_review": pending_boundary_review(settings, task)
@@ -3189,12 +3366,14 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         task = get_task(settings.database_path, task_id)
         if task is None or task["task_type"] != "case_analysis":
             raise HTTPException(404, detail=error_detail("TASK_NOT_FOUND", "没有找到案例解析任务。", "请返回任务列表。"))
+        require_task(settings,int(session.user["id"]),task)
         with authority_operation_lock(settings, "case", str(task["subject_ref"])):
             duplicate = resolve_case_source_duplicate(settings, str(task["payload"]["source_url"]))
             if duplicate and duplicate.get("state") in {"approved", "rejected", "awaiting_review"}:
                 raise HTTPException(409, detail=error_detail("CASE_RETRY_BLOCKED", "这条视频已有审核结果。", "请查看已有案例。"))
             active = find_active_case_task(settings.database_path, str(task["subject_ref"]))
             if active:
+                require_task(settings,int(session.user["id"]),active)
                 return {"task": active}
             with transaction(settings.database_path, immediate=True) as connection:
                 row = connection.execute("SELECT status,payload_json,created_by_user_id FROM tasks WHERE task_id=?", (task_id,)).fetchone()
@@ -3233,6 +3412,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         require_csrf(session, x_csrf_token)
         with authority_operation_lock(settings, "case", task_id):
             task = get_task(settings.database_path, task_id)
+            require_task(settings,int(session.user["id"]),task)
             if task is None:
                 raise HTTPException(
                     status_code=404,

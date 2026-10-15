@@ -211,22 +211,28 @@ export function parseEditedFactValue(originalValue, text) {
 }
 
 export function customerCard(customer) {
+  const operation = customer.operation || {};
+  const speaker = customer.speaker;
+  const records = customer.creation_record_count === null || customer.creation_record_count === undefined ? "创作记录暂不可读"
+    : customer.creation_record_count ? `${customer.creation_record_count} 个创作记录` : "暂无创作记录";
+  const pending = customer.pending_count === null || customer.pending_count === undefined ? "待办暂不可读" : customer.pending_count ? `${customer.pending_count} 项待处理` : "";
   return `
-    <a
-      class="customer-row"
-      href="/customers/${encodeURIComponent(customer.business_id)}"
-      data-route
-    >
-      <div class="customer-row-main">
-        <div>
-          <strong>${escapeHtml(customer.display_name)}</strong>
-          <p>${escapeHtml(customer.industry || "行业待确认")}</p>
+    <article class="customer-operation-card" data-customer-id="${escapeHtml(customer.business_id)}">
+      <div class="customer-operation-heading">
+        <span class="customer-symbol" aria-hidden="true">${escapeHtml(Array.from(customer.display_name || "客")[0])}</span>
+        <div class="customer-operation-identity">
+          <div class="customer-title-line"><a class="customer-operation-name" href="${escapeHtml(customer.detail_url)}" data-route title="${escapeHtml(customer.display_name)}">${escapeHtml(customer.display_name)}</a><span class="list-status ${operation.kind === "ready" ? "list-status-ready" : operation.kind === "error" || operation.kind === "blocked" ? "list-status-attention" : ""}">${escapeHtml(operation.status || "待核对")}</span></div>
+          <p>${escapeHtml(customer.industry || "行业待确认")}${customer.region ? ` · ${escapeHtml(customer.region)}` : ""}</p>
         </div>
       </div>
-      <div class="customer-row-end">
-        <span class="customer-speaker-count">已确认出镜人 ${Number(customer.speaker_count || 0)} 位</span>
-        ${customerStatusPill(customer.status)}
-        <span class="case-chevron" aria-hidden="true">›</span>
+      <div class="customer-operation-speaker">${speaker
+        ? `<span><strong>${escapeHtml(speaker.display_name)}${speaker.public_role ? `<em> · ${escapeHtml(speaker.public_role)}</em>` : ""}</strong><small>${customer.approved_speaker_count == null ? "出镜人数量暂不可读" : `${customer.approved_speaker_count} 位已确认出镜人`}</small></span>`
+        : `<span class="list-muted">${customer.approved_speaker_count === null ? "出镜人状态暂时无法读取" : "尚无已批准出镜人"}</span>`}
       </div>
-    </a>`;
+      <div class="customer-operation-progress"><span class="customer-operation-stats">${escapeHtml(records)}${pending ? ` · ${escapeHtml(pending)}` : ""}</span>${operation.note && operation.note !== operation.status && operation.note !== operation.primary?.label ? `<p class="customer-operation-note">${escapeHtml(operation.note)}</p>` : ""}</div>
+      <div class="customer-operation-actions">
+        <a class="btn btn-primary btn-compact" href="${escapeHtml(operation.primary?.url || customer.detail_url)}" data-route>${escapeHtml(operation.primary?.label || "查看客户")}</a>
+        <a class="section-link" href="${escapeHtml(operation.secondary?.url || `${customer.detail_url}/content`)}" data-route>查看作品记录</a>
+      </div>
+    </article>`;
 }

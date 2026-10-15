@@ -1,0 +1,61 @@
+{
+  "schema_version": "production-profile-registry-v1.0",
+  "status": "approved_frozen",
+  "fixture_only": true,
+  "target_profiles": [
+    "mix",
+    "news"
+  ],
+  "source_profile_classifications": [
+    "mix",
+    "news",
+    "hybrid",
+    "uncertain"
+  ],
+  "profiles": {
+    "mix": {
+      "profile_id": "mix",
+      "status": "production_ready",
+      "script_contract": {
+        "fixture_only": true
+      },
+      "storyboard_contract": {
+        "fixture_only": true
+      },
+      "export_contract": {
+        "fixture_only": true
+      },
+      "case_compatibility_policy": {
+        "fixture_only": true
+      },
+      "pattern_compatibility_policy": {
+        "fixture_only": true
+      },
+      "validation_policy": {
+        "fixture_only": true
+      }
+    },
+    "news": {
+      "profile_id": "news",
+      "status": "research_coverage_insufficient",
+      "script_contract": {
+        "fixture_only": true
+      },
+      "storyboard_contract": {
+        "fixture_only": true
+      },
+      "export_contract": {
+        "fixture_only": true
+      },
+      "case_compatibility_policy": {
+        "fixture_only": true
+      },
+      "pattern_compatibility_policy": {
+        "fixture_only": true
+      },
+      "validation_policy": {
+        "fixture_only": true
+      }
+    }
+  }
+}

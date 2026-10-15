@@ -13,6 +13,7 @@ from .canonical_gateway import (
 from .config import Settings
 from .customer_gateway import (
     list_customers,
+    get_customer_detail,
 )
 from .speaker_gateway import (
     list_speakers,
@@ -878,10 +879,12 @@ def get_active_generation_request(
 
 def list_creation_options(
     settings: Settings,
+    business_id: str | None = None,
 ) -> dict[str, Any]:
     customers: list[dict[str, Any]] = []
+    context = get_customer_detail(settings, business_id) if business_id else None
 
-    for customer in list_customers(settings):
+    for customer in ([context] if context else list_customers(settings)):
         if customer.get("status") != "approved" and not (customer.get("current_business_persona") or {}).get("approved"):
             continue
 
@@ -939,6 +942,7 @@ def list_creation_options(
 
     return {
         "customers": customers,
+        "customer_context": ({"business_id": context["business_id"], "display_name": context["display_name"], "status": context["status"]} if context else None),
         "ready_customer_count": sum(
             customer["creation_ready"] for customer in customers
         ),

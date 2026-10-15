@@ -247,7 +247,7 @@ export function createSpeakerViews({
                     <label for="speaker-materials">已有资料</label>
                     <textarea
                       id="speaker-materials"
-                      rows="11"
+                      rows="7"
                       maxlength="50000"
                       placeholder="粘贴这个人的真实经历、实际职责、亲自做过的事情、擅长讲的内容、采访记录等。"
                       required
@@ -265,7 +265,7 @@ export function createSpeakerViews({
 
                     <textarea
                       id="speaker-forbidden"
-                      rows="5"
+                      rows="4"
                       placeholder="每行一条。例如：&#10;不得声称自己具备未提供的专业资质&#10;不得把未经确认的数据说成自己的经营结果"
                     ></textarea>
 
