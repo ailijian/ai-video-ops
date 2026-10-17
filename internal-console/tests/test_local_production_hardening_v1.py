@@ -514,11 +514,15 @@ def test_console_authority_routes_return_409_for_simultaneous_same_entity(
         route = "/api/customers/fixture_business/persona/approve"
         body = {"note": "approve"}
     else:
-        def fake_case(settings, case_id, *, reviewer, note, approval_principal):
+        def fake_case(settings, case_id, *, reviewer, note, approval_principal, expected_target, review_command, quality_decision):
             assert approval_principal == {"user_id": 1, "namespace": approval_principal["namespace"]}
             calls.append(reviewer)
             entered.set()
             release.wait(timeout=2)
+            receipt=settings.pipeline_root / "data/cases" / case_id / "approval_receipt.json"
+            receipt.parent.mkdir(parents=True,exist_ok=True)
+            receipt.write_text(json.dumps({"case_id":case_id,"synthetic_lock_test_stub":True}),encoding="utf-8")
+            assert review_command["context"]["snapshot"]==expected_target
             return {"case_id": case_id, "review": {"approved": True}}
 
         monkeypatch.setattr(main_module, "approve_case_candidate", fake_case)
@@ -536,6 +540,9 @@ def test_console_authority_routes_return_409_for_simultaneous_same_entity(
             json={"phone": "13800000000", "password": "ReviewConsole2026!"},
         )
         second_csrf = second_login.json()["csrf_token"]
+        from review_protocol import case_command_fixture
+        if entity == "case":
+            body["review_context"] = case_command_fixture(settings,"7999999999999999966")
         first_response: list[Any] = []
 
         thread = threading.Thread(

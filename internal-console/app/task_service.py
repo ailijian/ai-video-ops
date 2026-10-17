@@ -257,6 +257,7 @@ def create_case_task(
     created_by_user_id: int | None = None,
     queue_max: int = 20,
     gpu_pending_per_user_max: int = 3,
+    review_operation_id: str | None = None,
 ) -> dict[str, Any]:
     if operator_profile_hint is not None and operator_profile_hint not in {"mix", "news", "hybrid", "uncertain"}:
         raise ValueError("Invalid Case operator_profile_hint")
@@ -269,6 +270,8 @@ def create_case_task(
         "reason": reason,
         "acquisition_provider": acquisition_provider,
     }
+    if review_operation_id:
+        payload["review_operation_id"] = review_operation_id
     if operator_profile_hint is not None:
         payload["operator_profile_hint"] = operator_profile_hint
     if source_upload is not None:
@@ -324,6 +327,13 @@ def submit_task(
     task_id = f"{task_id_prefix}-{uuid.uuid4().hex[:12]}"
 
     with transaction(database_path, immediate=True) as connection:
+        review_operation = payload.get("review_operation_id")
+        recovered = connection.execute(
+            "SELECT task_id FROM tasks WHERE task_type=? AND subject_ref=? AND json_extract(payload_json,'$.review_operation_id')=?",
+            (task_type, subject_ref, review_operation)).fetchone() if review_operation else None
+        if recovered:
+            # Stable retry identity covers queued, failed, review and completed tasks.
+            return get_task(database_path, recovered["task_id"])
         existing = connection.execute(
             f"""
             SELECT task_id FROM tasks

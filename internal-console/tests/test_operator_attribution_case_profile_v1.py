@@ -1,4 +1,5 @@
 from __future__ import annotations
+from review_protocol import post_review, case_command_fixture
 
 import json
 import hashlib
@@ -114,10 +115,10 @@ def test_legacy_case_task_does_not_infer_operator_hint(settings):
     assert case_reanalysis_hint(settings.database_path, task["subject_ref"]) is None
 
 
-def test_legacy_review_reanalysis_requires_source_before_mutation(client, monkeypatch):
+def test_legacy_review_reanalysis_requires_source_before_mutation(client, settings, monkeypatch):
     csrf = login_and_change_password(client)
     monkeypatch.setattr(
-        main_module, "get_case_detail", lambda *_: {"operator_profile_hint": None}
+        main_module, "get_case_detail", lambda *a, **kw: {"operator_profile_hint": None}
     )
     monkeypatch.setattr(
         main_module,
@@ -126,10 +127,11 @@ def test_legacy_review_reanalysis_requires_source_before_mutation(client, monkey
             AssertionError("must not mutate")
         ),
     )
-    response = client.post(
+    response = post_review(client,
         "/api/cases/7999999999999999918/review",
         headers={"X-CSRF-Token": csrf},
-        json={"decision": "reanalyze", "reason": "重新检查"},
+        json={"decision": "reanalyze", "reason": "重新检查",
+            "review_context": case_command_fixture(settings,"7999999999999999918")},
     )
     assert response.status_code == 422
     assert response.json()["detail"]["code"] == "CASE_SOURCE_URL_MISSING"

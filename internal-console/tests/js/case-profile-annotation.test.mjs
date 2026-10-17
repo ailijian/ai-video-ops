@@ -43,6 +43,7 @@ const app = { innerHTML: "", querySelector:()=>null, querySelectorAll: () => [] 
 const views = createCaseViews({
   app,
   api: async (url, options) => {
+    if(url.startsWith("/api/review-commands/")) return {operations:[]};
     calls.push({ url, options });
     if (options?.method === "POST") {
       const request = JSON.parse(options.body);

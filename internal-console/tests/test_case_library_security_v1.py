@@ -1,3 +1,4 @@
+from review_protocol import post_review
 """CASE-CL0: real Session/CSRF/Gateway/Pipeline Approval, synthetic analysis only."""
 from contextlib import ExitStack
 from dataclasses import replace
@@ -88,7 +89,7 @@ def ready(node):
 
 def approve(node,decisions):
     c,headers,_=node[1]['C']
-    r=c.post(f'/api/cases/{CASE_ID}/review',headers=headers,json={'decision':'approve','evidence_review':decisions})
+    r=post_review(c, f'/api/cases/{CASE_ID}/review',headers=headers,json={'decision':'approve','evidence_review':decisions})
     assert r.status_code==200,r.text
     return r.json()
 
@@ -122,7 +123,7 @@ def test_four_principals_formal_approval_and_private_isolation(node):
     assert duplicate['state']=='submitted' and not any(k in duplicate for k in ('existing_task','attempt_id','actor','existing_case'))
     assert task['task_id'] not in json.dumps(duplicate)
     for client,headers in ((a,ha),(d,hd)):
-        r=client.post(f'/api/cases/{CASE_ID}/review',headers=headers,json={'decision':'approve','evidence_review':decisions,'reviewer':'13900000003'})
+        r=post_review(client, f'/api/cases/{CASE_ID}/review',headers=headers,json={'decision':'approve','evidence_review':decisions,'reviewer':'13900000003'})
         assert r.status_code==403 and r.json()['detail']['code']=='CASE_REVIEWER_REQUIRED'
     assert candidate.read_bytes()==original
     with pytest.raises(CanonicalOperationError) as error:
@@ -173,7 +174,7 @@ def test_revoke_reviewer_and_capability_history_is_immutable(node):
     _,_,_,decisions,_,_=ready(node)
     settings=node[0]; c,hc,_=node[1]['C']
     manage_reviewer(settings,3,action='revoke',operator='offline-test-operator',reason='Explicit revoke')
-    assert c.post(f'/api/cases/{CASE_ID}/review',headers=hc,json={'decision':'approve','evidence_review':decisions}).status_code==403
+    assert post_review(c, f'/api/cases/{CASE_ID}/review',headers=hc,json={'decision':'approve','evidence_review':decisions}).status_code==403
     assert c.get('/api/cases?view=review').status_code==404
     with pytest.raises(CanonicalOperationError): reviewer_authorization(settings,principal(settings,3))
     db=connect(settings.database_path)

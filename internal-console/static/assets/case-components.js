@@ -1,5 +1,6 @@
 import { DOUYIN_PLAYER_VIEWPORTS } from "./case-media-preview.mjs?v=case-media-fit-1";
-import { escapeHtml, caseListCard } from "./list-ui.mjs?v=brand-ui-1";
+import { escapeHtml, caseListCard } from "./list-ui.mjs?v=flow-closure-2";
+import { accountLabel, formatConsoleTime } from "./ui-format.mjs?v=flow-closure-2";
 export { escapeHtml };
 
 export const CASE_PROGRESS_STAGES = [
@@ -182,31 +183,40 @@ export function caseReviewContent(detail, statusPill) {
     ${shot.function ? `<p><strong>作用</strong>${escapeHtml(shot.function)}</p>` : ""}
   </article>`).join("");
   const evidenceReview = detail.evidence_review || null;
+  const classificationPending = detail.classification_required && detail.classification?.status !== "confirmed";
+  const canReview = detail.permissions?.can_review === true && detail.review?.can_review === true;
+  const canConfirmEvidence = canReview && !classificationPending && !detail.review?.approved;
   const narrationQuestions = (evidenceReview?.narration_items || []).map((item) => `<label class="case-evidence-item">
     <span><strong>口播 ${Number(item.start || 0).toFixed(1)}–${Number(item.end || 0).toFixed(1)} 秒</strong>
       <small>当前拆解保留原始语音识别${item.suggested_text && item.suggested_text !== item.source_text ? "，未自动采用系统修正" : ""}。</small>
       ${item.source_text ? `<span class="case-evidence-text">${escapeHtml(item.source_text)}</span>` : ""}
     </span>
-    <span class="case-evidence-check"><input type="checkbox" data-evidence-kind="narration" data-item-id="${escapeHtml(item.item_id)}">确认保留原识别</span>
+    ${canConfirmEvidence ? `<span class="case-evidence-check"><input type="checkbox" data-evidence-kind="narration" data-item-id="${escapeHtml(item.item_id)}">确认保留原识别</span>` : ""}
   </label>`).join("");
   const shotQuestions = (evidenceReview?.shot_items || []).map((item) => `<label class="case-evidence-item">
     <span><strong>分镜 ${Number(item.start || 0).toFixed(1)}${item.end == null ? "" : `–${Number(item.end).toFixed(1)}`} 秒</strong>
       <small>这一处的分镜划分需要核对，当前拆解暂时保留现有划分。</small></span>
-    <span class="case-evidence-check"><input type="checkbox" data-evidence-kind="shot" data-item-id="${escapeHtml(item.item_id)}">确认保留当前分镜</span>
+    ${canConfirmEvidence ? `<span class="case-evidence-check"><input type="checkbox" data-evidence-kind="shot" data-item-id="${escapeHtml(item.item_id)}">确认保留当前分镜</span>` : ""}
   </label>`).join("");
   const evidenceReviewSurface = evidenceReview?.required
     ? evidenceReview.available
-      ? `<section class="panel case-evidence-review"><h2>入库前确认</h2><p>请对照原视频核对以下疑点。确认只认可当前展示的原识别与分镜，不会自动采用系统猜测；不准确时请重新分析，暂不要批准。</p>
-          <div class="case-evidence-list">${narrationQuestions}${shotQuestions}</div></section>`
-      : `<section class="panel case-evidence-review"><h2>入库前确认</h2><p>待确认的分析证据暂时无法读取，请勿批准。刷新后仍有问题时请联系管理员。</p></section>`
+      ? `<section class="panel case-evidence-review"><h2>${canConfirmEvidence ? "入库前确认" : detail.review?.decision ? "分析疑点记录" : "待审核的分析疑点"}</h2><p>${canConfirmEvidence ? '请对照原视频核对以下疑点。确认只认可当前展示的原识别与分镜，不会自动采用系统猜测；不准确时请重新分析，暂不要批准。勾选尚未保存，点击“确认并批准入库”后提交。' : detail.review?.decision ? "本次审核已结束，以下保留原分析疑点供追溯，无需重新确认。" : "以下疑点由指定审核人在正式审核时核对；此处仅供查看，无需重复确认分类。"}</p>
+          <div class="case-evidence-list">${narrationQuestions}${shotQuestions}</div>${canConfirmEvidence ? '<button class="btn btn-secondary" type="button" data-scroll-review-decision>前往提交审核</button>' : ""}</section>`
+      : `<section class="panel case-evidence-review"><h2>分析证据</h2><p>待审核的分析证据暂时无法读取，请刷新后重试或联系管理员。</p></section>`
     : "";
   const reviewDecision = detail.review?.approved
     ? `<div class="approved-message"><strong>已加入正式案例库</strong><p>这个案例已经完成审核。</p></div>`
+    : detail.review?.decision
+      ? `<p><strong>${detail.review.decision === "reanalyze" ? "本次分析已退回重新处理" : "本次投稿未收录"}</strong></p><p>${escapeHtml(detail.review.reason || "请查看已保存的人工审核决定。")}</p>
+        <p class="review-source-note">${escapeHtml(accountLabel(detail.reviewed_by?.phone))}${detail.review.reviewed_at ? ` · ${escapeHtml(formatConsoleTime(detail.review.reviewed_at))}` : ""}</p>
+        <p>原决定保留，新尝试不会覆盖本次审核记录。</p>${detail.permissions?.can_reanalyze ? `<a class="btn btn-secondary" href="/cases/new?reanalyze_case=${encodeURIComponent(detail.case_id)}&attempt_id=${encodeURIComponent(detail.review.attempt_id)}" data-route>重新分析这条投稿</a>` : ""}`
     : !detail.permissions?.can_review
-      ? detail.classification_required && detail.classification?.status !== "confirmed"
+      ? classificationPending
         ? `<p>先核对分类，再交由指定审核人处理。</p><a class="btn btn-primary" href="/cases/${detail.case_id}/classification" data-route>核对分类</a>`
-        : `<p>投稿已整理，等待指定审核人完成审核。</p>`
-    : detail.classification_required && detail.classification?.status !== "confirmed"
+        : `<p>${detail.classification?.status === "confirmed" ? "分类已确认，等待指定审核人完成审核。" : "投稿已整理，等待指定审核人完成审核。"}</p><p class="review-source-note">分类确认不等于正式收录，无需再次勾选审核疑点。</p>`
+    : !canReview
+      ? `<p>当前投稿状态暂不可审核，请刷新后查看最新进度。</p>`
+    : classificationPending
       ? `<p>请先检查系统推荐的行业与视频结构，确认后继续审核。</p><a class="btn btn-primary" href="/cases/${detail.case_id}/classification" data-route>确认分类</a>`
     : detail.review?.approval_recovery_required
       ? `<p>上次批准尚未完整保存。继续后只会完成原有批准，不会重复审核。</p><button class="btn btn-primary btn-wide" type="button" data-review-action="approve">完成批准</button>`
@@ -251,7 +261,7 @@ export function caseReviewContent(detail, statusPill) {
           <section><h3>画面拆解</h3><div class="breakdown-list">${shots}</div></section></div>
         </details>
       </div>
-      <aside class="review-aside"><section class="panel review-decision"><h2>人工审核</h2>
+      <aside class="review-aside"><section class="panel review-decision" id="case-review-decision" tabindex="-1"><h2>人工审核</h2>
         ${reviewDecision}
         <p class="review-rights-note">批准不会改变原视频素材使用权。</p>
       </section></aside>

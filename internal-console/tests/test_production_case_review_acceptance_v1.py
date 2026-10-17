@@ -181,12 +181,19 @@ def approval_fixture(tmp_path: Path, *, attempt_id: str = ATTEMPT_ID, case_id: s
     return settings, candidate, state_path
 
 
+def positive_quality(settings):
+    from case_human_review_v2 import quality_context
+    from app.canonical_gateway import _approval_candidate
+    return {**quality_context(_approval_candidate(settings, CASE_ID)[0]), "decision": "suitable", "origin": "human_final_confirmation"}
+
+
 def approve(settings: Settings):
     return approve_case_candidate(
         settings,
         CASE_ID,
         reviewer=REVIEWER,
         note="已对照公开来源完成测试审核。",
+        quality_decision=positive_quality(settings),
     )
 
 
@@ -255,7 +262,7 @@ def test_final_evidence_review_approves_without_changing_source_artifacts(tmp_pa
     before = (narration.read_bytes(), shots.read_bytes())
     detail = approve_case_candidate(
         settings, CASE_ID, reviewer=REVIEWER, note="已核对疑点",
-        evidence_review=decisions, reviewer_user_id=1,
+        evidence_review=decisions, reviewer_user_id=1, quality_decision=positive_quality(settings),
     )
     assert detail["status"] == "approved"
     approved = json.loads((settings.pipeline_root / "data" / "cases" / CASE_ID / "case_v1.json").read_text(encoding="utf-8"))

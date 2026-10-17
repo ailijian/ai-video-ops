@@ -345,6 +345,7 @@ main[tabindex="-1"]:focus { outline: none; }
 .case-evidence-text { margin-top: 8px; overflow-wrap: anywhere; line-height: 1.65; }
 .case-evidence-check { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; font-weight: 650; }
 .case-evidence-check input { width: 18px; height: 18px; flex: none; }
+.review-decision { scroll-margin-top: 88px; }
 .full-breakdown { overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius-md); background: var(--surface); }
 .full-breakdown summary { min-height: 60px; padding: 0 16px; display: flex; align-items: center; justify-content: space-between; gap: 12px; cursor: pointer; font-weight: 750; list-style: none; }
 .full-breakdown summary::-webkit-details-marker { display: none; }

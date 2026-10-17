@@ -1,5 +1,6 @@
 """Offline intake acceptance. No provider/model calls or production data."""
 from __future__ import annotations
+from review_protocol import post_review
 
 import copy
 import hashlib
@@ -221,7 +222,7 @@ def test_smart_case_cannot_skip_classification_or_final_evidence_gate(client, se
     csrf = login_and_change_password(client)
     task = group(client, csrf).json()["items"][0]["task"]
     path = candidate(settings, task)
-    response = client.post(f"/api/cases/{ID}/review", headers={"X-CSRF-Token": csrf}, json={"decision": "approve"})
+    response = post_review(client, f"/api/cases/{ID}/review", headers={"X-CSRF-Token": csrf}, json={"decision": "approve"})
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "CASE_CLASSIFICATION_REQUIRED"
     assert json.loads(path.read_text(encoding="utf-8"))["lifecycle"]["approved"] is False
@@ -287,13 +288,21 @@ def test_confirmed_labels_still_cannot_bypass_case_approval_gates(client, settin
     csrf = login_and_change_password(client)
     task = group(client, csrf).json()["items"][0]["task"]
     path = candidate(settings, task)
+    # Model explicit human quality confirmation while preserving the original
+    # invalid source/privacy/Proof fixture. Classification must not bypass them.
+    value=json.loads(path.read_text(encoding="utf-8"))
+    privacy=path.parent/"synthetic-invalid-privacy.json"
+    privacy.write_text("{}",encoding="utf-8")
+    value["source_artifacts"]={"storyboard_v1":str(path.parents[2]/"reverse_storyboard_v1.json"),
+                               "privacy_projection_v1":str(privacy)}
+    path.write_text(json.dumps(value,ensure_ascii=False),encoding="utf-8")
     state = client.get(f"/api/cases/{ID}/classification").json()
     response = client.post(f"/api/cases/{ID}/classification", headers={"X-CSRF-Token": csrf}, json={
         "industry":"餐饮", "profile":"mix", "candidate_sha256":state["candidate_sha256"],
         "expected_confirmation_sha256":None})
     assert response.status_code == 200
     before = path.read_bytes()
-    blocked = client.post(f"/api/cases/{ID}/review", headers={"X-CSRF-Token":csrf}, json={"decision":"approve"})
+    blocked = post_review(client, f"/api/cases/{ID}/review", headers={"X-CSRF-Token":csrf}, json={"decision":"approve"})
     assert blocked.status_code == 409
     assert blocked.json()["detail"]["code"] == "CASE_APPROVAL_BLOCKED"
     assert path.read_bytes() == before

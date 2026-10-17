@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import json
 import threading
 import time
@@ -251,6 +252,7 @@ class CaseIntakeGroupRequest(BaseModel):
 
 
 class CaseClassificationRequest(BaseModel):
+    attempt_id: str | None = Field(default=None, pattern=r"^[A-Za-z0-9_-]{8,128}$")
     industry: str | None = Field(default=None, max_length=30)
     profile: Literal["mix", "news", "hybrid", "uncertain"]
     candidate_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -271,12 +273,14 @@ class CaseEvidenceReviewRequest(BaseModel):
 
 
 class CaseReviewRequest(BaseModel):
+    review_context: str | None = Field(default=None, max_length=50000)
     decision: Literal["reject", "reanalyze", "approve"]
     reason: str = Field(default="", max_length=1000)
     operator_profile_hint: Literal["mix", "news", "hybrid", "uncertain"] | None = None
     industry: str | None = Field(default=None, max_length=30)
     source_upload_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
     evidence_review: CaseEvidenceReviewRequest | None = None
+    quality_decision: dict[str, Any] | None = None
 
 
 class CaseProfileAnnotationRequest(BaseModel):
@@ -825,7 +829,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     async def canonical_error_handler(
         _: Request, exc: CanonicalOperationError
     ) -> JSONResponse:
-        status_code = 404 if exc.code == "CASE_OBJECT_NOT_FOUND" else 403 if exc.code in {"CASE_REVIEWER_REQUIRED", "NOVEL_NEWS_NOT_AVAILABLE", "REVIEW_ACTOR_MISMATCH"} else 409 if exc.code in {
+        status_code = 404 if exc.code in {"CASE_OBJECT_NOT_FOUND", "CASE_NOT_FOUND"} else 403 if exc.code in {"CASE_REVIEWER_REQUIRED", "NOVEL_NEWS_NOT_AVAILABLE", "REVIEW_ACTOR_MISMATCH"} else 409 if exc.code in {
             "CASE_DISPLAY_CONFLICT",
             "REVIEW_CONTEXT_STALE", "REVIEW_CONTEXT_REQUIRED", "REVIEW_REPLAY_CONFLICT", "INVALID_REVIEW_CONTEXT",
             "OPERATION_IN_PROGRESS",
@@ -838,6 +842,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             "CASE_APPROVAL_BLOCKED",
             "CASE_SOURCE_GOVERNANCE_BLOCKED",
             "CASE_APPROVAL_RECOVERY_REQUIRED",
+            "CASE_EVIDENCE_REVIEW_REQUIRED", "CASE_EVIDENCE_REVIEW_NOT_REQUIRED",
+            "CASE_EVIDENCE_REVIEW_INCOMPLETE", "CASE_EVIDENCE_REVIEW_STALE", "CASE_EVIDENCE_REVIEW_CONFLICT", "CASE_QUALITY_DECISION_REQUIRED",
+            "REVIEW_COMMIT_CONFLICT", "REVIEW_COMMIT_BINDING_REQUIRED",
             "CASE_PROFILE_ANNOTATION_BLOCKED",
             "CASE_INDUSTRY_ANNOTATION_BLOCKED",
             "CASE_CLASSIFICATION_CONFLICT",
@@ -924,6 +931,65 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     ) -> Any:
         with authority_operation_lock(settings, scope, identity, timeout_seconds=0.0):
             return operation(*args, **kwargs)
+
+    from . import review_commands
+
+    def review_command(kind, identity, session, payload, request_path, execute, *, business_id=None, preflight=None):
+        review_commands.reject_borrowed_context(payload.review_context,{"actor":case_principal(settings,int(session.user["id"]))})
+        def perform():
+            command = review_commands.begin(settings, kind, identity, int(session.user["id"]),
+                payload.review_context, {"request_path": request_path,
+                    "payload": payload.model_dump(exclude={"review_context"}, exclude_none=True)}, business_id=business_id, validate_only=preflight is not None)
+            if kind == "case":
+                recovered = review_commands.committed_case_result(settings, command)
+                if recovered is not None:
+                    return review_commands.finish(command, recovered)
+            if command["result"] is not None:
+                if command["result"].get("status") == "cancelled_before_commit":
+                    raise review_commands.blocked("REVIEW_REPLAY_CONFLICT", "这次未保存的提交已取消，请重新核对后提交。")
+                return command["result"]
+            if preflight is not None and not command["saved"]:
+                preflight()
+                command = review_commands.begin(settings, kind, identity, int(session.user["id"]), payload.review_context,
+                    {"request_path": request_path, "payload": payload.model_dump(exclude={"review_context"}, exclude_none=True)}, business_id=business_id)
+            return review_commands.finish(command, execute(command))
+        return locked_authority_call("case" if kind == "case" else "business",
+            identity if kind != "speaker" else business_id, perform)
+
+
+    @app.get("/api/review-commands/{kind}/{identity}")
+    def pending_review_commands(kind: Literal["case", "business", "speaker"], identity: str,
+            session: SessionContext = Depends(require_console_access)):
+        if not re.fullmatch(r"[a-zA-Z0-9_-]{1,128}", identity):
+            raise HTTPException(404)
+        if kind == "case" and not is_reviewer(settings, int(session.user["id"])):
+            return {"operations": []}
+        return {"operations": review_commands.pending(settings, kind, identity, int(session.user["id"]))}
+
+
+    @app.post("/api/review-commands/{kind}/{identity}/{operation_id}/cancel")
+    def cancel_uncommitted_review(kind: Literal["case", "business", "speaker"], identity: str, operation_id: str,
+            session: SessionContext = Depends(require_console_access),
+            x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")):
+        require_csrf(session, x_csrf_token)
+        if not re.fullmatch(r"[a-zA-Z0-9_-]{1,128}", identity) or not re.fullmatch(r"[a-f0-9]{32}", operation_id):
+            raise HTTPException(404)
+        if kind == "case": reviewer_authorization(settings, case_principal(settings, int(session.user["id"])))
+        operations = review_commands.pending(settings, kind, identity, int(session.user["id"]))
+        operation = next((v for v in operations if v["operation_id"] == operation_id), None)
+        if not operation: raise HTTPException(404)
+        from human_review_operations_v1 import read, write_once
+        directory = settings.pipeline_root / "data/review_operations" / kind / identity / operation_id
+        value = read(directory / "intent.json")
+        def cancel():
+            if not review_commands.can_discard(settings, directory, value):
+                raise review_commands.blocked(message="这次操作已有保存结果，必须继续恢复，不能取消历史决定。")
+            result = {"status": "cancelled_before_commit"}
+            write_once(directory / "result.json", result)
+            return result
+        return locked_authority_call("case" if kind == "case" else "business",
+            value["context"]["business_id"] if kind == "speaker" else identity, cancel)
+
 
     def visible_case_task(task, user_id):
         """Private Case scope and duplicate/current-attempt links never bypass access."""
@@ -3044,7 +3110,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                     detail = get_case_detail(settings, item["case_id"],attempt_id=attempt_id)
                     item["case"] = {k: detail.get(k) for k in ("case_id", "title", "duration_seconds", "platform", "status", "source_url")}
                     item["case"]["cover_url"] = (f"/api/cases/{item['case_id']}/cover" + (f"?attempt_id={attempt_id}" if attempt_id else "")) if case_cover_path(settings, item["case_id"],attempt_id=attempt_id) else None
-                    item["classification"] = classification_state(settings, item["case_id"])
+                    item["classification"] = classification_state(settings, item["case_id"], attempt_id=attempt_id)
                 except CanonicalOperationError as exc:
                     if exc.code != "CASE_NOT_FOUND":
                         item["message"] = exc.message
@@ -3077,9 +3143,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         return intake_group_projection(group_id,int(session.user["id"]))
 
     @app.get("/api/cases/{case_id}/classification")
-    def case_classification(case_id: str, session: SessionContext = Depends(require_console_access)):
-        require_private_case(settings,int(session.user["id"]),case_id)
-        return classification_state(settings, case_id)
+    def case_classification(case_id: str, session: SessionContext = Depends(require_console_access), attempt_id: str | None = None):
+        require_private_case(settings,int(session.user["id"]),case_id,attempt_id)
+        return classification_state(settings, case_id,attempt_id=attempt_id)
 
     @app.get("/api/cases/{case_id}/cover")
     def case_cover(case_id: str, session: SessionContext = Depends(require_console_access),attempt_id: str | None = None):
@@ -3097,7 +3163,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                                     session: SessionContext = Depends(require_console_access),
                                     x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")):
         require_csrf(session, x_csrf_token)
-        require_private_case(settings,int(session.user["id"]),case_id)
+        require_private_case(settings,int(session.user["id"]),case_id,payload.attempt_id)
         return locked_authority_call("case", case_id, confirm_classification, settings, case_id,
                                      **payload.model_dump(), actor_user_id=int(session.user["id"]),
                                      actor_phone=str(session.user["phone"]))
@@ -3118,15 +3184,24 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         detail["submitted_by"] = intake_task.get("created_by") if intake_task else None
         detail["classification"] = classification_summary(settings, case_id,attempt_id=attempt_id)
         detail["classification_required"] = bool(intake_task and not intake_task["payload"].get("operator_profile_hint")
-            and not intake_task["payload"].get("profile") and not detail["review"].get("approved"))
+            and not intake_task["payload"].get("profile") and not detail["review"].get("approved") and not detail["review"].get("decision"))
         reviewer=is_reviewer(settings,user_id)
         detail["review"]["can_review"] = detail["review"]["can_review"] and reviewer
         detail["can_annotate_profile"] = bool(detail.get("can_annotate_profile") and reviewer)
         detail["can_annotate_industry"] = bool(detail.get("can_annotate_industry") and reviewer)
-        detail["permissions"]={"can_review":reviewer,"can_publish":reviewer and detail["review"]["approved"]}
+        detail["permissions"]={"can_review":reviewer,"can_publish":reviewer and detail["review"]["approved"],
+            "can_reanalyze":detail["review"].get("decision")=="reject" and bool(detail.get("source_url"))}
         if reviewer and detail["review"]["approved"]:
             detail["publication_context"]=publication_context(settings,case_id)
             detail["shared_display"]=shared_projection(settings,case_id)
+        detail["approval_context"] = review_commands.issue(settings, "case", case_id, user_id) if detail["review"]["can_review"] else None
+        if detail["approval_context"] and not detail["review"].get("approval_recovery_required"):
+            from case_human_review_v2 import quality_context
+            from .canonical_gateway import _find_case_path
+            try:
+                detail["quality_context"] = quality_context(_find_case_path(settings, case_id)[0])
+            except (OSError, ValueError, KeyError, TypeError):
+                detail["quality_context"] = None  # Incomplete evidence can be read, never approved.
         detail["visibility"]="private"
         return detail
 
@@ -3190,21 +3265,51 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
         require_csrf(session, x_csrf_token)
-        reviewer_authorization(settings,case_principal(settings,int(session.user["id"])))
-        if payload.source_upload_id:
-            if payload.decision != "reanalyze":
+        reviewer_authorization(settings, case_principal(settings, int(session.user["id"])))
+        upload_cache = None
+
+        def preflight():
+            nonlocal upload_cache
+            if payload.decision in {"reject", "reanalyze"} and not payload.reason.strip():
+                raise HTTPException(422, detail=error_detail("CASE_REVIEW_REASON_REQUIRED", "请填写不收录或重新分析的原因。", "补充原因后再次提交。"))
+            if payload.source_upload_id and payload.decision != "reanalyze":
                 raise HTTPException(422, detail="只有重新分析可以提交新视频文件。")
+            if payload.decision != "reanalyze": return
+            source_detail = get_case_detail(settings, case_id)
+            if not source_detail.get("source_url"):
+                raise HTTPException(422, detail=error_detail("CASE_SOURCE_URL_MISSING", "原始视频链接缺失，暂时不能重新分析。", "请恢复准确来源后再继续。"))
+            if payload.source_upload_id:
+                upload_cache = validate_for_submission(settings, payload.source_upload_id, str(source_detail["source_url"]), int(session.user["id"]))
+            elif source_detail.get("review_media", {}).get("operator_uploaded") or settings.case_acquisition_provider == "upload_only":
+                raise HTTPException(422, detail=error_detail("SOURCE_UPLOAD_REQUIRED", "请重新上传与来源对应的视频文件。", "请从添加案例页上传。"))
+            elif settings.case_acquisition_provider == "qiyun" and not (os.environ.get("QYAPI_APP_ID") and os.environ.get("QYAPI_APP_KEY")):
+                raise HTTPException(503, detail=error_detail("SOURCE_PROVIDER_NOT_CONFIGURED", "自动获取视频暂不可用。", "请上传本地视频，或联系管理员配置视频解析服务。"))
+
+        def execute(command):
+            nonlocal upload_cache
+            if payload.decision == "reanalyze":
+                with transaction(settings.database_path) as db:
+                    prior = db.execute("SELECT task_id FROM tasks WHERE task_type='case_analysis' AND subject_ref=? AND json_extract(payload_json,'$.review_operation_id')=?", (case_id, command["context"]["operation_id"])).fetchone()
+                if prior:
+                    task = get_task(settings.database_path, prior["task_id"])
+                    record_submission(settings, int(session.user["id"]), task=task)
+                    return {"decision": "reanalyze", "task": task}
+                if payload.source_upload_id:
+                    from .case_uploads import reserve_review_upload
+                    source_detail = get_case_detail(settings, case_id, attempt_id=command["context"]["snapshot"]["attempt_id"])
+                    upload_cache = reserve_review_upload(settings, command, upload_cache, str(source_detail["source_url"]), int(session.user["id"]), payload.source_upload_id)
+            return perform_case_review(case_id, payload, session, upload_cache, command)
+
+        def submit():
+            return review_command("case", case_id, session, payload, f"/api/cases/{case_id}/review", execute, preflight=preflight)
+        if payload.source_upload_id:
             with operation_lock(settings.pipeline_root, f"source-upload:{payload.source_upload_id}"):
-                detail = get_case_detail(settings, case_id)
-                upload = validate_for_submission(settings, payload.source_upload_id,
-                                                 str(detail.get("source_url") or ""), int(session.user["id"]))
-                return perform_case_review(case_id, payload, session, upload)
-        if payload.decision == "reanalyze" and get_case_detail(settings, case_id).get("review_media", {}).get("operator_uploaded"):
-            raise HTTPException(422, detail=error_detail("SOURCE_UPLOAD_REQUIRED", "请重新上传视频文件。", "请从添加案例页选择与来源对应的文件。"))
-        return perform_case_review(case_id, payload, session)
+                return submit()
+        return submit()
 
     def perform_case_review(case_id: str, payload: CaseReviewRequest, session: SessionContext,
-                            source_upload: dict | None = None) -> dict[str, Any]:
+                            source_upload: dict | None = None, command=None) -> dict[str, Any]:
+        review_commands.validate_target(settings, command)
         reason = payload.reason.strip()
         if payload.decision in {"reject", "reanalyze"} and not reason:
             raise HTTPException(
@@ -3219,7 +3324,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         reanalysis_source_url = None
         reanalysis_industry = None
         if payload.decision == "reanalyze":
-            reanalysis_detail = get_case_detail(settings, case_id)
+            reanalysis_detail = get_case_detail(settings, case_id, attempt_id=command["context"]["snapshot"]["attempt_id"])
             reanalysis_industry = selected_case_industry(
                 payload.industry, str(reanalysis_detail.get("industry") or "待分类")
             )
@@ -3259,36 +3364,27 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 return approve_case_candidate(settings, case_id, **kwargs)
             approval_kwargs: dict[str, Any] = {
                 "reviewer": reviewer,
-                "note": reason or "人工已对照原视频完成结构研究审核。",
+                "note": reason,
+                "quality_decision": payload.quality_decision,
                 "approval_principal":case_principal(settings,int(session.user["id"])),
+                "expected_target": command["context"]["snapshot"],
+                "review_command": command,
             }
             if payload.evidence_review is not None:
                 approval_kwargs["evidence_review"] = payload.evidence_review.model_dump()
                 approval_kwargs["reviewer_user_id"] = int(session.user["id"])
-            detail = locked_authority_call(
-                "case",
-                case_id,
-                approve_classified_candidate,
-                settings,
-                case_id,
-                **approval_kwargs,
-            )
+            detail = approve_classified_candidate(settings, case_id, **approval_kwargs)
             mark_task_reviewed(
                 settings.database_path, case_id, "已批准入库",
                 attempt_id=(detail.get("review") or {}).get("attempt_id"),
             )
-            return {"decision": "approved", "case": detail}
-        decision = locked_authority_call(
-            "case",
-            case_id,
-            record_case_review_decision,
-            settings,
-            case_id,
-            reviewer=reviewer,
-            decision=payload.decision,
-            reason=reason,
-            review_principal=case_principal(settings,int(session.user["id"])),
-        )
+            receipt = settings.pipeline_root / "data/cases" / case_id / "approval_receipt.json"
+            return {"decision": "approved", "case": detail,
+                    "approval_receipt_ref": review_commands._ref(settings, receipt)}
+        decision = record_case_review_decision(settings, case_id, reviewer=reviewer,
+            decision=payload.decision, reason=reason,
+            review_principal=case_principal(settings, int(session.user["id"])),
+            expected_target=command["context"]["snapshot"], decided_at=command["at"])
         if payload.decision == "reject":
             mark_task_reviewed(
                 settings.database_path, case_id, "不收录",
@@ -3308,6 +3404,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             source_upload=source_upload,
             acquisition_provider=settings.case_acquisition_provider,
             reanalyze=True,
+            review_operation_id=command["context"]["operation_id"],
             reason=reason,
             created_by_user_id=int(session.user["id"]),
             queue_max=settings.task_queue_max,

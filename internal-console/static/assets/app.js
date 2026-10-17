@@ -1,9 +1,9 @@
 import { dashboardMarkup, dashboardSkeleton } from "./dashboard-view.mjs?v=dash-1";
 import { taskListRows, taskSourceResults, taskReadFailure, taskActivityRows } from "./task-list-view.mjs?v=ui-1";
 import { createApiClient } from "./api-client.js?v=customer-speaker-v1";
-import { createCaseViews } from "./case-views.js?v=ui-1";
+import { createCaseViews } from "./case-views.js?v=flow-closure-2";
 import { createCustomerViews } from "./customer-views.js?v=ui-1";
-import { progressPanel } from "./case-components.js?v=smart-intake-1.1";
+import { progressPanel } from "./case-components.js?v=flow-closure-2";
 import { startTaskPolling } from "./task-progress.js?v=mobile-reliability-1";
 import { CUSTOM_INDUSTRY, industryOptions, industryValue as readIndustryValue, setIndustryValue, syncCustomIndustry } from "./case-industry.mjs?v=industry-2";
 import { matchWorkflowRoute } from "./routes.js";
@@ -279,6 +279,7 @@ function statusPill(status) {
     historical_failed: ["历史未完成", "pill-archived"],
     needs_check: ["需核对", "pill-review"],
     rejected: ["未收录", "pill-archived"],
+    returned: ["已退回重新分析", "pill-pending"],
     archived: ["已归档", "pill-archived"],
   };
   const [label, className] = labels[status] || [status, "pill-archived"];

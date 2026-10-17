@@ -134,6 +134,52 @@ def validate_for_submission(settings: Settings, upload_id: str, source_url: str,
         raise upload_error("上传文件已失效或与当前来源不符，请重新上传。") from exc
 
 
+
+def reserve_review_upload(settings, command, upload, source_url, user_id, upload_id):
+    """Reserve an already validated source for one durable Human operation.
+
+    The 24h limit applies to new admission, not a saved decision waiting for
+    capacity. Exact media, receipt, ownership and source are still revalidated.
+    This grants no playback, publication or production rights.
+    """
+    from human_review_operations_v1 import read, write_once
+    path = command["directory"] / "source_upload_reservation_v1.json"
+    if path.exists():
+        reservation = read(path)
+        upload = reservation["upload"]
+        if (reservation["operation_id"] != command["context"]["operation_id"]
+                or reservation["source_url"] != source_url or reservation["user_id"] != user_id):
+            raise upload_error("恢复文件与原审核操作不符。")
+    elif upload is None:
+        upload = validate_for_submission(settings, upload_id, source_url, user_id)
+    try:
+        read_upload(settings.pipeline_root, upload["upload_id"], source_url=source_url,
+            user_id=user_id, receipt_sha256=upload["receipt_sha256"])
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise upload_error("原审核操作保留的文件已不可用，请联系管理员恢复准确来源。") from exc
+    write_once(path, {"version":"review-source-reservation-v1.0", "upload":upload,
+        "operation_id":command["context"]["operation_id"], "source_url":source_url,
+        "user_id":user_id, "at":command["at"]})
+    return upload
+
+
+def _pending_review_uploads(settings):
+    from human_review_operations_v1 import read
+    protected = set()
+    for path in (settings.pipeline_root / "data/review_operations/case").glob("*/*/source_upload_reservation_v1.json"):
+        if (path.parent / "result.json").exists():
+            continue
+        try:
+            value = read(path)
+            intent = read(path.parent / "intent.json")
+            if (value.get("version") == "review-source-reservation-v1.0"
+                    and value["operation_id"] == intent["context"]["operation_id"]
+                    and value["upload"]["upload_id"] == intent["intent"]["payload"]["source_upload_id"]):
+                protected.add(value["upload"]["upload_id"])
+        except (OSError, KeyError, ValueError):
+            continue
+    return protected
+
 def cleanup_unused_uploads(settings: Settings) -> None:
     """Hourly orphan/failed-before-acquisition cleanup; never touch active tasks."""
     now = datetime.now(timezone.utc)
@@ -153,6 +199,8 @@ def cleanup_unused_uploads(settings: Settings) -> None:
                     ).fetchone()
                 finally:
                     connection.close()
+                if directory.name in _pending_review_uploads(settings):
+                    continue
                 if task and task["status"] != "failed":
                     continue  # successful attempts use validated canonical retention
                 threshold = (datetime.fromisoformat(task["updated_at"].replace("Z", "+00:00")) if task

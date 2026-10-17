@@ -4,6 +4,8 @@ import argparse
 import hashlib
 import json
 import re
+import uuid
+from case_human_review_v2 import APPROVAL_VERSION, validate_quality_decision
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -254,10 +256,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--note",
-        default=(
-            "Human review passed against retained source provenance, the Douyin "
-            "original source, and Reverse Storyboard V1.1."
-        ),
+        default="",
     )
     parser.add_argument(
         "--governance-policy",
@@ -275,6 +274,8 @@ def main() -> None:
     parser.add_argument("--console-authority-db", help="Console entry only: trusted local authorization database")
     parser.add_argument("--console-user-id", type=int)
     parser.add_argument("--console-principal-namespace")
+    parser.add_argument("--quality-decision", help="JSON: explicit human final confirmation bound to candidate and evidence; required for every new approval")
+    parser.add_argument("--review-operation-id", help="Trusted Console command identity; offline execution gets its own identity")
     args = parser.parse_args()
     console_authorization = None
     console_fields = (args.console_authority_db, args.console_user_id, args.console_principal_namespace)
@@ -293,6 +294,11 @@ def main() -> None:
     case = json.loads(original_bytes.decode("utf-8"))
 
     errors: list[str] = []
+    try:
+        human_quality = validate_quality_decision(case_path, read_json(Path(args.quality_decision)) if args.quality_decision else None)
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        errors.append(f"CASE_QUALITY_DECISION_REQUIRED: {exc}")
+        human_quality = None
 
     lifecycle = case.get("lifecycle", {})
     validation = case.get("validation", {})
@@ -482,6 +488,9 @@ def main() -> None:
         raise SystemExit(2)
 
     approved_at = now_iso()
+    human_quality = {**human_quality, "reviewer": args.reviewer, "decided_at": approved_at,
+                     "actor": console_authorization or {"kind": "trusted_offline_operator", "reviewer": args.reviewer},
+                     "operation_id": args.review_operation_id or uuid.uuid4().hex}
 
     lifecycle["status"] = "approved"
     lifecycle["approved"] = True
@@ -492,6 +501,7 @@ def main() -> None:
     case["lifecycle"] = lifecycle
 
     case["approval"] = {
+        "contract_version": APPROVAL_VERSION, "human_quality_decision": human_quality,
         "decision": "approved",
         "reviewer": args.reviewer,
         "approved_at": approved_at,
@@ -539,6 +549,7 @@ def main() -> None:
     )
 
     receipt = {
+        "contract_version": APPROVAL_VERSION, "human_quality_decision": human_quality,
         "case_id": case.get("case_id"),
         "decision": "approved",
         "reviewer": args.reviewer,

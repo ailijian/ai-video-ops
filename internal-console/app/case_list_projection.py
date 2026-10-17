@@ -36,6 +36,7 @@ def my_submissions(settings,user_id):
         receipt=settings.pipeline_root/'data/case_analysis_attempts'/case_id/task['task_id']/'human_review_decision_v1.json'
         decision=_read_json(receipt) if receipt.is_file() else {}
         if decision.get('decision')=='reject': state='rejected'
+        elif decision.get('decision')=='reanalyze': state='returned'
         elif detail and detail['review']['approved']: state='approved'
         elif state=='awaiting_review' and detail:
             state='needs_confirmation' if not classification or classification['status']!='confirmed' else 'awaiting_review'
@@ -45,8 +46,7 @@ def my_submissions(settings,user_id):
         if detail and case_cover_path(settings,case_id,attempt_id=task['task_id']):
             cover=f"/api/cases/{case_id}/cover?attempt_id={quote(task['task_id'])}"
         href=f"/cases/{case_id}?attempt_id={quote(task['task_id'])}" if detail else f"/tasks/{quote(task['task_id'])}"
-        if state=='needs_confirmation': href=f'/cases/{case_id}/classification'
-        if state=='rejected': href=f'/cases/new?reanalyze_case={case_id}&attempt_id={quote(task["task_id"])}'
+        if state=='needs_confirmation': href=f'/cases/{case_id}/classification?attempt_id={quote(task["task_id"])}'
         rows.append({'case_id':case_id,'submission_id':task['task_id'],'task_id':task['task_id'],
                      'title':detail['title'] if detail else '未命名的视频投稿',
                      'industry':industry,'video_type':None,'duration_seconds':detail.get('duration_seconds') if detail else None,
@@ -79,12 +79,19 @@ def case_cards(settings,user_id,*,view='shared',search='',industry='',video_type
     elif view=='mine': rows=my_submissions(settings,user_id)
     elif view=='review':
         rows=[]
-        for row in list_cases(settings):
+        for row in list_cases(settings, include_terminal=True):
             row['visibility']='review'
-            row['href']=f"/cases/{row['case_id']}"
+            attempt_id=row.get('attempt_id')
+            # The card needs only the exact decision companion, not full evidence
+            # or media integrity reads for every row in the review list.
+            receipt=settings.pipeline_root/'data/case_analysis_attempts'/row['case_id']/str(attempt_id)/'human_review_decision_v1.json'
+            decision=_read_json(receipt) if attempt_id and receipt.is_file() else {}
+            terminal=decision.get('decision') if (decision.get('case_id'),decision.get('attempt_id'))==(row['case_id'],attempt_id) else None
+            if terminal: row['status']='rejected' if terminal=='reject' else 'returned'
+            row['href']=f"/cases/{row['case_id']}"+(f'?attempt_id={quote(attempt_id)}' if attempt_id else '')
             row['video_type']=None
             row['cover_url']=None
-            row['classification']=classification_summary(settings,row['case_id'])
+            row['classification']=classification_summary(settings,row['case_id'],attempt_id=attempt_id)
             row['industry']=row['classification'].get('industry') if row['classification']['status']=='confirmed' else (row.get('industry_annotation') or {}).get('industry')
             if row['status']=='awaiting_review' and row['classification']['status']!='confirmed':
                 row['status']='needs_confirmation'

@@ -618,6 +618,9 @@ def test_no_detected_speech_full_canonical_chain_and_model_accounting(
     ]
 
     approved_candidate = destinations["candidate"]
+    from case_human_review_v2 import quality_context
+    quality_input = tmp_path / "human-quality-input.json"
+    quality_input.write_text(json.dumps({**quality_context(approved_candidate), "decision": "suitable", "origin": "human_final_confirmation"}), encoding="utf-8")
     run_main(
         monkeypatch,
         case_approver,
@@ -628,6 +631,7 @@ def test_no_detected_speech_full_canonical_chain_and_model_accounting(
             "fixture-human-reviewer",
             "--note",
             "Explicit human approval fixture.",
+            "--quality-decision", str(quality_input),
         ],
     )
     approved = read_json(approved_candidate)

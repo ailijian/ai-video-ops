@@ -126,8 +126,11 @@ def publication_context(settings,case_id):
                 'cover_available':case_cover_path(settings,case_id) is not None,
                 'display_receipt_sha256':history[-1][1] if history else None,
                 'published':bool(history and history[-1][0]['action']=='publish' and shared_projection(settings,case_id))}
-    except (CanonicalOperationError,OSError,ValueError,TypeError,KeyError):
-        return {'available':False,'published':False}
+    except (CanonicalOperationError,OSError,ValueError,TypeError,KeyError) as exc:
+        return {'available':False,'published':False,'blocker':{
+            'code':getattr(exc,'code','CASE_DISPLAY_EVIDENCE_UNAVAILABLE'),
+            'message':'案例的来源、隐私或批准收据证据尚未完整通过共享校验。',
+            'next_action':'请由指定审核或运维人员核对原来源与批准证据。保留历史审核；补证完成前不能共享。'}}
 
 
 def change_publication(settings,case_id,*,actor,action,title='',structure_summary='',cover_evidence=None,

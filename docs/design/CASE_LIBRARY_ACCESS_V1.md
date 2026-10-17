@@ -105,5 +105,44 @@ their authorized reviewer detail paths remain available. This implementation
 does not weaken those Gates or rewrite old artifacts to make them publishable.
 No real reviewer is granted and no real Case is published by this delivery.
 
+## New final approvals: CASE-UAT-2 amendment (2026-10-17)
+
+Founder approved the streamlined positive human quality decision. Machine owner
+[`case_human_review_v2.py`](../../ops-pipeline/scripts/case_human_review_v2.py)
+defines `case-human-quality-decision-v1.0` and `case-human-approval-v2.0`.
+Every new approval, including the trusted offline CLI, requires an explicit
+`suitable` / `human_final_confirmation` submission matching the exact Case,
+Attempt, candidate SHA and all retained JSON evidence SHAs. The existing final
+confirmation submits it; there is no extra checkbox, quality screen, mandatory
+positive reason, score, role or second reviewer. Reject/reanalyze still require
+reasons. Session principal, time and command identity come from the owner.
+
+The approved Case and existing Approval Receipt embed the same quality record;
+the receipt's approved Case SHA verifies their association. HTTP, Gateway and CLI
+validate the same contract. CLI Console flags recheck the current reviewer grant;
+CLI without them retains the existing trusted offline operating boundary.
+Neither path bypasses evidence, source, privacy, Proof or production Gates.
+
+The existing Review Command coordinates a fully committed approval using an
+additive `case-review-command-commit-v1.0` companion, published in the same staged
+Case directory transaction. It binds the original intent, actor, exact Attempt,
+candidate/evidence, quality submission, approval/authorization/governance SHAs.
+Only an exact match plus current reviewer permission can finish an interrupted
+result. Recovery reads the original result and receipt; it does not invoke the
+Approval Writer, cleanup, fingerprinting or task creation. Missing proof,
+conflicting result or mismatched actor/intent/SHA fails closed. Existing partial
+transaction repair remains separate. An old pending operation without sufficient
+commit proof cannot be retroactively associated automatically.
+
+Historical approvals without these additive versions retain their old semantics
+and bytes. There is no backfill, automatic historical quality claim, withdrawal,
+or new publication requirement for historical cases. Sharing and all production
+rights/compatibility still use their independent existing owners.
+
+Terminal Attempt detail lookup is independent of executable candidate selection.
+Authorized owners/reviewers can read rejected decisions, reason, reviewer, time
+and legal evidence; rejected Attempts get no executable approval context.
+Reanalysis creates an independent Attempt, never rewrites the terminal decision.
+
 See [CASE-TAXONOMY-0 candidate](CASE_TAXONOMY_0_CANDIDATE.md) for the separate,
 unapproved vocabulary decision.

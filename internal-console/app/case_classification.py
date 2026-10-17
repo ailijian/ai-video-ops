@@ -161,8 +161,10 @@ def classification_summary(settings: Settings, case_id: str, *, attempt_id: str 
 
 def confirm_classification(settings: Settings, case_id: str, *, industry: str | None, profile: str,
                            candidate_sha256: str, expected_confirmation_sha256: str | None,
-                           actor_user_id: int, actor_phone: str) -> dict:
-    state = classification_state(settings, case_id)
+                           actor_user_id: int, actor_phone: str, attempt_id: str | None = None) -> dict:
+    state = classification_state(settings, case_id,attempt_id=attempt_id)
+    if _context(settings,case_id)[2] != state["attempt_id"]:
+        raise CanonicalOperationError("CASE_CLASSIFICATION_CONFLICT", "这是历史尝试，不能修改当前分类。", "请查看本人原投稿或有权处理的新记录。")
     if not state["can_confirm"] or candidate_sha256 != state["candidate_sha256"] or expected_confirmation_sha256 != state["confirmation_sha256"]:
         raise CanonicalOperationError("CASE_CLASSIFICATION_CONFLICT", "分类结果已变化。", "刷新结果后重新确认。")
     industry = industry.strip() if industry else None

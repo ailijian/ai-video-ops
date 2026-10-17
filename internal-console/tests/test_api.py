@@ -1,4 +1,5 @@
 from __future__ import annotations
+from review_protocol import post_review
 
 import json
 
@@ -277,13 +278,19 @@ def test_review_closes_exact_running_attempt_and_late_worker_cannot_reopen_it(
     ).json()["task"]
     update_task(settings.database_path, task["task_id"], status="running", progress=99)
     from app import main as main_module
-    monkeypatch.setattr(main_module, "approve_case_candidate", lambda *args, **kwargs: {
-        "case_id": case_id, "review": {"approved": True, "attempt_id": task["task_id"]},
-    })
-    approved = client.post(
+    def task_projection_approval_stub(*args, **kwargs):
+        # This unit test stubs Approval; expose its new receipt-reference interface.
+        receipt=settings.pipeline_root / "data/cases" / case_id / "approval_receipt.json"
+        receipt.parent.mkdir(parents=True,exist_ok=True)
+        receipt.write_text(json.dumps({"case_id":case_id,"synthetic_task_projection_stub":True}),encoding="utf-8")
+        return {"case_id":case_id,"review":{"approved":True,"attempt_id":task["task_id"]}}
+    monkeypatch.setattr(main_module, "approve_case_candidate", task_projection_approval_stub)
+    from review_protocol import case_command_fixture
+    token = case_command_fixture(settings,case_id,task=task)
+    approved = post_review(client,
         f"/api/cases/{case_id}/review",
         headers={"X-CSRF-Token": csrf},
-        json={"decision": "approve", "reason": "已核对"},
+        json={"decision": "approve", "reason": "已核对", "review_context": token},
     )
     assert approved.status_code == 200
     for late_status in ("running", "awaiting_review", "failed"):

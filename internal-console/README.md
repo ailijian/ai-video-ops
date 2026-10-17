@@ -307,3 +307,33 @@ supported opportunities and additional Scene Contrast validation gate do not
 follow from the existence of UI/code or from a completed task. Runtime access
 is owned by `app/config.py` and `app/novel_news_rollout.py`; artifact structure
 and semantic closure are owned by `ops-pipeline/scripts/novel_news_v1.py`.
+
+
+## Case final review and interrupted result recovery
+
+CASE final reviews use `app/review_commands.py` (`human-review-command-v1.0`).
+The current private detail supplies an opaque `approval_context` binding the
+node, Session principal, exact Case/Attempt, candidate SHA and source snapshot.
+Final submission requires that context plus the existing Evidence confirmation.
+`ops-pipeline/scripts/case_human_review_v2.py` owns explicit positive quality
+confirmation (`case-human-quality-decision-v1.0`, approval v2.0): the existing
+final modal submits it, with optional approval reason. Reject/reanalyze require
+reasons. Session, CSRF, current reviewer authorization and all domain Gates run
+again on replay. Historical approvals and receipts are not backfilled.
+
+Immutable intent/result companions live under
+`data/review_operations/case/<id>/<operation_id>/`. Exact replay resumes the
+original operation, including after restart. The Case directory transaction
+publishes `case-review-command-commit-v1.0`, binding the original actor, intent,
+Candidate/Evidence/quality input, approved Case and Receipt SHA. A fully committed
+approval only finishes its original command result: no second Approval Writer,
+Receipt, fingerprint, cleanup or Task. Missing proof or identity mismatch blocks
+recovery. Reanalysis uses the original operation identity for one independent
+Task, retaining the old decision. Validated source uploads reserve exact bytes
+for unfinished commands; queue recovery cannot substitute or reconsume sources.
+
+Authorized rejected Attempt details remain readable, with reason, actor/time and
+legal evidence; no approval context is issued for a terminal Attempt. A new
+Attempt never overwrites it. Shared display remains an independent explicit
+human operation with its own whitelist, rights evidence and withdrawal Gates.
+Case Approval grants neither media reuse nor Pattern/Profile Compatibility.

@@ -1,6 +1,7 @@
 // Presentation only; canonical tasks own every business state.
 export function intakeItemState(item) {
   if (item.state === "input_duplicate") return "input_duplicate";
+  if (item.state === "linked" && !item.task && !item.case) return "submitted";
   if (item.case?.status === "approved") return "approved";
   if (item.error_code || item.task?.status === "failed") return "failed";
   if (item.case && item.classification?.status === "confirmed") return "confirmed";
@@ -9,7 +10,7 @@ export function intakeItemState(item) {
   return "analyzing";
 }
 export function intakeCounts(items) {
-  const counts = { total: 0, analyzing: 0, needs_confirmation: 0, confirmed: 0, failed: 0, completed: 0, approved: 0, duplicates: 0 };
+  const counts = { total: 0, analyzing: 0, needs_confirmation: 0, confirmed: 0, failed: 0, completed: 0, approved: 0, submitted: 0, duplicates: 0 };
   for (const item of items) {
     const state = intakeItemState(item);
     if (state === "input_duplicate") { counts.duplicates += 1; continue; }
@@ -48,6 +49,7 @@ export function confirmedClassificationLabel(human) {
 }
 export function intakeStage(item) {
   const state = intakeItemState(item);
+  if (state === "submitted") return "投稿已记录，本次未建立新解析任务";
   if (state === "input_duplicate") return "本批重复，已合并";
   if (state === "needs_confirmation") return "等待人工确认";
   if (state === "confirmed") return confirmedClassificationLabel(item.classification.human);
