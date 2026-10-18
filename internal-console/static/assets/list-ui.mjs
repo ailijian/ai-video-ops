@@ -32,7 +32,7 @@ export function caseListCard(item, _statusPill, returnPath = "") {
   const href = item.href || `/cases/${encodeURIComponent(item.case_id)}${shared ? "?shared=1" : ""}`;
   const destination = href + (returnPath ? `${href.includes("?") ? "&" : "?"}return=${encodeURIComponent(returnPath)}` : "");
   const duration = formatCaseDuration(item.duration_seconds);
-  const state = caseStateLabels[item.status] || "待处理";
+  const state = item.sharing_label || caseStateLabels[item.status] || "待处理";
   const cover = item.cover_url ? `<img src="${escapeHtml(item.cover_url)}" alt="" loading="lazy" decoding="async">` : "";
   return `<a class="case-library-card" href="${escapeHtml(destination)}" data-route data-case-status="${escapeHtml(item.status)}" data-case-id="${escapeHtml(item.case_id || "")}">
     <span class="case-card-cover">${cover}<span class="case-cover-placeholder" ${cover ? "hidden" : ""}>${videoIcon}<small>暂无封面</small></span>${duration ? `<span class="case-card-duration">${duration}</span>` : ""}</span>

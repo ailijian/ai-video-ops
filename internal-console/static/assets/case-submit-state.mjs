@@ -45,6 +45,7 @@ export function resetCaseSubmitState() {
 
 export function caseTaskResumeDestination(task) {
   if (task?.task_type !== "case_analysis") return null;
+  if (task.payload?.evidence_revision && task.task_id) return `/tasks/${encodeURIComponent(task.task_id)}`;
   if (task.current_active_task_id) return `/tasks/${encodeURIComponent(task.current_active_task_id)}`;
   if (task.current_case_status === "approved" && task.subject_ref) {
     return `/cases/${encodeURIComponent(task.subject_ref)}`;

@@ -1,6 +1,6 @@
 """Offline intake acceptance. No provider/model calls or production data."""
 from __future__ import annotations
-from review_protocol import post_review
+from review_protocol import post_review, post_historical_case_review
 
 import copy
 import hashlib
@@ -302,7 +302,9 @@ def test_confirmed_labels_still_cannot_bypass_case_approval_gates(client, settin
         "expected_confirmation_sha256":None})
     assert response.status_code == 200
     before = path.read_bytes()
-    blocked = post_review(client, f"/api/cases/{ID}/review", headers={"X-CSRF-Token":csrf}, json={"decision":"approve"})
+    # The frozen minimal fixture must still exercise its original Source/Proof/
+    # Privacy rejection, independently of the earlier new v1.1 Coverage Gate.
+    blocked = post_historical_case_review(client, f"/api/cases/{ID}/review", headers={"X-CSRF-Token":csrf}, json={"decision":"approve"})
     assert blocked.status_code == 409
     assert blocked.json()["detail"]["code"] == "CASE_APPROVAL_BLOCKED"
     assert path.read_bytes() == before

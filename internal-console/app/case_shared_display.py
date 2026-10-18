@@ -18,6 +18,290 @@ VERSION = 'case-shared-display-v1.0'
 FIELDS = ('title','industry','video_type','duration_seconds','structure_summary')
 KEYS = {'schema_version','case_id','audience','sequence','parent_sha256','action','at','actor',
         'case_sha256','approval_receipt_sha256','allowed_fields','display','sources','cover_clearance'}
+JOINT_VERSION = 'case-shared-display-v1.1'
+PREVIEW_VERSION = 'case-shared-display-preview-v1.0'
+DECISION_VERSION = 'case-human-display-decision-v1.0'
+
+
+def _share_error(message, code='CASE_SHARE_PREVIEW_STALE'):
+    return CanonicalOperationError(code, message, '请重新核对展示预览；已经保存的收录记录会保留。')
+
+
+def _grant_ref(authorization):
+    return {k:authorization[k] for k in ('namespace','user_id','event_id','event_sha256')}
+
+
+def _policy(settings):
+    # A changed validator invalidates an uncommitted display authorization.
+    from human_review_operations_v1 import digest
+    return {'version': PREVIEW_VERSION, 'validator_sha256': digest({
+        'display': _sha256(Path(__file__)),
+        'privacy': _sha256(settings.pipeline_root/'scripts/privacy_projection_v1.py'),
+        'source': _sha256(settings.pipeline_root/'scripts/approve_case_v1.py')})}
+
+
+def _preview_sources(settings, candidate):
+    from case_evidence_revision_v1 import source_refs, check_ref
+    from .path_safety import resolve_within
+    refs = source_refs(settings.pipeline_root, candidate)
+    for ref in refs.values():
+        check_ref(settings.repo_root, ref)
+    case = _read_json(candidate)
+    for name in ('source_acquisition_ref', 'source_metadata_ref'):
+        ref = case['source_provenance'][name]
+        path = resolve_within(settings.pipeline_root, ref['path'])
+        if _sha256(path) != ref['sha256']:
+            raise _share_error('原始来源已变化，不能签发共享预览。')
+        refs[name] = {'path': str(path.relative_to(settings.repo_root)), 'sha256': _sha256(path)}
+    return refs
+
+
+def share_preview(settings, case_id, actor, *, title=None, structure_summary=None):
+    try:
+        return _build_share_preview(settings,case_id,actor,title=title,structure_summary=structure_summary)
+    except CanonicalOperationError:
+        raise
+    except (FileNotFoundError,ValueError,KeyError,TypeError,RuntimeError) as exc:
+        raise _share_error('来源、隐私、证明或审核范围尚未完整核对，请恢复来源或重新分析。') from exc
+
+
+def _build_share_preview(settings, case_id, actor, *, title=None, structure_summary=None):
+    """Read-only, source-bound proposal. Only a signed final command authorizes it.
+
+    Raw narration, claims, proof and model descriptions are never default display
+    text. The structural default describes only the validated timeline shape.
+    Edited text remains a source-bound Human display proposal, not Customer Truth.
+    """
+    from case_evidence_revision_v1 import resolve_target, review_scope
+    from approve_case_v1 import validate_source_provenance
+    from privacy_projection_v1 import validate_case_privacy_gate, scan_sensitive_values
+    from human_review_operations_v1 import digest
+    authorization = reviewer_authorization(settings, actor)
+    from .review_commands import snapshot, CASE_VERSION
+    target_snapshot = snapshot(settings, 'case', case_id, version=CASE_VERSION)
+    target = resolve_target(settings.pipeline_root, case_id, target_snapshot['attempt_id'])
+    scope = review_scope(settings.pipeline_root, case_id, target_snapshot['attempt_id'])
+    case = _read_json(target.candidate)
+    if (case.get('lifecycle') or {}).get('approved') or scope['summary']['blocked']:
+        raise _share_error('尚有来源、修订或风险问题需要处理。')
+    refs = _preview_sources(settings, target.candidate)
+    _, errors = validate_source_provenance(case)
+    if errors:
+        raise _share_error('案例来源尚未完整核对，不能批准或共享。')
+    validate_case_privacy_gate(case)
+    privacy_path = settings.repo_root/refs['privacy_projection_v1']['path']
+    if case['privacy_gate'].get('source_projection_sha256') != _sha256(privacy_path):
+        raise _share_error('隐私校验证据已变化。')
+    understanding = (case.get('storyboard') or {}).get('video_understanding') or {}
+    proofs = understanding.get('verified_proofs')
+    if (not isinstance(proofs, list) or case.get('quality', {}).get('verified_proof_count') != len(proofs)
+            or (not proofs and any(c.get('status') in {'proof','verified_proof','observed_proof','proven'} for c in understanding.get('claims', [])))):
+        raise _share_error('案例的证明边界尚未完整核对。')
+    metadata = _read_json(settings.repo_root/refs['source_metadata_ref']['path'])
+    default_title = str(metadata.get('desc') or metadata.get('title') or '').strip()[:120]
+    shots = (case.get('storyboard') or {}).get('shots') or []
+    default_summary = f'通过 {len(shots)} 个镜头呈现视频结构，供创作拆解参考。' if shots else ''
+    display_title = default_title if title is None else title.strip()
+    summary = default_summary if structure_summary is None else structure_summary.strip()
+    # No offline semantic oracle can establish a new business assertion. Permit
+    # source excerpts and the deterministic structural description only; free
+    # paraphrases require a separately supported source-backed review path.
+    if (display_title and display_title not in default_title) or (summary and summary not in default_summary):
+        raise _share_error('展示修改必须取自当前来源标题或安全结构摘要；不能新增未经证明的主张。')
+    classification = classification_summary(settings, case_id, attempt_id=target_snapshot['attempt_id'])
+    industry = classification.get('industry') if classification.get('status') == 'confirmed' else None
+    classification_path = target.attempt_root/'case_classification_review_v1.json'
+    classification_ref = None
+    if classification_path.exists():
+        record = _read_json(classification_path)
+        if record.get('confirmed_case_sha256') != _sha256(target.candidate):
+            raise _share_error('分类确认与当前候选不一致。')
+        classification_ref = {'path':str(classification_path.relative_to(settings.repo_root)), 'sha256':_sha256(classification_path)}
+    duration = (case.get('identity') or {}).get('duration_seconds')
+    if isinstance(duration, bool) or not isinstance(duration, (int,float)) or not math.isfinite(duration) or duration <= 0:
+        duration = None
+    elif float(duration).is_integer():
+        duration = int(duration)  # Canonical JSON survives the browser's number roundtrip.
+    display = {'title':display_title, 'industry':industry, 'video_type':None,
+               'duration_seconds':duration, 'structure_summary':summary}
+    # Missing display text is an independent display deficiency. An unavailable
+    # source, invalid scope, signature or IO failure must never select this mode.
+    blocker = {'code':'CASE_DISPLAY_TITLE_REQUIRED', 'message':'缺少可核对的展示标题，当前只能批准入库。'} if not display_title else None
+    if display_title:
+        _validate_display(display)
+    if scan_sensitive_values(display):
+        raise _share_error('展示内容含有敏感信息，请先修正预览。')
+    history = _history(settings, case_id)
+    candidate_ref = {'path':str(target.candidate.relative_to(settings.pipeline_root)), 'sha256':_sha256(target.candidate)}
+    sources = {
+        'title':{'kind':'human_confirmed_source_display_title', 'ref':refs['source_metadata_ref'], 'candidate_ref':candidate_ref},
+        'industry':{'kind':'classification_confirmation' if industry else 'not_confirmed', 'ref':classification_ref},
+        'video_type':{'kind':'no_formal_taxonomy'},
+        'duration_seconds':{'kind':'validated_media_identity', 'candidate_ref':candidate_ref, 'evidence_refs':refs},
+        'structure_summary':{'kind':'human_reviewed_safe_structure', 'candidate_ref':candidate_ref,
+            'privacy_ref':refs['privacy_projection_v1'], 'storyboard_ref':refs['storyboard_v1']}}
+    preview = {'schema_version':PREVIEW_VERSION, 'case_id':case_id, 'attempt_id':target_snapshot['attempt_id'],
+        'candidate_ref':candidate_ref, 'evidence_sha256':{k:r['sha256'] for k,r in refs.items()}, 'revision_ref':target.revision_ref,
+        'revision_validation_ref':target.validation_ref, 'scope_sha256':scope['scope_sha256'],
+        'allowed_fields':list(FIELDS), 'display':display, 'sources':sources,
+        'cover':{'state':'placeholder', 'cover_ref':None, 'clearance_ref':None},
+        'expected_publication_head_sha256':history[-1][1] if history else None,
+        'reviewer_grant_ref':_grant_ref(authorization), 'display_policy_ref':_policy(settings)}
+    return {'mode':'approve_only' if blocker else 'approve_and_share', 'preview':preview,
+        'preview_sha256':digest(preview), 'blocker':blocker, 'blocker_sha256':digest(blocker) if blocker else None}
+
+
+def validate_preview(settings, bundle, actor, *, committed=False):
+    """Revalidate sources and policy before each stage; never trust client flags."""
+    from human_review_operations_v1 import digest
+    from .path_safety import resolve_within
+    preview = bundle['preview']
+    if (digest(preview) != bundle['preview_sha256'] or preview['schema_version'] != PREVIEW_VERSION
+            or preview['reviewer_grant_ref'] != _grant_ref(reviewer_authorization(settings, actor))
+            or preview['display_policy_ref'] != _policy(settings)
+            or preview['cover'] != {'state':'placeholder','cover_ref':None,'clearance_ref':None}):
+        raise _share_error('展示预览、策略或原审核授权已变化。')
+    refs=preview['sources']['duration_seconds']['evidence_refs']
+    if preview['evidence_sha256']!={k:r['sha256'] for k,r in refs.items()}:
+        raise _share_error('展示来源摘要不一致。')
+    for ref in refs.values():
+        path = resolve_within(settings.repo_root, ref['path'])
+        if _sha256(path) != ref['sha256']:
+            raise _share_error('展示来源已变化。')
+    classification = preview['sources']['industry'].get('ref')
+    if classification and _sha256(resolve_within(settings.repo_root, classification['path'])) != classification['sha256']:
+        raise _share_error('展示分类已变化。')
+    candidate = resolve_within(settings.pipeline_root, preview['candidate_ref']['path'])
+    if _sha256(candidate) != preview['candidate_ref']['sha256']:
+        raise _share_error('原审核候选已变化。')
+    if committed:
+        annotation=settings.pipeline_root/'data/case_governance/cases'/preview['case_id']/'case_industry_annotation_v1.json'
+        _,case_sha,_=_base(settings,preview['case_id'])
+        industry,_=_confirmed_industry(settings,preview['case_id'],case_sha)
+        if annotation.exists() or industry!=preview['display']['industry']:
+            raise _share_error('批准后的展示分类来源已变化，需要重新核对。')
+    else:
+        current = share_preview(settings, preview['case_id'], actor,
+            title=preview['display']['title'], structure_summary=preview['display']['structure_summary'])
+        if current != bundle:
+            raise _share_error('当前展示预览已变化。')
+    return preview
+
+
+def validate_sharing_decision(settings, command, submission, *, committed=False):
+    from human_review_operations_v1 import digest
+    context = command['context']
+    bundle = context.get('sharing')
+    if not bundle:
+        raise _share_error('当前没有可核对的共享预览，不能执行新版批准。')
+    keys = {'schema_version','decision','preview_sha256','preview','blocker_sha256','origin'}
+    expected = {'schema_version':DECISION_VERSION,
+        'decision':'publish_exact_preview' if bundle['mode']=='approve_and_share' else 'approve_only',
+        'preview_sha256':bundle['preview_sha256'], 'preview':bundle['preview'],
+        'blocker_sha256':bundle['blocker_sha256'], 'origin':'human_joint_final_confirmation'}
+    if not isinstance(submission, dict) or set(submission)!=keys or digest(submission)!=digest(expected):
+        raise _share_error('请通过最终确认明确授权当前准确的展示内容。','CASE_SHARE_DECISION_REQUIRED')
+    target=context['snapshot']
+    if (target.get('sharing_mode')!=bundle['mode'] or target.get('share_preview_sha256')!=digest(bundle['preview'])
+            or target.get('share_blocker_sha256')!=bundle['blocker_sha256']
+            or target.get('reviewer_grant_ref')!=bundle['preview']['reviewer_grant_ref']
+            or bundle['preview']['case_id']!=context['identity'] or bundle['preview']['attempt_id']!=target['attempt_id']
+            or bundle['preview']['candidate_ref']!={'path':target['artifact'],'sha256':target['artifact_sha256']}
+            or bundle['preview']['scope_sha256']!=target['scope_sha256']
+            or bundle['preview']['revision_ref']!=target['revision_ref']
+            or bundle['preview']['revision_validation_ref']!=target['revision_validation_ref']):
+        raise _share_error('共享授权与原审核操作不一致。')
+    return validate_preview(settings, bundle, context['actor'], committed=committed)
+
+
+def _validate_joint_record(settings, record):
+    """Version-specific reader validates the immutable decision/Approval linkage."""
+    from human_review_operations_v1 import digest
+    from .path_safety import resolve_within
+    decision=record['human_display_decision']
+    keys={'schema_version','decision','origin','operation_id','intent_ref','preview_sha256',
+          'case_id','attempt_id','candidate_ref','evidence_sha256','revision_ref','revision_validation_ref',
+          'scope_sha256','actor','decided_at'}
+    if set(decision)!=keys or decision['schema_version']!=DECISION_VERSION:
+        raise _blocked()
+    saved_path=resolve_within(settings.pipeline_root,decision['intent_ref']['path'])
+    if _sha256(saved_path)!=decision['intent_ref']['sha256']:
+        raise _blocked()
+    saved=_read_json(saved_path);context=saved['context'];bundle=context['sharing'];preview=bundle['preview']
+    expected_path=settings.pipeline_root/'data/review_operations/case'/record['case_id']/context['operation_id']/'intent.json'
+    if (saved_path!=expected_path or context['version']!='human-review-command-v1.2'
+            or context['identity']!=record['case_id'] or context['operation_id']!=decision['operation_id']
+            or context['actor']!={k:record['actor'][k] for k in ('namespace','user_id')}
+            or preview['reviewer_grant_ref']!=_grant_ref(record['actor']) or bundle['mode']!='approve_and_share'
+            or bundle['preview_sha256']!=digest(preview) or decision['preview_sha256']!=digest(preview)
+            or saved['intent']['payload']['sharing_decision']!={
+                'schema_version':DECISION_VERSION,'decision':'publish_exact_preview','preview_sha256':digest(preview),
+                'preview':preview,'blocker_sha256':None,'origin':'human_joint_final_confirmation'}
+            or record['display']!=preview['display'] or record['sources']!=preview['sources']
+            or record['allowed_fields']!=preview['allowed_fields'] or record['cover_clearance'] is not None
+            or decision['actor']!=record['actor'] or decision['decided_at']!=saved['at']
+            or decision['origin']!='human_joint_final_confirmation' or decision['decision']!='publish_exact_preview'):
+        raise _blocked()
+    for key in ('case_id','attempt_id','candidate_ref','evidence_sha256','revision_ref','revision_validation_ref','scope_sha256'):
+        if decision[key]!=preview[key]: raise _blocked()
+    canonical=settings.pipeline_root/'data/cases'/record['case_id']
+    binding=_read_json(canonical/'console_review_command_v1.json')
+    if (binding['context']!=context or binding['intent_ref']!=decision['intent_ref']
+            or binding['artifacts']['case_v1.json']['sha256']!=record['case_sha256']
+            or binding['artifacts']['approval_receipt.json']['sha256']!=record['approval_receipt_sha256']):
+        raise _blocked()
+    return preview
+
+
+def publish_joint(settings, command):
+    """Stage B only. Caller holds Case lock; never calls the Approval writer."""
+    from . import review_commands
+    from human_review_operations_v1 import read, write_once
+    context=command['context'];case_id=context['identity'];actor=context['actor']
+    with reviewer_lock(settings,actor):
+        authorization=reviewer_authorization(settings,actor)
+        saved=review_commands._case_intent(settings,command)
+        bundle=context['sharing'];preview=bundle['preview']
+        if _grant_ref(authorization)!=preview['reviewer_grant_ref']:
+            raise _share_error('原审核授权已失效，请重新核对展示内容。')
+        case,case_sha,receipt_sha=_base(settings,case_id)
+        history=_history(settings,case_id)
+        existing=[(v,h) for v,h in history if v.get('human_display_decision',{}).get('operation_id')==context['operation_id']]
+        if len(existing)>1: raise _blocked()
+        if existing:
+            value,receipt_hash=existing[0]
+            _validate_joint_record(settings,value)
+            if (value['human_display_decision']['intent_ref']!=review_commands._ref(settings,command['directory']/'intent.json')
+                    or value['case_sha256']!=case_sha or value['approval_receipt_sha256']!=receipt_sha):
+                raise _blocked()
+            # A later withdrawal/publication is authoritative. This branch never
+            # republishes, even if result persistence was interrupted originally.
+            return {'path':str((_root(settings,case_id)/f"receipt_{value['sequence']:06}.json").relative_to(settings.pipeline_root)),
+                    'sha256':receipt_hash}
+        validate_sharing_decision(settings,command,saved['intent']['payload'].get('sharing_decision'),committed=True)
+        parent=history[-1][1] if history else None
+        if parent!=preview['expected_publication_head_sha256']:
+            raise _share_error('共享展示状态已变化，需要重新核对。')
+        receipt=read(settings.pipeline_root/'data/cases'/case_id/'approval_receipt.json')
+        quality=(case.get('approval') or {}).get('human_quality_decision') or {}
+        if (receipt['case_sha256_before_approval']!=preview['candidate_ref']['sha256']
+                or quality.get('operation_id')!=context['operation_id']
+                or (case.get('analysis_lineage') or {}).get('attempt_id')!=preview['attempt_id']):
+            raise _share_error('正式批准与原展示预览不一致。')
+        decision={k:preview[k] for k in ('case_id','attempt_id','candidate_ref','evidence_sha256',
+            'revision_ref','revision_validation_ref','scope_sha256')}
+        decision.update(schema_version=DECISION_VERSION,decision='publish_exact_preview',origin='human_joint_final_confirmation',
+            operation_id=context['operation_id'],intent_ref=review_commands._ref(settings,command['directory']/'intent.json'),
+            preview_sha256=bundle['preview_sha256'],actor=authorization,decided_at=command['at'])
+        record={'schema_version':JOINT_VERSION,'case_id':case_id,'audience':'eligible_platform_users',
+            'sequence':len(history)+1,'parent_sha256':parent,'action':'publish','at':datetime.now(timezone.utc).isoformat(),
+            'actor':authorization,'case_sha256':case_sha,'approval_receipt_sha256':receipt_sha,
+            'allowed_fields':preview['allowed_fields'],'display':preview['display'],'sources':preview['sources'],
+            'cover_clearance':None,'human_display_decision':decision}
+        _validate_joint_record(settings,record)
+        path=_root(settings,case_id)/f"receipt_{record['sequence']:06}.json"
+        write_once(path,record)
+        return review_commands._ref(settings,path)
 
 
 def _blocked(message='共享展示记录无法核对。'):
@@ -56,8 +340,9 @@ def _history(settings,case_id):
     records = []
     for sequence,path in enumerate(sorted(_root(settings,case_id).glob('receipt_*.json')),1):
         value = _read_json(path)
-        if (path.name != f'receipt_{sequence:06}.json' or set(value) != KEYS
-                or value['schema_version'] != VERSION or value['case_id'] != case_id
+        joint = value.get('schema_version') == JOINT_VERSION
+        if (path.name != f'receipt_{sequence:06}.json' or set(value) != (KEYS | {'human_display_decision'} if joint else KEYS)
+                or value['schema_version'] not in {VERSION,JOINT_VERSION} or value['case_id'] != case_id
                 or value['audience'] != 'eligible_platform_users'
                 or value['sequence'] != sequence or value['parent_sha256'] != previous
                 or value['action'] not in {'publish','withdraw'}
@@ -73,8 +358,12 @@ def _history(settings,case_id):
                     or set(value['sources']) != set(FIELDS)):
                 raise _blocked()
             _validate_display(value['display'])
+            if joint:
+                _validate_joint_record(settings, value)
         elif value['allowed_fields'] or value['display'] or value['sources'] or value['cover_clearance']:
             raise _blocked()
+        elif joint:
+            raise _blocked()  # Existing explicit withdraw uses its frozen v1.0 contract.
         previous = _sha256(path)
         records.append((value,previous))
     return records
@@ -197,7 +486,7 @@ def shared_projection(settings,case_id):
         if record['action']!='publish' or record['case_sha256']!=case_sha or record['approval_receipt_sha256']!=receipt_sha:
             return None
         industry,source=_confirmed_industry(settings,case_id,case_sha)
-        if record['display']['industry']!=industry or record['sources']['industry']!=source:
+        if record['display']['industry']!=industry or (record['schema_version']==VERSION and record['sources']['industry']!=source):
             return None
         return {'case_id':case_id,**record['display'],'status':'approved','visibility':'shared',
                 'published_at':record['at'],'display_revision':record_sha,
@@ -236,3 +525,45 @@ def shared_cases(settings):
         row=shared_projection(settings,root.parent.name)
         if row: rows.append(row)
     return sorted(rows,key=lambda row:(row['published_at'],row['case_id']),reverse=True)
+
+
+def sharing_status(settings, case_id):
+    """Public-state wording only, no private operation, actor or Task disclosure."""
+    if shared_projection(settings,case_id):
+        return {'sharing_state':'approved_shared','sharing_label':'已收录并共享'}
+    result={'sharing_state':'approved_only','sharing_label':'已收录，共享尚未完成',
+        'sharing_next_action':'请由指定审核人从共享展示管理核对允许展示的内容。'}
+    try:
+        history=_history(settings,case_id)
+        if history and history[-1][0]['action']=='withdraw':
+            return {'sharing_state':'approved_withdrawn','sharing_label':'已收录，已撤回共享',
+                'sharing_next_action':'共享已撤回，原收录记录保留。如需再次共享，请重新核对并明确授权展示内容。'}
+        canonical=settings.pipeline_root/'data/cases'/case_id
+        binding_path=canonical/'console_review_command_v1.json'
+        if not binding_path.exists():return result
+        from .path_safety import resolve_within
+        binding=_read_json(binding_path);context=binding['context']
+        intent_path=resolve_within(settings.pipeline_root,binding['intent_ref']['path'])
+        if (context['version']!='human-review-command-v1.2' or context['identity']!=case_id
+                or _sha256(intent_path)!=binding['intent_ref']['sha256']):return result
+        terminal=intent_path.with_name('result.json')
+        if not terminal.exists():
+            result['sharing_next_action']='原提交审核人可继续原操作完成共享；无需重新批准案例。'
+            return result
+        value=_read_json(terminal)
+        if (value.get('schema_version')=='case-review-share-result-v1.0'
+                and value.get('operation_id')==context['operation_id']
+                and value.get('intent_ref')==binding['intent_ref']
+                and value.get('approved_case_ref',{}).get('sha256')==_sha256(canonical/'case_v1.json')
+                and value.get('approval_receipt_ref',{}).get('sha256')==_sha256(canonical/'approval_receipt.json')):
+            if value['completion']=='approval_kept_share_reconfirmation_required':
+                result.update(sharing_state='approved_reconfirm',sharing_label='已收录，需重新核对展示内容',
+                    sharing_next_action='原展示确认已失效。请从共享展示管理重新核对当前来源、分类及展示内容。')
+                blocker=value.get('blocker') or {}
+                if blocker.get('code') in {'CASE_SHARE_PREVIEW_STALE','CASE_DISPLAY_CONFLICT'}:
+                    result['sharing_next_action']=blocker['message']+' 请从共享展示管理重新核对并明确授权。'
+            elif value['completion']=='approved_only':
+                result['sharing_next_action']='本次仅批准入库。请补齐允许展示的内容后，从共享展示管理明确确认。'
+        return result
+    except (CanonicalOperationError,OSError,ValueError,KeyError,TypeError):
+        return result  # No failed read grants display or invents an executable recovery.

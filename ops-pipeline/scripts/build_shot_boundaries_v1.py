@@ -747,10 +747,28 @@ def main() -> None:
         if d.get("boundary_before") is True
     }
 
+    revision_targets = set()
+    if review_data and review_data.get('human_edit_ref'):
+        from case_evidence_revision_v1 import check_ref, EDIT_VERSION
+        from human_review_operations_v1 import file_sha
+        pipeline = Path(__file__).resolve().parents[1]
+        edit = read_json(check_ref(pipeline,review_data['human_edit_ref']))
+        if edit.get('schema_version') != EDIT_VERSION or edit.get('case_id') != args.case_id:
+            raise RuntimeError('Boundary revision identity mismatch.')
+        for key,path in (('visual_manifest',Path(args.visual_manifest)),('visual_v1',Path(args.visual_v1))):
+            if edit['source_refs'][key]['sha256'] != file_sha(path):
+                raise RuntimeError('Boundary revision source SHA mismatch.')
+        for item in edit['boundary_edits']:
+            old,new=item['boundary_frame_id'],item['target_frame_id']
+            if (new not in frame_by_id or new not in manifest_by_id
+                    or review_actions_by_frame.get(new,{}).get('action')!='keep'
+                    or review_actions_by_frame.get(old,{}).get('action')!='reject'):
+                raise RuntimeError('Boundary revision must reject its exact old cut and keep its verified target.')
+            revision_targets.add(new)
     unknown_review_targets = [
         frame_id
         for frame_id in review_actions_by_frame
-        if frame_id not in model_selected_ids
+        if frame_id not in model_selected_ids and frame_id not in revision_targets
     ]
     if unknown_review_targets:
         raise RuntimeError(

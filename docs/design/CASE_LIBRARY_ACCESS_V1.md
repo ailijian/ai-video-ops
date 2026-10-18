@@ -146,3 +146,73 @@ Reanalysis creates an independent Attempt, never rewrites the terminal decision.
 
 See [CASE-TAXONOMY-0 candidate](CASE_TAXONOMY_0_CANDIDATE.md) for the separate,
 unapproved vocabulary decision.
+
+## Human evidence revision and final coverage
+
+[`case_evidence_revision_v1.py`](../../ops-pipeline/scripts/case_evidence_revision_v1.py)
+owns `case-human-evidence-edit-v1.0`, `case-human-evidence-revision-v1.0`,
+`case-evidence-confirmation-policy-v1.0` and `case-evidence-final-review-v2.0`.
+These are immutable companions of an existing submission Attempt, not a second
+Case approval lifecycle. A saved edit is not a validated candidate or approval.
+The newest unvalidated/failed revision blocks approval of older candidates.
+
+Only a current explicitly authorized reviewer may save bounded source-audio
+corrections or move an existing cut to a verified frame in the same Manifest.
+Original ASR words/times, observations, media, candidates and receipts stay
+unchanged. The source and parent SHA are compared inside the Case/reviewer locks.
+One genuine Case-analysis Task builds each revision; it is never a submission
+Attempt and is excluded from submission selection. The whole Privacy, narration,
+Shot, Storyboard and Case dependency graph is rebuilt, without old `passed` cache
+reuse. Absent models or failed validation leave a recoverable saved revision.
+
+The deterministic policy requires source/Privacy/timeline evidence in addition
+to confidence. Ordinary accurate results are confirmed only by the existing
+final button. Uncertain results still require explicit keep or correction;
+unsupported risks fail closed. Corrected evidence uses `resolved_by_revision`,
+never keep of the original error. API/Gateway/Approval CLI share exact v2
+coverage validation and the existing Q1 positive Human quality action.
+
+Review Command v1.1 snapshots revision, validation and scope SHAs. A null expected
+revision SHA is an explicit comparison against the original head, retained in
+durable recovery. Saved edits and build Tasks recover the same operation; the
+UAT-2 Domain Commit proof also binds v2 coverage and revision companions.
+Historical v1 commands/receipts retain their original dispatch and bytes.
+Revised candidates cannot downgrade to v1 keep coverage. Shared Display,
+Fingerprint, Pattern, Compatibility, media rights and News Gates remain separate.
+
+## CASE-SHARE-UX-2 joint final confirmation amendment
+
+Architecture decision: `CASE_SHARE_UX_2_S0_CONTRACT_APPROVED_WITH_GUARDS`.
+The executable display owner remains `internal-console/app/case_shared_display.py`.
+New read-only `case-shared-display-preview-v1.0` binds exact Candidate, Attempt,
+Evidence, Revision/Validation, Coverage scope, source-backed display fields,
+current reviewer grant event, publication head and validator identity. Console
+signs it in `human-review-command-v1.2`; edits reissue a new exact preview.
+An unavailable source/scope/service never implies permission or approve-only.
+Missing display title is an independent display deficiency; only then the signed
+mode can be approve-only, while every existing Approval Gate still applies.
+
+One explicit final Human action submits Q1 and `case-human-display-decision-v1.0`.
+Approval and `case-shared-display-v1.1` Publication remain separate receipts.
+Publication binds the actual postcommit Case/Approval hashes, original immutable
+intent and exact preview. Default cover is placeholder: file existence is no right.
+No original media, private transcript, business claim or reviewer log is projected.
+Human title/summary edits are source-bound proposals, privacy scanned and explicitly
+confirmed for display; they do not create Customer Truth or Proof.
+The offline implementation permits excerpts of the exact source title and a
+deterministic description of the validated timeline. Unsupported new factual
+paraphrases are rejected, rather than presented as semantically verified.
+
+Review Command owns two-stage execution and `case-review-share-result-v1.0`, not a
+new approval lifecycle. A committed Approval is never repeated or rolled back for
+a display failure. Temporary publication failure leaves a resumable intent;
+permanent preview/head/grant changes preserve Approval and require fresh display
+review via advanced management. A revoke/regrant cannot revive old consent.
+An already committed publication is recognized before parent-CAS; later withdrawal
+or publication always wins and an old intent never republishes. Current UI state
+comes from the latest validated display projection, not the historical result.
+
+Historical command v1.0/v1.1 and Publication v1.0 keep their frozen semantics and
+bytes. Old Approval does not auto-publish. Advanced explicit publication/withdrawal,
+Pattern, Fingerprint, Compatibility, News and media rights retain their own Gates.
+No schema migration, role, database or background publication listener is added.

@@ -1,9 +1,9 @@
 import { dashboardMarkup, dashboardSkeleton } from "./dashboard-view.mjs?v=dash-1";
 import { taskListRows, taskSourceResults, taskReadFailure, taskActivityRows } from "./task-list-view.mjs?v=ui-1";
 import { createApiClient } from "./api-client.js?v=customer-speaker-v1";
-import { createCaseViews } from "./case-views.js?v=flow-closure-2";
+import { createCaseViews } from "./case-views.js?v=case-recovery-ui1";
 import { createCustomerViews } from "./customer-views.js?v=ui-1";
-import { progressPanel } from "./case-components.js?v=flow-closure-2";
+import { progressPanel } from "./case-components.js?v=case-share-ui1";
 import { startTaskPolling } from "./task-progress.js?v=mobile-reliability-1";
 import { CUSTOM_INDUSTRY, industryOptions, industryValue as readIndustryValue, setIndustryValue, syncCustomIndustry } from "./case-industry.mjs?v=industry-2";
 import { matchWorkflowRoute } from "./routes.js";

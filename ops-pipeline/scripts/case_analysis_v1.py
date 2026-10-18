@@ -210,6 +210,9 @@ class Orchestrator:
         source_upload_receipt_sha256: str | None = None,
         acquisition_provider: str = "legacy_downloader",
         provider_source_url: str | None = None,
+        revision_id: str | None = None,
+        build_task_id: str | None = None,
+        console_authority_db: Path | None = None,
     ) -> None:
         if not ATTEMPT_ID_RE.fullmatch(attempt_id):
             raise CaseAnalysisError("INVALID_ATTEMPT_ID", "Attempt ID is invalid.")
@@ -277,7 +280,20 @@ class Orchestrator:
             else:
                 self.child_env.setdefault(key, value)
                 self.deepseek_env.setdefault(key, value)
-        self.state = self._load_or_initialize()
+        self.revision_id = revision_id
+        self.build_task_id = build_task_id
+        self.console_authority_db = console_authority_db
+        if revision_id:
+            from case_evidence_revision_v1 import bind_build_execution
+            if not console_authority_db or not build_task_id:
+                raise CaseAnalysisError('CASE_REVISION_EXECUTION_INVALID','Revision requires its genuine build task and authorization node.')
+            bind_build_execution(self.pipeline_root,console_authority_db,self.case_id,self.attempt_id,revision_id,build_task_id)
+            self.state_path=self.attempt_root/'human_revisions'/revision_id/'execution_status_v1.json'
+            self.logs_root=self.state_path.parent/'logs'
+            self.state={'case_id':self.case_id,'attempt_id':self.attempt_id,'build_task_id':build_task_id,
+                'status':'queued','current_stage':'structure','progress':0,'error':None}
+        else:
+            self.state = self._load_or_initialize()
 
     def _load_or_initialize(self) -> dict[str, Any]:
         if self.state_path.is_file():
@@ -788,6 +804,25 @@ class Orchestrator:
         return acquisition
 
     def run(self) -> dict[str, Any]:
+        if self.revision_id:
+            from case_evidence_revision_v1 import derive_revision, read, check_ref
+            from operation_lock_v1 import scoped_lock_key
+            revision=self.attempt_root/'human_revisions'/self.revision_id/'revision_v1.json'
+            actor=read(revision)['actor']
+            try:
+                with operation_lock(self.pipeline_root,scoped_lock_key('case',self.case_id)), operation_lock(
+                        self.pipeline_root,f"case-reviewer:{actor['namespace']}:{actor['user_id']}"):
+                    self.state.update(status='running',progress=10)
+                    self.save()
+                    target=derive_revision(self.pipeline_root,self.console_authority_db,self.case_id,self.attempt_id,
+                        self.revision_id,self.build_task_id,self.run_command)
+                    self.state.update(status='completed',progress=100,artifacts={'case_candidate_v1':str(target.candidate)})
+                    self.save()
+                    return self.state
+            except Exception as exc:
+                self.state.update(status='failed',error={'code':getattr(exc,'code','CASE_REVISION_BUILD_FAILED'),'message':str(exc)})
+                self.save()
+                raise
         try:
             acquisition_path = self.attempt_root / "source_acquisition_v1.json"
             self.start_stage("acquire")
@@ -1292,6 +1327,9 @@ def main() -> None:
     parser.add_argument("--source-upload-receipt-sha256", default=None)
     parser.add_argument("--acquisition-provider", choices=["legacy_downloader", "qiyun", "upload_only"], default="legacy_downloader")
     parser.add_argument("--provider-source-url", default=None)
+    parser.add_argument('--revision-id')
+    parser.add_argument('--build-task-id')
+    parser.add_argument('--console-authority-db',type=Path)
     args = parser.parse_args()
     if args.profile and args.operator_profile_hint:
         parser.error("Provide at most one of --profile or --operator-profile-hint")
@@ -1326,6 +1364,9 @@ def main() -> None:
             source_upload_receipt_sha256=args.source_upload_receipt_sha256,
             acquisition_provider=args.acquisition_provider,
             provider_source_url=args.provider_source_url,
+            revision_id=args.revision_id,
+            build_task_id=args.build_task_id,
+            console_authority_db=args.console_authority_db,
         ).run()
     except CaseAnalysisError as exc:
         print(json.dumps({"ok": False, "code": exc.code, "message": str(exc)}, ensure_ascii=False))

@@ -1,5 +1,11 @@
 # Authority Map V1
 
+CASE-SHARE-UX-2 retains separate Case Approval and Shared Display Authority.
+`case_shared_display.py` owns source-bound preview v1.0 and Publication v1.1 with
+Human display decision v1.0; `review_commands.py` coordinates explicit final Human
+command v1.2 and share-result v1.0. See [Case Library Access](../design/CASE_LIBRARY_ACCESS_V1.md).
+Neither the joint action nor its execution result grants media or production rights.
+
 **Status:** Approved Operations Reference
 **System Authority:** [AI Video Ops MVP V1 Frozen Operations Baseline](../product/AI%20Video%20Ops%20MVP%20V1｜End-to-End%20System%20Map%20&%20Operations%20Baseline.md)
 
@@ -98,6 +104,7 @@ Speaker Human Review, shared-customer access and News fail-closed remain unchang
 - Operational Controls own only whether an operator action is paused. They do not own Persona, Content, Batch, Footage, Rights, or Proof lifecycle.
 - Internal Console tasks own execution status only. `queued`, `running`, `awaiting_review`, and `failed` never replace Case lifecycle or Human approval.
 - Case shared display is separate from Case Approval: `case_shared_display.py` owns SHA-bound, append-only `case-shared-display-v1.0` publish/withdraw companions and whitelist projections. Explicit display clearance grants no source-video download, Production Asset Rights, Pattern or Compatibility. Old approvals are unpublished by default. See [Case Library Access V1](../design/CASE_LIBRARY_ACCESS_V1.md).
+- Human Case evidence edits/revisions, effective candidate resolution and final v2 coverage belong to [`case_evidence_revision_v1.py`](../../ops-pipeline/scripts/case_evidence_revision_v1.py). Saved/failed edits do not confer approval; immutable source lineage, current reviewer authority, explicit high-risk handling and existing quality/Approval Gates remain mandatory. See the same Case Library Access owner for compatibility and execution boundaries.
 - Case Console approval uses an explicit local principal capability. Migration 005 owns the immutable node namespace and capability event store; Pipeline `case_console_authorization_v1.py` independently validates current grants. HTTP derives its actor from Session, never request input. Trusted offline maintenance remains a distinct OS authority path; no change to historical reviewer/Receipt SHA. Exact authenticated Task/Group relationships scope private Case Attempts and media; missing lineage remains reviewer-only.
 - Novel News opportunity previews and feature-rollout settings do not own Customer Truth, semantic novelty, approval, or real-customer validation. Novel News approved content is distinct from a Mix Approved Batch and from historical-content repurpose; its presentation entry references separately recorded semantic content.
 - Local source-video existence and remote Douyin playback are not Approved Case Authority. Source traceability is the canonical URL, stable platform video ID, recorded source-media SHA-256, retained metadata, and acquisition lineage.

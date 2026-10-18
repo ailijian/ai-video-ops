@@ -31,6 +31,10 @@ This is a reading route, not a global precedence rule. The Baseline owns system 
 
 ## Machine sources
 
+The [CASE isolated release candidate](../design/CASE_INTAKE_REVIEW_SHARE_V1_ISOLATED_RC.md)
+records the Founder-accepted Intake/Review/Share scope and frozen dependency
+lineage. It does not authorize production rollout or replace the machine owners.
+
 DASH-1's [Brand Operations Home read contract](../design/DASH1_BRAND_OPERATIONS_HOME.md)
 routes the homepage aggregation, action identities and unknown completion metric.
 It combines existing owners without changing Authority or granting permissions.
@@ -48,7 +52,7 @@ Runtime artifact paths in the Authority Map and Artifact Lifecycle are relative 
 | Smart Case intake groups and independent classification labels | Console [intake admission](../../internal-console/app/case_intake_service.py), [classification companion](../../internal-console/app/case_classification.py), and [usage/API boundaries](../../internal-console/README.md#case-smart-intake); canonical analysis and approval retain their existing owners |
 | Customer intake identity, additive Business revisions and explicit Speaker revalidation | [Console contracts and recovery](../../internal-console/README.md#customer-and-speaker-smart-intake), [Customer review writer](../../ops-pipeline/scripts/customer_fact_review_v1.py), [Speaker review writer](../../ops-pipeline/scripts/speaker_fact_review_v1.py); existing Persona builder, resolver and approval remain Authority owners |
 | Shared Authority release provenance and checksums | [Authority release](../../deploy/creative-authority/authority_release.py) |
-| Case publication, reviewer grants and private submission access | [Case Library Access V1](../design/CASE_LIBRARY_ACCESS_V1.md), [final Human quality contract](../../ops-pipeline/scripts/case_human_review_v2.py), [display receipt/projection owner](../../internal-console/app/case_shared_display.py), [principal/access adapter](../../internal-console/app/case_library_access.py), [independent Approval authorization owner](../../ops-pipeline/scripts/case_console_authorization_v1.py); approved Case and production Authority retain their existing owners |
+| Case publication, reviewer grants and private submission access | [Case Library Access V1](../design/CASE_LIBRARY_ACCESS_V1.md), [final Human quality contract](../../ops-pipeline/scripts/case_human_review_v2.py), [evidence revision and coverage owner](../../ops-pipeline/scripts/case_evidence_revision_v1.py), [display receipt/projection owner](../../internal-console/app/case_shared_display.py), [principal/access adapter](../../internal-console/app/case_library_access.py), [independent Approval authorization owner](../../ops-pipeline/scripts/case_console_authorization_v1.py); approved Case and production Authority retain their existing owners |
 
 ## History and evidence
 

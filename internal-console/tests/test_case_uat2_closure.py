@@ -9,6 +9,7 @@ from app.main import build_app, CaseReviewRequest
 from app.case_library_access import manage_reviewer
 from app.canonical_gateway import _sha256, approve_case_candidate, CanonicalOperationError
 from test_case_library_security_v1 import node, ready, publish, CASE_ID
+from review_protocol import historical_case_context
 
 URL = f"/api/cases/{CASE_ID}"
 
@@ -17,7 +18,7 @@ def submission(node, decisions):
     c = node[1]['C'][0]
     detail = c.get(URL).json()
     return {'decision': 'approve', 'evidence_review': decisions,
-            'review_context': detail['approval_context']['token'],
+            'review_context': historical_case_context(c, detail),
             'quality_decision': {**detail['quality_context'], 'decision': 'suitable', 'origin': 'human_final_confirmation'}}
 
 

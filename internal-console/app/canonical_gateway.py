@@ -341,13 +341,28 @@ def _latest_case_attempt(settings: Settings, case_id: str):
     ), default=None)
 
 
-def _attempt_candidate(case_id: str, state_path: Path, state: dict[str, Any]):
+def _case_attempt_root(candidate_path: Path) -> Path:
+    from case_evidence_revision_v1 import root_for_candidate, RevisionError
+    try:
+        return root_for_candidate(candidate_path)
+    except RevisionError as exc:
+        raise CanonicalOperationError(exc.code, str(exc), "请恢复原投稿及准确来源后继续。") from exc
+
+
+def _attempt_candidate(case_id: str, state_path: Path, state: dict[str, Any], *, require_valid=False):
     root = state_path.parent
     candidate = resolve_within(root, str((state.get("artifacts") or {}).get("case_candidate_v1") or ""))
     if (state.get("case_id") != case_id or state.get("attempt_id") != root.name
             or not candidate.is_file() or _read_json(candidate).get("case_id") != case_id):
         raise CanonicalOperationError("CASE_NOT_FOUND", "没有找到这个案例的分析结果。", "请查看对应任务或返回投稿列表。")
-    return candidate, state
+    from case_evidence_revision_v1 import resolve_target, RevisionError
+    # Historical read may show the original analysis together with a pending
+    # revision. Approval must never use that read-only fallback.
+    try:
+        target = resolve_target(root.parents[3], case_id, root.name, require_valid=require_valid)
+    except RevisionError as exc:
+        raise CanonicalOperationError(exc.code, str(exc), "请恢复或重新校验当前修订，不能批准旧版本。") from exc
+    return target.candidate or candidate, state
 
 
 def list_cases(settings: Settings, *, include_terminal: bool = False) -> list[dict[str, Any]]:
@@ -581,7 +596,7 @@ def _find_case_path(
             if (state.get("case_id") != case_id or state.get("attempt_id") != attempt_id
                     or not candidate.is_file() or _read_json(candidate).get("case_id") != case_id):
                 raise ValueError("Attempt mismatch")
-            return candidate, state
+            return _attempt_candidate(case_id,state_path,state)
         except (CanonicalOperationError, ValueError) as exc:
             raise CanonicalOperationError("CASE_NOT_FOUND", "没有找到这个案例。", "请返回案例库。") from exc
     if canonical.is_file():
@@ -779,6 +794,13 @@ def get_case_detail(settings: Settings, case_id: str, *, attempt_id: str | None 
         )
         if review_receipt_path.is_file():
             review_receipt = _read_json(review_receipt_path)
+    full_narration=(case.get('audio_evidence') or {}).get('transcript_safe_semantic')
+    if case.get('human_evidence_revision'):
+        board_ref=(case.get('storyboard') or {}).get('artifact') or {}
+        path=resolve_within(settings.pipeline_root,str(board_ref.get('path') or ''))
+        if not path.is_file() or _sha256(path)!=board_ref.get('sha256'):
+            raise CanonicalOperationError('CASE_REVISION_SOURCE_STALE','修订后的口播来源无法核对。','请恢复准确派生证据，不能显示旧识别为当前结果。')
+        full_narration=''.join(str(s.get('text_safe_verbatim') or '') for s in _read_json(path).get('narration_track',[]))
     return {
         **projection,
         "status": ("returned" if review_receipt.get("decision") == "reanalyze" else "rejected") if review_receipt.get("decision") in {"reject", "reanalyze"} else projection["status"],
@@ -813,7 +835,7 @@ def get_case_detail(settings: Settings, case_id: str, *, attempt_id: str | None 
         ],
         "full_breakdown": {
             "narration": _safe_chinese_text(
-                (case.get("audio_evidence") or {}).get("transcript_safe_semantic"),
+                full_narration,
                 max_length=12000,
             ),
             "shots": shots,
@@ -1364,7 +1386,7 @@ def _approval_candidate(
     latest = _latest_case_attempt(settings, case_id)
     if latest and latest[1].get("status") in {"awaiting_review", "approved"}:
         try:
-            return _attempt_candidate(case_id, *latest)
+            return _attempt_candidate(case_id, *latest, require_valid=True)
         except CanonicalOperationError as exc:
             raise CanonicalOperationError("CASE_APPROVAL_RECOVERY_REQUIRED", "当前分析身份或候选资料不完整。", "请核对精确 Attempt，不能改用其他历史候选批准。") from exc
     return None
@@ -1381,7 +1403,36 @@ def _prepare_final_evidence_review(
     *,
     reviewer: str,
     reviewer_user_id: int | None,
+    review_command=None,
 ) -> Path | None:
+    from case_evidence_revision_v1 import require_confirmation_contract, RevisionError
+    try:
+        require_confirmation_contract(review_command['context'] if review_command else None, decisions)
+    except RevisionError as exc:
+        raise CanonicalOperationError(exc.code, str(exc), '请恢复完整来源与依赖证据，或重新分析；不能改用旧版勾选批准。') from exc
+    if isinstance(decisions,dict) and decisions.get('schema_version') == 'case-evidence-final-review-v2.0':
+        from case_evidence_revision_v1 import final_review, RevisionError
+        from human_review_operations_v1 import write_once
+        if review_command is None:
+            raise CanonicalOperationError('CASE_EVIDENCE_SCOPE_STALE','缺少准确的最终确认操作。','请重新打开审核页面。')
+        context=review_command['context']
+        directory=_case_attempt_root(candidate_path)
+        try:
+            receipt=final_review(directory.parents[3],case['case_id'],directory.name,decisions,
+                actor=context['actor'],reviewer=reviewer,operation_id=context['operation_id'],reviewed_at=review_command['at'])
+        except RevisionError as exc:
+            if exc.code.startswith('CASE_REVISION_SOURCE_'):
+                raise CanonicalOperationError('CASE_EVIDENCE_SCOPE_UNAVAILABLE','当前审核范围的来源无法完整核对。',
+                    '请恢复完整来源与依赖证据，或重新分析；不能改用旧版勾选批准。') from exc
+            raise CanonicalOperationError(exc.code,str(exc),'请处理明确疑点后再批准。') from exc
+        except (OSError,ValueError,KeyError,TypeError,RuntimeError) as exc:
+            raise CanonicalOperationError('CASE_EVIDENCE_SCOPE_UNAVAILABLE','当前审核范围无法重新核对。',
+                '请恢复完整来源与依赖证据，或重新分析；不能改用旧版勾选批准。') from exc
+        path=directory/'final_reviews'/(context['operation_id']+'.json')
+        write_once(path,receipt)  # Persistence errors remain server errors, never source validation.
+        return path
+    if case.get('human_evidence_revision'):
+        raise CanonicalOperationError('CASE_EVIDENCE_SCOPE_STALE','修订后的案例必须使用新版完整审核范围。','请刷新页面，不能沿旧接口保留原识别。')
     pending = case.get("review_pending") or {}
     required = pending.get("requires_explicit_confirmation") is True
     if not required:
@@ -1394,7 +1445,7 @@ def _prepare_final_evidence_review(
         raise CanonicalOperationError(
             "CASE_EVIDENCE_REVIEW_REQUIRED", "请先确认分析中的疑点。", "逐项确认后再批准入库。"
         )
-    attempt_root = candidate_path.parents[2].resolve()
+    attempt_root = _case_attempt_root(candidate_path)
     paths: dict[str, Path] = {}
     for key in ("narration_review_v1", "shot_boundaries"):
         path = Path(str((case.get("source_artifacts") or {}).get(key) or ""))
@@ -1651,7 +1702,7 @@ def _reconcile_partial_case_approval(
     requested_by: str,
 ) -> dict[str, Any]:
     canonical_path = settings.pipeline_root / "data" / "cases" / case_id / "case_v1.json"
-    state_path = candidate_path.parents[2] / "case_analysis_attempt_v1.json"
+    state_path = _case_attempt_root(candidate_path) / "case_analysis_attempt_v1.json"
     attempt_id = str(state.get("attempt_id") or "")
     _, receipt = _validate_approved_case_artifacts(
         canonical_path,
@@ -1776,7 +1827,7 @@ def _approve_case_candidate(settings, case_id, *, reviewer, note,
         )
     candidate_path, state = candidate
     attempt_id = str(state.get("attempt_id") or "")
-    prior_decision = candidate_path.parents[2] / "human_review_decision_v1.json"
+    prior_decision = _case_attempt_root(candidate_path) / "human_review_decision_v1.json"
     if prior_decision.is_file():
         raise CanonicalOperationError("CASE_REVIEW_NOT_READY", "该候选已退回或未收录。", "请继续对应的新尝试，不能批准已结束的候选。")
     if canonical_path.is_file():
@@ -1789,7 +1840,7 @@ def _approve_case_candidate(settings, case_id, *, reviewer, note,
                 state,
                 requested_by=reviewer,
             )
-        backup = candidate_path.parents[2] / "superseded_canonical"
+        backup = _case_attempt_root(candidate_path) / "superseded_canonical"
         if not backup.exists():
             shutil.copytree(canonical_dir, backup)
     if state.get("status") != "awaiting_review":
@@ -1805,6 +1856,7 @@ def _approve_case_candidate(settings, case_id, *, reviewer, note,
         evidence_review,
         reviewer=reviewer,
         reviewer_user_id=reviewer_user_id,
+        review_command=review_command,
     )
     from case_human_review_v2 import validate_quality_decision
     try:
@@ -1876,7 +1928,7 @@ def _approve_case_candidate(settings, case_id, *, reviewer, note,
     quality_input.unlink()
     companion_path = _approval_companion_path(settings, case_id)
     staged_companion_path = companion_path.parent / ".approval-companion.stage"
-    state_path = candidate_path.parents[2] / "case_analysis_attempt_v1.json"
+    state_path = _case_attempt_root(candidate_path) / "case_analysis_attempt_v1.json"
     staged_state_path = state_path.parent / ".approval-state.stage"
     try:
         staged_receipt_path = staged_case_path.parent / "approval_receipt.json"
@@ -1956,7 +2008,7 @@ def record_case_review_decision(
     return _record_case_review_decision(settings,case_id,reviewer=reviewer,decision=decision,reason=reason, expected_target=expected_target, decided_at=decided_at)
 
 
-def _bound_case_candidate(settings, case_id, expected):
+def _bound_case_candidate(settings, case_id, expected, *, for_approval=True):
     path = settings.pipeline_root / expected["artifact"]
     base = (settings.pipeline_root / "data/case_analysis_attempts" / case_id / str(expected["attempt_id"])).resolve()
     if not path.resolve().is_relative_to(base) or _sha256(path) != expected["artifact_sha256"]:
@@ -1964,11 +2016,14 @@ def _bound_case_candidate(settings, case_id, expected):
     state = _read_json(base / "case_analysis_attempt_v1.json")
     if state.get("case_id") != case_id or state.get("attempt_id") != expected["attempt_id"]:
         raise CanonicalOperationError("REVIEW_CONTEXT_STALE", "案例身份不匹配。", "请重新核对。")
+    effective, _ = _attempt_candidate(case_id, base / "case_analysis_attempt_v1.json", state, require_valid=for_approval)
+    if effective.resolve() != path.resolve():
+        raise CanonicalOperationError("REVIEW_CONTEXT_STALE", "案例已有更新修订。", "请重新核对当前版本。")
     return path, state
 
 
 def _record_case_review_decision(settings,case_id,*,reviewer,decision,reason,expected_target=None,decided_at=None):
-    candidate = _bound_case_candidate(settings,case_id,expected_target) if expected_target else _latest_candidate(settings, case_id)
+    candidate = _bound_case_candidate(settings,case_id,expected_target,for_approval=False) if expected_target else _latest_candidate(settings, case_id)
     if candidate is None:
         raise CanonicalOperationError(
             "CASE_REVIEW_NOT_READY",
@@ -1988,7 +2043,7 @@ def _record_case_review_decision(settings,case_id,*,reviewer,decision,reason,exp
         "decided_at": decided_at or datetime.now(timezone.utc).isoformat(),
         "media_reuse_rights_changed": False,
     }
-    receipt_path = candidate_path.parents[2] / "human_review_decision_v1.json"
+    receipt_path = _case_attempt_root(candidate_path) / "human_review_decision_v1.json"
     from human_review_operations_v1 import write_once
     try:
         write_once(receipt_path, receipt)
@@ -1999,7 +2054,7 @@ def _record_case_review_decision(settings,case_id,*,reviewer,decision,reason,exp
         state["status"] = "rejected"
         state["current_stage"] = "不收录"
     state["updated_at"] = datetime.now(timezone.utc).isoformat()
-    attempt_root = candidate_path.parents[2]
+    attempt_root = _case_attempt_root(candidate_path)
     state_path = attempt_root / "case_analysis_attempt_v1.json"
     _write_atomic(state_path, state)
     if decision == "reject":

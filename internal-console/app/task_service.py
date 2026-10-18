@@ -109,6 +109,10 @@ def _row_to_task(row: Any) -> dict[str, Any]:
         elif task_type in {"content_generation", "excel_export"}:
             public_error = "后台操作没有完成，请按提示刷新业务状态后重试。"
 
+        elif task_type == "case_analysis" and payload.get("evidence_revision"):
+            public_error = ("修订隐私检查没有通过，已保存的修改仍然保留。"
+                            if "privacy" in lowered else "修订校验没有完成，已保存的修改仍然保留。")
+
         elif row["error_code"] == "SOURCE_PROVIDER_RATE_LIMITED":
             public_error = "视频解析请求较多，请稍后重新分析；也可以上传本地视频。"
 
@@ -197,6 +201,7 @@ def latest_subject_task(
             f"""SELECT {TASK_COLUMNS} FROM tasks AS t
             LEFT JOIN users AS u ON u.id = t.created_by_user_id
             WHERE t.task_type = ? AND t.subject_ref = ?
+              AND (t.task_type != 'case_analysis' OR json_extract(t.payload_json,'$.evidence_revision') IS NULL)
               AND (? IS NULL OR json_extract(t.payload_json, '$.intake_id') = ?)
             ORDER BY t.rowid DESC LIMIT 1""",
             (task_type, subject_ref, intake_id, intake_id),
@@ -232,6 +237,7 @@ def find_active_case_task(database_path: Path, case_id: str) -> dict[str, Any] |
             FROM tasks AS t
             LEFT JOIN users AS u ON u.id = t.created_by_user_id
             WHERE t.task_type = 'case_analysis' AND t.subject_ref = ?
+              AND json_extract(t.payload_json,'$.evidence_revision') IS NULL
               AND t.status IN ('queued', 'running', 'awaiting_review')
             ORDER BY t.updated_at DESC LIMIT 1
             """.format(columns=TASK_COLUMNS),
@@ -715,6 +721,21 @@ STAGE_LABELS = {
 }
 
 
+def end_case_revision_tasks(settings: Settings, case_id: str, attempt_id: str) -> None:
+    """Execution closure projected from the exact immutable Human terminal decision.
+
+    There is no new Task status: existing completed also closes rejected source
+    analysis. Stage text explicitly says no further calculation was performed.
+    Failed/completed history is retained; later retry rechecks the parent Gate.
+    """
+    with transaction(settings.database_path) as db:
+        rows=db.execute("SELECT task_id FROM tasks WHERE task_type='case_analysis' AND subject_ref=? "
+            "AND json_extract(payload_json,'$.evidence_revision.attempt_id')=? AND status IN ('queued','running','awaiting_review')",
+            (case_id,attempt_id)).fetchall()
+    for row in rows:
+        update_task(settings.database_path,row['task_id'],status='completed',stage='原投稿已结束，未继续计算')
+
+
 class CaseTaskRunner:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -737,6 +758,16 @@ class CaseTaskRunner:
         if task is None:
             return None
         case_id = str(task["subject_ref"] or "")
+        revision = task['payload'].get('evidence_revision')
+        if revision:
+            from case_evidence_revision_v1 import resolve_target
+            try:
+                parent=self.settings.pipeline_root/'data/case_analysis_attempts'/case_id/revision['attempt_id']
+                if (parent/'human_review_decision_v1.json').exists():return 'completed'
+                target=resolve_target(self.settings.pipeline_root,case_id,revision['attempt_id'])
+                return 'completed' if target.state=='validated' else 'failed' if target.state=='failed' else None
+            except (OSError,ValueError,RuntimeError):
+                return None
         if approved_case_attempt_id(self.settings, case_id) == task_id:
             return "completed"
         state_path = (
@@ -910,6 +941,14 @@ class CaseTaskRunner:
                 ])
             if payload.get("provider_source_url"):
                 command.extend(["--provider-source-url", str(payload["provider_source_url"])])
+            revision=payload.get('evidence_revision')
+            if revision:
+                command=[self.settings.pipeline_python_executable or self.settings.python_executable,
+                    str(self.settings.pipeline_root/'scripts/case_analysis_v1.py'),
+                    '--source-url',str(payload['source_url']),'--attempt-id',revision['attempt_id'],
+                    '--revision-id',revision['revision_id'],'--build-task-id',task_id,
+                    '--console-authority-db',str(self.settings.database_path)]
+                state_path=self.settings.pipeline_root/'data/case_analysis_attempts'/case_id/revision['attempt_id']/'human_revisions'/revision['revision_id']/'execution_status_v1.json'
             child_env = pipeline_subprocess_env(
                 needs_deepseek=True,
                 needs_qiyun=(payload.get("acquisition_provider") == "qiyun" and not payload.get("source_upload")),
@@ -969,9 +1008,9 @@ class CaseTaskRunner:
             update_task(
                 self.settings.database_path,
                 task_id,
-                status="awaiting_review",
+                status="completed" if revision else "awaiting_review",
                 progress=100,
-                stage="等待人工审核",
+                stage="修订校验完成" if revision else "等待人工审核",
             )
         except Exception as exc:
             update_task(

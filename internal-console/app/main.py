@@ -272,15 +272,41 @@ class CaseEvidenceReviewRequest(BaseModel):
     shot_decisions: list[CaseEvidenceDecision] = Field(default_factory=list, max_length=100)
 
 
+class CaseFinalEvidenceReviewRequest(BaseModel):
+    model_config = {"extra":"forbid"}
+    schema_version: Literal['case-evidence-final-review-v2.0']
+    confirmation_mode: Literal['final_bulk_keep']
+    scope_sha256: str = Field(pattern=r'^[a-f0-9]{64}$')
+    explicit_keep_ids: list[str] = Field(default_factory=list,max_length=200)
+
+
+class CaseSharingDecision(BaseModel):
+    model_config = {"extra":"forbid"}
+    schema_version: Literal['case-human-display-decision-v1.0']
+    decision: Literal['publish_exact_preview','approve_only']
+    preview_sha256: str = Field(pattern=r'^[a-f0-9]{64}$')
+    preview: dict[str, Any]
+    blocker_sha256: str | None = Field(...,pattern=r'^[a-f0-9]{64}$')
+    origin: Literal['human_joint_final_confirmation']
+
+
+class CaseSharePreviewRequest(BaseModel):
+    model_config = {"extra":"forbid"}
+    title: str | None = Field(default=None,max_length=120)
+    structure_summary: str | None = Field(default=None,max_length=1000)
+
+
 class CaseReviewRequest(BaseModel):
+    model_config = {"extra":"forbid"}
     review_context: str | None = Field(default=None, max_length=50000)
     decision: Literal["reject", "reanalyze", "approve"]
     reason: str = Field(default="", max_length=1000)
     operator_profile_hint: Literal["mix", "news", "hybrid", "uncertain"] | None = None
     industry: str | None = Field(default=None, max_length=30)
     source_upload_id: str | None = Field(default=None, pattern=r"^[a-f0-9]{32}$")
-    evidence_review: CaseEvidenceReviewRequest | None = None
+    evidence_review: CaseFinalEvidenceReviewRequest | CaseEvidenceReviewRequest | None = None
     quality_decision: dict[str, Any] | None = None
+    sharing_decision: CaseSharingDecision | None = None
 
 
 class CaseProfileAnnotationRequest(BaseModel):
@@ -668,7 +694,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                     status="completed", progress=100, stage="已批准入库",
                     error_code=None, error_message=None,
                 )
-            elif task["status"] in {"failed", "completed"} and active_task_id and active_task_id != task["task_id"]:
+            elif (task["status"] in {"failed", "completed"} and active_task_id
+                    and active_task_id != task["task_id"]
+                    and not task["payload"].get("evidence_revision")):
                 current["current_active_task_id"] = active_task_id
             projected.append(current)
         return projected
@@ -856,6 +884,11 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             "CASE_PROFILE_COMPATIBILITY_NOT_APPROVED",
             "NO_APPROVED_COMPATIBLE_CASE",
         } else 503
+        if exc.code.startswith('CASE_REVISION_') or exc.code in {'CASE_EVIDENCE_SCOPE_STALE','CASE_EVIDENCE_SCOPE_UNAVAILABLE','CASE_EVIDENCE_RISK_UNRESOLVED'}:
+            status_code = 422 if exc.code in {'CASE_REVISION_ID_INVALID','CASE_REVISION_EDIT_INVALID','CASE_REVISION_SEGMENT_INVALID',
+                'CASE_REVISION_BOUNDARY_INVALID','CASE_REVISION_TIMELINE_INVALID'} else 409
+        if exc.code.startswith('CASE_SHARE_'):
+            status_code = 503 if exc.code=='CASE_SHARE_PUBLICATION_PENDING' else 409
         detail = error_detail(exc.code, exc.message, exc.next_action)
         detail.update(exc.details)
         return JSONResponse(
@@ -936,23 +969,43 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
     def review_command(kind, identity, session, payload, request_path, execute, *, business_id=None, preflight=None):
         review_commands.reject_borrowed_context(payload.review_context,{"actor":case_principal(settings,int(session.user["id"]))})
+        intent_payload=payload.model_dump(exclude={"review_context"},exclude_none=True)
+        # In the revision contract null is an explicit CAS against the original
+        # head. Preserve it in durable recovery; legacy payload encoding stays v1.
+        if 'expected_revision_sha256' in type(payload).model_fields:
+            intent_payload['expected_revision_sha256']=payload.expected_revision_sha256
+        if getattr(payload,'sharing_decision',None) is not None:
+            intent_payload['sharing_decision']=payload.sharing_decision.model_dump()
         def perform():
             command = review_commands.begin(settings, kind, identity, int(session.user["id"]),
                 payload.review_context, {"request_path": request_path,
-                    "payload": payload.model_dump(exclude={"review_context"}, exclude_none=True)}, business_id=business_id, validate_only=preflight is not None)
+                    "payload": intent_payload}, business_id=business_id, validate_only=preflight is not None)
+            joint=kind=='case' and command['context']['version']==review_commands.JOINT_CASE_VERSION and intent_payload.get('decision')=='approve'
+            if joint and command['result'] is not None:
+                reviewer_authorization(settings,case_principal(settings,int(session.user['id'])))
+                approved=review_commands.committed_case_result(settings,command)
+                return review_commands.present_joint(settings,review_commands.validate_joint_result(settings,command,approved))
             if kind == "case":
                 recovered = review_commands.committed_case_result(settings, command)
                 if recovered is not None:
+                    if joint:
+                        return review_commands.present_joint(settings,review_commands.complete_joint(settings,command,recovered))
                     return review_commands.finish(command, recovered)
             if command["result"] is not None:
                 if command["result"].get("status") == "cancelled_before_commit":
                     raise review_commands.blocked("REVIEW_REPLAY_CONFLICT", "这次未保存的提交已取消，请重新核对后提交。")
                 return command["result"]
             if preflight is not None and not command["saved"]:
-                preflight()
+                preflight(command)
                 command = review_commands.begin(settings, kind, identity, int(session.user["id"]), payload.review_context,
-                    {"request_path": request_path, "payload": payload.model_dump(exclude={"review_context"}, exclude_none=True)}, business_id=business_id)
-            return review_commands.finish(command, execute(command))
+                    {"request_path": request_path, "payload": intent_payload}, business_id=business_id)
+            if joint:
+                from .case_shared_display import validate_sharing_decision
+                validate_sharing_decision(settings,command,intent_payload.get('sharing_decision'))
+            executed=execute(command)
+            if joint:
+                return review_commands.present_joint(settings,review_commands.complete_joint(settings,command,executed))
+            return review_commands.finish(command, executed)
         return locked_authority_call("case" if kind == "case" else "business",
             identity if kind != "speaker" else business_id, perform)
 
@@ -964,6 +1017,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404)
         if kind == "case" and not is_reviewer(settings, int(session.user["id"])):
             return {"operations": []}
+        if kind == "case":
+            return {"operations": locked_authority_call("case", identity, review_commands.pending,
+                settings, kind, identity, int(session.user["id"]))}
         return {"operations": review_commands.pending(settings, kind, identity, int(session.user["id"]))}
 
 
@@ -3194,7 +3250,25 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         if reviewer and detail["review"]["approved"]:
             detail["publication_context"]=publication_context(settings,case_id)
             detail["shared_display"]=shared_projection(settings,case_id)
-        detail["approval_context"] = review_commands.issue(settings, "case", case_id, user_id) if detail["review"]["can_review"] else None
+        if detail['review']['approved']:
+            from .case_shared_display import sharing_status
+            detail.update(sharing_status(settings,case_id))
+        sharing=None
+        if detail['review']['can_review']:
+            try:
+                require_case_classification(case_id)
+                from .case_shared_display import share_preview
+                sharing=share_preview(settings,case_id,case_principal(settings,user_id))
+            except HTTPException as exc:
+                if exc.status_code!=409 or not isinstance(exc.detail,dict) or exc.detail.get('code')!='CASE_CLASSIFICATION_REQUIRED':
+                    raise
+                detail['share_preview_error']={'message':exc.detail['message'],'next_action':exc.detail['next_action']}
+            except CanonicalOperationError as exc:
+                detail['share_preview_error']={'message':exc.message,'next_action':exc.next_action}
+            except (OSError,ValueError,RuntimeError,TypeError,KeyError):
+                detail['share_preview_error']={'message':'安全展示预览暂不可核对，请恢复来源或重新分析。','next_action':'原修订和审核记录保留，暂不能批准。'}
+        detail['share_preview']=sharing
+        detail["approval_context"] = review_commands.issue(settings, "case", case_id, user_id,sharing=sharing,joint=True) if detail["review"]["can_review"] else None
         if detail["approval_context"] and not detail["review"].get("approval_recovery_required"):
             from case_human_review_v2 import quality_context
             from .canonical_gateway import _find_case_path
@@ -3203,7 +3277,25 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             except (OSError, ValueError, KeyError, TypeError):
                 detail["quality_context"] = None  # Incomplete evidence can be read, never approved.
         detail["visibility"]="private"
+        if reviewer and detail['review']['can_review'] and not detail['review'].get('approval_recovery_required'):
+            from .case_evidence_review import workspace
+            detail['evidence_workspace']=workspace(settings,case_id,detail['review']['attempt_id'])
         return detail
+
+    @app.post('/api/cases/{case_id}/share-preview')
+    def case_share_preview(case_id: str, payload: CaseSharePreviewRequest,
+            x_csrf_token: str | None = Header(default=None,alias='X-CSRF-Token'),
+            session: SessionContext = Depends(require_console_access)):
+        require_csrf(session,x_csrf_token)
+        actor=case_principal(settings,int(session.user['id']))
+        reviewer_authorization(settings,actor)
+        require_private_case(settings,actor['user_id'],case_id)
+        def prepare():
+            require_case_classification(case_id)
+            from .case_shared_display import share_preview
+            sharing=share_preview(settings,case_id,actor,**payload.model_dump())
+            return {'share_preview':sharing,'approval_context':review_commands.issue(settings,'case',case_id,actor['user_id'],sharing=sharing,joint=True)}
+        return locked_authority_call('case',case_id,prepare)
 
     @app.get("/api/cases/{case_id}/media")
     def case_media(
@@ -3257,6 +3349,19 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             note=payload.note,
         )}
 
+    def require_case_classification(case_id):
+        with transaction(settings.database_path) as connection:
+            latest = connection.execute("SELECT task_id FROM tasks WHERE task_type='case_analysis' AND json_extract(payload_json,'$.evidence_revision') IS NULL AND subject_ref=? ORDER BY created_at DESC,task_id DESC LIMIT 1", (case_id,)).fetchone()
+        latest_task = get_task(settings.database_path, latest["task_id"]) if latest else None
+        if latest_task and not (latest_task["payload"].get("operator_profile_hint") or latest_task["payload"].get("profile")):
+            current = get_case_detail(settings, case_id)
+            intake_task = get_task(settings.database_path, str(current["review"].get("attempt_id") or ""))
+            if (intake_task and not intake_task["payload"].get("operator_profile_hint")
+                    and not intake_task["payload"].get("profile")
+                    and not current["review"].get("approval_recovery_required")
+                    and classification_state(settings, case_id)["status"] != "confirmed"):
+                raise HTTPException(409, detail=error_detail("CASE_CLASSIFICATION_REQUIRED", "请先检查并确认分类。", "确认分类后继续案例审核；分类确认不会批准入库。"))
+
     @app.post("/api/cases/{case_id}/review")
     def review_case(
         case_id: str,
@@ -3268,8 +3373,17 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         reviewer_authorization(settings, case_principal(settings, int(session.user["id"])))
         upload_cache = None
 
-        def preflight():
+        def preflight(_command):
             nonlocal upload_cache
+            if payload.decision=='approve' and _command['context']['version']==review_commands.JOINT_CASE_VERSION:
+                require_case_classification(case_id)
+                from case_evidence_revision_v1 import require_confirmation_contract, RevisionError
+                try:
+                    require_confirmation_contract(_command['context'],payload.evidence_review.model_dump() if payload.evidence_review else None)
+                except RevisionError as exc:
+                    raise CanonicalOperationError(exc.code,str(exc),'请恢复准确审核范围后继续。') from exc
+                from .case_shared_display import validate_sharing_decision
+                validate_sharing_decision(settings,_command,payload.sharing_decision.model_dump() if payload.sharing_decision else None)
             if payload.decision in {"reject", "reanalyze"} and not payload.reason.strip():
                 raise HTTPException(422, detail=error_detail("CASE_REVIEW_REASON_REQUIRED", "请填写不收录或重新分析的原因。", "补充原因后再次提交。"))
             if payload.source_upload_id and payload.decision != "reanalyze":
@@ -3349,19 +3463,6 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 ))
         reviewer = str(session.user["phone"])
         if payload.decision == "approve":
-            def approve_classified_candidate(settings, case_id, **kwargs):
-                with transaction(settings.database_path) as connection:
-                    latest = connection.execute("SELECT task_id FROM tasks WHERE task_type='case_analysis' AND subject_ref=? ORDER BY created_at DESC,task_id DESC LIMIT 1", (case_id,)).fetchone()
-                latest_task = get_task(settings.database_path, latest["task_id"]) if latest else None
-                if latest_task and not (latest_task["payload"].get("operator_profile_hint") or latest_task["payload"].get("profile")):
-                    current = get_case_detail(settings, case_id)
-                    intake_task = get_task(settings.database_path, str(current["review"].get("attempt_id") or ""))
-                    if (intake_task and not intake_task["payload"].get("operator_profile_hint")
-                            and not intake_task["payload"].get("profile")
-                            and not current["review"].get("approval_recovery_required")
-                            and classification_state(settings, case_id)["status"] != "confirmed"):
-                        raise HTTPException(409, detail=error_detail("CASE_CLASSIFICATION_REQUIRED", "请先检查并确认分类。", "确认分类后继续案例审核；分类确认不会批准入库。"))
-                return approve_case_candidate(settings, case_id, **kwargs)
             approval_kwargs: dict[str, Any] = {
                 "reviewer": reviewer,
                 "note": reason,
@@ -3373,7 +3474,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             if payload.evidence_review is not None:
                 approval_kwargs["evidence_review"] = payload.evidence_review.model_dump()
                 approval_kwargs["reviewer_user_id"] = int(session.user["id"])
-            detail = approve_classified_candidate(settings, case_id, **approval_kwargs)
+            require_case_classification(case_id)
+            detail = approve_case_candidate(settings, case_id, **approval_kwargs)
             mark_task_reviewed(
                 settings.database_path, case_id, "已批准入库",
                 attempt_id=(detail.get("review") or {}).get("attempt_id"),
@@ -3385,6 +3487,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             decision=payload.decision, reason=reason,
             review_principal=case_principal(settings, int(session.user["id"])),
             expected_target=command["context"]["snapshot"], decided_at=command["at"])
+        from .task_service import end_case_revision_tasks
+        end_case_revision_tasks(settings,case_id,decision['attempt_id'])
         if payload.decision == "reject":
             mark_task_reviewed(
                 settings.database_path, case_id, "不收录",
@@ -3465,21 +3569,34 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(404, detail=error_detail("TASK_NOT_FOUND", "没有找到案例解析任务。", "请返回任务列表。"))
         require_task(settings,int(session.user["id"]),task)
         with authority_operation_lock(settings, "case", str(task["subject_ref"])):
-            duplicate = resolve_case_source_duplicate(settings, str(task["payload"]["source_url"]))
+            revision=task['payload'].get('evidence_revision')
+            if revision:
+                from case_evidence_revision_v1 import resolve_target, RevisionError
+                reviewer_authorization(settings,case_principal(settings,int(session.user['id'])))
+                try:
+                    target=resolve_target(settings.pipeline_root,task['subject_ref'],revision['attempt_id'])
+                    if ((target.attempt_root/'human_review_decision_v1.json').exists()
+                            or (settings.pipeline_root/'data/cases'/task['subject_ref']/'approval_receipt.json').exists()):
+                        raise RevisionError('CASE_REVISION_TERMINAL','原投稿已结束，不能重试旧修订。')
+                    if target.revision_root.name!=revision['revision_id'] or target.revision_ref['sha256']!=revision['revision_sha256'] or target.state=='validated':
+                        raise RevisionError('CASE_REVISION_HEAD_STALE','该任务不再是待恢复的当前修订。')
+                except RevisionError as exc:
+                    raise CanonicalOperationError(exc.code,str(exc),'请刷新案例并恢复当前修订。') from exc
+            duplicate = None if revision else resolve_case_source_duplicate(settings, str(task["payload"]["source_url"]))
             if duplicate and duplicate.get("state") in {"approved", "rejected", "awaiting_review"}:
                 raise HTTPException(409, detail=error_detail("CASE_RETRY_BLOCKED", "这条视频已有审核结果。", "请查看已有案例。"))
-            active = find_active_case_task(settings.database_path, str(task["subject_ref"]))
+            active = None if revision else find_active_case_task(settings.database_path, str(task["subject_ref"]))
             if active:
                 require_task(settings,int(session.user["id"]),active)
                 return {"task": active}
             with transaction(settings.database_path, immediate=True) as connection:
                 row = connection.execute("SELECT status,payload_json,created_by_user_id FROM tasks WHERE task_id=?", (task_id,)).fetchone()
                 latest = connection.execute("SELECT task_id FROM tasks WHERE task_type='case_analysis' AND subject_ref=? ORDER BY created_at DESC,task_id DESC LIMIT 1", (task["subject_ref"],)).fetchone()
-                if latest["task_id"] != task_id:
+                if not revision and latest["task_id"] != task_id:
                     raise HTTPException(409, detail=error_detail("CASE_RETRY_SUPERSEDED", "已有更新的分析记录。", "请恢复最新任务。"))
                 if row["status"] != "failed":
                     raise HTTPException(409, detail=error_detail("CASE_RETRY_BLOCKED", "任务状态已变化。", "刷新后查看当前任务。"))
-                if pending_boundary_review(settings, task):
+                if not revision and pending_boundary_review(settings, task):
                     raise HTTPException(409, detail=error_detail("CASE_BOUNDARY_REVIEW_REQUIRED", "请先确认待判断的分镜。", "进入任务详情确认分镜后继续。"))
                 ensure_task_capacity(connection, queue_max=settings.task_queue_max,
                                      gpu_pending_per_user_max=settings.gpu_pending_per_user_max,
@@ -3515,6 +3632,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                     status_code=404,
                     detail=error_detail("TASK_NOT_FOUND", "没有找到这个任务。", "请返回任务记录重新选择。"),
                 )
+            if task['payload'].get('evidence_revision'):
+                raise HTTPException(409,detail=error_detail('CASE_EVIDENCE_SCOPE_STALE','修订必须通过完整新版审核范围处理。','请返回案例审核页。'))
             try:
                 resumed = submit_boundary_review(
                     settings,
@@ -3539,6 +3658,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         return {"case_analysis": case_capability()}
 
     assets_path = static_path / "assets"
+    from .case_evidence_review import register_routes as register_case_evidence_routes
+    register_case_evidence_routes(app,settings,require_console_access,require_csrf,review_command,task_runner)
     app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
 
     @app.get("/{full_path:path}", include_in_schema=False)

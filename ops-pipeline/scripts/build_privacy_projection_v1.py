@@ -101,6 +101,7 @@ def main() -> None:
     parser.add_argument("--case-id", required=True)
     parser.add_argument("--visual-v1", required=True)
     parser.add_argument("--audio-v1", required=True)
+    parser.add_argument("--human-evidence-edit", default=None)
     parser.add_argument("--output-root", default=None)
     args = parser.parse_args()
 
@@ -123,6 +124,23 @@ def main() -> None:
     speech_evidence_status = require_audio_speech_evidence(audio)
 
     annotations, inspected = collect_annotations(visual, audio)
+    edit_source = None
+    if args.human_evidence_edit:
+        from case_evidence_revision_v1 import EDIT_VERSION
+        edit_path = Path(args.human_evidence_edit).resolve()
+        edit = read_json(edit_path)
+        if edit.get("schema_version") != EDIT_VERSION or edit.get("case_id") != args.case_id:
+            raise RuntimeError("Human revision privacy source identity mismatch.")
+        for key, expected in before_hashes.items():
+            if edit.get("source_refs", {}).get(key, {}).get("sha256") != expected:
+                raise RuntimeError("Human revision privacy source SHA mismatch.")
+        for item in edit.get("narration_edits", []):
+            inspected += 1
+            record = build_privacy_annotation(source_ref=item["segment_id"],
+                field="human_revision.corrected_text", value=item["corrected_text"])
+            if record["annotations"]:
+                annotations.append(record)
+        edit_source = {"path":str(edit_path), "sha256":sha256_file(edit_path)}
     high_redactions = sum(
         1
         for record in annotations
@@ -189,6 +207,8 @@ def main() -> None:
             "raw_sources_modified": False,
         },
     }
+    if edit_source:
+        artifact["source_artifacts"]["human_evidence_edit"] = edit_source
     output_path.write_text(
         json.dumps(artifact, ensure_ascii=False, indent=2),
         encoding="utf-8",

@@ -8,17 +8,25 @@ import uuid
 from pathlib import Path
 
 
+def io_path(path):
+    """Windows extended paths for IO only; never change persisted identities."""
+    path = Path(path).resolve()
+    if os.name == 'nt' and not str(path).startswith('\\\\?\\'):
+        return Path('\\\\?\\'+str(path))
+    return path
+
+
 def digest(value):
     return hashlib.sha256(json.dumps(value, sort_keys=True, ensure_ascii=False,
         separators=(",", ":")).encode("utf-8")).hexdigest()
 
 
 def file_sha(path):
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+    return hashlib.sha256(io_path(path).read_bytes()).hexdigest()
 
 
 def read(path):
-    value = json.loads(Path(path).read_text(encoding="utf-8-sig"))
+    value = json.loads(io_path(path).read_text(encoding="utf-8-sig"))
     if not isinstance(value, dict):
         raise RuntimeError("Invalid Human operation record")
     return value
@@ -26,7 +34,7 @@ def read(path):
 
 def write_once(path, value):
     """Atomic, exclusive publication; an interrupted retry cannot overwrite history."""
-    path = Path(path)
+    path = io_path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     if path.exists():
         if read(path) != value:

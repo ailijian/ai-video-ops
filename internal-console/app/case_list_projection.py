@@ -5,7 +5,7 @@ from .canonical_gateway import CanonicalOperationError, _read_json, case_cover_p
 from .case_classification import classification_summary
 from .case_intake_service import get_group
 from .case_library_access import can_read_group, can_read_private_case, is_reviewer, owns_task, safe_case_task
-from .case_shared_display import shared_cases
+from .case_shared_display import shared_cases, sharing_status
 from .database import connect
 from .task_service import TASK_COLUMNS, _row_to_task
 
@@ -14,7 +14,7 @@ def my_submissions(settings,user_id):
     db=connect(settings.database_path)
     try:
         tasks=[_row_to_task(row) for row in db.execute(
-            f"SELECT {TASK_COLUMNS} FROM tasks t LEFT JOIN users u ON u.id=t.created_by_user_id WHERE t.task_type='case_analysis' AND t.created_by_user_id=? ORDER BY t.created_at DESC,t.task_id DESC",(user_id,))]
+            f"SELECT {TASK_COLUMNS} FROM tasks t LEFT JOIN users u ON u.id=t.created_by_user_id WHERE t.task_type='case_analysis' AND json_extract(t.payload_json,'$.evidence_revision') IS NULL AND t.created_by_user_id=? ORDER BY t.created_at DESC,t.task_id DESC",(user_id,))]
         group_ids=[r[0] for r in db.execute('SELECT group_id FROM case_intake_groups WHERE created_by_user_id=? ORDER BY created_at DESC,group_id DESC',(user_id,))]
     finally: db.close()
     rows=[]
@@ -48,6 +48,7 @@ def my_submissions(settings,user_id):
         href=f"/cases/{case_id}?attempt_id={quote(task['task_id'])}" if detail else f"/tasks/{quote(task['task_id'])}"
         if state=='needs_confirmation': href=f'/cases/{case_id}/classification?attempt_id={quote(task["task_id"])}'
         rows.append({'case_id':case_id,'submission_id':task['task_id'],'task_id':task['task_id'],
+                     **(sharing_status(settings,case_id) if state=='approved' else {}),
                      'title':detail['title'] if detail else '未命名的视频投稿',
                      'industry':industry,'video_type':None,'duration_seconds':detail.get('duration_seconds') if detail else None,
                      'cover_url':cover,'status':state,'href':href,'visibility':'mine',

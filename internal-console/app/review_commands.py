@@ -18,6 +18,8 @@ from human_review_operations_v1 import digest, file_sha, read, write_once
 
 _KEY = secrets.token_bytes(32)
 VERSION = "human-review-command-v1.0"
+CASE_VERSION = "human-review-command-v1.1"
+JOINT_CASE_VERSION = "human-review-command-v1.2"
 CASE_COMMIT_VERSION = "case-review-command-commit-v1.0"
 CASE_COMMIT_FILE = "console_review_command_v1.json"
 
@@ -30,12 +32,13 @@ def _node(settings):
     return digest([str(settings.pipeline_root.resolve()), str(settings.database_path.resolve())])
 
 
-def snapshot(settings, kind, identity, *, business_id=None):
+def snapshot(settings, kind, identity, *, business_id=None, version=None):
     root = settings.pipeline_root
     if kind == "case":
         from .canonical_gateway import _find_case_path, _approval_candidate, _analysis_states
-        candidate = _approval_candidate(settings, identity)
-        path, attempt = candidate if candidate else _find_case_path(settings, identity)
+        from .canonical_gateway import _latest_case_attempt, _attempt_candidate
+        latest = _latest_case_attempt(settings,identity)
+        path, attempt = _attempt_candidate(identity,*latest) if latest else _find_case_path(settings, identity)
         sources = [path]
         for state_path, state in _analysis_states(settings, identity):
             sources.append(state_path)
@@ -49,9 +52,24 @@ def snapshot(settings, kind, identity, *, business_id=None):
             directory = root / "data/case_analysis_attempts" / identity / attempt["attempt_id"]
             sources.extend(directory.glob("case_classification_review_v1.json"))
         value = read(path)
-        return {"artifact": str(path.relative_to(root)), "artifact_sha256": file_sha(path),
+        result = {"artifact": str(path.relative_to(root)), "artifact_sha256": file_sha(path),
             "attempt_id": (attempt or {}).get("attempt_id") or (value.get("analysis_lineage") or {}).get("attempt_id"),
             "state_sha256": digest({str(p.relative_to(root)): file_sha(p) for p in sources})}
+        if version in {CASE_VERSION, JOINT_CASE_VERSION}:
+            from case_evidence_revision_v1 import resolve_target, review_scope
+            result.update(revision_ref=None, revision_validation_ref=None, scope_sha256=None)
+            try:
+                target = resolve_target(root,identity,result['attempt_id'])
+                result['revision_ref'] = target.revision_ref
+                result['revision_validation_ref'] = target.validation_ref
+                result['scope_sha256'] = review_scope(root,identity,result['attempt_id'])['scope_sha256']
+            except (OSError,ValueError,KeyError,TypeError,RuntimeError):
+                result['scope_error'] = {
+                    'code': 'CASE_EVIDENCE_SCOPE_UNAVAILABLE',
+                    'message': '当前审核范围无法建立，暂不能批准入库。',
+                    'next_action': '请恢复完整来源与依赖证据，或重新分析后再批准。',
+                }
+        return result
     from .persona_authority import resolve_persona_authority
     authority = resolve_persona_authority(settings, identity, kind)
     selected = authority.review_candidate or authority.current
@@ -72,15 +90,22 @@ def snapshot(settings, kind, identity, *, business_id=None):
         "state_sha256": digest({str(p.relative_to(root)): file_sha(p) for p in sorted(paths)})}
 
 
-def issue(settings, kind, identity, user_id, *, business_id=None):
+def issue(settings, kind, identity, user_id, *, business_id=None, sharing=None, joint=False):
     import json
-    context = {"version": VERSION, "kind": kind, "identity": identity,
+    version = JOINT_CASE_VERSION if joint else CASE_VERSION if kind == 'case' else VERSION
+    context = {"version": version, "kind": kind, "identity": identity,
         "business_id": business_id, "actor": principal(settings, user_id),
         "node": _node(settings), "operation_id": secrets.token_hex(16),
-        "snapshot": snapshot(settings, kind, identity, business_id=business_id)}
+        "snapshot": snapshot(settings, kind, identity, business_id=business_id, version=version)}
+    if joint:
+        context['sharing'] = sharing
+        context['snapshot'].update(sharing_mode=sharing['mode'] if sharing else 'unavailable',
+            share_preview_sha256=sharing['preview_sha256'] if sharing else None,
+            share_blocker_sha256=sharing['blocker_sha256'] if sharing else None,
+            reviewer_grant_ref=sharing['preview']['reviewer_grant_ref'] if sharing else None)
     body = base64.urlsafe_b64encode(json.dumps(context, sort_keys=True).encode()).decode()
     token = body + "." + hmac.new(_KEY, body.encode(), "sha256").hexdigest()
-    return {"token": token, "operation_id": context["operation_id"], **context["snapshot"]}
+    return {"token": token, "version": version, "operation_id": context["operation_id"], **context["snapshot"]}
 
 
 
@@ -111,7 +136,7 @@ def begin(settings, kind, identity, user_id, token, intent, *, business_id=None,
     try:
         body, signature = token.split(".")
         context = json.loads(base64.urlsafe_b64decode(body))
-        if (context["version"] != VERSION or context["kind"] != kind or context["identity"] != identity
+        if (context["version"] not in ({VERSION,CASE_VERSION,JOINT_CASE_VERSION} if kind=='case' else {VERSION}) or context["kind"] != kind or context["identity"] != identity
                 or context["business_id"] != business_id or context["node"] != _node(settings)
                 or not re.fullmatch(r"[a-f0-9]{32}", context["operation_id"])):
             raise ValueError()
@@ -121,7 +146,7 @@ def begin(settings, kind, identity, user_id, token, intent, *, business_id=None,
         raise blocked("REVIEW_ACTOR_MISMATCH", "不能提交其他账号的审核操作。")
     directory = settings.pipeline_root / "data/review_operations" / kind / identity / context["operation_id"]
     path = directory / "intent.json"
-    value = {"version": VERSION, "context": context, "token_sha256": digest(token), "token": token, "intent": intent}
+    value = {"version": context['version'], "context": context, "token_sha256": digest(token), "token": token, "intent": intent}
     if path.exists():
         saved = read(path)
         if any(saved.get(k) != v for k, v in value.items()):
@@ -129,7 +154,17 @@ def begin(settings, kind, identity, user_id, token, intent, *, business_id=None,
     else:
         if not hmac.compare_digest(signature, hmac.new(_KEY, body.encode(), "sha256").hexdigest()):
             raise blocked("INVALID_REVIEW_CONTEXT")
-        if context["snapshot"] != snapshot(settings, kind, identity, business_id=business_id):
+        current = snapshot(settings, kind, identity, business_id=business_id, version=context['version'])
+        if context['version'] == JOINT_CASE_VERSION:
+            sharing=context.get('sharing')
+            if sharing:
+                from .case_shared_display import validate_preview
+                validate_preview(settings, sharing, context['actor'])
+            current.update(sharing_mode=sharing['mode'] if sharing else 'unavailable',
+                share_preview_sha256=sharing['preview_sha256'] if sharing else None,
+                share_blocker_sha256=sharing['blocker_sha256'] if sharing else None,
+                reviewer_grant_ref=sharing['preview']['reviewer_grant_ref'] if sharing else None)
+        if context["snapshot"] != current:
             raise blocked()
         value["at"] = datetime.now(timezone.utc).isoformat()
         if validate_only:
@@ -142,6 +177,77 @@ def begin(settings, kind, identity, user_id, token, intent, *, business_id=None,
 
 def finish(command, result):
     write_once(command["directory"] / "result.json", result)
+    return result
+
+
+def complete_joint(settings, command, approved):
+    """Close a two-stage execution only after A is proven; B cannot undo A."""
+    from .case_shared_display import publish_joint, _share_error
+    context=command['context'];bundle=context.get('sharing')
+    if not bundle:
+        raise _share_error('原共享确认缺失，不能补造展示决定。')
+    publication=None;blocker=None
+    completion='approved_only'
+    if bundle['mode']=='approve_and_share':
+        try:
+            publication=publish_joint(settings,command)
+            completion='approved_shared'
+        except CanonicalOperationError as exc:
+            if exc.code not in {'CASE_SHARE_PREVIEW_STALE','CASE_DISPLAY_CONFLICT'}:
+                raise
+            completion='approval_kept_share_reconfirmation_required'
+            blocker={'code':exc.code,'message':exc.message,'next_action':exc.next_action}
+        except (OSError,ValueError,KeyError,TypeError) as exc:
+            raise CanonicalOperationError('CASE_SHARE_PUBLICATION_PENDING','案例已收录，共享尚未完成。',
+                '请恢复原审核操作；不会再次收录或创建任务。',details={'saved_stage':'case_approved','recoverable':True}) from exc
+    elif bundle['mode']!='approve_only':
+        raise _share_error('共享操作模式无效。')
+    canonical=settings.pipeline_root/'data/cases'/context['identity']
+    result={'schema_version':'case-review-share-result-v1.0','operation_id':context['operation_id'],
+        'case_id':context['identity'],'attempt_id':context['snapshot']['attempt_id'],
+        'intent_ref':_ref(settings,command['directory']/'intent.json'),
+        'approved_case_ref':_ref(settings,canonical/'case_v1.json'),
+        'approval_receipt_ref':approved['approval_receipt_ref'], 'publication_receipt_ref':publication,
+        'completion':completion, 'completed_at':datetime.now(timezone.utc).isoformat(), 'blocker':blocker}
+    return finish(command,result)
+
+
+def present_joint(settings, result):
+    """An immutable execution result never substitutes for current publication."""
+    from .case_shared_display import shared_projection, sharing_status
+    from .canonical_gateway import get_case_detail
+    shared=shared_projection(settings,result['case_id'])
+    return {'decision':'approved','execution':result,'case':get_case_detail(settings,result['case_id']),
+        **sharing_status(settings,result['case_id']),
+        'shared_display':shared,'approval_receipt_ref':result['approval_receipt_ref']}
+
+
+def validate_joint_result(settings,command,approved):
+    result=command['result'];context=command['context']
+    keys={'schema_version','operation_id','case_id','attempt_id','intent_ref','approved_case_ref',
+          'approval_receipt_ref','publication_receipt_ref','completion','completed_at','blocker'}
+    canonical=settings.pipeline_root/'data/cases'/context['identity']
+    if (approved is None or set(result)!=keys or result['schema_version']!='case-review-share-result-v1.0'
+            or result['operation_id']!=context['operation_id'] or result['case_id']!=context['identity']
+            or result['attempt_id']!=context['snapshot']['attempt_id']
+            or result['intent_ref']!=_ref(settings,command['directory']/'intent.json')
+            or result['approved_case_ref']!=_ref(settings,canonical/'case_v1.json')
+            or result['approval_receipt_ref']!=approved['approval_receipt_ref']):
+        raise blocked('REVIEW_COMMIT_CONFLICT','联合操作的终局结果与原提交不一致。')
+    mode=context['sharing']['mode']
+    if result['completion']=='approved_shared' and mode=='approve_and_share':
+        from .case_shared_display import _history, _root
+        matches=[(v,h) for v,h in _history(settings,context['identity'])
+            if v.get('human_display_decision',{}).get('operation_id')==context['operation_id']]
+        if len(matches)!=1:
+            raise blocked('REVIEW_COMMIT_CONFLICT')
+        value,sha=matches[0]
+        if result['publication_receipt_ref']!={'path':str((_root(settings,context['identity'])/f"receipt_{value['sequence']:06}.json").relative_to(settings.pipeline_root)),'sha256':sha}:
+            raise blocked('REVIEW_COMMIT_CONFLICT')
+    elif not (result['publication_receipt_ref'] is None and (
+            result['completion']=='approved_only' and mode=='approve_only' and result['blocker'] is None
+            or result['completion']=='approval_kept_share_reconfirmation_required' and mode=='approve_and_share' and isinstance(result['blocker'],dict))):
+        raise blocked('REVIEW_COMMIT_CONFLICT')
     return result
 
 
@@ -182,9 +288,18 @@ def stage_case_approval_commit(settings, command, staged_case, staged_governance
     for key, raw in (value.get("source_artifacts") or {}).items():
         if isinstance(raw, str) and raw.lower().endswith(".json"):
             evidence[key] = _ref(settings, resolve_within(settings.pipeline_root, raw))
-    confirmation = candidate.parents[2] / "case_evidence_final_review_v1.json"
+    from .canonical_gateway import _case_attempt_root
+    confirmation = _case_attempt_root(candidate) / "case_evidence_final_review_v1.json"
+    if saved['intent']['payload'].get('evidence_review',{}).get('schema_version') == 'case-evidence-final-review-v2.0':
+        confirmation = _case_attempt_root(candidate) / 'final_reviews' / (context['operation_id']+'.json')
     if confirmation.exists():
         evidence["final_evidence_review"] = _ref(settings, confirmation)
+    for key in ('revision_ref','revision_validation_ref'):
+        if target.get(key):
+            evidence[key]=target[key]
+    revision_value=value.get('human_evidence_revision')
+    if revision_value:
+        evidence['human_evidence_edit']=revision_value['edit_ref']
     canonical = settings.pipeline_root / "data/cases" / context["identity"]
     artifacts = {name: _ref(settings, staged_case.parent / name, published_path=canonical / name)
                  for name in ("case_v1.json", "approval_receipt.json", "console_authorization_receipt_v1.json")}
@@ -277,12 +392,15 @@ def committed_case_result(settings, command):
             evidence = saved["intent"]["payload"].get("evidence_review")
             if evidence is not None:
                 confirmation = read(resolve_within(settings.pipeline_root, binding["evidence"]["final_evidence_review"]["path"]))
-                for key in ("candidate_sha256", "narration_sha256", "shot_sha256", "narration_decisions", "shot_decisions"):
+                if evidence.get('schema_version') == 'case-evidence-final-review-v2.0' and confirmation.get('submission') != evidence:
+                    raise blocked('REVIEW_COMMIT_CONFLICT')
+                keys = () if evidence.get('schema_version') == 'case-evidence-final-review-v2.0' else ("candidate_sha256", "narration_sha256", "shot_sha256", "narration_decisions", "shot_decisions")
+                for key in keys:
                     if confirmation.get(key) != evidence.get(key):
                         raise blocked("REVIEW_COMMIT_CONFLICT")
             result = {"decision": "approved", "case": get_case_detail(settings, context["identity"]),
                       "approval_receipt_ref": artifacts["approval_receipt.json"]}
-            if command["result"] is not None:
+            if command["result"] is not None and context['version'] != JOINT_CASE_VERSION:
                 stored = command["result"]
                 if (stored.get("decision") != "approved" or stored.get("approval_receipt_ref") != result["approval_receipt_ref"]
                         or stored.get("case", {}).get("approved_case_sha256") != result["case"].get("approved_case_sha256")):
@@ -303,6 +421,11 @@ def validate_target(settings, command, *, approved_ok=False):
     path = settings.pipeline_root / target["artifact"]
     if not path.resolve().is_relative_to(settings.pipeline_root.resolve()):
         raise blocked()
+    if command['context']['kind']=='case' and command['context']['version'] in {CASE_VERSION,JOINT_CASE_VERSION}:
+        from case_evidence_revision_v1 import resolve_target
+        current=resolve_target(settings.pipeline_root,command['context']['identity'],target['attempt_id'])
+        if current.revision_ref != target.get('revision_ref') or current.validation_ref != target.get('revision_validation_ref'):
+            raise blocked()
     if file_sha(path) == target["artifact_sha256"]:
         return
     receipt = path.parent / "approval_receipt.json"
@@ -319,6 +442,45 @@ def validate_target(settings, command, *, approved_ok=False):
     raise blocked()
 
 
+def _pending_case_progress(settings, directory, saved):
+    """Read-only explanation of a proven commit, never a recovery capability.
+
+    Reuse the exact Approval proof and display validators. Merely loading the
+    page must not finish a command, publish, or repair a partial transaction.
+    """
+    context = saved['context']
+    if context.get('version') != JOINT_CASE_VERSION or saved['intent']['payload'].get('decision') != 'approve':
+        return None  # Frozen older workflows keep their original recovery UI.
+    progress = {'attempt_id': context['snapshot']['attempt_id'], 'stage': 'review_pending'}
+    command = {'context': context, 'directory': directory, 'result': None}
+    try:
+        approved = committed_case_result(settings, command)
+        if approved is None:
+            return progress
+        from .case_shared_display import _history, sharing_status, validate_sharing_decision
+        state = sharing_status(settings, context['identity'])['sharing_state']
+        progress['sharing_state'] = state
+        history = _history(settings, context['identity'])
+        existing = [record for record, _ in history
+                    if record.get('human_display_decision', {}).get('operation_id') == context['operation_id']]
+        if len(existing) > 1:
+            raise blocked('REVIEW_COMMIT_CONFLICT')
+        if existing or context['sharing']['mode'] == 'approve_only':
+            progress['stage'] = 'result_pending'
+        else:
+            validate_sharing_decision(settings, command, saved['intent']['payload'].get('sharing_decision'), committed=True)
+            head = history[-1][1] if history else None
+            if head != context['sharing']['preview']['expected_publication_head_sha256']:
+                raise blocked('CASE_DISPLAY_CONFLICT')
+            progress['stage'] = 'publication_pending'
+        return progress
+    except (CanonicalOperationError, OSError, ValueError, KeyError, TypeError, RuntimeError):
+        # No speculative retry label when sources, grants, or binding cannot be
+        # proven. The original POST still owns all current permission checks.
+        progress['stage'] = 'recheck_required'
+        return progress
+
+
 def pending(settings, kind, identity, user_id):
     """Only the submitting principal can recover its private immutable intent."""
     actor = principal(settings, user_id)
@@ -330,10 +492,15 @@ def pending(settings, kind, identity, user_id):
         value = read(path)
         if value.get("context", {}).get("actor") != actor or value["context"].get("node") != _node(settings):
             continue
-        result.append({"operation_id": value["context"]["operation_id"], "at": value["at"],
+        item = {"operation_id": value["context"]["operation_id"], "at": value["at"],
             "request_path": value["intent"]["request_path"],
             "payload": {**value["intent"]["payload"], "review_context": value["token"]},
-            "can_discard": can_discard(settings, path.parent, value)})
+            "can_discard": can_discard(settings, path.parent, value)}
+        if kind == 'case':
+            progress = _pending_case_progress(settings, path.parent, value)
+            if progress is not None:
+                item['progress'] = progress
+        result.append(item)
     return result
 
 
@@ -352,6 +519,9 @@ def can_discard(settings, directory, value):
     if value["context"]["kind"] == "case":
         attempt = settings.pipeline_root / "data/case_analysis_attempts" / value["context"]["identity"] / str(target["attempt_id"])
         if (attempt / "human_review_decision_v1.json").exists():
+            return False
+        revision=attempt/'human_revisions'/('revision_'+value['context']['operation_id'])/'edit_v1.json'
+        if revision.exists():
             return False
         canonical = settings.pipeline_root / "data/cases" / value["context"]["identity"] / "approval_receipt.json"
         if canonical.exists():

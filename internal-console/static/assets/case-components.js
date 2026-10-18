@@ -1,6 +1,9 @@
 import { DOUYIN_PLAYER_VIEWPORTS } from "./case-media-preview.mjs?v=case-media-fit-1";
-import { escapeHtml, caseListCard } from "./list-ui.mjs?v=flow-closure-2";
+import { escapeHtml, caseListCard } from "./list-ui.mjs?v=case-share-ux2";
 import { accountLabel, formatConsoleTime } from "./ui-format.mjs?v=flow-closure-2";
+import { evidenceWorkspace, reviewWorkspace } from "./case-evidence-workspace.mjs?v=case-review-ux1";
+import { sharePreviewPanel } from "./case-share-confirmation.mjs?v=case-share-ui1";
+import { caseRecovery, caseResultPanel } from "./case-review-result.mjs?v=case-recovery-ui1";
 export { escapeHtml };
 
 export const CASE_PROGRESS_STAGES = [
@@ -23,12 +26,13 @@ export function progressPanel(task, { compact = false, embedded = false, boundar
   const terminal = ["awaiting_review", "completed"].includes(task.status);
   const failed = task.status === "failed";
   const isCaseTask = task.task_type === "case_analysis";
+  const isRevision = isCaseTask && Boolean(task.payload?.evidence_revision);
   const caseApproved = isCaseTask && task.current_case_status === "approved";
   const currentTaskId = isCaseTask && task.current_active_task_id && task.current_active_task_id !== task.task_id
     ? task.current_active_task_id : null;
   const reviewConflict = caseApproved && task.status === "awaiting_review";
   const classificationHref = task.subject_ref ? `/cases/${encodeURIComponent(task.subject_ref)}/classification` : "/cases";
-  const caseHref = task.subject_ref ? `/cases/${encodeURIComponent(task.subject_ref)}` : "/cases";
+  const caseHref = task.subject_ref ? `/cases/${encodeURIComponent(task.subject_ref)}${isRevision ? `?attempt_id=${encodeURIComponent(task.payload.evidence_revision.attempt_id)}` : ""}` : "/cases";
   const stages = CASE_PROGRESS_STAGES.map(([, label, threshold], index) => {
     const done = terminal || task.progress >= threshold;
     const active = !failed && !done && index === Math.max(0, activeIndex);
@@ -43,7 +47,12 @@ export function progressPanel(task, { compact = false, embedded = false, boundar
     task.error_code === "MEDIA_DUPLICATE_CASE" &&
     task.payload?.duplicate?.existing_case_id;
 
-  const failureAction = currentTaskId
+  const failureAction = isRevision
+    ? `<div class="next-action"><strong>${failed ? "修改已保存，校验尚未完成" : terminal ? "修订校验已结束" : "正在校验已保存的修改"}</strong>
+        <span>${failed ? "恢复会继续原校验任务，保留修改，不会重新投稿。校验通过前不能批准旧分析结果。" : "返回案例核对当前修订结果；校验完成不等于批准入库。"}</span>
+        ${failed && !caseApproved ? '<button class="btn btn-primary" type="button" data-retry-revision>继续校验</button>' : ""}
+        <a class="btn btn-secondary" href="${caseHref}" data-route>返回案例审核</a></div>`
+    : currentTaskId
     ? `<div class="next-action"><strong>已有新的分析任务</strong><span>这条记录保留本次分析的结果，请查看当前任务的真实进度。</span><a class="btn btn-primary" href="/tasks/${encodeURIComponent(currentTaskId)}" data-route>查看当前进度</a></div>`
     : failed && caseApproved
     ? `<div class="next-action"><strong>案例已经入库</strong><span>这次分析没有完成，但后续的案例已通过审核，无需重新分析。</span><a class="btn btn-primary" href="${caseHref}" data-route>查看已入库案例</a></div>`
@@ -81,13 +90,13 @@ export function progressPanel(task, { compact = false, embedded = false, boundar
           你可以离开这个页面，任务进度会保留在“任务记录”中。
         </p>`;
   return `<section class="${embedded ? "" : "card "}task-progress ${compact ? "compact" : ""} ${embedded ? "embedded" : ""}" data-task-progress>
-    <div class="task-progress-head"><div><h2>${isCaseTask ? (failed && boundaryReview ? "分镜待确认" : failed ? "这次分析未完成" : reviewConflict ? "本次分析待核对" : task.status === "completed" ? (caseApproved ? "案例已入库" : "本次审核已结束") : terminal ? "分析完成，等待审核" : "案例分析中") : (failed ? "任务未完成" : terminal ? "任务已完成" : "任务进行中")}</h2>
+    <div class="task-progress-head"><div><h2>${isRevision ? (failed ? "修订校验未完成" : terminal ? "修订校验已完成" : "修订校验中") : isCaseTask ? (failed && boundaryReview ? "分镜待确认" : failed ? "这次分析未完成" : reviewConflict ? "本次分析待核对" : task.status === "completed" ? (caseApproved ? "案例已入库" : "本次审核已结束") : terminal ? "分析完成，等待审核" : "案例分析中") : (failed ? "任务未完成" : terminal ? "任务已完成" : "任务进行中")}</h2>
       <p>${escapeHtml(reviewConflict ? "这个来源已有入库案例，本次结果仍待核对。" : failed && boundaryReview ? "分镜划分尚待人工确认。" : failed && caseApproved ? "历史分析未完成；当前案例已入库。" : failed ? task.error_message || "请稍后重试。" : task.stage || "等待开始")}</p>
       ${isCaseTask && task.payload?.acquisition_provider === "legacy_downloader" && !task.payload?.source_upload
         ? `<p class="task-acquisition-label">视频获取方式：原有下载方式（未使用付费解析）</p>` : ""}</div>
       ${isCaseTask ? "" : `<strong>${Number(task.progress || 0)}%</strong>`}</div>
     ${isCaseTask ? "" : `<div class="progress-track"><span style="width:${Math.max(0, Math.min(100, Number(task.progress || 0)))}%"></span></div>`}
-    <ol class="progress-steps">${stages}</ol>
+    ${isRevision ? "" : `<ol class="progress-steps">${stages}</ol>`}
     ${failureAction}
   </section>`;
 }
@@ -146,7 +155,7 @@ function paragraphList(values) {
   return (values || []).filter(Boolean).map((value) => `<p>${escapeHtml(value)}</p>`).join("");
 }
 
-export function caseReviewContent(detail, statusPill) {
+export function caseReviewContent(detail, statusPill, {operations = [], recoveryUnavailable = false} = {}) {
   const profileLine = caseProfileMetadata(detail).join(" · ") || "未记录结构类型";
   const industryLine = caseIndustryMetadata(detail);
   const annotationAction = detail.can_annotate_profile
@@ -198,14 +207,22 @@ export function caseReviewContent(detail, statusPill) {
       <small>这一处的分镜划分需要核对，当前拆解暂时保留现有划分。</small></span>
     ${canConfirmEvidence ? `<span class="case-evidence-check"><input type="checkbox" data-evidence-kind="shot" data-item-id="${escapeHtml(item.item_id)}">确认保留当前分镜</span>` : ""}
   </label>`).join("");
-  const evidenceReviewSurface = evidenceReview?.required
+  const workspace = reviewWorkspace(detail);
+  // An editable draft is not a trusted preview or permission. It lets an
+  // authorized reviewer repair display-only validation failures through the
+  // same server preview Owner, while approval stays disabled until reissued.
+  const shareDraft = detail.share_preview || (canReview && !classificationPending && workspace?.can_approve
+    && detail.permissions?.can_review && !detail.review?.approved ? {draft_only:true,
+      preview:{display:{title:String(detail.title || '').slice(0,120),structure_summary:'',industry:detail.classification?.industry}},
+      blocker:{message:'请核对展示文字，再获取可信预览；通过前不能批准。'}} : null);
+  const evidenceReviewSurface = workspace ? evidenceWorkspace(workspace,escapeHtml) : evidenceReview?.required
     ? evidenceReview.available
       ? `<section class="panel case-evidence-review"><h2>${canConfirmEvidence ? "入库前确认" : detail.review?.decision ? "分析疑点记录" : "待审核的分析疑点"}</h2><p>${canConfirmEvidence ? '请对照原视频核对以下疑点。确认只认可当前展示的原识别与分镜，不会自动采用系统猜测；不准确时请重新分析，暂不要批准。勾选尚未保存，点击“确认并批准入库”后提交。' : detail.review?.decision ? "本次审核已结束，以下保留原分析疑点供追溯，无需重新确认。" : "以下疑点由指定审核人在正式审核时核对；此处仅供查看，无需重复确认分类。"}</p>
           <div class="case-evidence-list">${narrationQuestions}${shotQuestions}</div>${canConfirmEvidence ? '<button class="btn btn-secondary" type="button" data-scroll-review-decision>前往提交审核</button>' : ""}</section>`
       : `<section class="panel case-evidence-review"><h2>分析证据</h2><p>待审核的分析证据暂时无法读取，请刷新后重试或联系管理员。</p></section>`
     : "";
   const reviewDecision = detail.review?.approved
-    ? `<div class="approved-message"><strong>已加入正式案例库</strong><p>这个案例已经完成审核。</p></div>`
+    ? `<div class="approved-message"><strong>${escapeHtml(detail.sharing_label || "已加入正式案例库")}</strong><p>正式收录记录已保存。${escapeHtml(detail.sharing_next_action || "")}</p></div>`
     : detail.review?.decision
       ? `<p><strong>${detail.review.decision === "reanalyze" ? "本次分析已退回重新处理" : "本次投稿未收录"}</strong></p><p>${escapeHtml(detail.review.reason || "请查看已保存的人工审核决定。")}</p>
         <p class="review-source-note">${escapeHtml(accountLabel(detail.reviewed_by?.phone))}${detail.review.reviewed_at ? ` · ${escapeHtml(formatConsoleTime(detail.review.reviewed_at))}` : ""}</p>
@@ -221,11 +238,13 @@ export function caseReviewContent(detail, statusPill) {
     : detail.review?.approval_recovery_required
       ? `<p>上次批准尚未完整保存。继续后只会完成原有批准，不会重复审核。</p><button class="btn btn-primary btn-wide" type="button" data-review-action="approve">完成批准</button>`
       : `<p>请对照原视频检查内容理解、叙事顺序与画面拆解。</p>
-        <button class="btn btn-primary btn-wide" type="button" data-review-action="approve"${evidenceReview?.required && !evidenceReview.available ? " disabled" : ""}>${evidenceReview?.required ? "确认并批准入库" : "批准入库"}</button>
+        ${detail.share_preview_error ? `<p role="alert">${escapeHtml(detail.share_preview_error.message)} ${escapeHtml(detail.share_preview_error.next_action)}</p>` : ""}
+        <button class="btn btn-primary btn-wide" type="button" data-review-action="approve"${(detail.approval_context?.version === "human-review-command-v1.2" && !detail.share_preview) || (workspace ? !workspace.can_approve : evidenceReview?.required && !evidenceReview.available) ? " disabled" : ""}>${detail.share_preview?.mode === "approve_and_share" ? "收录并共享" : detail.share_preview?.mode === "approve_only" ? "批准入库" : evidenceReview?.required ? "确认并批准入库" : "批准入库"}</button>
         <button class="btn btn-secondary btn-wide" type="button" data-review-action="reanalyze">重新分析</button>
         <button class="btn btn-ghost btn-wide danger-text" type="button" data-review-action="reject">不收录</button>`;
-  return `<main class="page page-review case-review-page">
-    <div class="case-review-heading"><a class="back-link" href="/cases" data-route>← 案例</a><div>${statusPill(detail.status)}</div></div>
+  return `<main class="page page-review case-review-page${detail.review?.approved ? ' case-review-complete' : ''}">
+    <div class="case-review-heading"><a class="back-link" href="/cases" data-route>← 案例</a>${detail.review?.approved ? '' : `<div>${statusPill(detail.status)}</div>`}</div>
+    ${caseResultPanel(detail, caseRecovery(detail, operations), escapeHtml, recoveryUnavailable)}
     <section class="review-layout">
       <div class="review-primary">
         <section class="panel media-summary">
@@ -244,7 +263,8 @@ export function caseReviewContent(detail, statusPill) {
           </div>
         </section>
         ${evidenceReviewSurface}
-        <section class="case-analysis"><h2>分析结果</h2>
+        ${shareDraft ? sharePreviewPanel(shareDraft) : ""}
+        <section class="case-analysis"><h2>${workspace?.state === "unavailable" ? "已有分析（审核范围尚未恢复）" : workspace && !["original","validated"].includes(workspace.state) ? "原分析（新修订尚未生效）" : "分析结果"}</h2>
         <div class="review-section"><h3>讲了什么</h3>
           ${detail.what_it_says?.topic ? `<div class="review-row"><span>内容主题</span><p>${escapeHtml(detail.what_it_says.topic)}</p></div>` : ""}
           ${detail.what_it_says?.core_expression ? `<div class="review-row"><span>核心表达</span><p>${escapeHtml(detail.what_it_says.core_expression)}</p></div>` : ""}
@@ -261,10 +281,10 @@ export function caseReviewContent(detail, statusPill) {
           <section><h3>画面拆解</h3><div class="breakdown-list">${shots}</div></section></div>
         </details>
       </div>
-      <aside class="review-aside"><section class="panel review-decision" id="case-review-decision" tabindex="-1"><h2>人工审核</h2>
+      ${detail.review?.approved ? '' : `<aside class="review-aside"><section class="panel review-decision" id="case-review-decision" tabindex="-1"><h2>人工审核</h2>
         ${reviewDecision}
         <p class="review-rights-note">批准不会改变原视频素材使用权。</p>
-      </section></aside>
+      </section></aside>`}
     </section>
   </main>`;
 }

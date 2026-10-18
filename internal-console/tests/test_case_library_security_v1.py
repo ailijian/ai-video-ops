@@ -1,4 +1,4 @@
-from review_protocol import post_review
+from review_protocol import post_historical_case_review as post_review
 """CASE-CL0: real Session/CSRF/Gateway/Pipeline Approval, synthetic analysis only."""
 from contextlib import ExitStack
 from dataclasses import replace
@@ -123,8 +123,11 @@ def test_four_principals_formal_approval_and_private_isolation(node):
     assert duplicate['state']=='submitted' and not any(k in duplicate for k in ('existing_task','attempt_id','actor','existing_case'))
     assert task['task_id'] not in json.dumps(duplicate)
     for client,headers in ((a,ha),(d,hd)):
-        r=post_review(client, f'/api/cases/{CASE_ID}/review',headers=headers,json={'decision':'approve','evidence_review':decisions,'reviewer':'13900000003'})
+        r=post_review(client, f'/api/cases/{CASE_ID}/review',headers=headers,json={'decision':'approve','evidence_review':decisions})
         assert r.status_code==403 and r.json()['detail']['code']=='CASE_REVIEWER_REQUIRED'
+        forged=post_review(client,f'/api/cases/{CASE_ID}/review',headers=headers,json={
+            'decision':'approve','evidence_review':decisions,'reviewer':'13900000003'})
+        assert forged.status_code==422  # Strict new DTO rejects undeclared actor fields.
     assert candidate.read_bytes()==original
     with pytest.raises(CanonicalOperationError) as error:
         approve_case_candidate(node[0],CASE_ID,reviewer='13900000004',note='forged owner call',

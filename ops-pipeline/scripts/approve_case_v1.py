@@ -40,6 +40,16 @@ def validate_deferred_evidence_review(
     case: dict[str, Any], candidate_sha256: str, receipt_path: Path | None,
     reviewer: str,
 ) -> tuple[dict[str, Any] | None, list[str]]:
+    if receipt_path is not None and receipt_path.is_file():
+        try:
+            if read_json(receipt_path).get('schema_version') == 'case-evidence-final-review-v2.0':
+                from case_evidence_revision_v1 import validate_final_review
+                receipt = validate_final_review(case,candidate_sha256,receipt_path,reviewer)
+                return receipt, []
+        except (OSError,ValueError,RuntimeError,KeyError,TypeError) as exc:
+            return None, [f'Final evidence coverage is invalid: {exc}']
+    if case.get('human_evidence_revision'):
+        return None, ['A revised candidate requires final evidence review v2; v1 downgrade is forbidden.']
     pending = case.get("review_pending") or {}
     if pending.get("requires_explicit_confirmation") is not True:
         validation = case.get("validation") or {}
@@ -294,6 +304,8 @@ def main() -> None:
     case = json.loads(original_bytes.decode("utf-8"))
 
     errors: list[str] = []
+    from case_evidence_revision_v1 import approval_attempt_errors
+    errors.extend(approval_attempt_errors(case,original_sha256,case_path))
     try:
         human_quality = validate_quality_decision(case_path, read_json(Path(args.quality_decision)) if args.quality_decision else None)
     except (OSError, ValueError, TypeError, KeyError) as exc:
@@ -318,6 +330,19 @@ def main() -> None:
         args.reviewer,
     )
     errors.extend(evidence_errors)
+    if console_authorization is not None:
+        from case_evidence_revision_v1 import validate_console_confirmation, RevisionError
+        try:
+            validate_console_confirmation(Path(__file__).resolve().parents[1], case, original_sha256,
+                console_authorization, args.review_operation_id, evidence_receipt)
+        except RevisionError as exc:
+            errors.append(f'{exc.code}: {exc}')
+    elif args.review_operation_id:
+        errors.append('CASE_EVIDENCE_SCOPE_STALE: A Console operation requires its current authorized principal; offline approval creates its own operation identity.')
+    if evidence_receipt and evidence_receipt.get('schema_version')=='case-evidence-final-review-v2.0':
+        if (console_authorization is None or any(evidence_receipt['actor'].get(k)!=console_authorization.get(k) for k in ('namespace','user_id'))
+                or evidence_receipt.get('operation_id')!=args.review_operation_id):
+            errors.append('Final evidence review v2 requires the exact current authorized principal and operation.')
 
     if lifecycle.get("status") != "review_required":
         errors.append(
@@ -524,11 +549,11 @@ def main() -> None:
     if evidence_receipt is not None:
         case["approval"]["evidence_review"] = {
             "receipt_sha256": sha256_file(Path(args.evidence_review_receipt)),
-            "narration_decision_count": len(evidence_receipt["narration_decisions"]),
-            "shot_decision_count": len(evidence_receipt["shot_decisions"]),
+            "narration_decision_count": len(evidence_receipt.get("narration_decisions",[d for d in evidence_receipt.get('decisions',[]) if d['item_id'].startswith('narration:')])),
+            "shot_decision_count": len(evidence_receipt.get("shot_decisions",[d for d in evidence_receipt.get('decisions',[]) if d['item_id'].startswith('shot:')])),
             "reviewed_by": evidence_receipt["reviewed_by"],
             "reviewed_at": evidence_receipt["reviewed_at"],
-            "policy": "source_asr_and_current_shot_boundaries_explicitly_confirmed",
+            "policy": evidence_receipt.get('schema_version') if evidence_receipt.get('schema_version')=='case-evidence-final-review-v2.0' else "source_asr_and_current_shot_boundaries_explicitly_confirmed",
         }
         case["review_pending"]["status"] = "confirmed_at_final_case_review"
         case.setdefault("narration_evidence", {})["manual_review_closed"] = True

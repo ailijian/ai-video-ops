@@ -1,0 +1,59 @@
+/* The review preview and its optional editor; shared form rules stay unchanged. */
+.case-share-preview { min-width:0; padding:24px; }
+.share-preview-heading { display:flex; justify-content:space-between; align-items:start; gap:16px; margin-bottom:20px; }
+.share-preview-heading h2 { margin:0; color:var(--ink); font-size:18px; font-weight:700; line-height:1.5; letter-spacing:-.025em; }
+.share-preview-heading p { margin:5px 0 0; color:var(--ink-soft); font-size:13px; }
+.share-preview-audience { flex:none; margin-top:4px; color:var(--ink-faint); font-size:12px; }
+.share-preview-card { display:grid; grid-template-columns:80px minmax(0,1fr); align-items:start; gap:20px; padding:20px; border:1px solid var(--line); border-radius:var(--radius-md); background:var(--canvas); }
+.share-preview-cover { aspect-ratio:9/16; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:10px; border-radius:8px; background:var(--mint); color:var(--forest); text-align:center; }
+.share-preview-cover svg { width:30px; height:30px; opacity:.7; }
+.share-preview-cover span { font-size:10px; color:var(--ink-faint); }
+.share-preview-content { min-width:0; }
+.share-preview-content h3 { margin:0; font-size:18px; font-weight:650; line-height:1.5; letter-spacing:-.015em; overflow-wrap:anywhere; }
+.share-preview-meta { display:flex; flex-wrap:wrap; align-items:center; gap:4px 10px; margin-top:8px; color:var(--ink-soft); font-size:12px; }
+.share-preview-meta span+span { padding-left:10px; border-left:1px solid var(--line-strong); }
+.share-preview-reference { margin-top:16px; }
+.share-preview-reference>span { color:var(--ink-faint); font-size:11px; }
+.share-preview-reference p { margin:4px 0 0; color:var(--ink-soft); font-size:13px; line-height:1.7; overflow-wrap:anywhere; white-space:pre-line; }
+.share-preview-notes { margin:16px 0 0; }
+.share-preview-notes p { margin:0; color:var(--forest); font-size:12px; line-height:1.65; }
+.share-preview-notes>span { display:block; margin-top:4px; color:var(--ink-faint); font-size:11px; line-height:1.65; }
+.case-share-preview[data-preview-state="dirty"] .share-preview-notes p,
+.case-share-preview[data-preview-state="draft"] .share-preview-notes p { color:var(--amber); }
+.case-share-preview[data-preview-state="error"] .share-preview-notes p { color:var(--red); }
+.share-preview-editor { margin-top:12px; border-top:1px solid var(--line); }
+.share-preview-editor>summary { display:flex; align-items:center; justify-content:space-between; gap:12px; min-height:44px; padding:10px 0; color:var(--forest); font-size:13px; font-weight:650; cursor:pointer; list-style:none; }
+.share-preview-editor>summary::-webkit-details-marker { display:none; }
+.share-preview-editor>summary>span { display:block; font-size:18px; line-height:1; transition:transform .15s ease; }
+.share-preview-editor[open]>summary>span { transform:rotate(180deg); }
+.share-preview-fields { padding:4px 0 0; }
+.share-preview-edit-hint { margin:0 0 16px; color:var(--ink-soft); font-size:12px; line-height:1.7; }
+.share-preview-fields .field { margin-bottom:16px; }
+.share-preview-fields .field label { margin-bottom:6px; color:var(--ink-soft); font-size:12px; font-weight:600; }
+.share-preview-fields .field textarea { min-height:96px; line-height:1.65; }
+.share-preview-edit-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.share-preview-edit-actions .btn { font-size:13px; }
+@media(max-width:767px) {
+  .case-share-preview { padding:20px 16px 12px; }
+  .share-preview-heading { gap:12px; margin-bottom:16px; }
+  .share-preview-heading h2 { font-size:17px; }
+  .share-preview-heading p { font-size:12px; }
+  .share-preview-audience { margin-top:3px; font-size:11px; }
+  .share-preview-card { grid-template-columns:64px minmax(0,1fr); gap:14px; padding:14px; }
+  .share-preview-content h3 { font-size:16px; line-height:1.5; }
+  .share-preview-meta { gap:4px 8px; margin-top:7px; font-size:11px; }
+  .share-preview-meta span+span { padding-left:8px; }
+  .share-preview-reference { margin-top:12px; }
+  .share-preview-reference p { font-size:12px; }
+  .share-preview-cover svg { width:26px; height:26px; }
+  .share-preview-cover span { font-size:9px; }
+  .share-preview-fields .field input,.share-preview-fields .field textarea { font-size:16px; }
+}
+@media(max-width:359px) {
+  .share-preview-audience { display:none; }
+  .share-preview-card { grid-template-columns:52px minmax(0,1fr); gap:12px; padding:12px; }
+  .share-preview-cover span { max-width:3em; line-height:1.5; }
+}
+@media(prefers-reduced-motion:reduce) {
+  .share-preview-editor>summary>span { transition:none; }
+}
