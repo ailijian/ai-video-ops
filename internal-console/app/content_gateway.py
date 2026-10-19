@@ -892,6 +892,7 @@ def list_creation_options(
         from .persona_authority import resolve_persona_authority
         business = resolve_persona_authority(settings, business_id, "business").current
         restriction_blocked = bool(business and (business.get("production_constraints") or {}).get("blockers"))
+        restriction_url = f"/customers/{business_id}#constraints"
 
         try:
             speakers = list_speakers(
@@ -929,7 +930,7 @@ def list_creation_options(
                 "business_persona_status": ("approved"),
                 "speakers": (approved_speakers),
                 "creation_ready": bool(approved_speakers) and not restriction_blocked,
-                "authority_blocker": ({"code": "BUSINESS_CONSTRAINT_BLOCKED", "message": "客户存在尚未处理的重要限制。", "next_action": "核对客户限制。"} if restriction_blocked else authority_blocker),
+                "authority_blocker": ({"code": "BUSINESS_CONSTRAINT_BLOCKED", "message": "客户档案已批准，但仍有重要限制需要核实。", "next_action": "查看客户待核实事项。", "url": restriction_url} if restriction_blocked else authority_blocker),
             }
         )
 

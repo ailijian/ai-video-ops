@@ -634,7 +634,16 @@ def safe_persona_projection(
         "fact_authority": "known_only",
     }
     if business_rules and business_rules["derived_authority_constraints"]:
-        projection["business_restrictions"] = project_value(business_rules, "safe_verbatim")
+        # Source quotes and review evidence are not generation facts. In
+        # particular, excluded external claims must not re-enter as guardrails.
+        projection["business_restrictions"] = project_value({
+            "blocked_terms": business_rules["blocked_terms"],
+            "excluded_fields": business_rules["excluded_fields"],
+            "legacy_external_scope_control": any(v.get("legacy_scope_receipt_sha256") for v in business_rules["derived_authority_constraints"]),
+            "legacy_quantitative_terms": business_rules["legacy_quantitative_terms"],
+            "conditions": [{k: v[k] for k in ("constraint_id", "condition", "affected_fields", "blocked_terms")}
+                for v in business_rules["conditions"]],
+        }, "safe_verbatim")
     assert_safe_for_external_model(
         json.dumps(projection, ensure_ascii=False, sort_keys=True)
     )
@@ -2633,6 +2642,11 @@ def validate_generated_item(
         errors.append("persona_and_speaker_fact_refs_used_empty")
     combined = f"{title}\n{narration}"
     rules = safe_persona.get("business_restrictions") or {}
+    from customer_constraints_v1 import assert_scope_claims_allowed, publication_text
+    try:
+        assert_scope_claims_allowed(rules, publication_text(item))
+    except RuntimeError:
+        errors.append("legacy_scope_forbidden_external_claim")
     for term in rules.get("blocked_terms", []):
         if term in combined:
             errors.append("business_restriction_forbidden_claim:" + term)

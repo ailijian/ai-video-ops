@@ -2,18 +2,18 @@ import { dashboardMarkup, dashboardSkeleton } from "./dashboard-view.mjs?v=dash-
 import { taskListRows, taskSourceResults, taskReadFailure, taskActivityRows } from "./task-list-view.mjs?v=ui-1";
 import { createApiClient } from "./api-client.js?v=customer-speaker-v1";
 import { createCaseViews } from "./case-views.js?v=case-recovery-ui1";
-import { createCustomerViews } from "./customer-views.js?v=ui-1";
+import { createCustomerViews } from "./customer-views.js?v=speaker-status-sync-1";
 import { progressPanel } from "./case-components.js?v=case-share-ui1";
 import { startTaskPolling } from "./task-progress.js?v=mobile-reliability-1";
 import { CUSTOM_INDUSTRY, industryOptions, industryValue as readIndustryValue, setIndustryValue, syncCustomIndustry } from "./case-industry.mjs?v=industry-2";
 import { matchWorkflowRoute } from "./routes.js";
 import {
   createSpeakerViews,
-} from "./speaker-views.js?v=ui-1";
+} from "./speaker-views.js?v=speaker-revalidation-ui-1";
 
 import {
   createContentViews,
-} from "./content-views.js?v=productized-stage3-3";
+} from "./content-views.js?v=review-flow-1";
 
 import {
   createContentOperationsViews,
@@ -136,25 +136,25 @@ function shell(title, body) {
     </div>`;
 }
 
-function bindCommonActions() {
-  const main = app.querySelector("main");
+function bindCommonActions(root = app) {
+  const main = root.querySelector("main");
   if (main) { main.id = "main-content"; main.tabIndex = -1; }
-  app.querySelector(".skip-link")?.addEventListener("click", event => {
+  root.querySelector(".skip-link")?.addEventListener("click", event => {
     event.preventDefault();
     main?.focus({preventScroll:true});
     main?.scrollIntoView({block:"start"});
   });
-  document.querySelectorAll("[data-route]").forEach((link) => {
+  root.querySelectorAll("[data-route]").forEach((link) => {
     link.addEventListener("click", (event) => {
       if (event.defaultPrevented || event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || link.target === "_blank") return;
       event.preventDefault();
       navigate(link.getAttribute("href"));
     });
   });
-  document.querySelectorAll('[data-action="change-password"]').forEach((button) => {
+  root.querySelectorAll('[data-action="change-password"]').forEach((button) => {
     button.addEventListener("click", () => navigate("/change-password"));
   });
-  document.querySelectorAll('[data-action="logout"]').forEach((button) => {
+  root.querySelectorAll('[data-action="logout"]').forEach((button) => {
     button.addEventListener("click", logout);
   });
 }

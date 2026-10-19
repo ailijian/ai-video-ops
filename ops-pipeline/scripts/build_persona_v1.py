@@ -700,7 +700,9 @@ def build_persona(
     )
     persona["provenance"]["content_sha256"] = persona_content_hash(persona)
 
-    output_path = output_root / persona_id / f"revision_{revision:04d}" / "persona_v1.json"
+    from persona_review_lifecycle_v1 import candidate_path
+    output_path = candidate_path(output_root, source)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     review_path = output_path.parent / "persona_review_pack_v1.md"
     if output_path.exists() or review_path.exists():
         raise RuntimeError(

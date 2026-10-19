@@ -642,6 +642,26 @@ def review_generation_batch_v2(
         )
     )
 
+    # Re-read current Business controls before recording any Human approval or
+    # editorial revision. A machine-passed historical batch is not a waiver.
+    persona_ref = (batch.get("lineage") or {}).get("persona") or {}
+    if persona_ref.get("path"):
+        persona_path = Path(persona_ref["path"]).resolve()
+        if not persona_path.is_file() or sha256_file(persona_path) != persona_ref.get("sha256"):
+            raise GenerationReviewV2Error("GENERATION_REVIEW_PERSONA_LINEAGE_INVALID", "Business Persona lineage does not validate.")
+        source_by_id = {v["content_id"]: v for v in source_contents}
+        texts = []
+        for item in normalized_input["items"]:
+            if item["decision"] == "rejected":
+                continue
+            source = source_by_id[item["content_id"]]
+            title = item.get("revised_title") if item["decision"] == "revised" else source.get("title")
+            narration = item.get("revised_narration") if item["decision"] == "revised" else source.get("narration")
+            from customer_constraints_v1 import publication_text
+            texts.append(publication_text({**source, "title": title, "narration": narration}))
+        from customer_constraints_v1 import assert_publication_allowed
+        assert_publication_allowed(read_json(persona_path), persona_path, texts)
+
     request_id = str(
         batch.get(
             "request_id"

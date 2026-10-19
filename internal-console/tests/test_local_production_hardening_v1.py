@@ -1,4 +1,5 @@
 from __future__ import annotations
+from app import persona_review_gateway
 
 import json
 import os
@@ -504,13 +505,14 @@ def test_console_authority_routes_return_409_for_simultaneous_same_entity(
     calls: list[str] = []
 
     if entity == "persona":
-        def fake_persona(settings, *, business_id, reviewer, note):
+        def fake_persona(settings, command, kind, identity, business_id, reviewer, note):
             calls.append(reviewer)
             entered.set()
             release.wait(timeout=2)
             return {"business_id": business_id, "approved": True}
 
-        monkeypatch.setattr(main_module, "approve_business_persona", fake_persona)
+        monkeypatch.setattr(persona_review_gateway, "approve", fake_persona)
+        monkeypatch.setattr(main_module, "get_customer_detail", lambda *a: {"business_id":"fixture_business","status":"approved"})
         route = "/api/customers/fixture_business/persona/approve"
         body = {"note": "approve"}
     else:
@@ -540,9 +542,10 @@ def test_console_authority_routes_return_409_for_simultaneous_same_entity(
             json={"phone": "13800000000", "password": "ReviewConsole2026!"},
         )
         second_csrf = second_login.json()["csrf_token"]
+        from app import review_commands
         from review_protocol import case_command_fixture
-        if entity == "case":
-            body["review_context"] = case_command_fixture(settings,"7999999999999999966")
+        body["review_context"] = (case_command_fixture(settings,"7999999999999999966") if entity=="case"
+            else review_commands.issue(settings,"business","fixture_business",1)["token"])
         first_response: list[Any] = []
 
         thread = threading.Thread(

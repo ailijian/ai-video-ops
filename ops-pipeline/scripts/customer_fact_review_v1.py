@@ -267,11 +267,16 @@ def save_review_progress(*, request: dict[str, Any], pipeline_root: Path,
             raise CustomerFactReviewError("REVIEW_REPLAY_CONFLICT", "A review operation cannot be reused for a different actor or payload.")
     else:
         if (directory / "customer_fact_review_v1.json").exists():
+            completed = read_json(directory / "customer_fact_review_v1.json")
+            if (str(completed.get("status", "")).startswith("completed_") and not normalized["decisions"]
+                    and not normalized.get("constraint_decisions") and not normalized.get("industry_review")):
+                return completed  # Read-only refresh/no-op, never a replacement Human decision.
             raise CustomerFactReviewError("FACT_REVIEW_ALREADY_FINALIZED", "Completed review cannot be changed by a new batch.")
         if request.get("context_version") != progress["version"]:
             raise CustomerFactReviewError("REVIEW_CONTEXT_STALE", "Review progress changed; reload and check it.")
         _validate_progress_subset(progress["artifact"], normalized)
-        if not normalized["decisions"] and not normalized.get("constraint_decisions") and not normalized.get("industry_review"):
+        if (not normalized["decisions"] and not normalized.get("constraint_decisions") and not normalized.get("industry_review")
+                and not progress["complete"]):
             raise CustomerFactReviewError("EMPTY_REVIEW_SUBMISSION", "No legal review selection was submitted.")
         timestamp = reviewed_at or datetime.now(timezone.utc).isoformat()
         # Validate all changes before persisting anything, including source-backed amendments.
@@ -281,6 +286,9 @@ def save_review_progress(*, request: dict[str, Any], pipeline_root: Path,
             industry_review=normalized.get("industry_review"), constraint_decisions=normalized.get("constraint_decisions"),
             candidate_sha=sha256_file(directory / "persona_fact_candidates_v1.json"))
         historical = reviewed_business_sources(pipeline_root, normalized["business_id"])
+        from persona_review_lifecycle_v1 import effective_sources, replacement_fields
+        historical = effective_sources(historical)
+        replacements = replacement_fields(directory, preview)
         from show_customer_status_v1 import resolve_current_persona, AuthorityResolutionError
         try:
             current = resolve_current_persona(pipeline_root, normalized["business_id"], "business")
@@ -288,14 +296,23 @@ def save_review_progress(*, request: dict[str, Any], pipeline_root: Path,
             if exc.code not in {"PERSONA_NOT_FOUND", "APPROVED_PERSONA_NOT_FOUND"}:
                 raise
             current = None
-        for field in SCALAR_PERSONA_FIELDS:
-            values = [v.get("normalized_value") for _, source, _ in historical for v in source.get("fact_candidates", [])
-                if v.get("target_field") == field and v.get("candidate_state") == "known_candidate"]
-            values += [v.get("normalized_value") for v in preview["fact_candidates"]
-                if v.get("target_field") == field and v.get("candidate_state") == "known_candidate"]
-            fact = ((current or {}).get("artifact", {}).get("facts") or {}).get(field, {})
-            if fact.get("state") == "known": values.append(fact["value"])
-            if values: merge_known_values(values, scalar=True)
+        from persona_review_lifecycle_v1 import scalar_review_values
+        for field, values in scalar_review_values(historical, preview, current, replacements).items():
+            if values:
+                try:
+                    merge_known_values(values, scalar=True)
+                except CustomerFactReviewError:
+                    fingerprint = canonical_sha256([intent, field, sha256_file(directory / "persona_fact_candidates_v1.json")])
+                    path = directory / "fact_conflicts" / f"review_{fingerprint[:24]}.json"
+                    if not path.exists():
+                        write_new_or_same(path, {"status": "awaiting_explicit_human_resolution", "field": field,
+                            "review_fingerprint": fingerprint, "reviewer": normalized["reviewer"], "attempted_at": timestamp,
+                            "decisions": normalized["decisions"], "candidate_sha256": sha256_file(directory / "persona_fact_candidates_v1.json"),
+                            "approved_persona_sha256": current["file_sha256"] if current else None,
+                            "authority": {"fact_review_finalized": False, "approved_truth_changed": False}})
+                    elif read_json(path).get("review_fingerprint") != fingerprint:
+                        raise CustomerFactReviewError("FACT_CONFLICT_RECORD_COLLISION", "Conflict identity collision")
+                    raise
         sequence = len(progress["receipts"]) + 1
         receipt = {"schema_version": PROGRESS_VERSION, "sequence": sequence,
             "operation_id": operation_id, "parent_sha256": progress["version"],
@@ -368,7 +385,7 @@ def validate_review_request(
     }
     if request.get("industry_review") is not None:
         industry = request["industry_review"]
-        from customer_onboarding_analysis_v1 import CUSTOMER_INDUSTRIES
+        from customer_intake_v1 import CUSTOMER_INDUSTRIES
         if not isinstance(industry, dict) or industry.get("decision") not in {"confirm", "uncertain"}:
             raise CustomerFactReviewError("INVALID_INDUSTRY_REVIEW", "Choose an industry or explicitly leave it uncertain.")
         value = industry.get("value")
@@ -785,7 +802,8 @@ def ensure_or_build_business_persona(
 
     source = read_json(input_path)
     revision = int(source.get("revision") or 1)
-    expected_path = output_root / business_id / f"revision_{revision:04d}" / "persona_v1.json"
+    from persona_review_lifecycle_v1 import candidate_path
+    expected_path = candidate_path(output_root, source)
 
     if expected_path.is_file():
         persona = read_json(expected_path)
@@ -822,6 +840,92 @@ def ensure_or_build_business_persona(
             "BUSINESS_PERSONA_BUILD_FAILED",
             str(exc),
         ) from exc
+
+
+def derive_business_persona_input(*, pipeline_root: Path, business_id: str,
+        intake_root: Path, reviewed: dict[str, Any], proposed: bool = False):
+    """One read-only derivation for the final preview and the existing writer.
+
+    Proposed data is produced by the same Human decision validator, never an
+    alternative runtime source or a trusted client assertion of approval.
+    """
+    intake_id = intake_root.name
+    reviewed_path = intake_root / "reviewed_persona_fact_candidates_v1.json"
+    reviewed_sources = reviewed_business_sources(
+        pipeline_root,
+        business_id,
+    )
+
+    from persona_review_lifecycle_v1 import effective_sources, apply_revision_input, replacement_fields
+    if proposed:
+        reviewed_sources = [v for v in reviewed_sources if v[0] != intake_id]
+        reviewed_sources.append((intake_id, reviewed, reviewed_path))
+        reviewed_sources.sort(key=lambda v: v[0])
+    reviewed_sources = effective_sources(reviewed_sources)
+    replacing = replacement_fields(intake_root, reviewed)
+
+    persona_input = build_business_persona_input(
+        business_id=business_id,
+        intake_id=intake_id,
+        reviewed_artifact=reviewed,
+        reviewed_artifact_path=(reviewed_path),
+        reviewed_sources=reviewed_sources,
+    )
+    apply_revision_input(pipeline_root, "business", business_id, intake_root, persona_input, reviewed)
+    from customer_constraints_v1 import CONTRACT_VERSION, collect, policy, unresolved_legacy_constraints
+    effective_constraints = collect(pipeline_root, business_id,
+        proposed_review=(intake_id, reviewed) if proposed else None)
+    if effective_constraints:
+        persona_input["persona_control_layer"] = {"contract_version": CONTRACT_VERSION,
+            "derived_authority_constraints": effective_constraints}
+
+    # The existing approved resolver owns effective lineage. An additive intake
+    # retains legacy approved facts even when they predate Console intake files.
+    from show_customer_status_v1 import resolve_current_persona, AuthorityResolutionError
+    try:
+        current = resolve_current_persona(pipeline_root, business_id, "business")
+    except AuthorityResolutionError as exc:
+        if exc.code not in {"PERSONA_NOT_FOUND", "APPROVED_PERSONA_NOT_FOUND"}:
+            raise CustomerFactReviewError(exc.code, "Approved Business lineage is invalid.") from exc
+        current = None
+    no_new_facts = False
+    if current:
+        original_facts = current["artifact"].get("facts") or {}
+        for field, fact in original_facts.items():
+            if field in replacing:
+                continue
+            if fact.get("state") != "known":
+                continue
+            added = persona_input["facts"].get(field)
+            if added:
+                added["value"] = merge_known_values([fact["value"], added["value"]], scalar=field in SCALAR_PERSONA_FIELDS)
+                added["source_refs"] = list(dict.fromkeys([
+                    *(fact.get("source_refs") or []), *(added.get("source_refs") or []),
+                    f"approved_business_revision:{current['revision']}:{current['file_sha256']}#{field}",
+                ]))
+            else:
+                persona_input["facts"][field] = copy.deepcopy(fact)
+        old_values = {key: value.get("value") for key, value in original_facts.items() if value.get("state") == "known"}
+        new_values = {key: value.get("value") for key, value in persona_input["facts"].items() if value.get("state") == "known"}
+        no_new_facts = (old_values == new_values and
+            current["artifact"].get("persona_control_layer") == persona_input.get("persona_control_layer"))
+        persona_input["revision"] = int(current["revision"]) + 1
+        persona_input["previous_approved_persona_path"] = str(current["path"])
+
+    if effective_constraints:
+        rules = policy(effective_constraints)
+        for field, fact in persona_input["facts"].items():
+            if fact.get("state") == "known" and (field in rules["excluded_fields"] or any(
+                    term in json.dumps(fact.get("value"), ensure_ascii=False) for term in rules["blocked_terms"])):
+                fact.update(state="unknown", value=None)
+
+    blockers = required_business_blockers(
+        persona_input,
+        critical_constraints=([v["record"] for v in unresolved_legacy_constraints(
+            pipeline_root, business_id, effective_constraints)] + policy(effective_constraints)["blockers"]),
+    )
+
+    return persona_input, blockers, no_new_facts
 
 
 def review_customer_facts(
@@ -929,6 +1033,9 @@ def review_customer_facts(
             industry_review=request.get("industry_review"), constraint_decisions=request.get("constraint_decisions"),
             candidate_sha=candidate_sha)
         historical = reviewed_business_sources(pipeline_root, business_id)
+        from persona_review_lifecycle_v1 import effective_sources, replacement_fields
+        historical = effective_sources(historical)
+        replacement = replacement_fields(intake_root, preview)
         from show_customer_status_v1 import resolve_current_persona, AuthorityResolutionError
         try:
             approved = resolve_current_persona(pipeline_root, business_id, "business")
@@ -936,15 +1043,8 @@ def review_customer_facts(
             if exc.code not in {"PERSONA_NOT_FOUND", "APPROVED_PERSONA_NOT_FOUND"}:
                 raise CustomerFactReviewError(exc.code, "Approved Business lineage is invalid.") from exc
             approved = None
-        for field in SCALAR_PERSONA_FIELDS:
-            values = [item.get("normalized_value") for _, artifact, _ in historical
-                for item in artifact.get("fact_candidates", [])
-                if item.get("target_field") == field and item.get("candidate_state") == "known_candidate"]
-            values += [item.get("normalized_value") for item in preview.get("fact_candidates", [])
-                if item.get("target_field") == field and item.get("candidate_state") == "known_candidate"]
-            fact = (approved["artifact"].get("facts") or {}).get(field, {}) if approved else {}
-            if fact.get("state") == "known":
-                values.append(fact.get("value"))
+        from persona_review_lifecycle_v1 import scalar_review_values
+        for field, values in scalar_review_values(historical, preview, approved, replacement).items():
             try:
                 if values:
                     merge_known_values(values, scalar=True)
@@ -1014,69 +1114,8 @@ def review_customer_facts(
         reviewed,
     )
 
-    reviewed_sources = reviewed_business_sources(
-        pipeline_root,
-        business_id,
-    )
-
-    persona_input = build_business_persona_input(
-        business_id=business_id,
-        intake_id=intake_id,
-        reviewed_artifact=reviewed,
-        reviewed_artifact_path=(reviewed_path),
-        reviewed_sources=reviewed_sources,
-    )
-    from customer_constraints_v1 import CONTRACT_VERSION, collect, policy
-    effective_constraints = collect(pipeline_root, business_id)
-    if effective_constraints:
-        persona_input["persona_control_layer"] = {"contract_version": CONTRACT_VERSION,
-            "derived_authority_constraints": effective_constraints}
-
-    # The existing approved resolver owns effective lineage. An additive intake
-    # retains legacy approved facts even when they predate Console intake files.
-    from show_customer_status_v1 import resolve_current_persona, AuthorityResolutionError
-    try:
-        current = resolve_current_persona(pipeline_root, business_id, "business")
-    except AuthorityResolutionError as exc:
-        if exc.code not in {"PERSONA_NOT_FOUND", "APPROVED_PERSONA_NOT_FOUND"}:
-            raise CustomerFactReviewError(exc.code, "Approved Business lineage is invalid.") from exc
-        current = None
-    no_new_facts = False
-    if current:
-        original_facts = current["artifact"].get("facts") or {}
-        for field, fact in original_facts.items():
-            if fact.get("state") != "known":
-                continue
-            added = persona_input["facts"].get(field)
-            if added:
-                added["value"] = merge_known_values([fact["value"], added["value"]], scalar=field in SCALAR_PERSONA_FIELDS)
-                added["source_refs"] = list(dict.fromkeys([
-                    *(fact.get("source_refs") or []), *(added.get("source_refs") or []),
-                    f"approved_business_revision:{current['revision']}:{current['file_sha256']}#{field}",
-                ]))
-            else:
-                persona_input["facts"][field] = copy.deepcopy(fact)
-        old_values = {key: value.get("value") for key, value in original_facts.items() if value.get("state") == "known"}
-        new_values = {key: value.get("value") for key, value in persona_input["facts"].items() if value.get("state") == "known"}
-        no_new_facts = (old_values == new_values and
-            current["artifact"].get("persona_control_layer") == persona_input.get("persona_control_layer"))
-        persona_input["revision"] = int(current["revision"]) + 1
-        persona_input["previous_approved_persona_path"] = str(current["path"])
-
-    if effective_constraints:
-        rules = policy(effective_constraints)
-        for field, fact in persona_input["facts"].items():
-            if fact.get("state") == "known" and (field in rules["excluded_fields"] or any(
-                    term in json.dumps(fact.get("value"), ensure_ascii=False) for term in rules["blocked_terms"])):
-                fact.update(state="unknown", value=None)
-
-    blockers = required_business_blockers(
-        persona_input,
-        critical_constraints=combined_critical_constraints(
-            pipeline_root,
-            business_id,
-        ),
-    )
+    persona_input, blockers, no_new_facts = derive_business_persona_input(
+        pipeline_root=pipeline_root, business_id=business_id, intake_root=intake_root, reviewed=reviewed)
 
     if blockers:
         completed = {

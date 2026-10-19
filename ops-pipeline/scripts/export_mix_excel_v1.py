@@ -60,12 +60,12 @@ def export_mix_excel(
         raise RuntimeError("Approved Batch contains a non-approved export item.")
     persona_ref = (batch.get("lineage") or {}).get("persona") or {}
     if persona_ref.get("path"):
-        from customer_constraints_v1 import assert_publication_allowed
+        from customer_constraints_v1 import assert_publication_allowed, publication_text
         persona_path = Path(persona_ref["path"])
         if not persona_path.is_file() or sha256_file(persona_path) != persona_ref.get("sha256"):
             raise RuntimeError("Export Business Persona lineage does not validate.")
         assert_publication_allowed(json.loads(persona_path.read_text(encoding="utf-8")), persona_path,
-            [str(item.get("title") or "") + "\n" + str(item.get("narration") or "") for item in contents])
+            [publication_text(item) for item in contents])
     if output_path.exists():
         raise RuntimeError("Excel output already exists and cannot be overwritten.")
 

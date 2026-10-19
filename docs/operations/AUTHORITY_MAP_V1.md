@@ -72,6 +72,44 @@ Speaker Human Review, shared-customer access and News fail-closed remain unchang
 
 ## Authority domains
 
+### Legacy unscoped critical scope adjudication — 2026-10-16
+
+Founder approved `CS-LEGACY-SCOPE-1` implementation. The existing Business
+restriction owner `customer_constraints_v1.py` delegates immutable receipt
+validation to `legacy_constraint_scope_v1.py`, contract
+`legacy-constraint-scope-adjudication-v1.0`. This is neither resolution nor a
+restriction edit. Only exact, untyped, unscoped legacy conflicts with supported
+historical excluded-claim Human Review and independent approved Persona evidence
+are eligible. Typed identity conflicts cannot use it.
+
+Decisions are `external_claims_only`, `core_identity_unresolved`, and default
+`insufficient_evidence`. Each receipt binds the four-part legacy target, frozen
+source/review/Business/Speaker hashes, stable local principal, explicit grant,
+reason, time, operation identity, and parent receipt SHA. Relationships remain
+unresolved. B/C retain Business blocking. A derives active publication controls
+from the same owner; it never changes the old record or Persona/Approval SHA.
+Receipts live inside the original Intake at
+`data/customer_intakes/<business>/<intake>/legacy_scope_adjudications/`, never as
+a sibling directory that could be mistaken for a newer Intake.
+Unsupported historical review layouts fail closed rather than inferring scope.
+
+The narrowly scoped `business_legacy_scope_reviewer` capability is explicitly
+granted/revoked by trusted local maintenance under an operation lock. Immutable
+`business-legacy-scope-capability-v1.0` events live at
+`data/customer_governance/legacy_scope_reviewers/<namespace>/<user_id>/`.
+There is no HTTP grant endpoint and existing Business/Case approval rights are
+unchanged. The Console rechecks the active Session principal and current grant
+inside the Business lock; the canonical writer independently checks them again.
+No production grant or adjudication is implied by contract implementation.
+
+Resolver, Truth/Capacity, source matching, Mix generation/revision/review/export
+and Closure consume the same effective publication restrictions. Model context
+contains safe control fields, never restriction source quotes or raw review
+evidence. Source-bound exclusions and conservative relationship/rent guards do
+not establish any external relationship. Remaining production gates still apply;
+News consumers remain unsupported and fail closed. Future Persona evidence
+changes invalidate the snapshot-bound adjudication until reviewed again.
+
 | Domain | Question answered | Authority owner |
 |---|---|---|
 | Customer Truth | What is true about this customer and speaker? | Current Approved Business Persona + Current Approved Speaker Persona |
@@ -100,6 +138,7 @@ Speaker Human Review, shared-customer access and News fail-closed remain unchang
 
 - Raw intake, Fact Candidate, AI extraction, Case facts, operator hints, capture missions, and status read-model output do not own Customer Truth.
 - Customer save-only identity, industry suggestions, and Speaker discovery intent are intake records, not approved facts. Additive Business updates retain the previous approved revision until a separate approval of the new candidate. `data/speaker_revalidations/<speaker_id>/business_revision_NNNN/speaker_revalidation_review_v1.json` records explicit Human reuse of unchanged personal evidence against an exact new Business SHA; it does not approve the resulting Speaker revision or grant media rights. [Console contracts](../../internal-console/README.md#customer-and-speaker-smart-intake) route these writers and recovery actions.
+- Initial Customer/Speaker onboarding may use one explicit final Human action over complete, source-bound previews. `speaker_review_preparation_v1.py` prepares unapproved personal proposals; `customer_speaker_confirmation.py` coordinates the existing Fact Review and Persona Approval owners with separate Business/Speaker decisions and receipts. Preparation and task completion are not Human approval. The joint operation preserves exact Approved Business binding, current actor, source SHA and idempotent recovery; historical or independently approved records are not reinterpreted as a joint decision. Existing Speaker-version revalidation and media/production gates remain independent.
 - Approval receipts prove that a gate occurred; they do not replace the approved artifact.
 - Operational Controls own only whether an operator action is paused. They do not own Persona, Content, Batch, Footage, Rights, or Proof lifecycle.
 - Internal Console tasks own execution status only. `queued`, `running`, `awaiting_review`, and `failed` never replace Case lifecycle or Human approval.
@@ -110,3 +149,18 @@ Speaker Human Review, shared-customer access and News fail-closed remain unchang
 - Local source-video existence and remote Douyin playback are not Approved Case Authority. Source traceability is the canonical URL, stable platform video ID, recorded source-media SHA-256, retained metadata, and acquisition lineage.
 - `data/case_governance/cases/<case_id>/case_profile_annotation_v1.json` and the industry annotation companion record human label additions/corrections bound to the exact Approved Case SHA-256. Submission metadata, human labels and system observations remain distinct. Saving requires the existing Case lock and matching Case/annotation hashes; no automatic backfill or Case/receipt/fingerprint/compatibility rewrite occurs.
 - `data/case_analysis_attempts/<case_id>/<attempt_id>/case_classification_review_v1.json` records the original evidence-derived suggestion and independent human classification choices/history. Its Console writer owns operator labels only. Classification is never Case Approval, Compatibility Approval, Customer Truth, Proof or media rights. SQLite intake groups reference tasks for UI recovery only.
+
+
+## Snapshot-bound review closure — 2026-10-17
+
+The Console [review protocol](../../internal-console/README.md#review-closure-and-targeted-corrections)
+binds every final approval/rejection/reanalysis to its displayed actor/object/SHA.
+[`human_review_operations_v1.py`](../../ops-pipeline/scripts/human_review_operations_v1.py)
+provides immutable append-only command companions; SQLite remains execution-only.
+[`persona_review_lifecycle_v1.py`](../../ops-pipeline/scripts/persona_review_lifecycle_v1.py)
+owns targeted correction Intakes, supersession of explicitly reviewed fact fields,
+and SHA-bound disposition of returned **unapproved** candidates. Neither companion
+can hide Approved Persona, alter a historical receipt, resolve restrictions or
+approve a replacement. `approve_persona_v1.py` retains final Authority and adds
+exact-decision write recovery. Current role/binding/production gates still apply.
+Historical records without these companions keep their original resolution rules.

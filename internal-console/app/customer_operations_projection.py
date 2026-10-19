@@ -9,7 +9,7 @@ from urllib.parse import urlencode
 
 from .canonical_gateway import CanonicalOperationError
 from .config import Settings
-from .customer_gateway import _customer_projection, _known_fact_value, BUSINESS_ID_RE
+from .customer_gateway import _customer_projection, _known_fact_value, BUSINESS_ID_RE, customer_creation_constraints
 from .database import connect
 from .persona_authority import resolve_persona_authority, validate_speaker_business_binding
 from .speaker_gateway import _speaker_projection
@@ -233,15 +233,8 @@ def _operation_row(settings, business_id, speaker_ids, tasks, records, records_k
         industry = _known_fact_value(current["artifact"], "industry")
     region = _known_fact_value(current["artifact"], "location_public_area") if current else None
     conditions = _creation_conditions(settings, business_id, approved, novel_available=novel_available) if current else {"ready": False, "paths": []}
-    constraints = (current or {}).get("production_constraints") or {}
-    # Pending first-time material can contain a core conflict before any Persona
-    # exists. Read the same canonical owner; do not invent a readiness state.
-    from customer_constraints_v1 import collect, policy, unresolved_legacy_constraints
-    controls = collect(settings.pipeline_root, business_id)
-    core_pending = any(item["constraint_type"] == "identity_conflict" or item["scope"] == "business"
-                       for item in policy(controls)["blockers"])
-    blocked = bool(constraints.get("blockers") or core_pending
-                   or unresolved_legacy_constraints(settings.pipeline_root, business_id, controls))
+    constraints = customer.get("creation_constraints") or customer_creation_constraints(settings, business_id, current)
+    blocked = constraints["blocked"]
     detail_url = f"/customers/{business_id}"
     work_url = detail_url + "/content"
     status = customer["status"]
@@ -275,8 +268,8 @@ def _operation_row(settings, business_id, speaker_ids, tasks, records, records_k
     title, label, url, kind = "待建档", "继续完善资料", detail_url + "/edit", "setup"
     note = "资料完善后再核对并批准档案。"
     if blocked:
-        title, label, url, kind = "待核实", "查看阻断原因", detail_url, "blocked"
-        note = "核心限制尚未解除，相关创作仍受阻。"
+        title, label, url, kind = "待核实", "查看阻断原因", constraints["url"], "blocked"
+        note = constraints["items"][0]["title"] if constraints["items"] else "核心限制尚未解除，相关创作仍受阻。"
         actionable.add("business")
     elif failed:
         task = failed[0]

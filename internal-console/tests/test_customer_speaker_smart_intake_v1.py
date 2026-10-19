@@ -1,6 +1,7 @@
 """CS gates: real app/gateways/subprocesses/locks, synthetic extraction only."""
 
 from __future__ import annotations
+from review_protocol import post_review
 
 import hashlib
 import json
@@ -110,6 +111,7 @@ analyze_customer_onboarding(request=json.loads(Path(sys.argv[2]).read_text(encod
 
 def review_payload(detail, *, selected=True):
     return {
+        "review_context": detail["review_context"]["token"],
         "decisions": [
             {"candidate_id": item["candidate_id"], "decision": "approve"}
             for item in detail["fact_candidates"]
@@ -140,7 +142,7 @@ def test_cs0_real_http_review_and_independent_recovery(client, settings, monkeyp
         raise OSError("synthetic unavailable storage")
 
     monkeypatch.setattr(gateway, "prepare_discovered_speaker_draft", fail_once)
-    response = client.post(
+    response = post_review(client,
         f"/api/customers/{business}/facts/review",
         headers={"X-CSRF-Token": csrf},
         json=review_payload(detail),
@@ -353,7 +355,7 @@ def test_cs0_missing_speaker_identity_persists_without_blocking_facts(client, se
     payload = review_payload(detail)
     payload["speaker_confirmations"][0]["speaker_name"] = ""
     payload["speaker_confirmations"][0]["public_role"] = ""
-    response = client.post(
+    response = post_review(client,
         f'/api/customers/{body["business_id"]}/facts/review',
         headers={"X-CSRF-Token": csrf},
         json=payload,

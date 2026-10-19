@@ -36,7 +36,10 @@ def test_customer_and_speaker_use_shared_profile_primitives():
     for name in ("ProfileSection({", "ProfileRow({", "EvidenceDisclosure("):
         assert name in customer
     assert "customerReviewGroups(needsReview)" in customer
-    assert "bindCustomerReviewControls(detail)" in customer
+    # Changes must invalidate the final server preview before one-step approval.
+    assert "bindCustomerReviewControls(detail, document, () => refreshFinal())" in customer
+    assert "detail.joint_speaker_confirmation_enabled ? bindCustomerSpeakerConfirmation : bindFinalCustomerConfirmation" in customer
+    assert "refreshFinal = bindFinal(" in customer
     assert 'data-review-choice="reject"' in customer
     assert 'data-review-choice="edit"' in customer
     assert "待统一确认" in customer

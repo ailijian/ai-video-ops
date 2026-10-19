@@ -1,4 +1,4 @@
-import { escapeHtml } from "./case-components.js?v=productized-stage1-5";
+import { escapeHtml } from "./case-components.js?v=flow-closure-2";
 
 const INTERNAL_LANGUAGE = /(?:authority|canonical|artifact|request id|content ledger|semantic ledger|historical exposure|presentation history|projection|[A-Z][A-Z0-9_]{3,})/;
 

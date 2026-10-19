@@ -1,17 +1,18 @@
-import { escapeHtml } from "./case-components.js";
+import { amendmentPanel, bindAmendment, bindingReviewPanel, mountRecovery } from "./review-workflow-ui.mjs?v=profile-correction-ui-1";
+import { escapeHtml } from "./case-components.js?v=flow-closure-2";
 
 import {
   editableFactValue,
   customerFieldLabel,
   parseEditedFactValue,
-} from "./customer-components.js?v=customer-speaker-v1";
+} from "./customer-components.js?v=flow-closure-2";
 
 import {
   speakerFieldLabel,
   speakerProgressPanel,
   speakerStatusPill,
   speakerTypeLabel,
-} from "./speaker-components.js?v=customer-speaker-v1";
+} from "./speaker-components.js?v=flow-closure-2";
 
 import {
   bindDecisionControls,
@@ -21,6 +22,7 @@ import {
 } from "./profile-components.js?v=productized-stage2-3";
 
 import { startTaskPolling } from "./task-progress.js";
+import {speakerReviewMarkup,bindSpeakerFinalConfirmation} from './speaker-final-confirmation.mjs?v=speaker-boundary-1';
 
 const SPEAKER_PROFILE_GROUPS = [
   {
@@ -358,7 +360,14 @@ export function createSpeakerViews({
                 },
               );
 
-              showToast(result.draft_saved ? "出镜人资料已保存，客户档案确认后可以继续。" : "出镜人资料已提交。");
+              if (result.input_differs) {
+                errorBox.textContent = "这位出镜人已存在。本次填写的新资料尚未保存；请保留原文，在已有档案的“补充更正”中提交需要变更的信息。";
+                errorBox.classList.add("visible");
+                const link=document.createElement("a");link.className="btn btn-secondary";link.textContent="打开已有出镜人";
+                link.href=`/customers/${encodeURIComponent(businessId)}/speakers/${encodeURIComponent(result.speaker_id)}`;link.target="_blank";link.rel="noopener";
+                errorBox.append(document.createElement("br"),link); return;
+              }
+              showToast(result.duplicate ? "已找到已有出镜人，本次没有重复提交。" : result.draft_saved ? "出镜人资料已保存，客户档案确认后可以继续。" : "出镜人资料已提交。");
               navigate(`/customers/${encodeURIComponent(businessId)}/speakers/${encodeURIComponent(result.speaker_id)}`);
             } catch (error) {
               errorBox.textContent =
@@ -391,6 +400,10 @@ export function createSpeakerViews({
     },
     ) {
     bindDecisionControls({ submitSelector: buttonId });
+    if (!needsReview.length) {
+      const progress=document.querySelector("[data-review-progress]");
+      if(progress)progress.textContent="已保留既有核对记录，请整体确认后继续档案审核。";
+    }
 
     document
       .querySelector(buttonId)
@@ -481,7 +494,8 @@ export function createSpeakerViews({
 
     const isSupplement =
       detail.latest_intake_type === "gap_supplement";
-    const reviewTitle = isSupplement
+    const isAmendment = detail.latest_intake_type === "review_amendment";
+    const reviewTitle = isAmendment ? "核对更正或重新关联的出镜人资料" : isSupplement
       ? "确认刚补充的信息"
       : "确认出镜人信息";
 
@@ -506,7 +520,7 @@ export function createSpeakerViews({
           ${pageHeading(
             "",
             reviewTitle,
-            isSupplement
+            isAmendment ? "请对照当前客户资料核对。原本人资料和表达限制保留，仍需单独批准档案。" : isSupplement
               ? "这里只审核本轮新增事实，之前已经确认的信息不会要求再次审核。"
               : `请检查“${detail.display_name}”本人可以承担的职责、经历和表达范围。`,
           )}
@@ -566,6 +580,7 @@ export function createSpeakerViews({
               {
                 method: "POST",
                 body: JSON.stringify({
+                  review_context: detail.approval_context.token,
                   decisions,
                   note: "Internal Console speaker information review completed.",
                 }),
@@ -602,6 +617,16 @@ export function createSpeakerViews({
         },
       },
     );
+  }
+
+  function renderSpeakerFinalReview(detail,businessId) {
+    app.innerHTML=shell('核对并确认出镜人档案',`<main class="page page-form customer-review-page profile-review-page customer-intake-page">
+      <div class="case-review-heading"><a class="back-link" href="/customers/${encodeURIComponent(businessId)}" data-route>← 返回客户详情</a>${speakerStatusPill(detail.status)}</div>
+      ${pageHeading('', '核对并确认出镜人档案',`请核对“${detail.display_name}”本人的资料及表达范围，最后一次明确确认。`)}
+      ${speakerReviewMarkup(detail)}</main>`);
+    bindCommonActions();
+    bindSpeakerFinalConfirmation({root:app.querySelector('main'),detail,api,toast:showToast,
+      reload:()=>renderSpeakerDetail(businessId,detail.speaker_id)});
   }
 
   function renderSpeakerPersonaReview(
@@ -692,6 +717,7 @@ export function createSpeakerViews({
               {
                 method: "POST",
                 body: JSON.stringify({
+                  review_context: detail.approval_context.token,
                   note: "Internal Console reviewer confirmed the complete speaker profile.",
                 }),
               },
@@ -1065,14 +1091,19 @@ export function createSpeakerViews({
   function renderSpeakerRevalidation(detail, businessId) {
     const evidence = detail.revalidation_evidence;
     const businessFacts = Object.entries(evidence.business_facts || {}).map(([field, value]) => ({field, ...value}));
-    app.innerHTML = shell("确认出镜人关联", `<main class="page page-form profile-review-page smart-profile-page">
+    app.innerHTML = shell("确认出镜人关联", `<main class="page page-form profile-review-page smart-profile-page speaker-revalidation-page">
       ${pageHeading("客户资料已更新", "确认出镜人关联", "客户资料已更新，需要确认出镜人信息是否仍然适用。旧版经历与批准记录保留。")}
       <section class="work-surface"><h2>原有本人事实与表达范围</h2>${speakerProfileSections(detail.speaker_persona?.facts || [])}</section>
       <details class="work-surface"><summary>检查更新后的客户资料</summary>${businessFacts.filter(item => item.state === "known").map(item => ProfileRow({label: customerFieldLabel(item.field), value: item.value, labelFor: customerFieldLabel})).join("")}</details>
-      <p>请对照检查职责、本人经历、允许主题与禁止表达。公司新增事实不会自动成为本人经历。</p>
-      <p class="field-hint">如果本人事实已变化，请保留当前状态并先核对新增证据，不要确认仍然适用。</p>
-      <div class="sticky-action profile-approval-bar"><button class="btn btn-primary" data-confirm-revalidation>已检查，本人事实与表达范围仍适用</button></div>
-      <a class="btn btn-secondary" href="/customers/${encodeURIComponent(businessId)}#speakers" data-route>稍后处理</a>
+      <section class="work-surface speaker-revalidation-confirmation" aria-labelledby="speaker-revalidation-title">
+        <h2 id="speaker-revalidation-title">本次复核</h2>
+        <p>请对照检查职责、本人经历、允许主题与禁止表达。公司新增事实不会自动成为本人经历。</p>
+        <p class="field-hint">如果本人事实已变化，请先核对新增证据；可以稍后继续，当前状态和原有记录会保留。</p>
+        <div class="speaker-revalidation-actions">
+          <button type="button" class="btn btn-primary" data-confirm-revalidation>已检查，本人事实与表达范围仍适用</button>
+          <a class="btn btn-secondary" href="/customers/${encodeURIComponent(businessId)}#speakers" data-route>稍后处理</a>
+        </div>
+      </section>
       </main>`);
     bindCommonActions();
     document.querySelector("[data-confirm-revalidation]").addEventListener("click", async event => {
@@ -1094,8 +1125,10 @@ export function createSpeakerViews({
     stopTaskPolling();
     skeletonPage("出镜人详情");
 
+    let detail = null;
+    const pending = await api(`/api/review-commands/speaker/${encodeURIComponent(speakerId)}`).catch(()=>({operations:[]}));
     try {
-      const detail = await api(
+      detail = await api(
         `/api/customers/${encodeURIComponent(
           businessId,
         )}/speakers/${encodeURIComponent(speakerId)}`,
@@ -1130,10 +1163,22 @@ export function createSpeakerViews({
         return;
       }
 
+      if (detail.status === "binding_review_required") {
+        app.innerHTML = shell("复核出镜人关联", bindingReviewPanel(detail)); bindCommonActions();
+        app.querySelector("[data-binding-review]").addEventListener("submit", async event=>{
+          event.preventDefault(); const form=event.currentTarget; if(!form.reportValidity())return;
+          const button=form.querySelector("button");button.disabled=true;
+          try {await api(`/api/customers/${encodeURIComponent(businessId)}/speakers/${encodeURIComponent(speakerId)}/review-amendments`,{
+            method:"POST",body:JSON.stringify({review_context:detail.approval_context.token,action:"rebase",changes:[],reason:form.querySelector("[data-binding-reason]").value.trim()})});await renderSpeakerDetail(businessId,speakerId);}
+          catch(error){const box=form.querySelector(".form-error");box.textContent=error.detail?.message||error.message;box.classList.add("visible");button.disabled=false;}
+        }); return;
+      }
+
       if (
         detail.status ===
         "fact_review_required"
       ) {
+        if(detail.unified_confirmation_enabled)return renderSpeakerFinalReview(detail,businessId);
         return renderSpeakerFactReview(
           detail,
           businessId,
@@ -1144,6 +1189,7 @@ export function createSpeakerViews({
         detail.status ===
         "persona_review_required"
       ) {
+        if(detail.unified_confirmation_enabled)return renderSpeakerFinalReview(detail,businessId);
         return renderSpeakerPersonaReview(
           detail,
           businessId,
@@ -1204,6 +1250,12 @@ export function createSpeakerViews({
         "出镜人暂时无法读取",
         error,
       );
+    } finally {
+      if (detail && ["approved", "persona_review_required", "binding_review_required", "needs_more_info"].includes(detail.status)) {
+        app.querySelector("main")?.insertAdjacentHTML("beforeend", amendmentPanel(detail,"speaker",speakerFieldLabel));
+        bindAmendment(app, detail, "speaker", {api, reload:()=>renderSpeakerDetail(businessId, speakerId)});
+      }
+      mountRecovery(app, api, pending.operations, ()=>renderSpeakerDetail(businessId, speakerId));
     }
   }
 

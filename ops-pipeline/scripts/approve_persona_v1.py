@@ -14,7 +14,7 @@ from build_persona_v1 import (
     validate_required_fact_authority,
 )
 
-APPROVER_VERSION = "approve_persona_v1.py@0.3"
+APPROVER_VERSION = "approve_persona_v1.py@0.4"
 
 
 def now_iso() -> str:
@@ -36,26 +36,8 @@ def write_new_json(path: Path, value: dict[str, Any]) -> str:
     return sha256_bytes(payload)
 
 
-def approve_persona(
-    persona_path: Path,
-    reviewer: str,
-    note: str,
-    approved_at: str | None = None,
-    decision_metadata: dict[str, Any] | None = None,
-) -> tuple[dict[str, Any], dict[str, Any], Path]:
-    persona_path = persona_path.expanduser().resolve()
-    if not persona_path.is_file():
-        raise FileNotFoundError(persona_path)
-    original_bytes = persona_path.read_bytes()
-    before_sha = sha256_bytes(original_bytes)
-    persona = json.loads(original_bytes.decode("utf-8"))
-    errors: list[str] = []
-    lifecycle = persona.get("lifecycle", {})
-    if (
-        lifecycle.get("status") != "review_required"
-        or lifecycle.get("approved") is not False
-    ):
-        errors.append("Persona must be review_required and not approved.")
+def validate_approval_authority(persona, persona_path):
+    errors = []
     errors.extend(validate_required_fact_authority(persona))
     if persona.get("persona_scope", "business") == "business":
         from customer_constraints_v1 import assert_production_allowed
@@ -90,6 +72,49 @@ def approve_persona(
                 errors.append(
                     "Speaker must remain bound to an Approved Business Persona."
                 )
+    return errors
+
+
+def approve_persona(
+    persona_path: Path,
+    reviewer: str,
+    note: str,
+    approved_at: str | None = None,
+    decision_metadata: dict[str, Any] | None = None,
+) -> tuple[dict[str, Any], dict[str, Any], Path]:
+    persona_path = persona_path.expanduser().resolve()
+    from persona_review_lifecycle_v1 import is_returned
+    if is_returned(persona_path):
+        raise RuntimeError("Returned Persona candidate cannot be approved; review its replacement Intake.")
+    if not persona_path.is_file():
+        raise FileNotFoundError(persona_path)
+    original_bytes = persona_path.read_bytes()
+    before_sha = sha256_bytes(original_bytes)
+    persona = json.loads(original_bytes.decode("utf-8"))
+    from human_review_operations_v1 import read, write_once
+    intent_path = persona_path.parent / "approval_intent_v1.json"
+    receipt_path = persona_path.parent / "approval_receipt.json"
+    if intent_path.is_file() and not receipt_path.exists():
+        intent = read(intent_path)
+        if (intent.get("version") != "persona-approval-operation-v1.0" or intent.get("reviewer") != reviewer
+                or intent.get("note") != note or intent.get("decision_metadata") != (decision_metadata or {})
+                or before_sha not in {intent["receipt"]["persona_sha256_before_approval"], intent["receipt"]["persona_sha256_after_approval"]}
+                or sha256_bytes(json.dumps(intent["persona"], ensure_ascii=False, indent=2).encode("utf-8")) != intent["receipt"]["persona_sha256_after_approval"]):
+            raise RuntimeError("Persona approval recovery does not match the original Human decision")
+        recovery_errors = validate_approval_authority(intent["persona"], persona_path)
+        if recovery_errors:
+            raise RuntimeError("Persona approval recovery blocked: " + " ".join(recovery_errors))
+        write_atomic_json(persona_path, intent["persona"])
+        write_once(receipt_path, intent["receipt"])
+        return intent["persona"], intent["receipt"], receipt_path
+    errors: list[str] = []
+    lifecycle = persona.get("lifecycle", {})
+    if (
+        lifecycle.get("status") != "review_required"
+        or lifecycle.get("approved") is not False
+    ):
+        errors.append("Persona must be review_required and not approved.")
+    errors.extend(validate_approval_authority(persona, persona_path))
     receipt_path = persona_path.parent / "approval_receipt.json"
     if receipt_path.exists():
         errors.append("Persona approval receipt already exists.")
@@ -111,6 +136,7 @@ def approve_persona(
             + ", ".join(unexpected_metadata)
         )
 
+    actual_content_sha = persona_content_hash(persona)
     timestamp = approved_at or now_iso()
     lifecycle.update(
         {
@@ -135,7 +161,7 @@ def approve_persona(
         persona["approval"]["review_decision_metadata"] = metadata
     persona["validation"]["human_approval_completed"] = True
     persona["validation"]["auto_approved"] = False
-    after_sha = write_atomic_json(persona_path, persona)
+    after_sha = sha256_bytes(json.dumps(persona, ensure_ascii=False, indent=2).encode("utf-8"))
     receipt = {
         "schema_version": "persona-approval-receipt-v1.0",
         "persona_id": persona.get("persona_id"),
@@ -156,7 +182,10 @@ def approve_persona(
     }
     if metadata:
         receipt["review_decision_metadata"] = metadata
-    write_new_json(receipt_path, receipt)
+    write_once(intent_path, {"version": "persona-approval-operation-v1.0", "reviewer": reviewer,
+        "note": note, "decision_metadata": metadata, "persona": persona, "receipt": receipt})
+    write_atomic_json(persona_path, persona)
+    write_once(receipt_path, receipt)
     return persona, receipt, receipt_path
 
 

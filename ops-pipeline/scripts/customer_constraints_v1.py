@@ -186,8 +186,11 @@ def legacy_target_key(target: dict[str, Any]) -> tuple[Any, ...]:
 def unresolved_legacy_constraints(root: Path, business_id: str, records: list[dict[str, Any]]) -> list[dict[str, Any]]:
     resolved = {legacy_target_key(v["human_review"]["resolution_target"]) for v in records
         if (v.get("human_review") or {}).get("decision") == "resolve" and v["human_review"].get("resolution_target")}
+    from legacy_constraint_scope_v1 import effective
+    scoped = {key for key, value in effective(root, business_id).items()
+        if value["decision"] == "external_claims_only"}
     return [v for v in legacy_critical_constraints(root, business_id) if legacy_target_key({
-        **v, "constraint_sha256": digest(v["record"])}) not in resolved]
+        **v, "constraint_sha256": digest(v["record"])}) not in resolved | scoped]
 
 
 def extract_constraints(intake: dict[str, Any], output: dict[str, Any], safe_materials: str) -> list[dict[str, Any]]:
@@ -320,6 +323,8 @@ def policy(records: list[dict[str, Any]]) -> dict[str, Any]:
             fields.extend(item["affected_fields"])
     return {"blockers": blockers, "blocked_terms": sorted(set(terms)),
         "excluded_fields": sorted(set(fields)), "conditions": conditions,
+        "legacy_quantitative_terms": sorted({term for item in records if item.get("legacy_scope_receipt_sha256")
+            for term in item.get("legacy_quantitative_terms", [])}),
         "derived_authority_constraints": copy.deepcopy(records)}
 
 
@@ -335,7 +340,7 @@ def validate_control_layer(persona: dict[str, Any]) -> dict[str, Any]:
     return policy(records)
 
 
-def collect(pipeline_root: Path, business_id: str) -> list[dict[str, Any]]:
+def collect(pipeline_root: Path, business_id: str, *, proposed_review=None) -> list[dict[str, Any]]:
     """Read only existing canonical sources, candidates and finalized Human reviews."""
     result = []
     originals = {}
@@ -376,6 +381,14 @@ def collect(pipeline_root: Path, business_id: str) -> list[dict[str, Any]]:
             if expected != read(reviewed_path).get("derived_authority_constraints"):
                 raise RuntimeError("Restriction reviewed artifact differs from Human decision.")
             records = expected
+        if proposed_review is not None and directory.name == proposed_review[0]:
+            proposed = proposed_review[1].get("derived_authority_constraints") or []
+            if {v["constraint_id"] for v in proposed} != {v["constraint_id"] for v in records}:
+                raise RuntimeError("Proposed restriction scope differs from its original candidates.")
+            for item in proposed:
+                validate_record(item)
+                validate_source(item["source"], intake)
+            records = copy.deepcopy(proposed)
         result.extend(records)
     resolved_ids = set()
     for item in result:
@@ -406,7 +419,8 @@ def collect(pipeline_root: Path, business_id: str) -> list[dict[str, Any]]:
             resolution = next(v for v in result if (v.get("human_review") or {}).get("resolution_target", {}).get("constraint_id") == item["constraint_id"])
             item = {**copy.deepcopy(item), "state": "resolved", "human_review": copy.deepcopy(resolution["human_review"])}
         effective.append(item)
-    return effective
+    from legacy_constraint_scope_v1 import effective_records
+    return effective + effective_records(pipeline_root, business_id)
 
 
 def root_for_persona(path: Path) -> Path | None:
@@ -454,7 +468,11 @@ def truth_projection(persona: dict[str, Any], *, path: Path | None = None) -> di
         if fact.get("state") != "known":
             continue
         text = json.dumps(fact.get("value"), ensure_ascii=False)
-        if field in value["excluded_fields"] or any(term in text for term in value["blocked_terms"]):
+        source_text = json.dumps(fact.get("source_refs", []), ensure_ascii=False)
+        source_blocked = any(item.get("legacy_scope_receipt_sha256") and any(
+            "#" + ref in source_text for ref in [item["source"]["raw_answer_ref"], *item["related_fact_refs"]])
+            for item in value["derived_authority_constraints"])
+        if source_blocked or field in value["excluded_fields"] or any(term in text for term in value["blocked_terms"]):
             fact.update(state="unknown", value=None)
     return result
 
@@ -462,7 +480,45 @@ def truth_projection(persona: dict[str, Any], *, path: Path | None = None) -> di
 def assert_publication_allowed(persona: dict[str, Any], path: Path, texts: list[str]) -> None:
     rules = assert_production_allowed(persona, path)
     for text in texts:
+        assert_scope_claims_allowed(rules, text)
         if any(term in text for term in rules["blocked_terms"]):
             raise RuntimeError("BUSINESS_RESTRICTION_FORBIDDEN_PUBLICATION")
         if any(item["condition"] not in text and (item["affected_fields"] or any(term in text for term in item["blocked_terms"])) for item in rules["conditions"]):
             raise RuntimeError("BUSINESS_RESTRICTION_CONDITION_MISSING")
+
+
+def publication_text(item: dict[str, Any]) -> str:
+    """Claim-bearing fields checked before publication and Ledger closure."""
+    return "\n".join(json.dumps(item.get(field), ensure_ascii=False) if isinstance(item.get(field), (dict, list))
+        else str(item.get(field) or "") for field in ("title", "narration", "central_claim", "cta"))
+
+
+def assert_scope_claims_allowed(rules: dict[str, Any], text: str) -> None:
+    """Additional fail-closed checks for external relationship paraphrases.
+
+    Source exclusion is primary. These guards also reject unsupported generated
+    relationship/rent assertions even when an external name was paraphrased.
+    They do not assert that any relationship has been established.
+    """
+    if not rules.get("legacy_external_scope_control") and not any(v.get("legacy_scope_receipt_sha256") for v in rules.get("derived_authority_constraints", [])):
+        return
+    if any(term in text for term in rules.get("blocked_terms", [])):
+        raise RuntimeError("LEGACY_SCOPE_FORBIDDEN_EXTERNAL_CLAIM")
+    import re
+    patterns = (
+        r"(?:市场|市集|运营方|管理方|出租方|合作方|另一门店).{0,20}(?:支持|扶持|推动|合作|经营|运营|管理|孵化|减负|让利|优惠|免租|减租)",
+        r"(?:食堂|我们|门店).{0,14}(?:得到|获得|受到).{0,10}(?:支持|扶持)",
+        r"(?:隶属|归属|旗下|联合经营|租金|免租|减租|房租|场地费|出租方|承租方)",
+    )
+    if any(re.search(pattern, text) for pattern in patterns):
+        raise RuntimeError("LEGACY_SCOPE_FORBIDDEN_EXTERNAL_CLAIM")
+    quantities = set(rules.get("legacy_quantitative_terms", []))
+    digits = {c: str(n) for n, c in enumerate("零一二三四五六七八九")}
+    for number in list(quantities):
+        if number.endswith("十") and 1 <= len(number[:-1]) <= 2 and all(c in digits for c in number[:-1]):
+            for c in number[:-1]:
+                quantities.update({c + "十", str(int(digits[c]) * 10)})
+        if number == "100":
+            quantities.update({"一百", "近百"})
+    if re.search(r"(?:午市|晚市|每天|单日|日均|每日|一天|中午|晚上).{0,12}(?:单|人|位)", text) and any(number in text for number in quantities):
+        raise RuntimeError("LEGACY_SCOPE_FORBIDDEN_EXTERNAL_QUANTITY")

@@ -338,3 +338,26 @@ def test_S1_sensitive_source_title_can_be_reduced_to_safe_excerpt_before_final_c
     public=node[1]['B'][0].get(url)
     assert public.json()['title']=='虚构制作过程' and '13912345678' not in public.text
     assert file_sha(metadata)==source_sha and len(receipts(node))==1
+
+
+def test_checkpoint_shared_case_does_not_grant_creative_or_media_authority(node):
+    from resolve_generation_source_plan_v1 import resolve_matching_universe, SourcePlanError
+    from production_profile_v1 import case_is_eligible_for_production_footage
+    c, h, url, data, _ = prepared(node)
+    response = c.post(url + '/review', headers=h, json=data)
+    assert response.status_code == 200, response.text
+    assert response.json()['sharing_state'] == 'approved_shared'
+    settings = node[0]
+    consumer = node[1]['B'][0]
+    assert consumer.get(url).status_code == 200
+    assert consumer.get(url + '/media').status_code == 404
+    assert not (settings.pipeline_root / 'data/cases' / CASE_ID /
+                'case_profile_compatibility_approval_v1.json').exists()
+    assert not list(settings.pipeline_root.glob('data/patterns/approved/*/approval_receipt.json'))
+    with pytest.raises(ValueError, match='schema'):
+        case_is_eligible_for_production_footage({})
+    before = {str(p): file_sha(p) for p in settings.pipeline_root.rglob('*.json')}
+    with pytest.raises(SourcePlanError) as blocked:
+        resolve_matching_universe(settings.pipeline_root)
+    assert blocked.value.code == 'SOURCE_PLAN_AUTHORITY_MISSING'
+    assert before == {str(p): file_sha(p) for p in settings.pipeline_root.rglob('*.json')}

@@ -1,18 +1,24 @@
+import {enhanceReviewDisclosures,bindReviewReturnLinks} from './customer-review-presentation.mjs?v=customer-speaker-scope-1';
+import { bindFinalCustomerConfirmation } from "./customer-final-confirmation.mjs?v=customer-speaker-scope-1";
+import {bindCustomerSpeakerConfirmation} from './customer-speaker-confirmation.mjs?v=customer-speaker-scope-1';
+import { amendmentPanel, bindAmendment, bindingReviewPanel, mountRecovery } from "./review-workflow-ui.mjs?v=profile-correction-ui-1";
 import {
   customerCard,
+  customerConstraintPanel,
   customerFieldLabel,
   customerProgressPanel,
   customerStatusPill,
   editableFactValue,
   parseEditedFactValue,
-} from "./customer-components.js?v=customer-speaker-v1";
+} from "./customer-components.js?v=customer-card-navigation-1";
 import {
   speakerCard,
-} from "./speaker-components.js?v=customer-speaker-v1";
+} from "./speaker-components.js?v=flow-closure-2";
 
-import { escapeHtml } from "./case-components.js";
+import { escapeHtml } from "./case-components.js?v=flow-closure-2";
 import { formatConsoleTime, accountLabel } from "./ui-format.mjs?v=ui-1";
-import { listEmpty, searchIcon, listSkeleton } from "./list-ui.mjs?v=brand-ui-1";
+import { listEmpty, searchIcon, listSkeleton } from "./list-ui.mjs?v=flow-closure-2";
+import {bindLegacyScope} from "./legacy-scope-ui.mjs?v=legacy-scope-1";
 import {
   ProfileRow,
   ProfileSection,
@@ -22,6 +28,7 @@ import {
   formatProfileValue,
 } from "./profile-components.js?v=productized-stage2-3";
 import { startTaskPolling } from "./task-progress.js";
+import {watchCustomerSpeakerTasks} from './customer-speaker-status.mjs?v=speaker-status-sync-1';
 import { ContentOperationsPanel } from "./content-operations-views.js?v=productized-stage3-3";
 
 const CUSTOMER_PROFILE_GROUPS = [
@@ -79,14 +86,14 @@ const CUSTOMER_PROFILE_GROUPS = [
 import { CASE_INDUSTRIES as CUSTOMER_INDUSTRIES } from "./case-industry.mjs?v=industry-2";
 export { CUSTOMER_INDUSTRIES };
 
-export function intakeSteps(active) {
-  return `<ol class="intake-steps" aria-label="资料整理步骤">${["提供资料", "AI 自动整理", "检查并确认"].map((label, index) => `<li ${active === index + 1 ? 'aria-current="step"' : ""}><span>${index + 1}</span>${label}</li>`).join("")}</ol>`;
+export function intakeSteps(active, amendment = false) {
+  return `<ol class="intake-steps" aria-label="资料整理步骤">${(amendment ? ["提供更正依据", "保留原审核来源", "检查并确认"] : ["提供资料", "AI 自动整理", "检查并确认"]).map((label, index) => `<li ${active === index + 1 ? 'aria-current="step"' : ""}><span>${index + 1}</span>${label}</li>`).join("")}</ol>`;
 }
 
 function auditNote(detail) {
   const reviewer = accountLabel(detail.reviewed_by?.phone);
   const time = formatConsoleTime(detail.fact_review?.created_at || detail.fact_review?.reviewed_at);
-  return reviewer ? `<p class="field-hint">信息审核：${escapeHtml(reviewer)}${time ? ` · ${escapeHtml(time)}` : ""}。客户与出镜人分别确认，素材使用权仍须单独检查。</p>` : "";
+  return reviewer ? `<p class="field-hint">信息审核：${escapeHtml(reviewer)}${time ? ` · ${escapeHtml(time)}` : ""}。客户与人物分别留存审核记录，素材使用权仍须单独检查。</p>` : "";
 }
 
 export function customerReviewGroups(items) {
@@ -106,12 +113,17 @@ export function customerReviewGroups(items) {
         <div class="customer-fact-heading"><h4>${escapeHtml(customerFieldLabel(item.field))}</h4><span data-fact-status>${item.default_review_selection ? "待统一确认" : "需要重点核对"}</span></div>
         <div class="customer-fact-value" data-fact-value>${formatProfileValue(item.value)}</div>
         ${item.review_exception_reason ? `<p class="field-hint">${escapeHtml(item.review_exception_reason)}</p>` : ""}
-        ${EvidenceDisclosure(item.source_excerpt)}
-        <div class="customer-fact-actions">
-          <button type="button" class="btn btn-secondary" data-review-choice="edit">修改</button>
-          <button type="button" class="btn btn-secondary" data-review-choice="reject">不采用</button>
-          <button type="button" class="btn btn-text" data-review-choice="approve" ${item.default_review_selection ? "hidden" : ""}>采用此信息</button>
-          <button type="button" class="btn btn-text" data-review-choice="">暂不处理</button>
+        <div class="customer-fact-footer">${EvidenceDisclosure(item.source_excerpt)}
+        <div class="customer-fact-tools">
+          <button type="button" class="btn btn-secondary" data-review-choice="approve" ${item.default_review_selection ? "hidden" : ""}>采用此信息</button>
+          <details class="customer-fact-options"><summary aria-label="调整${escapeHtml(customerFieldLabel(item.field))}">调整</summary>
+            <div class="customer-fact-actions">
+              <button type="button" class="btn btn-ghost" data-review-choice="edit">修改</button>
+              <button type="button" class="btn btn-ghost" data-review-choice="reject">不采用</button>
+              <button type="button" class="btn btn-ghost" data-review-choice="">暂不处理</button>
+            </div>
+          </details>
+        </div>
         </div>
         <div class="review-edit-panel" hidden><label>修改后的信息<textarea aria-label="修改${escapeHtml(customerFieldLabel(item.field))}" rows="3">${escapeHtml(editableFactValue(item.value))}</textarea></label><p class="field-hint">修改后的内容将在下方预览，提交后形成真实人审记录。</p></div>
       </article>`).join("")}</section>` : "";
@@ -127,18 +139,29 @@ const CONSTRAINT_PRESENTATION = {
 const CONSTRAINT_DEFAULTS = {publication_prohibition: "confirm", unverified_claim: "defer", identity_conflict: "defer", conditional_fact: "confirm"};
 const CONSTRAINT_ACTION_LABELS = {confirm: "按上述限制使用内容", exclude: "明确排除此项宣传", defer: "需要进一步核实，相关内容暂不使用", dismiss: "纠正识别", resolve: "补充核实资料，解决此项冲突"};
 
+export function constraintReviewImpact(type, decision) {
+  if (!decision) return "本次暂未处理，仍需核对后才能完成新客户档案批准。";
+  if (["dismiss", "resolve"].includes(decision)) return "请补充准确原文和核对说明，保存时仍须通过正式校验。";
+  if (type === "identity_conflict") return "主体冲突尚未解决，保存进度不会解除相关创作限制。";
+  if (decision === "defer") return "保存后继续待核实，新客户档案暂不能批准。";
+  if (decision === "exclude") return "此项宣传不用于创作，不表示它已核实；其余资料仍按原流程审核。";
+  if (type === "conditional_fact") return "后续内容必须保留原有适用条件。";
+  if (type === "publication_prohibition") return "相关表述会继续禁用，独立业务事实仍按原流程审核。";
+  return "保留当前限制，后续仍需检查档案批准和内容使用条件。";
+}
+
 export function customerConstraintReview(detail) {
   const candidates = detail.constraint_candidates || [];
   const pendingCount = candidates.filter(item => !item.human_review).length;
   if (!candidates.length) return "";
-  return `<section class="work-surface review-surface customer-constraint-surface">
+  return `<section class="work-surface review-surface customer-constraint-surface" id="customer-review-constraints">
     <div class="review-surface-heading">
-      <h2>重要限制与待核实内容 <span class="customer-section-count">${pendingCount} 项待核对 · ${candidates.length - pendingCount} 项已保存</span></h2>
-      <p>${pendingCount ? "以下是 AI 的待提交建议，请重点核对。" : "以下限制已从保存的人审记录重新读取。"}暂不宣传不代表宣传主张已经核实。</p>
+      <h2>重要限制与待核实内容 <span class="customer-section-count">${pendingCount} 项待核对${candidates.length > pendingCount ? ` · ${candidates.length - pendingCount} 项已保存` : ""}</span></h2>
+      <p>${pendingCount ? "以下是 AI 的待提交建议，请对照原文核对。" : "以下限制已从保存的人审记录重新读取。"}暂不宣传不代表宣传主张已经核实。</p>
     </div>
     <div class="customer-constraint-list">
       ${candidates.map((item, index) => {
-        const [title, hint] = CONSTRAINT_PRESENTATION[item.constraint_type] || ["待核实内容", "请核对原文并选择处理方式。"];
+        const [title] = CONSTRAINT_PRESENTATION[item.constraint_type] || ["待核实内容"];
         const id = `constraint-${index}`;
         const targets = (detail.constraint_resolution_targets || []).filter(target => target.constraint_type === item.constraint_type);
         if (item.human_review) return `<article class="customer-constraint-card is-reviewed"><h3>${title} · 已保存</h3><p>${escapeHtml(item.source.evidence_quote)}</p><p>${escapeHtml(CONSTRAINT_ACTION_LABELS[item.human_review.decision])}</p>${item.human_review.amendment ? `<p>当前禁用：${escapeHtml((item.blocked_terms || []).join("、"))}；条件：${escapeHtml(item.condition || "无")}</p>` : ""}<p class="field-hint">${escapeHtml(accountLabel(item.human_review.reviewer))} · ${escapeHtml(formatConsoleTime(item.human_review.reviewed_at))}。已保存决定不能由新的批量提交覆盖。</p></article>`;
@@ -149,7 +172,7 @@ export function customerConstraintReview(detail) {
             <span class="customer-constraint-status" data-constraint-status>AI 建议，待统一确认</span>
           </div>
           <div class="customer-constraint-body">
-            <div class="customer-constraint-source"><span>资料中的原文</span><p>${escapeHtml(item.source.evidence_quote)}</p></div>
+            <div class="customer-constraint-source"><span>资料中的原文</span><blockquote>${escapeHtml(item.source.evidence_quote)}</blockquote><p class="customer-constraint-scope">影响范围：${item.scope === "business" ? "客户主体与核心真实性（未解决仍会阻断）" : "相关宣传主张"}${item.condition ? `；成立条件：${escapeHtml(item.condition)}` : ""}。</p></div>
             <div class="field customer-constraint-action">
               <label for="${id}-action">处理方式</label>
               <select id="${id}-action" aria-label="限制审核决定" aria-describedby="${id}-hint" data-constraint-action>
@@ -157,8 +180,7 @@ export function customerConstraintReview(detail) {
                 ${item.constraint_type === "unverified_claim" ? '<option value="exclude">明确排除此项宣传，不用于内容</option>' : ""}
                 <option value="defer" ${defaultAction === "defer" ? "selected" : ""}>${item.constraint_type === "unverified_claim" ? "暂不宣传，继续待核实" : "相关内容暂不能使用，继续核实"}</option><option value="dismiss">纠正识别</option><option value="resolve">补充核实资料，解决此项冲突</option>
               </select>
-              <span class="field-hint" id="${id}-hint">${hint}</span>
-              <p class="field-hint">受影响范围：${item.scope === "business" ? "客户主体与核心真实性（未解决仍会阻断）" : "相关宣传主张"}${item.condition ? `；成立条件：${escapeHtml(item.condition)}` : ""}。</p>
+              <p class="customer-constraint-impact" id="${id}-hint" data-constraint-impact role="status">${constraintReviewImpact(item.constraint_type, defaultAction)}</p>
             </div>
           </div>
           ${["publication_prohibition", "conditional_fact"].includes(item.constraint_type) ? `<details class="customer-constraint-amendment"><summary>修改建议（需要来源依据）</summary><label><input type="checkbox" data-amend-enabled> 本次提交有来源的限制修订</label><div class="field"><label>禁用词（每行一个）<textarea data-amend-terms rows="3">${escapeHtml((item.blocked_terms || []).join("\n"))}</textarea></label></div><div class="field"><label>成立条件<input data-amend-condition value="${escapeHtml(item.condition || "")}"></label></div><div class="field"><label>影响的业务信息<select data-amend-fields multiple>${[...new Set([...(item.affected_fields || []), ...(detail.fact_candidates || []).map(v => v.field)])].map(field => `<option value="${escapeHtml(field)}" ${(item.affected_fields || []).includes(field) ? "selected" : ""}>${escapeHtml(customerFieldLabel(field))}</option>`).join("")}</select></label></div><div class="field"><label>准确原文<textarea data-amend-quote rows="3">${escapeHtml(item.source.evidence_quote)}</textarea></label></div><div class="field"><label>修改依据<textarea data-amend-reason rows="2"></textarea></label></div><div class="field"><label>对内容使用的影响<textarea data-amend-impact rows="2"></textarea></label></div><p class="field-hint">原候选永久保留。缩小禁用范围需要新的准确证据，成立条件不得丢失。</p></details>` : ""}
@@ -177,7 +199,7 @@ export function customerConstraintReview(detail) {
   </section>`;
 }
 
-export function bindCustomerConstraintControls(root = document) {
+export function bindCustomerConstraintControls(root = document, detail = {}) {
   const rows = [...root.querySelectorAll("[data-constraint-id]")];
   if (!rows.length) return;
   const progress = root.querySelector("[data-constraint-progress]");
@@ -189,6 +211,12 @@ export function bindCustomerConstraintControls(root = document) {
       row.querySelector("[data-constraint-evidence-panel]").hidden = !["dismiss", "resolve"].includes(value);
       row.querySelector("[data-constraint-status]").textContent = value ? "待统一确认" : "本次暂不处理";
       row.classList.toggle("has-selection", Boolean(value));
+      const impact = row.querySelector("[data-constraint-impact]");
+      if (impact) {
+        const type = detail.constraint_candidates?.find(item => item.constraint_id === row.dataset?.constraintId)?.constraint_type;
+        impact.textContent = constraintReviewImpact(type, value);
+        impact.classList.toggle("needs-attention", !value || value === "defer" || type === "identity_conflict");
+      }
     });
     if (progress) progress.textContent = `处理方式已选择 ${selected} / ${rows.length}，提交后保存核对结果。`;
   };
@@ -204,21 +232,68 @@ export function customerSubmissionSummary(factChoices, constraintChoices) {
     conflicts: constraintChoices.filter(v => v.type === "identity_conflict" && !["resolve", "dismiss"].includes(v.decision)).length};
 }
 
-export function bindCustomerReviewControls(detail, root = document) {
+export function customerReviewConsequence(counts) {
+  if (counts.conflicts) return "仍有主体冲突需要核实，保存进度不会解除相关创作限制。";
+  if (counts.deferred) return `还有 ${counts.deferred} 项选择继续待核实，新客户档案暂不能批准。`;
+  if (counts.pending) return `有 ${counts.pending} 项本次暂未处理，可保存进度后继续核对。`;
+  return "保存本页核对结果后，客户与出镜人档案仍需分别批准。";
+}
+
+export function customerFinalPreview(value) {
+  const approving = ["approve_business_profile","approve_customer_and_speakers"].includes(value.mode);
+  const joint = value.schema_version === 'customer-final-confirmation-v1.1';
+  const facts = Object.keys(value.projection.facts || {});
+  const constraints = value.projection.constraints || [];
+  const blockers = (value.blockers || []).map(item => ({
+    critical_constraints:"重要限制仍需处理，当前不能批准客户档案。",
+    business_identity:"客户基本身份信息尚不完整。",
+    business_offer:"主要产品或服务信息尚不完整。",
+    customer_use_context:"主要顾客及使用场景尚不完整。",
+    production_bearing_facts:"还需要可用于内容的具体业务事实。",
+  })[item] || (/^[a-z_]+$/.test(item) ? "仍有资料条件未满足，请继续核对或补充针对性来源。" : String(item)));
+  return `<section class="customer-confirmation-scope" aria-label="本次客户确认范围">
+    <dl class="customer-confirmation-metrics">
+      <div><dt>客户信息</dt><dd>${facts.length} 项</dd></div>
+      <div><dt>保留限制</dt><dd>${constraints.length} 项</dd></div>
+      <div class="${blockers.length ? 'needs-attention' : ''}"><dt>待处理条件</dt><dd>${blockers.length} 项</dd></div>
+    </dl>
+    ${blockers.length ? `<ul class="customer-final-blockers">${blockers.map(v=>`<li>${escapeHtml(v)}</li>`).join("")}</ul>` : ''}
+    ${constraints.length ? `<ul class="customer-confirmation-restrictions">${constraints.map(v=>`<li class="${['exclude','defer'].includes(v.decision) ? 'needs-attention' : ''}"><strong>${escapeHtml(CONSTRAINT_PRESENTATION[v.constraint_type]?.[0] || '重要事项')}</strong><span>${escapeHtml(CONSTRAINT_ACTION_LABELS[v.decision] || '仍待核对')}${v.condition ? `；${escapeHtml(v.condition)}` : ''}</span></li>`).join('')}</ul>` : ''}
+    <div class="customer-confirmation-links" aria-label="返回核对资料">
+      <button type="button" class="btn btn-ghost" data-review-section-target="customer-review-business">返回查看客户信息 ↑</button>
+      ${constraints.length ? '<button type="button" class="btn btn-ghost" data-review-section-target="customer-review-constraints">返回查看重要限制 ↑</button>' : ''}
+    </div>
+    <p class="field-hint">${approving ? '确认后，客户信息及限制将用于后续创作资格检查。' : '本次只保存核对进度，不会批准客户或人物档案，也不会解除未解决的限制。'}${joint ? '' : '出镜人本人资料仍需独立审核。'}</p>
+  </section>`;
+}
+
+export function bindCustomerReviewControls(detail, root = document, onChange = () => {}) {
+  bindReviewReturnLinks(root);
   const rows = [...root.querySelectorAll("[data-review-row]")];
   const controls = [...root.querySelectorAll("[data-constraint-id]")];
   const update = () => {
+    enhanceReviewDisclosures(root);
     const choices = controls.map(row => ({decision: row.querySelector("[data-constraint-action]").value,
       type: detail.constraint_candidates.find(v => v.constraint_id === row.dataset.constraintId)?.constraint_type}));
     const counts = customerSubmissionSummary(rows.map(row => row.dataset.decision || ""), choices);
     counts.conflicts = (detail.constraint_candidates || []).filter(v => v.constraint_type === "identity_conflict" && v.state !== "resolved").length;
     counts.edited += controls.filter(row => row.querySelector("[data-amend-enabled]")?.checked).length;
     const summary = root.querySelector("[data-review-progress]");
-    if (summary) summary.textContent = `将采用 ${counts.adopted} 项 · 已修改 ${counts.edited} 项 · 不采用 ${counts.rejected} 项 · 待核实 ${counts.deferred} 项 · 暂未处理 ${counts.pending} 项 · 关键冲突 ${counts.conflicts} 项`;
+    if (summary) {
+      summary.textContent = [!detail.unified_confirmation_enabled && `将采用 ${counts.adopted} 项业务信息`,
+        counts.edited && `已修改 ${counts.edited} 项`, counts.rejected && `不采用 ${counts.rejected} 项`,
+        counts.deferred && `待核实 ${counts.deferred} 项`, counts.pending && `暂未处理 ${counts.pending} 项`,
+        counts.conflicts && `关键冲突 ${counts.conflicts} 项`].filter(Boolean).join(" · ");
+      summary.hidden = !summary.textContent;
+    }
+    const consequence = root.querySelector("[data-review-consequence]");
+    if (consequence) consequence.textContent = detail.joint_speaker_confirmation_enabled && !counts.deferred && !counts.conflicts && !counts.pending
+      ? '核对上方资料后，可一次确认客户与所选出镜人。' : customerReviewConsequence(counts);
     const important = root.querySelector("[data-important-submissions]");
     if (important) important.innerHTML = controls.map((row, index) => `<li><strong>${escapeHtml(CONSTRAINT_PRESENTATION[choices[index].type]?.[0] || "重要事项")}</strong>：${escapeHtml(CONSTRAINT_ACTION_LABELS[choices[index].decision] || "本次暂不处理")}<small>${escapeHtml(detail.constraint_candidates.find(v => v.constraint_id === row.dataset.constraintId)?.source.evidence_quote || "")}</small>${row.querySelector("[data-amend-enabled]")?.checked ? `<p>本次修订：禁用 ${escapeHtml(row.querySelector("[data-amend-terms]").value || "无")}；条件 ${escapeHtml(row.querySelector("[data-amend-condition]").value || "无")}；影响信息 ${escapeHtml([...row.querySelector("[data-amend-fields]").selectedOptions].map(v => customerFieldLabel(v.value)).join("、") || "原宣传范围")}。</p><small>修订依据：${escapeHtml(row.querySelector("[data-amend-quote]").value)}；说明：${escapeHtml(row.querySelector("[data-amend-reason]").value)}；生产影响：${escapeHtml(row.querySelector("[data-amend-impact]").value)}</small>` : ""}</li>`).join("");
     const button = root.querySelector("#submit-fact-review");
-    if (button) button.disabled = !rows.some(row => row.dataset.decision) && !choices.some(v => v.decision) && !root.querySelector("#human-industry")?.value && !detail.review_progress?.completion_retry_required && !(detail.speaker_candidates || []).some(v => !v.confirmed);
+    if (button) button.disabled = !rows.some(row => row.dataset.decision) && !choices.some(v => v.decision) && !root.querySelector("#human-industry")?.value && !detail.review_progress?.completion_retry_required && !(detail.speaker_candidates || []).some(v => !v.confirmed) && detail.fact_candidates.some(v=>v.state==="requires_review");
+    onChange();
   };
   rows.forEach(row => {
     row.querySelectorAll("[data-review-choice]").forEach(button => button.addEventListener("click", () => {
@@ -231,7 +306,11 @@ export function bindCustomerReviewControls(detail, root = document) {
       row.querySelector("[data-fact-status]").textContent = {approve: "待统一确认", edit: "已修改，待统一确认", reject: "不采用，待保存"}[row.dataset.decision] || "本次暂不处理";
       row.querySelector(".review-edit-panel").hidden = row.dataset.decision !== "edit";
       row.querySelector('[data-review-choice="approve"]').hidden = row.dataset.decision === "approve";
+      row.querySelectorAll("[data-review-choice]").forEach(choice => choice.setAttribute?.("aria-pressed", String(choice.dataset.reviewChoice === row.dataset.decision)));
+      const options = row.querySelector(".customer-fact-options");
+      if (options) options.open = false;
       if (row.dataset.decision === "edit") row.querySelector("textarea").focus();
+      else options?.querySelector("summary")?.focus();
       window.__customerReviewDirty = true;
       update();
     }));
@@ -252,7 +331,7 @@ export function bindCustomerReviewControls(detail, root = document) {
 
 function discoveryPanel(detail) {
   const candidates = (detail.speaker_candidates || []).filter(item => !item.confirmed);
-  if (candidates.length) return speakerDiscoverySection(candidates);
+  if (candidates.length) return speakerDiscoverySection(candidates,detail.joint_speaker_confirmation_enabled);
   if ((detail.speakers || []).length) return "";
   if (detail.speaker_discovery_status === "failed") return `<section class="work-surface customer-discovery-status"><h2>人物发现暂未完成</h2><p>客户信息仍然保留，可以单独重试查找人物，也可以手动添加。</p><div class="customer-recovery-actions"><button class="btn btn-secondary" data-retry-person-discovery>重试查找出镜人</button><a class="btn btn-secondary" href="/customers/${encodeURIComponent(detail.business_id)}/speakers/new" data-route>手动添加出镜人</a></div><div data-person-discovery-progress></div></section>`;
   return `<section class="work-surface customer-discovery-status"><h2>${(detail.speaker_candidates || []).length ? "已保存所选出镜人" : (detail.speaker_count ? "本次资料未发现新增人物" : "暂未找到明确的出镜人")}</h2><p>人物资料与客户资料分别审核。可以继续处理已保存人物，或补充新的本人资料。</p><div class="customer-recovery-actions">${detail.speaker_discovery_status === "completed" && !(detail.speaker_candidates || []).length ? '<button class="btn btn-secondary" data-retry-person-discovery>重新查找出镜人</button>' : ""}<a class="btn btn-secondary" href="/customers/${encodeURIComponent(detail.business_id)}/speakers/new" data-route>添加出镜人</a></div><div data-person-discovery-progress></div></section>`;
@@ -265,13 +344,13 @@ const SPEAKER_TYPE_OPTIONS = [
   ["generic", "其他出镜人"],
 ];
 
-function speakerDiscoverySection(candidates = []) {
+function speakerDiscoverySection(candidates = [], joint = false) {
   if (!candidates.length) return "";
   return `
-    <section class="work-surface speaker-discovery-surface">
+    <section class="work-surface speaker-discovery-surface" id="customer-review-speakers">
       <div class="review-surface-heading">
-        <h2>发现可能的出镜人 <span class="customer-section-count">${candidates.length} 位</span></h2>
-        <p>请检查选中的人；确认后保存资料，之后仍需单独确认人物档案。</p>
+        <h2>确认出镜人 <span class="customer-section-count">${candidates.length} 位待确认</span></h2>
+        <p>${joint ? '请核对选中的人。下方会展示完整人物资料，最后与客户档案一次确认。' : '请检查选中的人；确认后保存资料，之后仍需单独确认人物档案。'}</p>
       </div>
       <div class="speaker-discovery-list">
         ${candidates.map((candidate) => {
@@ -290,22 +369,22 @@ function speakerDiscoverySection(candidates = []) {
               <label class="speaker-discovery-toggle">
                 <input type="checkbox" data-speaker-select ${selected ? "checked" : ""}>
                 <span>
-                  <strong>选择为出镜人</strong>
+                  <strong>本次添加为出镜人</strong>
                   <small>${explicit ? "资料明确提到会出镜" : "可能代表客户出镜"}</small>
                 </span>
               </label>
               <div class="speaker-discovery-fields">
                 <div class="field">
-                  <label>姓名</label>
-                  <input data-speaker-name maxlength="200" value="${escapeHtml(candidate.confirmation?.speaker_name || candidate.name || "")}" placeholder="请补充姓名">
+                  <label for="speaker-${candidateId}-name">姓名</label>
+                  <input id="speaker-${candidateId}-name" data-speaker-name maxlength="200" value="${escapeHtml(candidate.confirmation?.speaker_name || candidate.name || "")}" placeholder="请补充姓名">
                 </div>
                 <div class="field">
-                  <label>公开身份</label>
-                  <input data-speaker-role maxlength="200" value="${escapeHtml(candidate.confirmation?.public_role || candidate.public_role || "")}" placeholder="请补充公开身份">
+                  <label for="speaker-${candidateId}-role">公开身份</label>
+                  <input id="speaker-${candidateId}-role" data-speaker-role maxlength="200" value="${escapeHtml(candidate.confirmation?.public_role || candidate.public_role || "")}" placeholder="请补充公开身份">
                 </div>
                 <div class="field">
-                  <label>出镜人类型</label>
-                  <select data-speaker-type>
+                  <label for="speaker-${candidateId}-type">出镜人类型</label>
+                  <select id="speaker-${candidateId}-type" data-speaker-type>
                     <option value="" ${speakerType === null ? "selected" : ""}>暂时无法判断，请选择</option>
                     ${SPEAKER_TYPE_OPTIONS.map(([value, label]) => `<option value="${value}" ${value === speakerType ? "selected" : ""}>${label}</option>`).join("")}
                   </select>
@@ -529,7 +608,8 @@ export function createCustomerViews({
 
   function renderFactReview(detail) {
     const supplement = detail.latest_intake_type === "gap_supplement";
-    const reviewTitle = "检查 AI 整理的客户资料";
+    const amendment = detail.latest_intake_type === "review_amendment";
+    const reviewTitle = detail.joint_speaker_confirmation_enabled ? '核对客户与出镜人资料' : detail.status === "persona_review_required" ? "核对并批准客户档案" : amendment ? "核对更正后的客户资料" : "检查 AI 整理的客户资料";
     const candidates = detail.fact_candidates || [];
     const known = candidates.filter(
       (item) => item.state === "known_candidate",
@@ -569,31 +649,39 @@ export function createCustomerViews({
           ${pageHeading(
             "",
             reviewTitle,
-            supplement
+            amendment ? "请核对本轮更正及其依据。原资料、审核记录和关键限制保留；更正仍需独立档案批准。" : supplement
               ? "只检查本轮新增事实；之前已经确认的信息会继续保留。"
               : "AI 已帮你整理好内容。请快速核对，发现不准确的地方可以直接修改。",
           )}
+          <p class="customer-review-name">${escapeHtml(detail.display_name)}</p>
 
-          ${intakeSteps(3)}
-          <div class="customer-review-overview"><span>普通业务信息 <strong>${needsReview.filter(v => v.default_review_selection).length}</strong></span><span>重要限制与待核实 <strong>${(detail.constraint_candidates || []).filter(v => !v.human_review).length}</strong></span><span>重点核对的异常 <strong>${needsReview.filter(v => !v.default_review_selection).length + (detail.constraint_candidates || []).filter(v => v.constraint_type === "identity_conflict" && v.state !== "resolved").length}</strong></span></div>
+          ${intakeSteps(3, amendment)}
+          <nav class="customer-review-overview" aria-label="核对内容">
+            ${(detail.constraint_candidates || []).length ? `<button type="button" data-review-section-target="customer-review-constraints">重要事项 <strong>${(detail.constraint_candidates || []).filter(v => !v.human_review).length} 项待核对</strong></button>` : ""}
+            <button type="button" data-review-section-target="customer-review-business">业务信息 <strong>${needsReview.length} 项待确认</strong></button>
+            ${(detail.speaker_candidates || []).some(v => !v.confirmed) ? `<button type="button" data-review-section-target="customer-review-speakers">出镜人 <strong>${detail.speaker_candidates.filter(v => !v.confirmed).length} 位待确认</strong></button>` : ""}
+            <button type="button" data-review-section-target="customer-review-summary">查看提交摘要</button>
+          </nav>
           ${detail.review_progress?.saved_count ? `<p class="result-banner">已保存 ${detail.review_progress.saved_count} 项审核决定，${detail.review_progress.pending_count} 项仍待处理。已保存记录保留，不需要重复核对。${detail.review_progress.completion_retry_required ? "审核决定已保存，后续整理中断，请继续完成保存。" : ""}</p>` : ""}
-          ${knownHtml}
+          ${customerConstraintReview(detail)}
 
-          <section class="work-surface review-surface">
+          <section class="work-surface review-surface" id="customer-review-business">
             <div class="review-surface-heading">
               <h2>客户业务信息 ${needsReview.length ? `<span class="customer-section-count">${needsReview.length} 项待确认</span>` : ""}</h2>
-              <p>普通信息已加入待统一确认清单。请浏览内容，必要时修改、不采用或暂不处理；异常需要明确选择。</p>
+              <p>准确的普通信息可统一确认；需要更正时打开“调整”。标记为重点核对的信息仍需明确选择。</p>
             </div>
+            ${knownHtml}
             ${customerReviewGroups(needsReview)}
             ${!candidates.some(item => item.field === "industry") && (!detail.industry || detail.industry === "待确认") ? `<div class="field customer-industry-field"><label for="human-industry">所属行业</label><select id="human-industry"><option value="">保留待判断（未提供人工判断）</option><option value="__uncertain__">暂不确定</option>${CUSTOMER_INDUSTRIES.map(value => `<option>${escapeHtml(value)}</option>`).join("")}</select><span class="field-hint">系统暂时无法准确判断。可以根据真实资料选择行业；留待判断不会阻止保存或其他审核。</span></div>` : ""}
           </section>
 
-          ${customerConstraintReview(detail)}
-
           ${discoveryPanel(detail)}
 
-          <section class="work-surface customer-submit-summary"><h2>本次提交范围</h2><p data-review-progress></p><ul data-important-submissions></ul><p class="field-hint">点击下方按钮才形成逐项人工审核决定。保存事实不等于批准客户档案；关键冲突仍会限制批准及内容使用。</p></section>
-          <div class="sticky-action review-submit-bar">
+          <section class="work-surface customer-submit-summary" id="customer-review-summary"><h2>${detail.unified_confirmation_enabled ? "本次确认" : "本次提交范围"}</h2><p data-review-progress></p><p class="customer-review-consequence" data-review-consequence role="status"></p>
+          ${(detail.constraint_candidates || []).some(v => !v.human_review) ? '<details class="customer-submit-details"><summary>查看重要事项提交明细</summary><ul data-important-submissions></ul></details>' : ""}
+          <p class="field-hint">${detail.joint_speaker_confirmation_enabled ? '请核对上方资料及本次确认范围，最后点击下方按钮提交。' : detail.unified_confirmation_enabled ? "请确认已核对上方资料。资料审核与客户档案批准分别保留记录；出镜人独立审核。" : "点击保存才形成逐项人工审核决定；关键限制仍按原规则生效。"}</p>
+          ${detail.unified_confirmation_enabled ? '<div data-customer-final-preview aria-live="polite"></div>' : ""}
+          <div class="review-submit-bar">
             <button
               id="submit-fact-review"
               class="btn btn-primary"
@@ -602,12 +690,14 @@ export function createCustomerViews({
               确认并保存已核对的信息
             </button>
           </div>
+          </section>
         </main>`,
     );
 
     bindCommonActions();
-    bindCustomerConstraintControls();
-    const updateSummary = bindCustomerReviewControls(detail);
+    bindCustomerConstraintControls(document, detail);
+    let refreshFinal = () => {};
+    const updateSummary = bindCustomerReviewControls(detail, document, () => refreshFinal());
     document.querySelectorAll('[data-review-row]').forEach(row => {
       const item = needsReview.find(candidate => candidate.candidate_id === row.dataset.reviewRow);
       if (item?.field === "industry") {
@@ -625,9 +715,7 @@ export function createCustomerViews({
     });
     bindDiscoveryRetry(detail);
 
-    document
-      .querySelector("#submit-fact-review")
-      .addEventListener("click", async () => {
+    const collectReview = () => {
         const decisions = [];
         const constraintDecisions = [];
         for (const item of detail.constraint_candidates || []) {
@@ -642,12 +730,12 @@ export function createCustomerViews({
               control: {scope: item.scope, affected_fields: [...row.querySelector("[data-amend-fields]").selectedOptions].map(v => v.value),
                 blocked_terms: row.querySelector("[data-amend-terms]").value.split("\n").map(v => v.trim()).filter(Boolean), condition: row.querySelector("[data-amend-condition]").value.trim() || null},
               evidence_quote: row.querySelector("[data-amend-quote]").value.trim(), reason: row.querySelector("[data-amend-reason]").value.trim(), production_impact: row.querySelector("[data-amend-impact]").value.trim()};
-            if (!decision.amendment.reason || !decision.amendment.production_impact || !decision.amendment.evidence_quote) {showToast("请填写限制修订的准确来源、依据及对内容使用的影响。"); return;}
+            if (!decision.amendment.reason || !decision.amendment.production_impact || !decision.amendment.evidence_quote) {throw new Error("请填写限制修订的准确来源、依据及对内容使用的影响。");}
           }
           if (["dismiss", "resolve"].includes(action)) {
             decision.resolution_quote = row.querySelector("[data-constraint-evidence]").value.trim();
             decision.note = row.querySelector("[data-constraint-note]").value.trim();
-            if (!decision.resolution_quote || !decision.note) { showToast("请引用本轮已保存资料中的准确原文，并填写核对说明。"); return; }
+            if (!decision.resolution_quote || !decision.note) { throw new Error("请引用本轮已保存资料中的准确原文，并填写核对说明。"); }
             const target = (detail.constraint_resolution_targets || []).find(value => [value.constraint_id, value.source_intake_id || "", value.constraint_sha256].join("|") === row.querySelector("[data-constraint-target]").value);
             if (target && action === "resolve") {
               decision.resolution_target = {constraint_id: target.constraint_id, constraint_sha256: target.constraint_sha256,
@@ -682,8 +770,7 @@ export function createCustomerViews({
                 row.querySelector(".review-edit-panel textarea").value,
               );
             } catch (error) {
-              showToast(error.message);
-              return;
+              throw error;
             }
           }
 
@@ -705,6 +792,25 @@ export function createCustomerViews({
             };
           },
         );
+        const industry = document.querySelector("#human-industry")?.value;
+        return {decisions, constraint_decisions:constraintDecisions, speaker_confirmations:speakerConfirmations,
+          review_context:detail.review_context?.token,
+          ...(detail.review_progress?.completion_retry_required ? {resume_review:true} : {}),
+          ...(industry ? {industry_review:{decision:industry === "__uncertain__" ? "uncertain" : "confirm",value:industry === "__uncertain__" ? null : industry}} : {}),
+          note:"Internal Console customer information review completed."};
+    };
+    if (detail.unified_confirmation_enabled) {
+      const bindFinal = detail.joint_speaker_confirmation_enabled ? bindCustomerSpeakerConfirmation : bindFinalCustomerConfirmation;
+      refreshFinal = bindFinal({root:document, detail, api, collect:collectReview,
+        render:customerFinalPreview, reload:()=>renderCustomerDetail(detail.business_id), toast:showToast});
+      return;
+    }
+    document
+      .querySelector("#submit-fact-review")
+      .addEventListener("click", async () => {
+        let payload;
+        try {payload = collectReview();} catch (error) {showToast(error.message); return;}
+        const {decisions, constraint_decisions:constraintDecisions, speaker_confirmations:speakerConfirmations} = payload;
         const button = document.querySelector("#submit-fact-review");
         button.disabled = true;
         button.textContent = "正在保存…";
@@ -783,7 +889,7 @@ export function createCustomerViews({
             "请整体检查这些信息，确认后会用于后续内容创作。",
           )}
 
-          ${intakeSteps(3)}
+          ${intakeSteps(3, detail.latest_intake_type === "review_amendment")}
           ${detail.current_business_persona?.approved ? '<p class="result-banner">新资料正在确认。原有已批准版本继续有效；确认本页后才启用新版本，出镜人将需要独立复核。</p>' : ""}
           ${auditNote(detail)}
           <div class="work-surface profile-document">
@@ -831,6 +937,7 @@ export function createCustomerViews({
             {
               method: "POST",
               body: JSON.stringify({
+                review_context: detail.approval_context.token,
                 note: "Internal Console reviewer confirmed the complete customer profile.",
               }),
             },
@@ -1009,6 +1116,7 @@ export function createCustomerViews({
       );
       const requestedGap = new URLSearchParams(location.search).get("gap");
       const productionSupplement = requestedGap === "process_material";
+      const constraintSupplement = requestedGap === "critical_constraints" && detail.creation_constraints?.blocked;
       const approvedSupplement = detail.status === "approved";
       if (detail.status !== "needs_more_info" && !approvedSupplement) {
         return navigate(`/customers/${encodeURIComponent(businessId)}`, true);
@@ -1019,7 +1127,9 @@ export function createCustomerViews({
             label: "真实服务流程",
             question: "这项服务从开始到结束通常如何完成？请只填写已经确认的真实步骤，以及出镜人本人实际参与的部分。",
           }]
-        : approvedSupplement ? [{gap_id: "additional_materials", label: "新增客户资料", question: "粘贴本次新增的真实业务资料。原有已批准事实保留，新事实需要单独审核；实质更正不会静默覆盖。"}] : detail.readiness_gaps || [];
+        : approvedSupplement ? [{gap_id: "additional_materials", label: constraintSupplement ? "主体关系与适用数据口径" : "新增客户资料", question: constraintSupplement
+          ? (detail.creation_constraints.items || []).map(item => `${item.title}：${item.reason}`).join("\n")
+          : "粘贴本次新增的真实业务资料。原有已批准事实保留，新事实需要单独审核；实质更正不会静默覆盖。"}] : detail.readiness_gaps || [];
       app.innerHTML = shell(
         productionSupplement ? "补充真实服务流程" : approvedSupplement ? "补充客户资料" : "补充缺失信息",
         `
@@ -1030,8 +1140,8 @@ export function createCustomerViews({
             </div>
             ${pageHeading(
               productionSupplement ? "可选的创作解锁路径" : "客户已创建",
-              productionSupplement ? "补充真实服务流程" : approvedSupplement ? "补充客户资料" : "补充缺失信息",
-              productionSupplement || approvedSupplement
+              productionSupplement ? "补充真实服务流程" : constraintSupplement ? "补充核实资料" : approvedSupplement ? "补充客户资料" : "补充缺失信息",
+              constraintSupplement ? "请提供可核实的主体关系及数据适用范围。补充将进入现有资料分析和人工审核，不会自动解除限制或覆盖已批准档案。" : productionSupplement || approvedSupplement
                 ? `这不会改变当前客户档案的完整性判断；补充内容仍需人工审核，并形成“${detail.display_name}”的新档案版本。`
                 : `还差 ${gaps.length} 类信息，就可以确认“${detail.display_name}”的客户档案。`,
             )}
@@ -1222,7 +1332,7 @@ export function createCustomerViews({
       const data = await api(`/api/customers/${encodeURIComponent(businessId)}/content-operations`);
       if (!host.isConnected) return;
       host.innerHTML = ContentOperationsPanel(data);
-      bindCommonActions();
+      bindCommonActions(host);
     } catch {
       if (!host.isConnected) return;
       host.innerHTML = `
@@ -1231,18 +1341,20 @@ export function createCustomerViews({
           <p>请稍后重试，客户资料和已有内容不会受到影响。</p>
           <a class="btn btn-secondary" href="/customers/${encodeURIComponent(businessId)}#content" data-route>重新加载</a>
         </section>`;
-      bindCommonActions();
+      bindCommonActions(host);
     }
   }
 
-  function renderApprovedCustomer(detail) {
+  function approvedCustomerPresentation(detail) {
+    const correction = amendmentPanel(detail, "business", customerFieldLabel);
     const facts = (detail.business_persona?.facts || []).filter(
       (fact) => fact.state === "known",
     );
     const speakers = detail.speakers || [];
+    const constraintBlocked = detail.creation_constraints?.blocked === true || detail.production_constraint_blocked === true;
     const revalidationRequired = speakers.some(speaker => speaker.status === "revalidation_required");
     const approvedSpeakers = speakers.filter(
-      (speaker) => speaker.status === "approved",
+      (speaker) => speaker.approved_for_current_business ?? speaker.status === "approved",
     );
     const pendingSpeaker = speakers.find(
       (speaker) => speaker.status !== "approved",
@@ -1258,13 +1370,12 @@ export function createCustomerViews({
       { id: "profile", label: "客户资料" },
       { id: "speakers", label: "出镜人" },
       { id: "content", label: "内容" },
+      ...(constraintBlocked || detail.creation_constraints?.legacy_scope_available ? [{ id: "constraints", label: "待核实事项" }] : []),
     ];
-    const requestedTab = decodeURIComponent(location.hash.slice(1));
-    const activeTab = tabs.some((tab) => tab.id === requestedTab)
-      ? requestedTab
-      : "overview";
-    const primaryAction = detail.creation_entry_ready
-      ? `<a class="btn btn-primary" href="/create?business_id=${encodeURIComponent(detail.business_id)}" data-route>去创作</a>`
+    const primaryAction = constraintBlocked
+      ? `<a class="btn btn-primary" href="#constraints" data-profile-tab="constraints">查看待核实事项</a>`
+      : detail.creation_entry_ready
+      ? `<a class="btn btn-primary" href="/create?business_id=${encodeURIComponent(detail.business_id)}" data-route>${detail.creation_constraints?.legacy_scope_available ? "检查创作条件" : "去创作"}</a>`
       : !speakers.length
         ? `<a class="btn btn-primary" href="/customers/${encodeURIComponent(detail.business_id)}/speakers/new" data-route>添加出镜人</a>`
         : analyzingSpeakers.length === 1
@@ -1302,8 +1413,8 @@ export function createCustomerViews({
           },
           {
             label: "创作状态",
-            value: detail.creation_entry_ready ? "可以检查创作内容" : "尚未就绪",
-            note: detail.creation_entry_ready
+            value: constraintBlocked ? "创作受限" : detail.creation_entry_ready ? "可以检查创作内容" : "尚未就绪",
+            note: constraintBlocked ? "档案已批准，仍有重要限制需要核实" : detail.creation_entry_ready
               ? "仍需检查内容机会与可行性"
               : "需要至少一位已确认出镜人",
           },
@@ -1312,7 +1423,7 @@ export function createCustomerViews({
           <div>
             <span>下一步</span>
             <h2>${
-              detail.creation_entry_ready
+              constraintBlocked ? "核实主体关系与适用范围" : detail.creation_entry_ready
                 ? "开始准备视频内容"
                 : analyzingSpeakers.length
                   ? `正在整理 ${analyzingSpeakers.length} 位出镜人信息`
@@ -1322,10 +1433,12 @@ export function createCustomerViews({
                   ? "添加第一位出镜人"
                   : "完成出镜人信息确认"
             }</h2>
-            <p>${revalidationRequired ? "出镜人需要确认更新后的客户信息。完成独立复核与档案确认后，再检查创作条件。" : retrySpeaker ? "客户档案已确认，出镜人信息需要继续处理。" : "系统只会在客户和出镜人信息满足条件后开放创作。"}</p>
+            <p>${constraintBlocked ? escapeHtml(detail.creation_constraints?.items?.[0]?.title || "重要限制尚未解除，请查看待核实事项。") : revalidationRequired ? "出镜人需要确认更新后的客户信息。完成独立复核与档案确认后，再检查创作条件。" : retrySpeaker ? "客户档案已确认，出镜人信息需要继续处理。" : "系统只会在客户和出镜人信息满足条件后开放创作。"}</p>
           </div>
-        </section>`,
+        </section>
+        ${correction ? `<div class="profile-correction-shortcut"><span>客户信息有变化？</span><a href="#profile" data-open-customer-correction>更正客户资料 <span aria-hidden="true">→</span></a></div>` : ""}`,
       profile: `<div class="work-surface profile-document">${customerProfileSections(facts)}</div>`,
+      constraints: customerConstraintPanel(detail),
       speakers: `
         <section class="profile-tab-section">
           <div class="section-head">
@@ -1346,6 +1459,16 @@ export function createCustomerViews({
         </section>`,
     };
 
+    return {tabs,primaryAction,tabContent,correction};
+  }
+
+  function renderApprovedCustomer(detail) {
+    const initial=approvedCustomerPresentation(detail);
+    let {tabs,primaryAction,tabContent}=initial;
+    const correction=initial.correction;
+    const requestedTab=decodeURIComponent(location.hash.slice(1));
+    let activeTab=tabs.some(tab=>tab.id===requestedTab)?requestedTab:'overview';
+    const supplementAction=`<a class="btn btn-secondary" href="/customers/${encodeURIComponent(detail.business_id)}/supplement" data-route>补充客户资料</a>`;
     app.innerHTML = shell(
       "客户详情",
       `
@@ -1359,28 +1482,84 @@ export function createCustomerViews({
             "",
             detail.display_name,
             detail.industry,
-            `<div class="page-heading-actions">${primaryAction}<a class="btn btn-secondary" href="/customers/${encodeURIComponent(detail.business_id)}/supplement" data-route>补充客户资料</a></div>`,
+            `<div class="page-heading-actions" data-customer-profile-actions>${primaryAction}${supplementAction}</div>`,
           )}
 
           ${auditNote(detail)}
+          <p class="field-hint" role="status" data-speaker-status-feedback hidden></p>
           ${ProfileTabs(tabs, activeTab)}
           <div class="profile-tab-panel" data-active-profile-tab="${escapeHtml(activeTab)}">
             ${tabContent[activeTab]}
           </div>
+          ${correction}
         </main>`,
     );
 
     bindCommonActions();
-    if (activeTab === "content") {
-      void renderCustomerContentOperations(detail.business_id);
-    }
+    const panel = app.querySelector(".profile-tab-panel");
+    const correctionCard = app.querySelector("[data-review-amendment]");
+    const loadTab = () => {
+      // Hide the retained form outside its owning tab without discarding drafts.
+      if (correctionCard) correctionCard.hidden = activeTab !== "profile";
+      panel?.querySelector("[data-open-customer-correction]")?.addEventListener("click", event => {
+        event.preventDefault();
+        if (!correctionCard) return;
+        selectTab("profile");
+        correctionCard.open = true;
+        correctionCard.querySelector("summary")?.focus({preventScroll:true});
+        correctionCard.scrollIntoView({block:"start"});
+      });
+      if (activeTab === "content") void renderCustomerContentOperations(detail.business_id);
+      if (activeTab === "constraints") void bindLegacyScope({host: document.querySelector("[data-legacy-scope]"),
+        businessId: detail.business_id, api, onSaved: () => renderCustomerDetail(detail.business_id)});
+    };
+    const selectTab = next => {
+      if (!panel || next === activeTab || !tabs.some(item => item.id === next)) return;
+      activeTab = next;
+      history.replaceState({}, "", `${location.pathname}#${next}`);
+      // Keep correction drafts and pending recovery controls in the same DOM.
+      panel.dataset.activeProfileTab = next;
+      panel.innerHTML = tabContent[next];
+      document.querySelectorAll(".profile-tabs [data-profile-tab]").forEach(link => {
+        const selected = link.dataset.profileTab === next;
+        link.classList.toggle("active", selected);
+        if (selected) link.setAttribute("aria-current", "page");
+        else link.removeAttribute("aria-current");
+      });
+      bindCommonActions(panel);
+      loadTab();
+    };
+    loadTab();
     document.querySelectorAll("[data-profile-tab]").forEach((tab) => {
       tab.addEventListener("click", (event) => {
         event.preventDefault();
-        const next = tab.dataset.profileTab;
-        history.replaceState({}, "", `${location.pathname}#${next}`);
-        renderApprovedCustomer(detail);
+        selectTab(tab.dataset.profileTab);
       });
+    });
+    const page=app.querySelector('.customer-detail-page');
+    const route=location.pathname;
+    const feedback=app.querySelector('[data-speaker-status-feedback]');
+    stopPolling=watchCustomerSpeakerTasks({detail,api,
+      isCurrent:()=>location.pathname===route && app.querySelector('.customer-detail-page')===page,
+      onDetail(next){
+        // A concurrent Business revision needs an explicit re-read, not a silent
+        // replacement of the source behind a correction draft or review command.
+        if(['business_persona','current_business_persona','latest_intake_id','creation_constraints'].some(key=>JSON.stringify(next[key])!==JSON.stringify(detail[key]))) {
+          stopTaskPolling();
+          if(feedback) {feedback.textContent='客户资料已变化，请刷新后重新核对。';feedback.hidden=false;}
+          return;
+        }
+        ({tabs,primaryAction,tabContent}=approvedCustomerPresentation(next));
+        const actions=app.querySelector('[data-customer-profile-actions]');
+        if(actions) {actions.innerHTML=primaryAction+supplementAction;bindCommonActions(actions);}
+        if(['overview','speakers'].includes(activeTab)) {
+          panel.innerHTML=tabContent[activeTab];bindCommonActions(panel);loadTab();
+        }
+        if(feedback) {feedback.textContent='';feedback.hidden=true;}
+      },
+      onError(error){
+        if(feedback) {feedback.textContent=error.detail?.next_action || error.message || '出镜人状态暂时无法读取，请稍后刷新。';feedback.hidden=false;}
+      },
     });
   }
 
@@ -1551,11 +1730,22 @@ export function createCustomerViews({
     stopTaskPolling();
     skeletonPage("客户详情");
 
+    let detail = null;
+    const pending = await api(`/api/review-commands/business/${encodeURIComponent(businessId)}`).catch(()=>({operations:[]}));
     try {
-      const detail = await api(
+      detail = await api(
         `/api/customers/${encodeURIComponent(businessId)}`,
       );
 
+      if (detail.creation_constraints?.blocked && detail.status !== "approved" && location.hash === "#constraints") {
+        app.innerHTML = shell("客户待核实事项", `<main class="page page-standard customer-detail-page">
+          <a class="back-link" href="/customers/${encodeURIComponent(businessId)}" data-route>← 返回客户详情</a>
+          ${pageHeading("", detail.display_name, "核实具体限制后，再按原流程继续。")}${customerConstraintPanel(detail)}</main>`);
+        bindCommonActions();
+        void bindLegacyScope({host: document.querySelector("[data-legacy-scope]"), businessId, api,
+          onSaved: () => renderCustomerDetail(businessId)});
+        return;
+      }
       if (
         detail.status === "analyzing" &&
         detail.task
@@ -1579,7 +1769,7 @@ export function createCustomerViews({
         bindCustomerProgress(detail.task, businessId);
         return;
       }
-      
+
       if (detail.status === "failed") {
         return renderFailedCustomer(detail);
         }
@@ -1588,6 +1778,7 @@ export function createCustomerViews({
       }
 
       if (detail.status === "persona_review_required") {
+        if (detail.unified_confirmation_enabled) return renderFactReview(detail);
         renderPersonaReview(detail);
         renderDiscoveryRecovery(detail);
         return;
@@ -1633,6 +1824,14 @@ export function createCustomerViews({
       bindCommonActions();
     } catch (error) {
       renderLoadError("客户暂时无法读取", error);
+    } finally {
+      if (detail && ["approved", "persona_review_required", "binding_review_required", "needs_more_info"].includes(detail.status)) {
+        if (detail.status !== "approved") app.querySelector("main")?.insertAdjacentHTML("beforeend", amendmentPanel(detail,"business",customerFieldLabel));
+        bindAmendment(app, detail, "business", {api, reload:()=>renderCustomerDetail(businessId)});
+      }
+      mountRecovery(app, api, pending.operations, ()=>renderCustomerDetail(businessId));
+      const reviewPage = app.querySelector?.('.customer-review-page');
+      if (reviewPage) enhanceReviewDisclosures(reviewPage);
     }
   }
 

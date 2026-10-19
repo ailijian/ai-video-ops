@@ -8,9 +8,11 @@ import re
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, TYPE_CHECKING
 
-from openai import OpenAI
+if TYPE_CHECKING:
+    from openai import OpenAI
+
 from customer_constraints_v1 import extract_constraints
 from build_persona_v1 import recovery_target_fields
 
@@ -42,7 +44,7 @@ ENV_PATH = Path(__file__).resolve().parents[1] / ".env"
 
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{1,127}$")
 
-CUSTOMER_INDUSTRIES = ("餐饮", "本地生活", "零售", "烘焙甜品", "美容", "教培", "服装", "饰品", "通用行业")
+from customer_intake_v1 import CUSTOMER_INDUSTRIES
 
 AI_BUSINESS_TOPICS = {
     "industry",
@@ -583,6 +585,9 @@ def load_deepseek_runtime_config() -> tuple[str, str]:
 def get_client(
     api_key: str,
 ) -> OpenAI:
+    # Pure proposal derivation is also used by the Console. The paid-model SDK
+    # belongs only to the external extraction boundary.
+    from openai import OpenAI
     return OpenAI(
         api_key=api_key,
         base_url="https://api.deepseek.com",

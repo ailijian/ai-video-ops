@@ -1,4 +1,5 @@
 from __future__ import annotations
+from review_protocol import post_review
 
 import json
 import subprocess
@@ -78,7 +79,7 @@ def review_current(client, business, csrf):
         ],
         "note": "Synthetic incremental Human review",
     }
-    response = client.post(
+    response = post_review(client,
         f"/api/customers/{business}/facts/review",
         headers={"X-CSRF-Token": csrf},
         json=payload,
@@ -91,7 +92,7 @@ def approved_customer(client, settings, csrf):
     body, _ = seed_customer(client, settings, csrf)
     business = body["business_id"]
     review_current(client, business, csrf)
-    result = client.post(
+    result = post_review(client,
         f"/api/customers/{business}/persona/approve",
         headers={"X-CSRF-Token": csrf},
         json={"note": "Synthetic Human R1 approval"},
@@ -100,7 +101,7 @@ def approved_customer(client, settings, csrf):
     return business
 
 
-def approved_speaker(client, settings, csrf, business):
+def approved_speaker(client, settings, csrf, business, *, approve=True):
     materials = "王琳是小爪宠物店店主，日常由她亲自接待顾客，检查宠物皮肤和毛发状态，并根据现场情况确认洗护方案。她可以分享自己在门店接待、宠物洗护前判断和日常服务中的实际经验。"
     result = client.post(
         f"/api/customers/{business}/speakers/analyze",
@@ -149,7 +150,7 @@ fixture['analysis'].analyze_speaker_onboarding(request=json.loads(Path(sys.argv[
         stage="等待确认",
     )
     detail = client.get(f"/api/customers/{business}/speakers/{speaker}").json()
-    reviewed = client.post(
+    reviewed = post_review(client,
         f"/api/customers/{business}/speakers/{speaker}/facts/review",
         headers={"X-CSRF-Token": csrf},
         json={
@@ -162,7 +163,9 @@ fixture['analysis'].analyze_speaker_onboarding(request=json.loads(Path(sys.argv[
         },
     )
     assert reviewed.status_code == 200, reviewed.text
-    approved = client.post(
+    if not approve:
+        return speaker
+    approved = post_review(client,
         f"/api/customers/{business}/speakers/{speaker}/persona/approve",
         headers={"X-CSRF-Token": csrf},
         json={"note": "Synthetic independent Human Speaker approval"},
@@ -394,7 +397,7 @@ def test_approved_revision_full_http_and_speaker_explicit_revalidation(
     r2_sha = sha(r2)
     repeated = review_current(client, business, csrf)
     assert sha(r2) == r2_sha
-    approved = client.post(
+    approved = post_review(client,
         f"/api/customers/{business}/persona/approve",
         headers=headers,
         json={"note": "Synthetic Human Business R2 approval"},
@@ -460,7 +463,7 @@ def test_approved_revision_full_http_and_speaker_explicit_revalidation(
     )
     assert replay.status_code == 200, replay.text
     assert sha(speaker_pending.review_candidate["path"]) == review_sha
-    speaker_approval_response = client.post(
+    speaker_approval_response = post_review(client,
         f"/api/customers/{business}/speakers/{speaker}/persona/approve",
         headers=headers,
         json={"note": "Synthetic independent Speaker R2 approval"},
@@ -537,7 +540,7 @@ def test_concurrent_supplement_and_review_do_not_collide(client, settings):
     with ThreadPoolExecutor(max_workers=2) as pool:
         results = list(
             pool.map(
-                lambda _: client.post(
+                lambda _: post_review(client,
                     f"/api/customers/{business}/facts/review",
                     headers={"X-CSRF-Token": csrf},
                     json=review,
@@ -584,7 +587,7 @@ def test_scalar_conflict_preserves_approved_truth(client, settings):
         facts=[{"topic": "industry", "value": "餐饮", "evidence_quote": "餐饮"}],
     )
     detail = client.get(f"/api/customers/{business}").json()
-    response = client.post(
+    response = post_review(client,
         f"/api/customers/{business}/facts/review",
         headers={"X-CSRF-Token": csrf},
         json={
@@ -611,7 +614,7 @@ def test_scalar_conflict_preserves_approved_truth(client, settings):
     assert len(json.loads(conflicts[0].read_text(encoding="utf-8"))["review_fingerprint"]) == 64
     # A new explicit decision resolves the pending conflict; no approved or
     # finalized review is edited to simulate repair.
-    resolved = client.post(
+    resolved = post_review(client,
         f"/api/customers/{business}/facts/review",
         headers={"X-CSRF-Token": csrf},
         json={
@@ -894,7 +897,7 @@ def test_insufficient_then_new_fact_review_preserves_old_review(client, settings
     )
     reviewed = review_current(client, business, csrf)
     assert reviewed["review"]["status"] == "completed_persona_review_required"
-    approval = client.post(
+    approval = post_review(client,
         f"/api/customers/{business}/persona/approve",
         headers=headers,
         json={"note": "Synthetic independent approval after gaps"},
@@ -933,7 +936,7 @@ def test_manual_industry_review_distinguishes_absent_uncertain_and_confirmed(
         }
         if choice is not None:
             payload["industry_review"] = choice
-        response = client.post(
+        response = post_review(client,
             f"/api/customers/{business}/facts/review", headers=headers, json=payload
         )
         assert response.status_code == 200, response.text

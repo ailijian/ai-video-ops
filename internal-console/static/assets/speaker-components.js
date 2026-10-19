@@ -1,4 +1,4 @@
-import { escapeHtml } from "./case-components.js";
+import { escapeHtml } from "./case-components.js?v=flow-closure-2";
 
 export const SPEAKER_PROGRESS_STAGES = [
   ["保存出镜人资料", 20],
@@ -36,6 +36,7 @@ export function speakerTypeLabel(type) {
 export function speakerStatusPill(status) {
   const values = {
     approved: ["已确认", "pill-approved"],
+    binding_review_required: ["待复核客户关联", "pill-review"],
     revalidation_required: ["需复核关联", "pill-review"],
     fact_review_required: ["信息待确认", "pill-review"],
     persona_review_required: ["档案待确认", "pill-review"],

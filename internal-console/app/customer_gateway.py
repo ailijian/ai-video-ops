@@ -384,6 +384,35 @@ def _normalized_readiness_blockers(
     return normalized
 
 
+def customer_creation_constraints(settings: Settings, business_id: str, current=None) -> dict[str, Any]:
+    """Explain the existing production policy, without resolving or rewriting it."""
+    from customer_constraints_v1 import collect, policy, unresolved_legacy_constraints, digest
+    records = collect(settings.pipeline_root, business_id)
+    legacy = unresolved_legacy_constraints(settings.pipeline_root, business_id, records)
+    blockers = ((current.get("production_constraints") or {}).get("blockers", [])
+                if current else policy(records)["blockers"] + [item["record"] for item in legacy])
+    legacy_by_sha = {digest(item["record"]): item for item in legacy}
+    labels = {"identity_conflict": "主体关系需要核实", "unverified_claim": "宣传依据需要核实",
+              "publication_prohibition": "发布限制需要核对", "conditional_fact": "适用条件需要核对"}
+    items = []
+    for blocker in blockers:
+        value = blocker if isinstance(blocker, dict) else {}
+        original = legacy_by_sha.get(digest(value))
+        source = value.get("source") or {}
+        identifier = str(value.get("constraint_id") or value.get("conflict_id") or value.get("question_id") or digest(blocker)[:16])
+        kind = str(value.get("constraint_type") or "legacy_critical")
+        items.append({"constraint_id": identifier, "constraint_sha256": digest(blocker),
+            "kind": kind, "source_intake_id": original["source_intake_id"] if original else source.get("intake_id"),
+            "title": str(value.get("topic") or value.get("question") or labels.get(kind, "关键信息需要核实")),
+            "reason": str(value.get("resolution_question") or value.get("question") or value.get("message")
+                          or value.get("description") or source.get("evidence_quote") or "请核实这项限制的真实情况与适用范围。"),
+            "source_kind": "legacy_intake" if original else "business_restriction"})
+    from customer_constraints_v1 import legacy_critical_constraints
+    return {"blocked": bool(blockers), "items": items,
+            "legacy_scope_available": bool(legacy_critical_constraints(settings.pipeline_root, business_id)),
+            "url": f"/customers/{business_id}#constraints", "projection_only": True}
+
+
 def _critical_gap_details(
     settings: Settings,
     business_id: str,
@@ -394,7 +423,7 @@ def _critical_gap_details(
     for source in unresolved_legacy_constraints(settings.pipeline_root, business_id, records):
         item = source["record"]
         values.append({"gap_id": f"critical_constraints:{source['constraint_id']}:{source['source_intake_id']}", "label": "关键冲突确认",
-            "question": str(item.get("question") or item.get("message") or item.get("description") or "请说明这项关键信息的真实情况。")})
+            "question": str(item.get("resolution_question") or item.get("question") or item.get("topic") or item.get("message") or item.get("description") or "请说明这项关键信息的真实情况。")})
     for item in policy(records)["blockers"]:
         values.append({"gap_id": f"critical_constraints:{item['constraint_id']}", "label": "重要限制核对",
             "question": item["source"]["evidence_quote"]})
@@ -768,6 +797,7 @@ def _customer_projection(
         "industry": str(industry),
         "industry_classification": industry_classification,
         "status": status,
+        "creation_constraints": customer_creation_constraints(settings, business_id, current_entry),
         "speaker_count": approved_speaker_count if approved_speaker_count is not None else (
             _approved_speaker_count(
                 settings,
@@ -1077,7 +1107,7 @@ def get_customer_detail(
         "reviewed_fact_candidates": (reviewed_candidates),
         "fact_review": fact_review,
         "current_business_persona": _project_persona(current["path"], current["artifact"]) if current else None,
-        "production_constraint_blocked": bool(current and (current.get("production_constraints") or {}).get("blockers")),
+        "production_constraint_blocked": projection["creation_constraints"]["blocked"],
         "speaker_discovery_status": speaker_discovery_status,
         "speaker_candidates": speaker_candidates,
         "speaker_confirmation": (

@@ -20,6 +20,9 @@ _KEY = secrets.token_bytes(32)
 VERSION = "human-review-command-v1.0"
 CASE_VERSION = "human-review-command-v1.1"
 JOINT_CASE_VERSION = "human-review-command-v1.2"
+BUSINESS_VERSION = "human-review-command-v1.3"
+CUSTOMER_SPEAKER_VERSION = "human-review-command-v1.4"
+SPEAKER_VERSION = "human-review-command-v1.5"
 CASE_COMMIT_VERSION = "case-review-command-commit-v1.0"
 CASE_COMMIT_FILE = "console_review_command_v1.json"
 
@@ -90,13 +93,22 @@ def snapshot(settings, kind, identity, *, business_id=None, version=None):
         "state_sha256": digest({str(p.relative_to(root)): file_sha(p) for p in sorted(paths)})}
 
 
-def issue(settings, kind, identity, user_id, *, business_id=None, sharing=None, joint=False):
+def issue(settings, kind, identity, user_id, *, business_id=None, sharing=None, joint=False, confirmation=None):
     import json
-    version = JOINT_CASE_VERSION if joint else CASE_VERSION if kind == 'case' else VERSION
+    version = BUSINESS_VERSION if confirmation is not None else JOINT_CASE_VERSION if joint else CASE_VERSION if kind == 'case' else VERSION
+    if confirmation and confirmation.get('schema_version')=='customer-final-confirmation-v1.1':
+        version=CUSTOMER_SPEAKER_VERSION
+    if confirmation and confirmation.get('schema_version')=='speaker-final-confirmation-v1.0':
+        if kind != 'speaker':raise blocked('INVALID_REVIEW_CONTEXT')
+        version=SPEAKER_VERSION
     context = {"version": version, "kind": kind, "identity": identity,
         "business_id": business_id, "actor": principal(settings, user_id),
         "node": _node(settings), "operation_id": secrets.token_hex(16),
         "snapshot": snapshot(settings, kind, identity, business_id=business_id, version=version)}
+    if confirmation is not None:
+        if kind != 'business' and version != SPEAKER_VERSION:
+            raise blocked('INVALID_REVIEW_CONTEXT')
+        context['confirmation'] = confirmation
     if joint:
         context['sharing'] = sharing
         context['snapshot'].update(sharing_mode=sharing['mode'] if sharing else 'unavailable',
@@ -136,7 +148,7 @@ def begin(settings, kind, identity, user_id, token, intent, *, business_id=None,
     try:
         body, signature = token.split(".")
         context = json.loads(base64.urlsafe_b64decode(body))
-        if (context["version"] not in ({VERSION,CASE_VERSION,JOINT_CASE_VERSION} if kind=='case' else {VERSION}) or context["kind"] != kind or context["identity"] != identity
+        if (context["version"] not in ({VERSION,CASE_VERSION,JOINT_CASE_VERSION} if kind=='case' else {VERSION,BUSINESS_VERSION,CUSTOMER_SPEAKER_VERSION} if kind=='business' else {VERSION,SPEAKER_VERSION}) or context["kind"] != kind or context["identity"] != identity
                 or context["business_id"] != business_id or context["node"] != _node(settings)
                 or not re.fullmatch(r"[a-f0-9]{32}", context["operation_id"])):
             raise ValueError()
@@ -144,6 +156,19 @@ def begin(settings, kind, identity, user_id, token, intent, *, business_id=None,
         raise blocked("INVALID_REVIEW_CONTEXT", "审核上下文无效。") from exc
     if context["actor"] != principal(settings, user_id):
         raise blocked("REVIEW_ACTOR_MISMATCH", "不能提交其他账号的审核操作。")
+    if context['version'] in {BUSINESS_VERSION,CUSTOMER_SPEAKER_VERSION} and intent.get('request_path') != f'/api/customers/{identity}/confirm':
+        raise blocked('INVALID_REVIEW_CONTEXT', '新版客户确认不能降级到旧审核入口。')
+    if kind=='speaker':
+        if context['version'] == SPEAKER_VERSION and intent.get('request_path') != f'/api/customers/{business_id}/speakers/{identity}/confirm':
+            raise blocked('INVALID_REVIEW_CONTEXT', '新版人物确认不能降级到旧审核入口。')
+        from .speaker_confirmation import guard as speaker_guard
+        speaker_guard(settings, identity, all_versions=context['version']==SPEAKER_VERSION, operation_id=context['operation_id'])
+        from .customer_confirmation import unfinished
+        for pending_intent in unfinished(settings,business_id):
+            pending=read(pending_intent)
+            if pending.get('version')==CUSTOMER_SPEAKER_VERSION and any(
+                    v['speaker_id']==identity for v in pending['context']['confirmation']['people']):
+                raise blocked('CUSTOMER_CONFIRMATION_PENDING','这位出镜人的联合确认尚未完成，请先继续客户页面中的原操作。')
     directory = settings.pipeline_root / "data/review_operations" / kind / identity / context["operation_id"]
     path = directory / "intent.json"
     value = {"version": context['version'], "context": context, "token_sha256": digest(token), "token": token, "intent": intent}
@@ -152,6 +177,9 @@ def begin(settings, kind, identity, user_id, token, intent, *, business_id=None,
         if any(saved.get(k) != v for k, v in value.items()):
             raise blocked("REVIEW_REPLAY_CONFLICT", "这次审核操作已用于其他决定。")
     else:
+        if kind == 'business':
+            from .customer_confirmation import guard
+            guard(settings, identity, all_versions=context['version'] in {BUSINESS_VERSION,CUSTOMER_SPEAKER_VERSION})
         if not hmac.compare_digest(signature, hmac.new(_KEY, body.encode(), "sha256").hexdigest()):
             raise blocked("INVALID_REVIEW_CONTEXT")
         current = snapshot(settings, kind, identity, business_id=business_id, version=context['version'])
@@ -508,6 +536,18 @@ def can_discard(settings, directory, value):
     """Only an uncommitted submission can be cancelled; decisions stay immutable."""
     if not {p.name for p in directory.iterdir()} <= {"intent.json", "source_upload_reservation_v1.json"}:
         return False
+    if value.get('version') in {BUSINESS_VERSION,CUSTOMER_SPEAKER_VERSION}:
+        from customer_fact_review_v1 import read_review_progress
+        bundle = value['context']['confirmation']
+        if value['version']==CUSTOMER_SPEAKER_VERSION:bundle=bundle['business']
+        intake = settings.pipeline_root/'data/customer_intakes'/value['context']['identity']/bundle['intake_id']
+        if any(v['operation_id'] == bundle['submission'].get('operation_id') for v in read_review_progress(intake)['receipts']):
+            return False
+    if value.get('version') == SPEAKER_VERSION:
+        bundle=value['context']['confirmation']
+        intake=settings.pipeline_root/'data/speaker_intakes'/bundle['business_id']/bundle['speaker_id']/bundle['intake_id']
+        if not bundle['fact_review_completed'] and (intake/'speaker_fact_review_v1.json').exists():
+            return False
     target = value["context"]["snapshot"]
     if target.get("artifact"):
         path = settings.pipeline_root / target["artifact"]

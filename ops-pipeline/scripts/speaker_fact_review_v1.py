@@ -560,7 +560,9 @@ def ensure_or_build_persona(
 ]:
     output_root = pipeline_root / "data" / "personas"
 
-    expected = output_root / speaker_id / "revision_0001" / "persona_v1.json"
+    from persona_review_lifecycle_v1 import candidate_path
+    source = read_json(input_path)
+    expected = candidate_path(output_root, source)
 
     if expected.is_file():
         persona = read_json(expected)
@@ -596,6 +598,7 @@ def ensure_or_build_persona(
             output_root,
             created_at=created_at,
             business_persona_path=(business_persona_path),
+            previous_persona_path=Path(source["previous_approved_persona_path"]) if source.get("previous_approved_persona_path") else None,
         )
     except Exception as exc:
         raise SpeakerFactReviewError(
@@ -735,6 +738,9 @@ def review_speaker_facts(
         request["speaker_id"],
     )
 
+    from persona_review_lifecycle_v1 import effective_sources, apply_revision_input
+    reviewed_sources = effective_sources(reviewed_sources, speaker=True)
+
     persona_input = build_speaker_persona_input(
         business_id=request["business_id"],
         speaker_id=request["speaker_id"],
@@ -744,6 +750,7 @@ def review_speaker_facts(
         reviewed_path=(reviewed_path),
         reviewed_sources=reviewed_sources,
     )
+    apply_revision_input(pipeline_root, "speaker", request["speaker_id"], root, persona_input, reviewed)
 
     blockers = speaker_blockers(persona_input)
 

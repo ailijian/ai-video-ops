@@ -1,5 +1,6 @@
 """E2-A real HTTP/CSRF/lock/replay, only extractor output is synthetic."""
 from __future__ import annotations
+from review_protocol import post_review
 
 import json
 import socket
@@ -63,7 +64,7 @@ def test_real_http_restrictions_auth_csrf_lock_human_actor_and_replay(client, se
     url = f"/api/customers/{business}/facts/review"
     payload = {"decisions": [{"candidate_id": v["candidate_id"], "decision": "approve"} for v in detail["fact_candidates"] if v["state"] == "requires_review"],
         "constraint_decisions": [{"constraint_id": detail["constraint_candidates"][0]["constraint_id"], "decision": "exclude"}],
-        "reviewer": "untrusted-client-actor"}
+        "reviewer": "untrusted-client-actor", "review_context": detail["review_context"]["token"]}
     assert client.post(url, json=payload).status_code == 403
     with authority_operation_lock(settings, "business", business):
         locked = client.post(url, headers={"X-CSRF-Token": csrf}, json=payload)
@@ -91,7 +92,7 @@ def test_saved_source_recovery_http_auth_lock_replay_and_history(client, setting
     csrf = login_and_change_password(client)
     body, detail = seed(client, settings, csrf, omission=True)
     business = body["business_id"]
-    saved = client.post(f"/api/customers/{business}/facts/review", headers={"X-CSRF-Token": csrf}, json={
+    saved = post_review(client, f"/api/customers/{business}/facts/review", headers={"X-CSRF-Token": csrf}, json={
         "decisions": [{"candidate_id": v["candidate_id"], "decision": "approve"} for v in detail["fact_candidates"] if v["state"] == "requires_review"]})
     assert saved.status_code == 200, saved.text
     directory = Path(body["task"]["payload"]["request_path"]).parent
@@ -123,7 +124,7 @@ def test_blocked_customer_human_industry_projection_and_evidence_gap(client, set
     csrf = login_and_change_password(client)
     body, detail = seed(client, settings, csrf, omission=True, coverage=True)
     business = body["business_id"]
-    response = client.post(f"/api/customers/{business}/facts/review", headers={"X-CSRF-Token": csrf}, json={
+    response = post_review(client, f"/api/customers/{business}/facts/review", headers={"X-CSRF-Token": csrf}, json={
         "decisions": [{"candidate_id": v["candidate_id"], "decision": "approve"} for v in detail["fact_candidates"] if v["state"] == "requires_review"],
         "industry_review": {"decision": decision, "value": value}})
     assert response.status_code == 200, response.text

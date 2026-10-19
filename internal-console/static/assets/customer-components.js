@@ -1,4 +1,4 @@
-import { escapeHtml } from "./case-components.js";
+import { escapeHtml } from "./case-components.js?v=flow-closure-2";
 import { formatProfileValue } from "./profile-components.js?v=productized-stage2-3";
 
 export const CUSTOMER_PROGRESS_STAGES = [
@@ -210,6 +210,24 @@ export function parseEditedFactValue(originalValue, text) {
   return normalized;
 }
 
+export function customerConstraintPanel(detail) {
+  const constraints = detail.creation_constraints;
+  if (!constraints?.blocked && !constraints?.legacy_scope_available) return "";
+  return `<section class="work-surface customer-constraint-panel" aria-labelledby="customer-constraints-title">
+    <h2 id="customer-constraints-title">创作前待核实事项</h2>
+    ${constraints.legacy_scope_available ? `<h3>有一项外部经营信息的归属需要确认</h3><p>当前客户：${escapeHtml(detail.display_name)}。资料中的其他名称与当前客户的关系尚未确认；请核对原始来源，由授权审核人判断影响范围。</p><div data-legacy-scope></div>` : ""}
+    <p>${detail.current_business_persona?.approved ? "客户档案与已确认出镜人继续保留。" : "已保存的客户资料继续保留。"}${constraints.blocked ? "以下限制尚未解除，当前不能创作；补充资料仍须人工核实，不会自动解除限制。" : "范围裁决已保存，仍需检查其余创作条件；相关主张和出镜人表达限制继续保留。"}</p>
+    <ul class="customer-constraint-list">${(constraints.items || []).map(item => `<li>
+      <h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.reason)}</p>
+      <details><summary>查看来源标识</summary><p>限制编号：${escapeHtml(item.constraint_id)}</p>${item.source_intake_id ? `<p>来源记录：${escapeHtml(item.source_intake_id)}</p>` : ""}</details>
+    </li>`).join("")}</ul>
+    ${["approved", "needs_more_info"].includes(detail.status)
+      ? `<a class="btn btn-secondary" href="/customers/${encodeURIComponent(detail.business_id)}/supplement?gap=critical_constraints" data-route>补充核实资料</a>`
+      : `<a class="btn btn-secondary" href="/customers/${encodeURIComponent(detail.business_id)}" data-route>返回资料核对</a>`}
+    <p class="field-hint">核实来源与影响范围后，须通过正式人工审核处理。原审核记录不会被覆盖，尚未核实的关系继续保留。</p>
+  </section>`;
+}
+
 export function customerCard(customer) {
   const operation = customer.operation || {};
   const speaker = customer.speaker;
@@ -221,7 +239,7 @@ export function customerCard(customer) {
       <div class="customer-operation-heading">
         <span class="customer-symbol" aria-hidden="true">${escapeHtml(Array.from(customer.display_name || "客")[0])}</span>
         <div class="customer-operation-identity">
-          <div class="customer-title-line"><a class="customer-operation-name" href="${escapeHtml(customer.detail_url)}" data-route title="${escapeHtml(customer.display_name)}">${escapeHtml(customer.display_name)}</a><span class="list-status ${operation.kind === "ready" ? "list-status-ready" : operation.kind === "error" || operation.kind === "blocked" ? "list-status-attention" : ""}">${escapeHtml(operation.status || "待核对")}</span></div>
+          <div class="customer-title-line"><a class="customer-operation-name" href="${escapeHtml(customer.detail_url)}" data-route title="${escapeHtml(customer.display_name)}"><span class="customer-operation-name-text">${escapeHtml(customer.display_name)}</span><svg class="customer-detail-arrow" viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 7 7-7 7"/></svg></a><span class="list-status ${operation.kind === "ready" ? "list-status-ready" : operation.kind === "error" || operation.kind === "blocked" ? "list-status-attention" : ""}">${escapeHtml(operation.status || "待核对")}</span></div>
           <p>${escapeHtml(customer.industry || "行业待确认")}${customer.region ? ` · ${escapeHtml(customer.region)}` : ""}</p>
         </div>
       </div>

@@ -86,6 +86,7 @@ from .case_library_access import (
 from .case_shared_display import shared_projection, shared_cover_path, publication_context, change_publication
 from .case_list_projection import case_cards
 from .dashboard_projection import dashboard
+from .legacy_scope_gateway import scope_projection, submit_scope
 from .database import transaction
 from .douyin_source_input import DouyinSourceInput
 from .database import apply_migrations
@@ -210,6 +211,7 @@ class SpeakerFactDecision(BaseModel):
 
 
 class SpeakerFactReviewRequest(BaseModel):
+    review_context: str | None = Field(default=None, max_length=50000)
     decisions: list[SpeakerFactDecision]
 
     note: str = Field(
@@ -219,10 +221,29 @@ class SpeakerFactReviewRequest(BaseModel):
 
 
 class SpeakerPersonaApprovalRequest(BaseModel):
+    review_context: str | None = Field(default=None, max_length=50000)
     note: str = Field(
         default="",
         max_length=2000,
     )
+
+
+class SpeakerFinalDecision(SpeakerFactDecision):
+    model_config = {"extra": "forbid"}
+
+
+class SpeakerFinalPreviewRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    review_context: str = Field(max_length=50000)
+    decisions: list[SpeakerFinalDecision] = Field(default_factory=list, max_length=100)
+    note: str = Field(default="", max_length=2000)
+
+
+class SpeakerFinalConfirmationRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    review_context: str = Field(max_length=200000)
+    preview_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    confirmation: Literal["approve_speaker_profile"]
 
 
 class LoginRequest(BaseModel):
@@ -420,9 +441,23 @@ class SpeakerRevalidationRequest(BaseModel):
     note: str = Field(default="", max_length=2000)
 
 
+class SpeakerJointFactDecision(CustomerFactDecision):
+    model_config={"extra":"forbid"}
+
+
+class SpeakerJointFactReview(BaseModel):
+    model_config={"extra":"forbid"}
+    candidate_id:str=Field(min_length=1,max_length=128)
+    decisions:list[SpeakerJointFactDecision]=Field(max_length=30)
+
+
 class CustomerFactReviewRequest(BaseModel):
     review_context: str | None = Field(default=None, max_length=8192)
     resume_review: bool = False
+    joint_speaker_review: bool = False
+    business_only: bool = False
+    retry_preparation: bool = False
+    speaker_fact_decisions: list[SpeakerJointFactReview] = Field(default_factory=list,max_length=5)
     decisions: list[CustomerFactDecision]
     constraint_decisions: list[dict[str, Any]] = Field(default_factory=list, max_length=30)
     industry_review: dict[str, Any] | None = None
@@ -436,11 +471,30 @@ class CustomerFactReviewRequest(BaseModel):
     )
 
 
+class CustomerFinalPreviewRequest(CustomerFactReviewRequest):
+    model_config={"extra":"forbid"}
+
+
 class CustomerPersonaApprovalRequest(BaseModel):
+    review_context: str | None = Field(default=None, max_length=50000)
     note: str = Field(
         default="",
         max_length=2000,
     )
+
+
+class CustomerFinalConfirmationRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    review_context: str = Field(max_length=200000)
+    preview_sha256: str = Field(pattern="^[a-f0-9]{64}$")
+    confirmation: Literal["approve_business_profile", "save_review_progress", "approve_customer_and_speakers"]
+
+
+class PersonaAmendmentRequest(BaseModel):
+    review_context: str | None = Field(default=None, max_length=50000)
+    action: Literal["correct", "rebase"]
+    reason: str = Field(min_length=1, max_length=2000)
+    changes: list[dict[str, Any]] = Field(default_factory=list, max_length=40)
 
 
 class ContentCapacityPreviewRequest(BaseModel):
@@ -750,14 +804,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                     pass
                 continue
             try:
-                prepared = locked_authority_call(
-                    "persona",
-                    speaker_id,
-                    prepare_speaker_draft_analysis,
-                    settings,
-                    business_id=business_id,
-                    speaker_id=speaker_id,
-                )
+                # The approval command already holds the Business/backup barrier.
+                prepared = prepare_speaker_draft_analysis(settings, business_id=business_id, speaker_id=speaker_id)
                 task = create_speaker_task(
                     settings.database_path,
                     business_id=business_id,
@@ -857,8 +905,15 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     async def canonical_error_handler(
         _: Request, exc: CanonicalOperationError
     ) -> JSONResponse:
-        status_code = 404 if exc.code in {"CASE_OBJECT_NOT_FOUND", "CASE_NOT_FOUND"} else 403 if exc.code in {"CASE_REVIEWER_REQUIRED", "NOVEL_NEWS_NOT_AVAILABLE", "REVIEW_ACTOR_MISMATCH"} else 409 if exc.code in {
+        status_code = 404 if exc.code in {"CASE_OBJECT_NOT_FOUND", "CASE_NOT_FOUND", "CUSTOMER_NOT_FOUND", "SPEAKER_NOT_FOUND"} else 422 if exc.code in {"INVALID_BUSINESS_ID", "INVALID_SPEAKER_ID"} else 403 if exc.code in {"CASE_REVIEWER_REQUIRED", "BUSINESS_SCOPE_REVIEWER_REQUIRED", "NOVEL_NEWS_NOT_AVAILABLE", "REVIEW_ACTOR_MISMATCH"} else 409 if exc.code in {
+            "SPEAKER_BUSINESS_LINEAGE_MISMATCH",
+            "LEGACY_SCOPE_REVIEW_BLOCKED", "PERSONA_APPROVAL_BLOCKED", "PERSONA_AMENDMENT_BLOCKED", "SCALAR_FACT_CONFLICT",
             "CASE_DISPLAY_CONFLICT",
+            "CUSTOMER_CONFIRMATION_STALE", "CUSTOMER_CONFIRMATION_PENDING", "CUSTOMER_CONFIRMATION_REQUIRED",
+            "CUSTOMER_PREVIEW_BLOCKED", "FACT_REVIEW_DECISION_IMMUTABLE", "REVIEW_COMMIT_CONFLICT",
+            "SPEAKER_PREPARATION_REQUIRED", "SPEAKER_REVIEW_INCOMPLETE",
+            "SPEAKER_CONFIRMATION_STALE", "SPEAKER_CONFIRMATION_PENDING", "SPEAKER_CONFIRMATION_REQUIRED",
+            "SPEAKER_REVIEW_UNKNOWN_CANDIDATE", "SPEAKER_PREVIEW_BLOCKED",
             "REVIEW_CONTEXT_STALE", "REVIEW_CONTEXT_REQUIRED", "REVIEW_REPLAY_CONFLICT", "INVALID_REVIEW_CONTEXT",
             "OPERATION_IN_PROGRESS",
             "AUTHORITY_CHANGED_REFRESH_REQUIRED",
@@ -906,7 +961,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             content={
                 "detail": error_detail(
                     exc.code,
-                    str(exc),
+                    {"TASK_QUEUE_FULL":"任务队列已满，请稍后继续原操作。",
+                     "GPU_PENDING_LIMIT_REACHED":"你已有多条待执行任务，请等待现有任务后继续。",
+                     "OPERATION_ALREADY_ACTIVE":"已有相同业务的任务正在处理，请查看原任务。"}.get(exc.code, str(exc)),
                     "请查看现有任务，或等待队列释放后重试。",
                 )
             },
@@ -960,12 +1017,28 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         identity: str,
         operation: Callable[..., Any],
         *args: Any,
+        allow_pending_review: bool = False,
         **kwargs: Any,
     ) -> Any:
+        parent_business = identity.split(':',1)[0] if scope=='persona' and ':' in identity else kwargs.get('business_id') if scope=='persona' else None
+        def guard_pending(business_id):
+            if not allow_pending_review:
+                from .customer_confirmation import guard
+                guard(settings,business_id)
+        if scope == "persona" and parent_business:
+            # Business approval and dependent Speaker writes share the same order.
+            with authority_operation_lock(settings, "business", parent_business, timeout_seconds=0.0):
+                guard_pending(parent_business)
+                if ':' in identity:
+                    from .speaker_confirmation import guard as speaker_guard
+                    speaker_guard(settings, identity.split(':',1)[1])
+                with operation_lock(settings.pipeline_root, f"{scope}:{identity}", timeout_seconds=0.0):
+                    return operation(*args, **kwargs)
         with authority_operation_lock(settings, scope, identity, timeout_seconds=0.0):
+            if scope=='business':guard_pending(identity)
             return operation(*args, **kwargs)
 
-    from . import review_commands
+    from . import review_commands, persona_review_gateway
 
     def review_command(kind, identity, session, payload, request_path, execute, *, business_id=None, preflight=None):
         review_commands.reject_borrowed_context(payload.review_context,{"actor":case_principal(settings,int(session.user["id"]))})
@@ -991,7 +1064,9 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                     if joint:
                         return review_commands.present_joint(settings,review_commands.complete_joint(settings,command,recovered))
                     return review_commands.finish(command, recovered)
-            if command["result"] is not None:
+            coordinated = (kind == 'business' and command['context']['version'] in {review_commands.BUSINESS_VERSION,review_commands.CUSTOMER_SPEAKER_VERSION}
+                or kind == 'speaker' and command['context']['version'] == review_commands.SPEAKER_VERSION)
+            if command["result"] is not None and not coordinated:
                 if command["result"].get("status") == "cancelled_before_commit":
                     raise review_commands.blocked("REVIEW_REPLAY_CONFLICT", "这次未保存的提交已取消，请重新核对后提交。")
                 return command["result"]
@@ -1003,12 +1078,13 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 from .case_shared_display import validate_sharing_decision
                 validate_sharing_decision(settings,command,intent_payload.get('sharing_decision'))
             executed=execute(command)
+            if coordinated:
+                return executed  # The existing Business owners close their exact staged operation.
             if joint:
                 return review_commands.present_joint(settings,review_commands.complete_joint(settings,command,executed))
             return review_commands.finish(command, executed)
         return locked_authority_call("case" if kind == "case" else "business",
-            identity if kind != "speaker" else business_id, perform)
-
+            identity if kind != "speaker" else business_id, perform,allow_pending_review=True)
 
     @app.get("/api/review-commands/{kind}/{identity}")
     def pending_review_commands(kind: Literal["case", "business", "speaker"], identity: str,
@@ -1022,6 +1098,15 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 settings, kind, identity, int(session.user["id"]))}
         return {"operations": review_commands.pending(settings, kind, identity, int(session.user["id"]))}
 
+    @app.post("/api/customers/{business_id}/review-amendments")
+    def amend_business_review(business_id: str, payload: PersonaAmendmentRequest,
+            session: SessionContext = Depends(require_console_access),
+            x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")):
+        require_csrf(session, x_csrf_token)
+        return review_command("business", business_id, session, payload,
+            f"/api/customers/{business_id}/review-amendments",
+            lambda command: persona_review_gateway.amend(settings, command, "business", business_id,
+                business_id, payload.action, payload.reason, payload.changes))
 
     @app.post("/api/review-commands/{kind}/{identity}/{operation_id}/cancel")
     def cancel_uncommitted_review(kind: Literal["case", "business", "speaker"], identity: str, operation_id: str,
@@ -1044,8 +1129,17 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             write_once(directory / "result.json", result)
             return result
         return locked_authority_call("case" if kind == "case" else "business",
-            value["context"]["business_id"] if kind == "speaker" else identity, cancel)
+            value["context"]["business_id"] if kind == "speaker" else identity, cancel,allow_pending_review=True)
 
+    @app.post("/api/customers/{business_id}/speakers/{speaker_id}/review-amendments")
+    def amend_speaker_review(business_id: str, speaker_id: str, payload: PersonaAmendmentRequest,
+            session: SessionContext = Depends(require_console_access),
+            x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token")):
+        require_csrf(session, x_csrf_token)
+        return review_command("speaker", speaker_id, session, payload,
+            f"/api/customers/{business_id}/speakers/{speaker_id}/review-amendments",
+            lambda command: persona_review_gateway.amend(settings, command, "speaker", speaker_id,
+                business_id, payload.action, payload.reason, payload.changes), business_id=business_id)
 
     def visible_case_task(task, user_id):
         """Private Case scope and duplicate/current-attempt links never bypass access."""
@@ -1306,6 +1400,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
         if active is not None:
             return {
+                "input_differs": bool(prepared.get("input_differs")),
+                "materials_saved": not bool(prepared.get("input_differs")),
                 "duplicate": True,
                 "business_id": (business_id),
                 "speaker_id": (speaker_id),
@@ -1362,6 +1458,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 "business_id": (business_id),
                 "speaker_id": (speaker_id),
                 "state": existing["status"],
+                "input_differs": bool(prepared.get("input_differs")),
+                "materials_saved": not bool(prepared.get("input_differs")),
                 "existing_speaker": (existing),
             }
 
@@ -1426,7 +1524,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     def speaker_detail(
         business_id: str,
         speaker_id: str,
-        _: SessionContext = Depends(require_console_access),
+        session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
         detail = get_speaker_detail(
             settings,
@@ -1460,6 +1558,22 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             ):
                 detail["status"] = "failed"
 
+        detail["approval_context"] = review_commands.issue(settings, "speaker", speaker_id, int(session.user["id"]), business_id=business_id)
+        detail['unified_confirmation_enabled'] = detail['status'] in {'fact_review_required','persona_review_required'}
+        if detail['unified_confirmation_enabled']:
+            from .speaker_confirmation import review_policy, sourced_scope
+            from .speaker_gateway import _latest_intake_dir
+            from human_review_operations_v1 import read
+            intake = _latest_intake_dir(settings, business_id, speaker_id)
+            candidates = read(intake/'speaker_fact_candidates_v1.json') if intake else {}
+            source = read(intake/'speaker_intake_v1.json') if intake else {}
+            policies = {v['fact_candidate_id']:review_policy(v,
+                source_verified=sourced_scope(v, candidates, source, business_id, speaker_id))
+                for v in candidates.get('fact_candidates',[])}
+            for item in detail['fact_candidates']:
+                item.update(policies.get(item['candidate_id'],{}))
+        from persona_review_lifecycle_v1 import amendable_fields
+        detail["amendable_fields"] = amendable_fields("speaker")
         return detail
 
     @app.post("/api/customers/{business_id}/speakers/{speaker_id}/revalidation/review")
@@ -1472,6 +1586,41 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             business_sha256=payload.business_sha256, speaker_sha256=payload.speaker_sha256,
             reviewer=str(session.user["phone"]), note=payload.note)
 
+    @app.post('/api/customers/{business_id}/speakers/{speaker_id}/review-preview')
+    def preview_speaker_confirmation(business_id: str, speaker_id: str, payload: SpeakerFinalPreviewRequest,
+            session: SessionContext = Depends(require_console_access),
+            x_csrf_token: str | None = Header(default=None, alias='X-CSRF-Token')):
+        require_csrf(session, x_csrf_token)
+        from . import speaker_confirmation
+        def prepare():
+            try:
+                return speaker_confirmation.preview(settings,business_id,speaker_id,int(session.user['id']),
+                    str(session.user['phone']),payload.model_dump(exclude_none=True))
+            except (RuntimeError, ValueError) as exc:
+                if isinstance(exc, CanonicalOperationError):raise
+                raise speaker_confirmation.fail('SPEAKER_PREVIEW_BLOCKED','暂不能建立人物确认范围：'+str(exc)) from exc
+        return locked_authority_call('persona',f'{business_id}:{speaker_id}',prepare)
+
+    @app.post('/api/customers/{business_id}/speakers/{speaker_id}/confirm')
+    def confirm_speaker_profile(business_id: str, speaker_id: str, payload: SpeakerFinalConfirmationRequest,
+            session: SessionContext = Depends(require_console_access),
+            x_csrf_token: str | None = Header(default=None, alias='X-CSRF-Token')):
+        require_csrf(session,x_csrf_token)
+        from . import speaker_confirmation
+        def preflight(command):
+            if command['context']['version'] != review_commands.SPEAKER_VERSION:
+                raise speaker_confirmation.fail('SPEAKER_CONFIRMATION_REQUIRED','请使用当前人物资料的准确确认范围。')
+            speaker_confirmation.validate_decision({**command,'intent':payload.model_dump(exclude={'review_context'})})
+        try:
+            result=review_command('speaker',speaker_id,session,payload,
+                f'/api/customers/{business_id}/speakers/{speaker_id}/confirm',
+                lambda command:speaker_confirmation.execute(settings,command,str(session.user['phone'])),
+                business_id=business_id,preflight=preflight)
+        except OSError as exc:
+            raise CanonicalOperationError('SPEAKER_CONFIRMATION_INTERRUPTED','出镜人确认尚未完成，已保存记录会保留。',
+                '请查看当前状态并继续原操作；不会重复审核或批准。') from exc
+        return {'execution':result,'speaker':get_speaker_detail(settings,business_id,speaker_id)}
+
     @app.post("/api/customers/{business_id}/speakers/{speaker_id}/facts/review")
     def review_speaker_fact_candidates(
         business_id: str,
@@ -1483,33 +1632,16 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         ),
         session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
-        require_csrf(
-            session,
-            x_csrf_token,
-        )
-
-        result = locked_authority_call(
-            "persona",
-            f"{business_id}:{speaker_id}",
-            review_speaker_facts,
-            settings,
-            business_id=(business_id),
-            speaker_id=(speaker_id),
-            decisions=[
-                item.model_dump(exclude_none=True) for item in (payload.decisions)
-            ],
-            reviewer=str(session.user["phone"]),
-            note=(payload.note),
-        )
-
-        mark_speaker_task_reviewed(
-            settings.database_path,
-            speaker_id,
-        )
-
-        return {
-            "review": result,
-        }
+        require_csrf(session, x_csrf_token)
+        def execute(command):
+            result = review_speaker_facts(settings, business_id=business_id, speaker_id=speaker_id,
+                intake_id=command["context"]["snapshot"]["intake_id"],
+                decisions=[item.model_dump(exclude_none=True) for item in payload.decisions],
+                reviewer=str(session.user["phone"]), note=payload.note)
+            mark_speaker_task_reviewed(settings.database_path, speaker_id)
+            return {"review": result}
+        return review_command("speaker", speaker_id, session, payload,
+            f"/api/customers/{business_id}/speakers/{speaker_id}/facts/review", execute, business_id=business_id)
 
     @app.post(
         "/api/customers/{business_id}/speakers/{speaker_id}/gaps/supplement"
@@ -1582,25 +1714,13 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         ),
         session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
-        require_csrf(
-            session,
-            x_csrf_token,
-        )
-
-        detail = locked_authority_call(
-            "persona",
-            f"{business_id}:{speaker_id}",
-            approve_speaker_persona,
-            settings,
-            business_id=(business_id),
-            speaker_id=(speaker_id),
-            reviewer=str(session.user["phone"]),
-            note=(payload.note),
-        )
-
-        return {
-            "speaker": detail,
-        }
+        require_csrf(session, x_csrf_token)
+        def execute(command):
+            persona_review_gateway.approve(settings, command, "speaker", speaker_id, business_id,
+                str(session.user["phone"]), payload.note.strip() or "Internal Console Human Review approved the Speaker Persona.")
+            return {"speaker": get_speaker_detail(settings, business_id, speaker_id)}
+        return review_command("speaker", speaker_id, session, payload,
+            f"/api/customers/{business_id}/speakers/{speaker_id}/persona/approve", execute, business_id=business_id)
 
     @app.get("/api/create/options")
     def creation_options(
@@ -2309,7 +2429,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 "queued",
                 "running",
             }:
-                if not task["payload"].get("discovery_retry_request"):
+                if not (task["payload"].get("discovery_retry_request") or task['payload'].get('speaker_preparation_request')):
                     customer["status"] = "analyzing"
 
             elif (
@@ -2619,7 +2739,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 "queued",
                 "running",
             }:
-                if not latest_task["payload"].get("discovery_retry_request"):
+                if not (latest_task["payload"].get("discovery_retry_request") or latest_task['payload'].get('speaker_preparation_request')):
                     detail["status"] = "analyzing"
 
             elif (
@@ -2661,24 +2781,33 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         detail["speakers"] = speakers
 
         detail["creation_entry_ready"] = not detail.get("production_constraint_blocked", False) and bool((detail.get("current_business_persona") or business_persona).get("approved")) and any(
-            speaker.get("status") == "approved" for speaker in speakers
+            speaker.get("approved_for_current_business", speaker.get("status") == "approved") for speaker in speakers
         )
 
+        detail["approval_context"] = review_commands.issue(settings, "business", business_id, int(session.user["id"]))
+        from persona_review_lifecycle_v1 import amendable_fields
+        detail["amendable_fields"] = amendable_fields("business")
         detail["media_rights_established"] = False
         detail["review_context"] = customer_review_context(settings, business_id,
             int(session.user["id"]), str(session.user["phone"]))
+        detail["unified_confirmation_enabled"] = True
+        detail['joint_speaker_confirmation_enabled'] = True
 
         return detail
 
-    def confirm_discovery_step(business_id, decisions, session):
+    def confirm_discovery_step(business_id, decisions, session, *, lock_held=False):
         try:
+            values = [item.model_dump(exclude_none=True) if hasattr(item, 'model_dump') else item for item in decisions]
+            if lock_held:
+                return confirm_speaker_discovery(settings, business_id=business_id, decisions=values,
+                    confirmed_by_user_id=int(session.user['id']), confirmed_by_phone=str(session.user['phone']))
             return locked_authority_call(
                 "business",
                 business_id,
                 confirm_speaker_discovery,
                 settings,
                 business_id=business_id,
-                decisions=[item.model_dump(exclude_none=True) for item in decisions],
+                decisions=values,
                 confirmed_by_user_id=int(session.user["id"]),
                 confirmed_by_phone=str(session.user["phone"]),
             )
@@ -2738,16 +2867,18 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     ) -> dict[str, Any]:
         require_csrf(session, x_csrf_token)
 
+        review_commands.reject_borrowed_context(payload.review_context,{"actor_id":int(session.user["id"]),"actor":str(session.user["phone"])})
+
         def save_customer_step():
+            from .customer_confirmation import guard
+            guard(settings, business_id)
             submission = None
             if payload.review_context:
                 submission = validate_customer_review_context(settings, business_id,
                     payload.review_context, int(session.user["id"]), str(session.user["phone"]),
                     payload.model_dump(exclude_none=True, exclude={"review_context"}))
             else:
-                directory = settings.pipeline_root / "data" / "customer_intakes" / business_id
-                if any(directory.glob("*/review_progress/*.json")):
-                    raise CanonicalOperationError("REVIEW_CONTEXT_REQUIRED", "请使用当前审核页面提交。", "请刷新后重新核对。")
+                raise CanonicalOperationError("REVIEW_CONTEXT_REQUIRED", "请使用当前审核页面提交，不能省略对象版本。", "请刷新后重新核对。")
             record_speaker_discovery_intent(
                 settings,
                 business_id=business_id,
@@ -2799,6 +2930,99 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             "speaker_confirmation": speaker_confirmation,
         }
 
+    @app.get("/api/customers/{business_id}/legacy-scope")
+    def read_legacy_scope(business_id: str,
+        session: SessionContext = Depends(require_console_access)) -> dict[str, Any]:
+        return scope_projection(settings, business_id, int(session.user["id"]))
+
+    @app.post("/api/customers/{business_id}/review-preview")
+    def preview_customer_confirmation(business_id: str, payload: CustomerFinalPreviewRequest,
+        x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+        session: SessionContext = Depends(require_console_access)):
+        require_csrf(session, x_csrf_token)
+        from .customer_confirmation import preview, fail
+        from customer_fact_review_v1 import CustomerFactReviewError
+        def prepare():
+            try:
+                if payload.joint_speaker_review:
+                    from .customer_speaker_confirmation import preview as joint_preview
+                    return joint_preview(settings,business_id,int(session.user['id']),str(session.user['phone']),
+                        payload.model_dump(exclude_none=True))
+                values=payload.model_dump(exclude_none=True)
+                for key in ('joint_speaker_review','business_only','retry_preparation','speaker_fact_decisions'):values.pop(key,None)
+                return preview(settings, business_id, int(session.user['id']), str(session.user['phone']),
+                    values)
+            except CustomerFactReviewError as exc:
+                raise fail(exc.code, str(exc)) from exc
+            except (ValueError, RuntimeError) as exc:
+                if isinstance(exc, CanonicalOperationError):
+                    raise
+                raise fail('CUSTOMER_PREVIEW_BLOCKED', '暂不能建立最终审核摘要：' + str(exc)) from exc
+        return locked_authority_call('business', business_id, prepare)
+
+    @app.post('/api/customers/{business_id}/review-preparation')
+    def prepare_customer_speakers(business_id:str,payload:CustomerFinalPreviewRequest,
+        x_csrf_token:str|None=Header(default=None,alias='X-CSRF-Token'),
+        session:SessionContext=Depends(require_console_access)):
+        require_csrf(session,x_csrf_token)
+        from .customer_speaker_confirmation import preparation_request,preparation_status,enqueue_preparation
+        def admit():
+            path,_=preparation_request(settings,business_id,int(session.user['id']),str(session.user['phone']),payload.model_dump(exclude_none=True))
+            result=preparation_status(settings,path)
+            if result['state']=='prepared':return result
+            task=enqueue_preparation(settings,path,business_id,int(session.user['id']),retry=payload.retry_preparation)
+            return {**result,'state':'failed' if task['status']=='failed' else 'pending',
+                'task':{'task_id':task['task_id'],'status':task['status'],'stage':task['stage']}}
+        result=locked_authority_call('business',business_id,admit)
+        if result.get('task') and result['state']!='failed':customer_task_runner.schedule(result['task']['task_id'])
+        return result
+
+    @app.post("/api/customers/{business_id}/confirm")
+    def confirm_customer_profile(business_id: str, payload: CustomerFinalConfirmationRequest,
+        x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+        session: SessionContext = Depends(require_console_access)):
+        require_csrf(session, x_csrf_token)
+        from . import customer_confirmation
+        def preflight(command):
+            if command['context']['version'] not in {review_commands.BUSINESS_VERSION,review_commands.CUSTOMER_SPEAKER_VERSION}:
+                raise customer_confirmation.fail('CUSTOMER_CONFIRMATION_REQUIRED', '请使用本页准确的最终确认摘要。')
+            customer_confirmation.validate_decision({**command, 'intent':payload.model_dump(exclude={'review_context'})})
+        def execute(command):
+            if command['context']['version'] not in {review_commands.BUSINESS_VERSION,review_commands.CUSTOMER_SPEAKER_VERSION}:
+                raise customer_confirmation.fail('CUSTOMER_CONFIRMATION_REQUIRED', '旧审核不能替代明确的联合确认。')
+            def save_people():
+                bundle=command['context']['confirmation']
+                if command['context']['version']==review_commands.CUSTOMER_SPEAKER_VERSION:bundle=bundle['business']
+                decisions = bundle['review_payload'].get('speaker_confirmations', [])
+                record_speaker_discovery_intent(settings, business_id=business_id, decisions=decisions,
+                    confirmed_by_user_id=int(session.user['id']), confirmed_by_phone=str(session.user['phone']))
+                people = confirm_discovery_step(business_id, decisions, session, lock_held=True)
+                from customer_fact_review_v1 import read_review_progress
+                intake = settings.pipeline_root/'data/customer_intakes'/business_id/bundle['intake_id']
+                if read_review_progress(intake)['complete']:
+                    mark_customer_task_reviewed(settings.database_path, business_id)
+                return people
+            if command['context']['version']==review_commands.CUSTOMER_SPEAKER_VERSION:
+                from .customer_speaker_confirmation import execute as execute_joint
+                return execute_joint(settings,command,str(session.user['phone']),on_review=save_people)
+            return customer_confirmation.execute(settings, command, str(session.user['phone']), on_review=save_people,
+                on_approved=lambda:auto_handoff_confirmed_speaker_drafts(business_id, created_by_user_id=int(session.user['id'])))
+        try:
+            result = review_command('business', business_id, session, payload,
+                f'/api/customers/{business_id}/confirm', execute, preflight=preflight)
+        except OSError as exc:
+            raise CanonicalOperationError('CUSTOMER_CONFIRMATION_INTERRUPTED', '客户确认尚未完成，已保存的记录会保留。',
+                '请刷新并继续原操作；不会重复审核、批准或建立出镜人。') from exc
+        return {'execution':result, 'customer':get_customer_detail(settings, business_id)}
+
+    @app.post("/api/customers/{business_id}/legacy-scope")
+    def adjudicate_legacy_scope(business_id: str, payload: dict[str, Any],
+        x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
+        session: SessionContext = Depends(require_console_access)) -> dict[str, Any]:
+        require_csrf(session, x_csrf_token)
+        return {"receipt": locked_authority_call("business", business_id, submit_scope,
+            settings, business_id, int(session.user["id"]), payload)}
+
     @app.post("/api/customers/{business_id}/persona/approve")
     def approve_customer_persona(
         business_id: str,
@@ -2809,30 +3033,14 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         ),
         session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
-        require_csrf(
-            session,
-            x_csrf_token,
-        )
-
-        detail = locked_authority_call(
-            "business",
-            business_id,
-            approve_business_persona,
-            settings,
-            business_id=business_id,
-            reviewer=str(session.user["phone"]),
-            note=payload.note,
-        )
-
-        speaker_handoff = auto_handoff_confirmed_speaker_drafts(
-            business_id,
-            created_by_user_id=int(session.user["id"]),
-        )
-
-        return {
-            "customer": detail,
-            "speaker_handoff": speaker_handoff,
-        }
+        require_csrf(session, x_csrf_token)
+        def execute(command):
+            persona_review_gateway.approve(settings, command, "business", business_id, business_id,
+                str(session.user["phone"]), payload.note.strip() or "Internal Console Human Review approved the Business Persona.")
+            return {"customer": get_customer_detail(settings, business_id),
+                "speaker_handoff": auto_handoff_confirmed_speaker_drafts(business_id, created_by_user_id=int(session.user["id"]))}
+        return review_command("business", business_id, session, payload,
+            f"/api/customers/{business_id}/persona/approve", execute)
 
     @app.post("/api/customers/{business_id}/readiness/recheck")
     def recheck_customer_existing_information(

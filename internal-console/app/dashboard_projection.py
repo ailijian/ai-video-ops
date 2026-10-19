@@ -76,12 +76,14 @@ def _customer_work(settings):
                 'needs_more_info': ('business_information', '资料缺口或关键限制需要处理。', '查看待处理资料', 35),
                 'draft': ('business_draft', '客户资料尚未提交分析。', '继续完善资料', 50),
             }.get(status)
+            if (row.get('creation_constraints') or {}).get('blocked'):
+                action = ('business_constraints', '客户档案保留，创作限制仍需核实。', '查看阻断原因', 30)
             if action:
                 kind, reason, label, priority = action
                 persona = row.get('business_persona') or {}
                 identity = f"{kind}:{business_id}:{row.get('latest_intake_id') or persona.get('revision') or 'current'}"
                 actions.append(_item(identity, kind, row['display_name'], reason, label,
-                    url+'/edit' if status == 'draft' else url, status, row.get('submitted_at'), priority,
+                    url+'#constraints' if kind == 'business_constraints' else url+'/edit' if status == 'draft' else url, status, row.get('submitted_at'), priority,
                     business_id=business_id, timestamp_source='customer_intake.created_at'))
         except READ_ERRORS:
             unreadable = True
@@ -93,6 +95,7 @@ def _customer_work(settings):
                 action = {
                     'fact_review_required': ('speaker_fact_review', '出镜人事实仍需人工核对。', '核对出镜人', 40),
                     'persona_review_required': ('speaker_approval', '出镜人档案等待正式批准。', '审核出镜人', 40),
+                    'binding_review_required': ('speaker_binding_review', '客户资料已更新，待确认出镜人的资料需要复核。', '复核出镜人', 40),
                     'revalidation_required': ('speaker_revalidation', '客户档案已更新，需要复核出镜人绑定。', '复核出镜人', 40),
                     'needs_more_info': ('speaker_information', '出镜人资料尚有待处理事项。', '查看出镜人', 45),
                 }.get(speaker['status'])

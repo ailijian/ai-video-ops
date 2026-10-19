@@ -28,13 +28,19 @@
 .customer-list-count,.list-result-count { color:var(--ink-soft); font-size:12px; margin:17px 0 14px; }
 .customer-list-count span { margin-left:4px; }
 .customer-operations-list { display:grid; grid-template-columns:minmax(0,1fr); gap:10px; }
-.customer-operation-card { display:grid; grid-template-columns:minmax(240px,1.4fr) minmax(145px,.7fr) minmax(220px,1.1fr) 140px; align-items:center; gap:24px; padding:22px 24px; background:var(--surface); border:1px solid var(--line); border-radius:12px; min-width:0; }
+.customer-operation-card { position:relative; isolation:isolate; display:grid; grid-template-columns:minmax(240px,1.4fr) minmax(145px,.7fr) minmax(220px,1.1fr) 140px; align-items:center; gap:24px; padding:22px 24px; background:var(--surface); border:1px solid var(--line); border-radius:12px; min-width:0; }
 .customer-operation-card:hover { border-color:#CDDCD2; }
 .customer-operation-heading { display:flex; align-items:center; gap:12px; min-width:0; }
 .customer-symbol { display:grid; place-items:center; width:42px; height:42px; flex:0 0 42px; border-radius:12px; background:var(--mint); color:var(--forest); font-size:16px; font-weight:650; }
 .customer-operation-identity { min-width:0; flex:1; }
 .customer-title-line { display:flex; align-items:flex-start; gap:8px; }
-.customer-operation-name { min-width:0; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; overflow-wrap:anywhere; color:var(--ink); font-size:16px; font-weight:700; line-height:1.5; }
+.customer-operation-name { min-width:0; display:flex; align-items:flex-start; gap:6px; color:var(--ink); font-size:16px; font-weight:700; line-height:1.5; }
+.customer-operation-name-text { min-width:0; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; overflow-wrap:anywhere; }
+/* One native detail link covers the card; independent actions stay above it. */
+.customer-operation-name::after { content:""; position:absolute; inset:0; z-index:1; border-radius:12px; }
+.customer-operation-name:focus-visible { outline:none; }
+.customer-operation-name:focus-visible::after { outline:2px solid var(--forest); outline-offset:3px; }
+.customer-detail-arrow { flex:none; width:16px; height:16px; margin-top:4px; fill:none; stroke:var(--forest); stroke-width:1.8; stroke-linecap:round; stroke-linejoin:round; }
 .customer-title-line>.list-status { margin-top:2px; }
 .customer-operation-identity p { margin:5px 0 0; color:var(--ink-soft); font-size:12px; line-height:1.5; overflow-wrap:anywhere; }
 .customer-operation-speaker,.customer-operation-progress { min-width:0; font-size:13px; }
@@ -44,6 +50,7 @@
 .customer-operation-stats { color:var(--ink); font-size:12px; font-variant-numeric:tabular-nums; }
 .customer-operation-note { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; margin:5px 0 0; font-size:11px; line-height:1.6; color:var(--ink-soft); }
 .customer-operation-actions { display:flex; flex-direction:column; align-items:stretch; gap:9px; }
+.customer-operation-actions > a { position:relative; z-index:2; }
 .customer-operation-actions .btn { padding:8px 12px; }
 .customer-operation-actions .section-link { text-align:center; font-size:12px; font-weight:500; color:var(--ink-soft); padding:3px 0; }
 .customer-list-pagination,.list-pagination { display:flex; align-items:center; justify-content:center; gap:16px; margin:24px 0; font-size:12px; color:var(--ink-soft); }

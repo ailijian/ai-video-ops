@@ -1,5 +1,6 @@
 """E2-D full ASGI, real Human gates; only remote extraction is preset fictional data."""
 from __future__ import annotations
+from review_protocol import post_review
 
 import hashlib
 import json
@@ -59,7 +60,7 @@ def decisions(detail, *, select_speaker=True):
         if kind == "identity_conflict":
             choice.update(resolution_quote=RESOLUTION, note="虚构人审：原文明确本品牌不等于合作餐厅，分别归属，不继承荣誉。")
         controls.append(choice)
-    return {"decisions": [{"candidate_id": item["candidate_id"], "decision": "approve"} for item in detail["fact_candidates"] if item["state"] == "requires_review"],
+    return {"review_context": detail["review_context"]["token"], "decisions": [{"candidate_id": item["candidate_id"], "decision": "approve"} for item in detail["fact_candidates"] if item["state"] == "requires_review"],
         "constraint_decisions": controls,
         "speaker_confirmations": [{"candidate_id": item["candidate_id"], "selected": select_speaker, "speaker_type": "owner_founder"} for item in detail["speaker_candidates"] if not item["confirmed"]]}
 
@@ -145,7 +146,7 @@ def test_unseen_candidate_or_altered_snapshot_cannot_be_reviewed_by_old_page(cli
     candidate_path.write_text(json.dumps(artifact, ensure_ascii=False), encoding="utf-8")
     payload = {**decisions(detail, select_speaker=False), "speaker_confirmations": [],
         "review_context": detail["review_context"]["token"]}
-    response = client.post(f'/api/customers/{body["business_id"]}/facts/review',
+    response = post_review(client, f'/api/customers/{body["business_id"]}/facts/review',
         headers={"X-CSRF-Token": csrf}, json=payload)
     assert response.status_code == 409 and response.json()["detail"]["code"] == "REVIEW_CONTEXT_STALE"
     assert not (directory / "review_progress").exists()
@@ -172,14 +173,14 @@ def test_durable_receipt_browser_fault_gateway_resume_without_duplicate_decision
     monkeypatch.setattr(customer_gateway, "_run_json_command", wrapper)
     payload = {**decisions(detail, select_speaker=False), "speaker_confirmations": [],
         "review_context": detail["review_context"]["token"]}
-    response = client.post(f"/api/customers/{business}/facts/review", headers={"X-CSRF-Token": csrf}, json=payload)
+    response = post_review(client, f"/api/customers/{business}/facts/review", headers={"X-CSRF-Token": csrf}, json=payload)
     assert response.status_code == 200 and response.json()["review"]["recovery_required"], response.text
     receipts = {p: sha(p) for p in (directory / "review_progress").glob("*.json")}
     assert len(receipts) == 1
     fresh = client.get(f"/api/customers/{business}").json()
     assert fresh["review_progress"]["completion_retry_required"] is True
     assert fresh["status"] == "fact_review_required" and fresh["creation_entry_ready"] is False
-    response = client.post(f"/api/customers/{business}/facts/review", headers={"X-CSRF-Token": csrf}, json={
+    response = post_review(client, f"/api/customers/{business}/facts/review", headers={"X-CSRF-Token": csrf}, json={
         "decisions": [], "resume_review": True, "review_context": fresh["review_context"]["token"]})
     assert response.status_code == 200 and response.json()["review"]["authority"]["fact_review_completed"], response.text
     assert all(sha(p) == h for p, h in receipts.items())
@@ -189,13 +190,13 @@ def test_durable_receipt_browser_fault_gateway_resume_without_duplicate_decision
 
 def approve_full_flow(client, settings, csrf, business, payload):
     headers = {"X-CSRF-Token": csrf}
-    reviewed = client.post(f"/api/customers/{business}/facts/review", headers=headers, json=payload)
+    reviewed = post_review(client, f"/api/customers/{business}/facts/review", headers=headers, json=payload)
     assert reviewed.status_code == 200, reviewed.text
     detail = client.get(f"/api/customers/{business}").json()
     assert detail["business_persona"]["approved"] is False
     assert detail["creation_entry_ready"] is False
     assert len(detail["speakers"]) == 1
-    approved = client.post(f"/api/customers/{business}/persona/approve", headers=headers,
+    approved = post_review(client, f"/api/customers/{business}/persona/approve", headers=headers,
         json={"note": "隔离虚构Golden：明确Business独立人工批准"})
     assert approved.status_code == 200, approved.text
     detail = client.get(f"/api/customers/{business}").json()
@@ -206,12 +207,12 @@ def approve_full_flow(client, settings, csrf, business, payload):
     personal = client.get(url).json()
     boundary(settings, personal["task"], "speaker_analysis")
     personal = client.get(url).json()
-    response = client.post(url + "/facts/review", headers=headers, json={"decisions": [
+    response = post_review(client, url + "/facts/review", headers=headers, json={"decisions": [
         {"candidate_id": item["candidate_id"], "decision": "approve"} for item in personal["fact_candidates"] if item["state"] == "requires_review"],
         "note": "只确认本人有逐字来源的经历与表达范围"})
     assert response.status_code == 200, response.text
     assert client.get(url).json()["speaker_persona"]["approved"] is False
-    response = client.post(url + "/persona/approve", headers=headers, json={"note": "隔离虚构Golden：明确Speaker独立人工批准"})
+    response = post_review(client, url + "/persona/approve", headers=headers, json={"note": "隔离虚构Golden：明确Speaker独立人工批准"})
     assert response.status_code == 200, response.text
     final = client.get(f"/api/customers/{business}").json()
     assert final["creation_entry_ready"] is True
@@ -235,7 +236,7 @@ def test_golden_full_application_independent_human_gates_and_no_truth_transfer(c
     assert "城市餐饮奖" not in json.dumps(persona["facts"], ensure_ascii=False)
     assert persona["persona_control_layer"]["contract_version"] == "business-restriction-v1.0"
     protected = {p: sha(p) for p in settings.pipeline_root.joinpath("data/personas").rglob("*.json")}
-    replay = client.post(f"/api/customers/{business}/facts/review", headers={"X-CSRF-Token": csrf}, json=payload)
+    replay = post_review(client, f"/api/customers/{business}/facts/review", headers={"X-CSRF-Token": csrf}, json=payload)
     assert replay.status_code == 200
     assert all(sha(p) == h for p, h in protected.items())
     assert all(sha(p) == h for p, h in cases.items())
@@ -246,7 +247,7 @@ def test_historical_golden_omission_recovery_preserves_review_and_one_speaker(cl
     body, detail = seed(client, settings, csrf, omission=True)
     business = body["business_id"]
     assert len(detail["fact_candidates"]) == 1
-    response = client.post(f"/api/customers/{business}/facts/review", headers={"X-CSRF-Token": csrf}, json=decisions(detail))
+    response = post_review(client, f"/api/customers/{business}/facts/review", headers={"X-CSRF-Token": csrf}, json=decisions(detail))
     assert response.status_code == 200, response.text
     detail = client.get(f"/api/customers/{business}").json()
     assert len(detail["speakers"]) == 1

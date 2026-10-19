@@ -1,4 +1,4 @@
-import { escapeHtml } from "./case-components.js";
+import { escapeHtml } from "./case-components.js?v=flow-closure-2";
 import { createContentDeliveryViews } from "./content-delivery-views.js?v=productized-stage3-3";
 import { createNewsDeliveryViews } from "./news-delivery-views.js?v=productized-stage3-3";
 import { createNovelNewsViews } from "./novel-news-views.js?v=gate-c2-1";
@@ -627,9 +627,9 @@ export function createContentViews({
           ${back}
           ${pageHeading("", context ? `${context.display_name} · 创作` : "创作", "进入创作前仍需核对正式档案和当前创作条件。")}
           <section class="state-panel state-empty">
-            <h2>还没有可用于创作的客户</h2>
+            <h2>${context ? "当前客户暂不能创作" : "还没有可用于创作的客户"}</h2>
             <p>${escapeHtml((data.customers || [])[0]?.authority_blocker?.message || "请先完成客户档案与适用出镜人的独立审核。")}</p>
-            <a class="btn btn-primary" href="${context ? `/customers/${encodeURIComponent(context.business_id)}` : "/customers"}" data-route>查看客户资料</a>
+            <a class="btn btn-primary" href="${escapeHtml((data.customers || [])[0]?.authority_blocker?.url || (context ? `/customers/${encodeURIComponent(context.business_id)}` : "/customers"))}" data-route>${(data.customers || [])[0]?.authority_blocker?.url ? "查看待核实事项" : "查看客户资料"}</a>
           </section>
         </main>`);
       bindCommonActions();

@@ -267,14 +267,114 @@ an explicit existing-customer check or `create_separate`, never automatic mergin
 Fact review keeps the original AI candidates and individual Human decisions.
 Optional `industry_review` distinguishes absent judgment, explicit `uncertain`,
 and a confirmed value from the existing industry taxonomy. It does not add a
-readiness requirement. Discovery candidates start unselected. Customer review
-and Speaker confirmation use separate business-lock operations: a draft failure
+readiness requirement. Discovery selection is an intake proposal, never Speaker
+approval. Legacy Customer review and Speaker confirmation retain their separate business-lock operations: a draft failure
 returns recoverable partial success, preserving the completed Customer review.
 `POST /api/customers/{business_id}/speaker-discovery/confirm` resumes saved
 selection intent independently. `/speaker-discovery/retry` runs only discovery
 from the saved privacy projection using the existing analysis task/runner.
 
+The unified Customer confirmation keeps those writers and the existing final
+Persona approver. `POST /api/customers/{business_id}/review-preview` is read-only:
+it derives the final known facts and effective restrictions with the same
+`derive_business_persona_input` used by the canonical builder. The signed
+`customer-final-confirmation-v1.0` preview binds the source review context,
+Intake/candidate/current state, proposed decisions, exact displayed projection,
+current authenticated principal, and either `approve_business_profile` or
+`save_review_progress`. Missing or failed previews never imply approval.
+
+`POST /api/customers/{business_id}/confirm` requires an explicit matching choice
+and preview SHA under `human-review-command-v1.3`. The existing Business lock
+protects append-only fact review, final candidate comparison and native Persona
+approval. `data/review_operations/business/<id>/<operation>/business_approval_target.json`
+binds the original intent/actor/preview to the exact candidate and independent
+fact-review companions; the existing Approval Receipt links it through
+`review_decision_metadata.decision_artifact_ref`. It is an operation companion,
+not another Truth store or approval lifecycle. A completed prior fact review is
+reused without replaying or rewriting its decisions. Human Speaker selection
+may save a Draft and start its existing analysis handoff; it never approves a
+Speaker. R1→R2 binding/revalidation, media rights and creation Gates remain separate.
+
+Blocked or incomplete material can only save legal review progress. An
+interrupted operation retains both commit boundaries, checks exact original
+identity/source/receipt and current access, and resumes through the existing
+Review Command recovery entry. It does not repeat a completed Approval or Task.
+An unfinished operation must be recovered or legally cancelled before starting
+another one. New contexts cannot be downgraded to legacy approval endpoints;
+historical contexts and independently explicit legacy/CLI approval remain valid
+under their original contracts. No approved artifact or historical SHA is
+migrated or reinterpreted as a new joint decision.
+
+New initial onboarding can prepare and confirm selected Speakers on that same
+page. `speaker_review_preparation_v1.py` owns immutable
+`speaker-review-preparation-v1.0` proposals under `data/speaker_preparations`.
+`POST /api/customers/{id}/review-preparation` uses the saved Customer sources and
+the existing Customer task worker to prepare Privacy-projected personal facts;
+it never writes a Human decision or approved Persona. Repeated preparation
+reuses its exact source/selection identity; failed extraction resumes the same
+task. Changing source or selected identity requires a different proposal.
+
+`customer_speaker_confirmation.py` coordinates
+`customer-final-confirmation-v1.1` with Business-only
+`human-review-command-v1.4`. The final signed context includes both the exact
+Business sub-decision and complete selected-person proposals/decisions. One
+explicit `approve_customer_and_speakers` action commits the existing Business
+owners first, then each unchanged Speaker Intake/Fact Review/Persona Approval
+owner against the actual Approved Business revision. Cached extraction may be
+promoted only when its original sources and actual native candidates match the
+displayed proposal; no model call occurs in the approval operation. Every
+Speaker retains a separate Human Fact Review and Approval Receipt, linked to
+the same operation and exact Business Approval Receipt. Partial success is
+recoverable without re-approving completed objects or creating duplicate tasks.
+
+Incomplete selected-person evidence cannot silently become a successful joint
+approval. The UI can explicitly request `business_only`, which signs a normal
+customer-only confirmation and never approves people. Existing approved Speaker
+revisions still use their explicit Business-version revalidation contract; this
+initial-onboarding path does not rewrite them. Unfinished joint operations
+block competing selected-Speaker mutations. Historical v1.0/v1.3 contexts and
+independent legacy approval remain governed by their original contracts.
+All Console Business/Speaker source mutations check unfinished confirmation
+commands inside the shared Business lock. Only the exact Review Command
+recovery and legal cancellation routes may proceed through that barrier, so a
+new supplement or analysis cannot invalidate a partially committed operation.
+The browser context binds local personal source/projection digests rather than
+duplicating raw personal material; the commit re-derives and compares that exact
+displayed meaning before calling the native Human writers.
+
 `POST /api/customers/{business_id}/gaps/supplement` retains reviewed evidence.
+Standalone Speaker review uses the same explicit final-action semantics.
+`POST /api/customers/{business_id}/speakers/{speaker_id}/review-preview` is
+read-only. `speaker_confirmation.py` derives `speaker-final-confirmation-v1.0`
+with the native Speaker decision coverage, historical-source merge, revision,
+capability and critical-conflict checks. Normal facts are pending bulk choices.
+Source-bound, conflict-free own-work restrictions also join that final choice:
+the server checks the native Intake identity, raw-answer SHA and exact quotation,
+then conservatively recognises only restrictive clauses. Unrecognised wording,
+expansions, identity changes and conflicts still require an explicit choice.
+Known expression restrictions are read-only and remain in the native historical
+source merge; ordinary corrections cannot remove protected fields. These defaults
+are pending selections, never saved decisions. All required candidates still
+receive native Human decisions only at the explicit final submit.
+
+`POST .../speakers/{speaker_id}/confirm` accepts only `approve_speaker_profile`
+with the exact signed preview under `human-review-command-v1.5`. It shares the
+existing Business lock and stages `speaker_approval_target.json` in the existing
+Speaker Review Command directory. The original immutable Speaker Fact Review
+and independent Persona Approval Receipt remain separate. The latter binds the
+exact staged decision, actor, intent, reviewed sources and current Business SHA.
+A completed legacy review is reused unchanged. No Task, Draft, media permission
+or Business approval is created by this confirmation. A blocked preview cannot
+submit; there is no implicit save-only or approval fallback.
+
+Interrupted review, candidate/target persistence, native approval or final result
+resumes the original intent across sessions/processes. Unfinished commands guard
+competing Speaker mutations; committed stages cannot be discarded. Replays
+verify their independent receipt references, and a new actor, source, Business
+revision or altered intent cannot borrow the operation. v1.5 cannot enter old
+review/approve routes. Historical commands retain their original dispatch and
+recovery contracts. This changes interaction, not the Persona Authority lifecycle.
+
 For an approved customer, additive facts form the next unapproved Business
 revision through the existing builder. The approved revision remains effective
 until independent Persona approval. Empty additions do not create a revision;
@@ -309,31 +409,67 @@ is owned by `app/config.py` and `app/novel_news_rollout.py`; artifact structure
 and semantic closure are owned by `ops-pipeline/scripts/novel_news_v1.py`.
 
 
-## Case final review and interrupted result recovery
+## Review closure and targeted corrections
 
-CASE final reviews use `app/review_commands.py` (`human-review-command-v1.0`).
-The current private detail supplies an opaque `approval_context` binding the
-node, Session principal, exact Case/Attempt, candidate SHA and source snapshot.
-Final submission requires that context plus the existing Evidence confirmation.
-`ops-pipeline/scripts/case_human_review_v2.py` owns explicit positive quality
-confirmation (`case-human-quality-decision-v1.0`, approval v2.0): the existing
-final modal submits it, with optional approval reason. Reject/reanalyze require
-reasons. Session, CSRF, current reviewer authorization and all domain Gates run
-again on replay. Historical approvals and receipts are not backfilled.
+Final Case, Business and Speaker review commands use the shared
+[`review_commands.py`](app/review_commands.py) protocol
+`human-review-command-v1.0`. A detail response supplies `approval_context`;
+Speaker fact review also uses it, while Business fact review retains its own
+existing `review_context`. HTTP requests must send the displayed opaque token.
+The token binds the node, stable Session principal, exact object, Intake/Attempt,
+artifact SHA and source snapshot. Missing, borrowed or stale contexts are rejected
+before domain mutation. Review capability, Session and CSRF checks run again on
+replay; a saved command is never a permission grant.
 
-Immutable intent/result companions live under
-`data/review_operations/case/<id>/<operation_id>/`. Exact replay resumes the
-original operation, including after restart. The Case directory transaction
-publishes `case-review-command-commit-v1.0`, binding the original actor, intent,
-Candidate/Evidence/quality input, approved Case and Receipt SHA. A fully committed
-approval only finishes its original command result: no second Approval Writer,
-Receipt, fingerprint, cleanup or Task. Missing proof or identity mismatch blocks
-recovery. Reanalysis uses the original operation identity for one independent
-Task, retaining the old decision. Validated source uploads reserve exact bytes
-for unfinished commands; queue recovery cannot substitute or reconsume sources.
+Commands append an immutable intent and result under
+`data/review_operations/<kind>/<id>/<operation_id>/`. These are recovery
+companions, not new business approval. Replaying the same actor, context and
+payload resumes the original operation, including after restart. Changed
+payloads fail closed. The submitting principal alone may fetch unfinished
+commands at `GET /api/review-commands/{kind}/{id}`. Cancelling an uncommitted
+submission appends a cancelled result and cannot revoke any domain decision.
+Case reanalysis admission carries the same operation identity: queue failure can
+resume to one Task without replacing the original Human decision. Source upload
+and provider preflight happen before saving a new command; a created Task is
+reused without consuming the upload a second time.
 
-Authorized rejected Attempt details remain readable, with reason, actor/time and
-legal evidence; no approval context is issued for a terminal Attempt. A new
-Attempt never overwrites it. Shared display remains an independent explicit
-human operation with its own whitelist, rights evidence and withdrawal Gates.
-Case Approval grants neither media reuse nor Pattern/Profile Compatibility.
+Business/Speaker `POST .../review-amendments` accepts an explicit correction
+reason, selected field values and source evidence, plus the same context.
+Canonical [`persona_review_lifecycle_v1.py`](../ops-pipeline/scripts/persona_review_lifecycle_v1.py)
+owns `persona-review-lifecycle-v1.0`. It appends a new Intake with exact source
+references. Human Fact Review and a separate final Persona approval are still
+required. Unchanged reviewed fields may be reused with their lineage; replacement
+fields supersede earlier values only after explicit Human approval/edit. Ordinary
+corrections cannot resolve identity conflicts or remove expression restrictions.
+A returned unapproved candidate retains its bytes and receives a SHA-bound
+`review_disposition_v1.json`; both resolver and approver refuse its reuse. A new
+candidate uses `revision_NNNN_<operation-id-prefix>` when needed to preserve old
+unapproved revisions. Approved revision sequence and receipts are unchanged.
+
+When Business changes before the first Speaker is approved,
+`binding_review_required` offers explicit reuse of saved personal evidence against
+the current Business via a new Intake. Pending personal changes remain pending;
+no null revalidation receipt is assumed. Existing approved-Speaker revalidation
+remains a separate unchanged-evidence workflow. Duplicate Speaker submissions
+with changed materials explicitly report that the new input was not saved and
+link to targeted correction, rather than claiming a new analysis was created.
+
+Persona approval writes `approval_intent_v1.json` before approved bytes and the
+immutable receipt. Interrupted writes recover only the exact Human decision and
+recheck fact/source/constraint validation. Console also checks current Speaker
+Business binding. No new reviewer roles, production rights or compatibility are
+granted by any of these recovery paths. Shared publication remains separate from
+Case approval; unavailable publication context returns actionable whitelist
+blockers to reviewers. Foreign deduplicated submissions without accessible task
+lineage remain neutral terminal submissions, never an endless analysis spinner.
+
+
+A validated upload used by an unfinished reanalysis command receives a
+SHA-bound `source_upload_reservation_v1.json` in that command directory. Hourly
+orphan cleanup retains that exact source while the command is unfinished. The
+24-hour new-admission limit does not expire an already saved decision waiting
+for queue capacity. Resume revalidates the receipt, bytes, source, principal and
+current reviewer grant. Once a Task exists, its existing retention policy owns
+the source. Cancelled uncommitted commands release the reservation for ordinary
+cleanup. Outstanding file quota remains in force; missing or corrupt sources
+fail closed for trusted recovery and are never silently replaced.
