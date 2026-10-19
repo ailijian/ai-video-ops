@@ -312,6 +312,10 @@ def _validate_recovered_closure(
         )
 
 
+from profile_compatibility_consumers_v1_1 import guarded as compatibility_guarded
+
+
+@compatibility_guarded
 def close_generation_export(
     *,
     pipeline_root: Path,

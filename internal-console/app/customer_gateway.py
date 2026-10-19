@@ -239,10 +239,11 @@ def _write_json_atomic(
         indent=2,
     )
 
+    from human_review_operations_v1 import io_path
     with tempfile.NamedTemporaryFile(
         mode="w",
         encoding="utf-8",
-        dir=path.parent,
+        dir=io_path(path.parent),
         prefix=f".{path.name}.",
         suffix=".tmp",
         delete=False,
@@ -252,7 +253,7 @@ def _write_json_atomic(
 
     os.replace(
         temporary,
-        path,
+        io_path(path),
     )
 
 

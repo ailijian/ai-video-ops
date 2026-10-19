@@ -34,6 +34,10 @@ def copy_cell_style(source: Any, target: Any) -> None:
         target.protection = copy(source.protection)
 
 
+from profile_compatibility_consumers_v1_1 import guarded as compatibility_guarded
+
+
+@compatibility_guarded
 def export_mix_excel(
     batch_path: Path,
     template_path: Path,

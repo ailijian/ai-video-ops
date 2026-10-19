@@ -260,7 +260,13 @@ def manifest_authority_rows(bundle: Path) -> tuple[list[dict[str, Any]], list[di
     return cases, patterns
 
 
-def build_release(pipeline_root: Path, release_parent: Path, repo_root: Path) -> Path:
+def build_release(pipeline_root: Path, release_parent: Path, repo_root: Path, *, contract_version="1.0", purpose=None, parent_release=None) -> Path:
+    if contract_version == '1.1':
+        sys.path.insert(0, str(repo_root / 'ops-pipeline/scripts'))
+        from profile_compatibility_release_v1_1 import build_release as build_native
+        return build_native(pipeline_root, release_parent, repo_root, purpose=purpose, parent_release=parent_release)
+    if contract_version != '1.0':
+        raise AuthorityReleaseError('Unknown Authority release version')
     data_root = pipeline_root.resolve() / "data"
     selected = collect_graph(data_root)
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
@@ -290,6 +296,10 @@ def build_release(pipeline_root: Path, release_parent: Path, repo_root: Path) ->
 def verify_release(release: Path, repo_root: Path) -> dict[str, Any]:
     release = release.resolve()
     manifest = read(release / "manifest.json")
+    if manifest.get('schema_version') == 'creative-authority-release-v1.1':
+        sys.path.insert(0, str(repo_root / 'ops-pipeline/scripts'))
+        from profile_compatibility_release_v1_1 import verify_release as verify_native
+        return verify_native(release, repo_root)
     if manifest.get("schema_version") != SCHEMA or manifest.get("source_machine_role") != "development_authority_source":
         raise AuthorityReleaseError("Invalid Authority Release manifest")
     if manifest.get("release_id") != release.name or not re.fullmatch(r"[0-9a-f]{40}", str(manifest.get("source_repo_commit", ""))):
@@ -319,6 +329,10 @@ def verify_release(release: Path, repo_root: Path) -> dict[str, Any]:
 
 def preflight(pipeline_root: Path, repo_root: Path, receipt_path: Path | None = None) -> dict[str, Any]:
     root = pipeline_root.resolve()
+    if (root / 'data/production_profiles/compatibility_v1_1/runtime_config.json').exists():
+        sys.path.insert(0, str(repo_root / 'ops-pipeline/scripts'))
+        from profile_compatibility_release_v1_1 import effective_runtime
+        return effective_runtime(root)
     data = root / "data"
     for relative in SINGLETONS:
         if not (data / relative).is_file():
@@ -653,8 +667,22 @@ def plan_merge(release: Path, pipeline_root: Path, repo_root: Path) -> dict[str,
     }
 
 
+def stage_release_v1_1(release, pipeline_root, repo_root):
+    sys.path.insert(0, str(Path(repo_root) / 'ops-pipeline/scripts'))
+    from profile_compatibility_release_v1_1 import stage_release
+    return stage_release(release, pipeline_root, repo_root)
+
+
+def activate_release_v1_1(pipeline_root, repo_root, release_ref, operation_id):
+    sys.path.insert(0, str(Path(repo_root) / 'ops-pipeline/scripts'))
+    from profile_compatibility_release_v1_1 import activate
+    return activate(pipeline_root, repo_root, release_ref, operation_id)
+
+
 def install_release(release: Path, pipeline_root: Path, repo_root: Path, expected_commit: str, backup_parent: Path, receipt_path: Path) -> dict[str, Any]:
     release, pipeline_root = release.resolve(), pipeline_root.resolve()
+    if read(release / 'manifest.json').get('schema_version') != SCHEMA:
+        raise AuthorityReleaseError('Use explicit versioned stage/activate for a new release; legacy installation cannot downgrade it')
     actual_commit = subprocess.check_output(["git", "-C", str(repo_root), "rev-parse", "HEAD"], text=True).strip()
     if actual_commit != expected_commit or pipeline_root != repo_root / "ops-pipeline":
         raise AuthorityReleaseError("Production checkout/pipeline root is not the expected commit/path")

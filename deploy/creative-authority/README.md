@@ -1,7 +1,16 @@
 # Shared Creative Authority deployment
 
+Mix-only v1.1 preparation, strict dispatch, independent Human approval, stage and
+activation are defined by the [C0 contract](../../docs/operations/PROFILE_COMPATIBILITY_V1_1_CONTRACT.md).
+It extends the existing release Owner; it does not replace V1's minimum graph or
+grant production rollout authorization. The new v1.1 isolated integration checks
+execute native Case/Pattern/Compatibility validation, pack/verify and preflight;
+they do not mock formal graph validation. An unreachable or advanced live control
+Authority fences new writes. Production/shared-filesystem operation and 4090
+deployment remain separately unverified and unauthorized in this implementation.
+
 Offline regression is included in the [repository verification runner](../../tools/README.md)
-as `authority-release`. Its unit fixtures replace formal graph validation;
+as `authority-release`. Its legacy V1 unit fixtures replace formal graph validation;
 passing them does not establish real Pipeline parser interoperability. The
 release verification and runtime preflight below remain required deployment
 checks against the actual immutable artifact.

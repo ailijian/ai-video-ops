@@ -15,6 +15,7 @@ from generation_feasibility_v1 import (
 from production_profile_v1 import (
     validate_registry,
 )
+from human_review_operations_v1 import io_path
 from show_customer_status_v1 import (
     AuthorityResolutionError,
     load_content_ledger,
@@ -25,7 +26,7 @@ from show_customer_status_v1 import (
     resolve_current_persona,
     resolve_recorded_path,
     resolve_speaker_persona,
-    sha256_file,
+    sha256_file as _artifact_sha,
     validate_approved_batch,
 )
 
@@ -36,6 +37,10 @@ SUPPORTED_PROFILES = {
     "mix",
     "news",
 }
+
+
+def sha256_file(path):
+    return _artifact_sha(io_path(path))
 
 
 class ContentCreationEntryError(RuntimeError):
@@ -56,7 +61,7 @@ def read_json(
     path: Path,
 ) -> dict[str, Any]:
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
+        value = json.loads(io_path(path).read_text(encoding="utf-8"))
     except (
         OSError,
         json.JSONDecodeError,
@@ -101,8 +106,14 @@ def load_profile_registry(
         / "production_profiles"
         / "production_profile_registry_v1.json"
     )
+    from profile_compatibility_release_v1_1 import CONFIG, effective_runtime
+    if (pipeline_root / CONFIG).is_file():
+        try:
+            path = effective_runtime(pipeline_root)['registry_path']
+        except RuntimeError as exc:
+            raise ContentCreationEntryError('PRODUCTION_PROFILE_REGISTRY_INVALID', str(exc)) from exc
 
-    if not path.is_file():
+    if not io_path(path).is_file():
         raise ContentCreationEntryError(
             "PRODUCTION_PROFILE_REGISTRY_NOT_FOUND",
             ("Production Profile Registry " "is required before content creation."),

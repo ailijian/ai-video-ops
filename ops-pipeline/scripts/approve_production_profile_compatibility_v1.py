@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import sys
 from pathlib import Path
 
 from production_profile_v1 import (
@@ -15,6 +17,8 @@ from production_profile_v1 import (
 
 
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == 'v1.1':
+        return main_v1_1(sys.argv[2:])
     parser = argparse.ArgumentParser(
         description=(
             "Persist the Human-approved Production Profile compatibility receipt and "
@@ -91,6 +95,48 @@ def main() -> None:
     print("Video search/download: 0")
     print("Remote model calls: 0")
     print("Frozen source artifacts unchanged: True")
+
+
+def main_v1_1(argv):
+    """Explicit native entry; no historical reviewer-name bypass."""
+    from production_profile_v1 import preview_compatibility_v1_1, decide_compatibility_v1_1
+    parser = argparse.ArgumentParser(description='Native independent Mix Compatibility Human Review')
+    parser.add_argument('action', choices=['snapshot', 'preview', 'confirm'])
+    parser.add_argument('--root', required=True)
+    parser.add_argument('--database', required=True)
+    parser.add_argument('--namespace', required=True)
+    parser.add_argument('--user-id', required=True, type=int)
+    parser.add_argument('--operation-id')
+    parser.add_argument('--decisions-json')
+    parser.add_argument('--preview-sha256')
+    parser.add_argument('--case-id', action='append')
+    parser.add_argument('--pattern-file', type=Path)
+    parser.add_argument('--mix-template', type=Path)
+    args = parser.parse_args(argv)
+    actor = {'namespace': args.namespace, 'user_id': args.user_id}
+    if args.action == 'snapshot':
+        from production_profile_v1 import bootstrap_mix_profile_v1_1, MIX_PATTERN_ID
+        from profile_compatibility_authorization_v1 import authorization
+        from profile_compatibility_decisions_v1_1 import prepare_target, decision_graph
+        authorization(Path(args.database), actor)
+        if not args.case_id or not args.mix_template or args.decisions_json or args.preview_sha256:
+            parser.error('snapshot requires --case-id and --mix-template; it cannot submit a decision')
+        definitions = bootstrap_mix_profile_v1_1(Path(args.root), args.mix_template)
+        targets = [prepare_target(Path(args.root), case_id=case_id, pattern_id=MIX_PATTERN_ID,
+            pattern_path=args.pattern_file, **definitions) for case_id in args.case_id]
+        result = {'source_targets': targets, 'current_heads': decision_graph(Path(args.root))['heads'],
+                  'review_status': 'review_required', 'approval_created': False}
+    elif args.action == 'preview':
+        if not args.operation_id or not args.decisions_json or args.preview_sha256:
+            parser.error('preview requires only --decisions-json')
+        result = preview_compatibility_v1_1(Path(args.root), Path(args.database), actor,
+            args.operation_id, json.loads(Path(args.decisions_json).read_text('utf-8')))
+    else:
+        if not args.operation_id or not args.preview_sha256 or args.decisions_json:
+            parser.error('confirm requires only --preview-sha256')
+        result = decide_compatibility_v1_1(Path(args.root), Path(args.database), actor,
+            args.operation_id, args.preview_sha256)
+    print(json.dumps(result, ensure_ascii=False))
 
 
 if __name__ == "__main__":

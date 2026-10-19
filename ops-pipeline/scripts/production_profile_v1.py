@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 from xml.etree import ElementTree
+from human_review_operations_v1 import io_path
 
 
 REGISTRY_SCHEMA_VERSION = "production-profile-registry-v1.0"
@@ -68,11 +69,68 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def preview_compatibility_v1_1(root, database_path, actor, operation_id, decisions):
+    """Native v1.1 entry; legacy v1.0 approval interpretation remains unchanged."""
+    from profile_compatibility_decisions_v1_1 import preview
+    return preview(root, database_path, actor, operation_id, decisions)
+
+
+def decide_compatibility_v1_1(root, database_path, actor, operation_id, preview_sha256):
+    from profile_compatibility_decisions_v1_1 import decide
+    return decide(root, database_path, actor, operation_id, preview_sha256)
+
+
+def resolve_compatibility_v1_1(root, **kwargs):
+    from profile_compatibility_release_v1_1 import effective_runtime
+    return effective_runtime(root, **kwargs)
+
+
+def declared_mix_profile_v1_1(template_path, template_sha256):
+    """Pure frozen Profile definition; no readiness or Human authority."""
+    return {
+        'profile_id': 'mix', 'profile_version': '1.1', 'status': 'definition_only',
+        'script_contract': {'shape': 'title_and_narration', 'required_fields': ['title', 'narration'],
+                            'narration_is_primary_semantic_spine': True},
+        'storyboard_contract': {'profile_field_required': True, 'shape': 'narration_to_visual_many_to_many',
+            'many_to_many_audio_visual_mapping': True,
+            'required_fields': ['narration_segment', 'visual_shots', 'hero_shot_role',
+                                'supporting_shot_roles', 'visual_anchor', 'avoid_recent_visual_anchor']},
+        'export_contract': {'implementation_version': 'current_v1', 'template_path': template_path,
+            'template_sha256': template_sha256, 'sheet': 'Sheet1', 'header_row': 4,
+            'headers': ['视频制作标题', '视频制作口播内容'], 'first_data_row': 5, 'contract_changed': False},
+        'case_compatibility_policy': {'approved_compatibility_required_for_new_matching': True,
+                                    'case_facts_transfer_permitted': False},
+        'pattern_compatibility_policy': {'approved_pattern_required': True,
+            'profile_compatibility_must_be_explicit': True, 'cross_profile_compatibility_is_automatic': False},
+        'validation_policy': {'profile_compatible_case_required': True,
+            'profile_compatible_pattern_required': True, 'privacy_gate_before_remote_call': True},
+    }
+
+
+def bootstrap_mix_profile_v1_1(root, mix_template_path):
+    """Acyclic definition only; creates neither compatibility nor readiness."""
+    from profile_compatibility_contract_v1_1 import RULES
+    from profile_compatibility_decisions_v1_1 import DOMAIN, digest, ref, write_once
+    root, template = Path(root).resolve(), Path(mix_template_path).resolve()
+    headers = _xlsx_first_sheet_row(template, 4, 2)
+    if headers != ['视频制作标题', '视频制作口播内容']:
+        raise RuntimeError('Mix export template contract changed')
+    profile = declared_mix_profile_v1_1(str(template), sha256_file(template))
+    path = root / DOMAIN / 'definitions' / digest(profile) / 'profile.json'
+    write_once(path, profile)
+    rules = {'schema_version': RULES, 'target_profile': 'mix', 'profile_sha256': sha256_file(path),
+             'pattern_scope_required': True, 'rule_version': '1.1', 'automatic_approval': False}
+    rules_path = root / DOMAIN / 'definitions' / digest(rules) / 'rules.json'
+    write_once(rules_path, rules)
+    return {'profile_ref': ref(root, path), 'rules_ref': ref(root, rules_path)}
+
+
 def read_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return json.loads(io_path(path).read_text(encoding="utf-8"))
 
 
 def sha256_file(path: Path) -> str:
+    path = io_path(path)
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
@@ -161,6 +219,10 @@ def validate_target_profile(registry: dict[str, Any], target_profile: str) -> di
 
 
 def validate_registry(registry: dict[str, Any]) -> None:
+    if registry.get('schema_version') == 'production-profile-registry-v1.1':
+        from profile_compatibility_contract_v1_1 import REGISTRY, validate_contract
+        validate_contract(registry, REGISTRY)
+        return
     if registry.get("schema_version") != REGISTRY_SCHEMA_VERSION:
         raise ValueError("Production Profile Registry schema is invalid.")
     if set((registry.get("profiles") or {}).keys()) != TARGET_PROFILES:
@@ -535,7 +597,7 @@ def audit_case_profile_compatibility_v1(
         storyboard_path.expanduser().resolve(),
     ]
     for path in paths:
-        if not path.is_file():
+        if not io_path(path).is_file():
             raise FileNotFoundError(path)
     case_path, case_approval_receipt_path, fingerprint_path, storyboard_path = paths
     case = read_json(case_path)

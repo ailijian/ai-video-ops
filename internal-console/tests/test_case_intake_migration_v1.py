@@ -66,8 +66,9 @@ def test_migration_preserves_populated_backup_and_detects_repeated_start(tmp_pat
         if table != "schema_migrations":
             assert first[table] == rows
     assert get_task(copy, task["task_id"])["payload"]["profile"] == "mix"
-    assert len(first["schema_migrations"]) == len(before["schema_migrations"]) + 2
+    assert len(first["schema_migrations"]) == len(before["schema_migrations"]) + 3
     assert first['case_capability_events']==[]  # Migration never grants any account.
+    assert first['profile_compatibility_capability_events'] == []
     with transaction(copy) as db:
         db.execute("INSERT INTO case_intake_groups VALUES ('historical-group','request','digest',1,'2026-10-09')")
         db.execute("INSERT INTO case_intake_items(group_id,position,source_url,task_id,state) VALUES (?,?,?,?,?)",
@@ -100,7 +101,8 @@ def test_concurrent_initializers_apply_migration_once(tmp_path):
     with ThreadPoolExecutor(max_workers=2) as pool:
         list(pool.map(lambda _: apply_migrations(source, MIGRATIONS), range(2)))
     after = snapshot(source)
-    assert len(after["schema_migrations"]) == 5
+    assert len(after["schema_migrations"]) == 6
+    assert after['profile_compatibility_capability_events'] == []
     assert after["users"] == before["users"] and after["tasks"] == before["tasks"]
 
 

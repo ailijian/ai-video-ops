@@ -1027,6 +1027,10 @@ def candidate_cache_path(
     )
 
 
+from profile_compatibility_consumers_v1_1 import guarded as compatibility_guarded
+
+
+@compatibility_guarded
 def persist_candidate_batch(
     *,
     path: Path,
@@ -1147,6 +1151,7 @@ def result_from_batch(
     }
 
 
+@compatibility_guarded
 def resolve_generation_batch(
     *,
     pipeline_root: Path,

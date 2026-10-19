@@ -17,12 +17,15 @@ from operation_lock_v1 import OperationLockTimeout, operation_lock, scoped_lock_
 from content_creation_entry_v1 import (
     ContentCreationEntryError,
     build_content_creation_entry,
+    load_profile_registry as load_entry_registry,
 )
+from human_review_operations_v1 import io_path
+from profile_compatibility_consumers_v1_1 import guarded as compatibility_guarded
 from show_customer_status_v1 import (
     AuthorityResolutionError,
     resolve_current_persona,
     resolve_speaker_persona,
-    sha256_file,
+    sha256_file as _artifact_sha,
 )
 
 from generation_request_effective_lifecycle_v1 import (
@@ -37,6 +40,10 @@ HANDOFF_SCHEMA_VERSION = "generation-source-planning-" "handoff-v1.0"
 OPERATION_VERSION = "generation_request_handoff_v1.py@1.0"
 
 IDEMPOTENCY_RE = re.compile(r"^[A-Za-z0-9_-]{8,128}$")
+
+
+def sha256_file(path):
+    return _artifact_sha(io_path(path))
 
 
 class GenerationRequestError(RuntimeError):
@@ -730,6 +737,7 @@ def recover_existing(
 
 
 @_business_locked
+@compatibility_guarded
 def create_generation_request_handoff(
     *,
     pipeline_root: Path,
@@ -973,8 +981,11 @@ def create_generation_request_handoff(
         / "production_profiles"
         / ("production_profile_" "registry_v1.json")
     )
+    from profile_compatibility_release_v1_1 import CONFIG
+    if (pipeline_root / CONFIG).is_file():
+        registry_path = load_entry_registry(pipeline_root)[0]
 
-    if not registry_path.is_file():
+    if not io_path(registry_path).is_file():
         raise GenerationRequestError(
             "PRODUCTION_PROFILE_REGISTRY_NOT_FOUND",
             (

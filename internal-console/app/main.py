@@ -1098,6 +1098,34 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 settings, kind, identity, int(session.user["id"]))}
         return {"operations": review_commands.pending(settings, kind, identity, int(session.user["id"]))}
 
+    @app.post('/api/profile-compatibility/preview')
+    def profile_compatibility_preview(payload: dict[str, Any],
+            session: SessionContext = Depends(require_console_access),
+            x_csrf_token: str | None = Header(default=None, alias='X-CSRF-Token')):
+        require_csrf(session, x_csrf_token)
+        from . import profile_compatibility_gateway as compatibility
+        from profile_compatibility_contract_v1_1 import CompatibilityError
+        if set(payload) != {'operation_id', 'decisions'}:
+            raise HTTPException(422, detail='需要明确的审核操作和逐项目标。')
+        try:
+            return compatibility.preview(settings, int(session.user['id']), payload['operation_id'], payload['decisions'])
+        except CompatibilityError as exc:
+            raise HTTPException(409, detail=error_detail(exc.code, str(exc), '请检查独立审核授权、资料版本和 Pattern 范围后重新核对。')) from exc
+
+    @app.post('/api/profile-compatibility/confirm')
+    def profile_compatibility_confirm(payload: dict[str, Any],
+            session: SessionContext = Depends(require_console_access),
+            x_csrf_token: str | None = Header(default=None, alias='X-CSRF-Token')):
+        require_csrf(session, x_csrf_token)
+        from . import profile_compatibility_gateway as compatibility
+        from profile_compatibility_contract_v1_1 import CompatibilityError
+        if set(payload) != {'operation_id', 'preview_sha256'}:
+            raise HTTPException(422, detail='需要当前预览和明确确认。')
+        try:
+            return compatibility.confirm(settings, int(session.user['id']), payload['operation_id'], payload['preview_sha256'])
+        except CompatibilityError as exc:
+            raise HTTPException(409, detail=error_detail(exc.code, str(exc), '请刷新并重新核对；已保存的独立记录会保留。')) from exc
+
     @app.post("/api/customers/{business_id}/review-amendments")
     def amend_business_review(business_id: str, payload: PersonaAmendmentRequest,
             session: SessionContext = Depends(require_console_access),

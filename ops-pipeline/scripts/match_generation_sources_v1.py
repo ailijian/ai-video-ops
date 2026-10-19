@@ -6,7 +6,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from build_persona_v1 import fact_is_known, persona_content_hash, sha256_file
+from build_persona_v1 import fact_is_known, persona_content_hash, sha256_file as _artifact_sha
+from human_review_operations_v1 import io_path
 from privacy_projection_v1 import validate_case_privacy_gate
 from production_profile_v1 import (
     COMPATIBILITY_APPROVAL_SCHEMA_VERSION,
@@ -51,7 +52,11 @@ FEASIBILITY_BLOCKERS = {
 
 
 def read_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return json.loads(io_path(path).read_text(encoding="utf-8"))
+
+
+def sha256_file(path):
+    return _artifact_sha(io_path(path))
 
 
 def canonical_sha256(value: Any) -> str:
@@ -75,7 +80,7 @@ def load_approved_persona(
     path: Path, expected_scope: str = "business"
 ) -> tuple[dict[str, Any], str]:
     path = path.expanduser().resolve()
-    if not path.is_file():
+    if not io_path(path).is_file():
         raise FileNotFoundError(path)
     persona = read_json(path)
     lifecycle = persona.get("lifecycle", {})
@@ -99,7 +104,7 @@ def load_request(
     speaker_persona: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], str]:
     path = path.expanduser().resolve()
-    if not path.is_file():
+    if not io_path(path).is_file():
         raise FileNotFoundError(path)
     request = read_json(path)
     if request.get("schema_version") != "generation-request-v1.0":
@@ -315,10 +320,15 @@ def load_profile_registry(path: Path | None) -> tuple[dict[str, Any] | None, str
     if path is None:
         return None, None
     path = path.expanduser().resolve()
-    if not path.is_file():
+    if not io_path(path).is_file():
         raise FileNotFoundError(path)
     registry = read_json(path)
     validate_registry(registry)
+    if registry.get('schema_version') == 'production-profile-registry-v1.1':
+        from profile_compatibility_release_v1_1 import effective_runtime, find_runtime_root
+        active = effective_runtime(find_runtime_root(path))
+        if active['registry_path'] != path:
+            raise RuntimeError('Profile Registry is not part of the active release')
     return registry, sha256_file(path)
 
 
@@ -335,10 +345,13 @@ def load_compatibility_report(
     if registry_sha256 is None:
         raise RuntimeError("Creative Coverage compatibility audit requires a Profile Registry.")
     path = path.expanduser().resolve()
-    if not path.is_file():
+    if not io_path(path).is_file():
         raise FileNotFoundError(path)
     report = read_json(path)
-    if report.get("schema_version") != COVERAGE_REPORT_SCHEMA_VERSION:
+    if report.get('schema_version') == 'creative-coverage-report-v1.1':
+        from profile_compatibility_contract_v1_1 import COVERAGE, validate_contract
+        validate_contract(report, COVERAGE)
+    elif report.get("schema_version") != COVERAGE_REPORT_SCHEMA_VERSION:
         raise RuntimeError("Creative Coverage Report schema is invalid.")
     if (report.get("source_registry_ref") or {}).get("sha256") != registry_sha256:
         raise RuntimeError("Creative Coverage Report Registry SHA mismatch.")
@@ -360,9 +373,12 @@ def load_profile_compatibility_approval(
             "Profile Compatibility Approval requires its Registry and Coverage Report."
         )
     path = path.expanduser().resolve()
-    if not path.is_file():
+    if not io_path(path).is_file():
         raise FileNotFoundError(path)
     approval = read_json(path)
+    if approval.get('schema_version') == 'production-profile-registry-v1.1':
+        from profile_compatibility_release_v1_1 import active_approval_projection
+        return active_approval_projection(path)
     if approval.get("schema_version") != COMPATIBILITY_APPROVAL_SCHEMA_VERSION:
         raise RuntimeError("Profile Compatibility Approval schema is invalid.")
     validate_profile_compatibility_approval_v1(
@@ -380,7 +396,7 @@ def load_patterns(paths: list[Path]) -> list[dict[str, Any]]:
     seen: set[str] = set()
     for raw_path in paths:
         path = raw_path.expanduser().resolve()
-        if not path.is_file():
+        if not io_path(path).is_file():
             raise FileNotFoundError(path)
         pattern = read_json(path)
         pattern_id = str(pattern.get("pattern_id") or "")
@@ -405,7 +421,7 @@ def load_patterns(paths: list[Path]) -> list[dict[str, Any]]:
 def _approved_pattern_receipt(path: Path, pattern: dict[str, Any]) -> dict[str, Any] | None:
     """Read a later human approval without rewriting the frozen profile registry."""
     receipt_path = path.with_name("approval_receipt.json")
-    if not receipt_path.is_file():
+    if not io_path(receipt_path).is_file():
         return None
     receipt = read_json(receipt_path)
     if (
@@ -425,7 +441,7 @@ def _approved_case_sidecar(source: dict[str, Any], target_profile: str) -> dict[
     case = source["case"]
     fingerprint = source["fingerprint"]
     path = Path(case["path"]).with_name("case_profile_compatibility_approval_v1.json")
-    if not path.is_file():
+    if not io_path(path).is_file():
         return None
     approval = read_json(path)
     if (
@@ -484,7 +500,7 @@ def load_cases_and_fingerprints(
     cases: dict[str, dict[str, Any]] = {}
     for raw_path in case_paths:
         path = raw_path.expanduser().resolve()
-        if not path.is_file():
+        if not io_path(path).is_file():
             raise FileNotFoundError(path)
         case = read_json(path)
         case_id = str(case.get("case_id") or "")
@@ -506,7 +522,7 @@ def load_cases_and_fingerprints(
     fingerprints: dict[str, dict[str, Any]] = {}
     for raw_path in fingerprint_paths:
         path = raw_path.expanduser().resolve()
-        if not path.is_file():
+        if not io_path(path).is_file():
             raise FileNotFoundError(path)
         fingerprint = read_json(path)
         case_id = str(fingerprint.get("case_id") or "")
@@ -524,7 +540,7 @@ def load_cases_and_fingerprints(
             sidecar_path = Path(cases[case_id]["path"]).with_name(
                 "case_profile_compatibility_approval_v1.json"
             )
-            sidecar = read_json(sidecar_path) if sidecar_path.is_file() else {}
+            sidecar = read_json(sidecar_path) if io_path(sidecar_path).is_file() else {}
             if (
                 sidecar.get("status") != "approved"
                 or sidecar.get("case_id") != case_id
@@ -868,7 +884,7 @@ def excluded_candidate_sources(paths: list[Path]) -> list[dict[str, Any]]:
     excluded: list[dict[str, Any]] = []
     for raw_path in paths:
         path = raw_path.expanduser().resolve()
-        if not path.is_file():
+        if not io_path(path).is_file():
             raise FileNotFoundError(path)
         candidate = read_json(path)
         pattern_id = str(candidate.get("pattern_id") or path.stem)
@@ -949,6 +965,14 @@ def build_source_plan(
         )
         request_has_explicit_target = True
     registry, registry_sha = load_profile_registry(profile_registry_path)
+    native_active = None
+    if (registry or {}).get('schema_version') == 'production-profile-registry-v1.1':
+        from profile_compatibility_release_v1_1 import effective_runtime, find_runtime_root
+        native_active = effective_runtime(find_runtime_root(profile_registry_path))
+        if (creative_coverage_report_path is None or profile_compatibility_approval_path is None
+                or creative_coverage_report_path.resolve() != native_active['coverage_path']
+                or profile_compatibility_approval_path.resolve() != native_active['registry_path']):
+            raise RuntimeError('Compatibility v1.1 matching requires the exact active release references')
     compatibility_report, compatibility_report_sha = load_compatibility_report(
         creative_coverage_report_path,
         registry_sha,
@@ -967,6 +991,11 @@ def build_source_plan(
         else None
     )
     patterns = load_patterns(pattern_paths)
+    if native_active is not None:
+        approved_pattern_versions = {v['target']['pattern_ref']['sha256']
+            for v in native_active['graph']['heads'].values() if v['effective']}
+        if any(p['sha256'] not in approved_pattern_versions for p in patterns):
+            raise RuntimeError('Selected Pattern version is outside the active Compatibility release')
     case_sources = load_cases_and_fingerprints(case_paths, fingerprint_paths)
     capabilities = persona_capabilities(persona, speaker_persona)
     excluded = excluded_candidate_sources(candidate_source_paths or [])
@@ -1151,7 +1180,7 @@ def build_source_plan(
                     )
                     else None
                 )
-                sidecar = _approved_case_sidecar(source, target_profile)
+                sidecar = None if native_active is not None else _approved_case_sidecar(source, target_profile)
                 recorded_case_approval = compatibility_approval_by_case.get(case_id) or {}
                 case_approval = (
                     recorded_case_approval
@@ -1476,6 +1505,8 @@ def build_source_plan(
     }
     feasibility = project_generation_feasibility(plan)
     plan["feasibility"] = feasibility
+    if (compatibility_approval or {}).get('schema_version') == 'compatibility-effective-read-model-v1.1':
+        plan['profile_compatibility_v1_1'] = compatibility_approval['runtime_binding']
     plan["coverage"]["blocker_type"] = feasibility["blocker_type"]
     plan["coverage"]["blocker_codes"] = feasibility["blocker_codes"]
     plan["coverage"]["humanized_reason"] = feasibility["humanized_reason"]

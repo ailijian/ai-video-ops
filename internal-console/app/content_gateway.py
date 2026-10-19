@@ -1083,6 +1083,10 @@ def preview_content_creation(
     return entry
 
 
+from .compatibility_gate import checked_subprocess as compatibility_guarded
+
+
+@compatibility_guarded
 def confirm_content_creation(
     settings: Settings,
     *,

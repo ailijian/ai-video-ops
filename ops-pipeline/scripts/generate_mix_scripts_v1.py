@@ -720,6 +720,10 @@ def structural_fingerprint_projection(
     }
 
 
+from profile_compatibility_consumers_v1_1 import guarded as compatibility_guarded
+
+
+@compatibility_guarded
 def validate_generation_inputs(
     persona_path: Path,
     request_path: Path,
@@ -4998,6 +5002,7 @@ def render_review_pack(
     return "\n".join(lines)
 
 
+@compatibility_guarded
 def write_batch(batch: dict[str, Any], output_root: Path) -> tuple[Path, Path, str]:
     output_dir = output_root.expanduser().resolve() / str(batch["request_id"])
     output_dir.mkdir(parents=True, exist_ok=True)

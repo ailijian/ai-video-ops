@@ -1,5 +1,13 @@
 # AI Video Ops Internal Console
 
+Independent Mix Compatibility v1.1 review is a thin Session/CSRF gateway over the
+existing Production Profile Owner. Its dedicated local grant, exact source
+snapshots, native receipts, release activation and common consumer fence are
+specified in the [C0 contract](../docs/operations/PROFILE_COMPATIBILITY_V1_1_CONTRACT.md).
+Case reviewer permissions, shared publication, and research hints do not grant this
+capability or production eligibility. Existing business/speaker/content Human Gates
+and the Task/Request lifecycle remain separate.
+
 The [DASH-1 homepage read contract](../docs/design/DASH1_BRAND_OPERATIONS_HOME.md)
 documents `/api/dashboard`, scoped metrics, actionable work and unavailable
 completion statistics. The previous `/api/workbench` endpoint stays compatible.

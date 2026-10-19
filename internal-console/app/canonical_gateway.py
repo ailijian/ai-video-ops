@@ -1866,7 +1866,8 @@ def _approve_case_candidate(settings, case_id, *, reviewer, note,
     transaction_id = uuid.uuid4().hex[:8]
     temporary_dir = canonical_dir.parent / f".{case_id}.{transaction_id}.stage"
     canonical_dir.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copytree(candidate_path.parent, temporary_dir)
+    from human_review_operations_v1 import io_path
+    shutil.copytree(io_path(candidate_path.parent), io_path(temporary_dir))
     staged_case_path = temporary_dir / "case_v1.json"
     quality_input = temporary_dir / ".quality-input.json"
     _write_atomic(quality_input, quality_decision)

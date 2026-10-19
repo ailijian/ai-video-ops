@@ -536,6 +536,10 @@ def _review_equivalent(
     )
 
 
+from profile_compatibility_consumers_v1_1 import guarded as compatibility_guarded
+
+
+@compatibility_guarded
 def review_generation_batch_v2(
     *,
     batch_path: Path,

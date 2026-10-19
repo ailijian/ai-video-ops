@@ -21,6 +21,8 @@ from match_generation_sources_v1 import (
     build_source_plan,
     write_source_plan,
 )
+from profile_compatibility_consumers_v1_1 import guarded as compatibility_guarded
+from human_review_operations_v1 import io_path
 
 REQUEST_SCHEMA_VERSION = "generation-request-v1.0"
 HANDOFF_SCHEMA_VERSION = "generation-source-planning-handoff-v1.0"
@@ -48,7 +50,7 @@ def read_json(
 ) -> dict[str, Any]:
     try:
         value = json.loads(
-            path.read_text(
+            io_path(path).read_text(
                 encoding="utf-8"
             )
         )
@@ -81,7 +83,7 @@ def read_json(
 
 
 def sha256_file(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
+    return hashlib.sha256(io_path(path).read_bytes()).hexdigest()
 
 
 def resolve_recorded_path(pipeline_root: Path, raw_path: Any) -> Path:
@@ -89,7 +91,7 @@ def resolve_recorded_path(pipeline_root: Path, raw_path: Any) -> Path:
     if not candidate.is_absolute():
         candidate = pipeline_root / candidate
     candidate = candidate.expanduser().resolve()
-    if not candidate.is_file():
+    if not io_path(candidate).is_file():
         raise SourcePlanError(
             "SOURCE_PLAN_AUTHORITY_MISSING",
             f"Required canonical authority is missing: {candidate}",
@@ -361,6 +363,18 @@ def resolve_matching_universe(
     """
 
     pipeline_root = pipeline_root.expanduser().resolve()
+    from profile_compatibility_release_v1_1 import CONFIG, effective_runtime, resolve_ref
+    if (pipeline_root / CONFIG).is_file():
+        active = effective_runtime(pipeline_root)
+        targets = [v['target'] for v in active['graph']['heads'].values() if v['effective']]
+        bundle = active['bundle_root']
+        def distinct(key):
+            return sorted({resolve_ref(bundle, t[key]) for t in targets})
+        return {'pattern_paths': distinct('pattern_ref'), 'case_paths': distinct('case_ref'),
+                'fingerprint_paths': distinct('fingerprint_ref'),
+                'creative_coverage_report_path': active['coverage_path'],
+                'profile_compatibility_approval_path': active['registry_path'],
+                'production_plan_root': pipeline_root / DEFAULT_PRODUCTION_PLAN_ROOT}
     authority_roots = authority_roots or {}
     pattern_root = pipeline_root / str(
         authority_roots.get("approved_pattern_root") or DEFAULT_PATTERN_ROOT
@@ -473,6 +487,7 @@ def resolve_matching_universe(
     }
 
 
+@compatibility_guarded
 def resolve_generation_source_plan(
     *,
     pipeline_root: Path,

@@ -11,6 +11,8 @@ from authority_release import (
     plan_merge,
     preflight,
     verify_release,
+    stage_release_v1_1,
+    activate_release_v1_1,
 )
 
 
@@ -39,6 +41,15 @@ def main() -> None:
     install.add_argument("--expected-commit", required=True)
     install.add_argument("--backup-parent", type=Path, required=True)
     install.add_argument("--receipt", type=Path, required=True)
+    stage = sub.add_parser('stage-v1.1')
+    stage.add_argument('--release', type=Path, required=True)
+    stage.add_argument('--pipeline-root', type=Path, required=True)
+    stage.add_argument('--repo-root', type=Path, required=True)
+    activate = sub.add_parser('activate-v1.1')
+    activate.add_argument('--release-ref', type=Path, required=True)
+    activate.add_argument('--pipeline-root', type=Path, required=True)
+    activate.add_argument('--repo-root', type=Path, required=True)
+    activate.add_argument('--operation-id', required=True)
     args = parser.parse_args()
     try:
         if args.operation == "verify":
@@ -49,12 +60,17 @@ def main() -> None:
             result = audit_merge(args.release, args.pipeline_root, args.repo_root)
         elif args.operation == "plan":
             result = plan_merge(args.release, args.pipeline_root, args.repo_root)
+        elif args.operation == 'stage-v1.1':
+            result = {'release_ref': stage_release_v1_1(args.release, args.pipeline_root, args.repo_root)}
+        elif args.operation == 'activate-v1.1':
+            result = activate_release_v1_1(args.pipeline_root, args.repo_root,
+                json.loads(args.release_ref.read_text('utf-8')), args.operation_id)
         else:
             result = install_release(args.release, args.pipeline_root, args.repo_root, args.expected_commit, args.backup_parent, args.receipt)
-    except AuthorityReleaseError as exc:
-        print(json.dumps({"ok": False, "code": exc.code, "message": str(exc), "audit": exc.details}, ensure_ascii=False))
+    except RuntimeError as exc:
+        print(json.dumps({"ok": False, "code": getattr(exc, 'code', 'AUTHORITY_RELEASE_BLOCKED'), "message": str(exc), "audit": getattr(exc, 'details', None)}, ensure_ascii=False))
         raise SystemExit(2) from exc
-    print(json.dumps({"ok": True, **result}, ensure_ascii=False))
+    print(json.dumps({"ok": True, **result}, ensure_ascii=False, default=str))
 
 
 if __name__ == "__main__":

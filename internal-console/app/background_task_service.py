@@ -45,6 +45,10 @@ BACKGROUND_OPERATIONS: dict[str, tuple[str, str]] = {
 }
 
 
+from .compatibility_gate import guarded as compatibility_guarded
+
+
+@compatibility_guarded
 def create_background_task(
     settings: Settings,
     *,

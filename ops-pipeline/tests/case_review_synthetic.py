@@ -62,7 +62,7 @@ class SyntheticModels:
         finally: sys.argv=old
 
 
-def prepare(pipeline, case_id, attempt_id, *, uncertain=False):
+def prepare(pipeline, case_id, attempt_id, *, uncertain=False, process_scenario=None):
     from human_review_operations_v1 import file_sha
     root=pipeline/'data/case_analysis_attempts'/case_id/attempt_id
     model=SyntheticModels(uncertain=uncertain)
@@ -73,9 +73,18 @@ def prepare(pipeline, case_id, attempt_id, *, uncertain=False):
     audio=evidence/'a.json';manifest=evidence/'m.json';visual=evidence/'v.json'
     words=[{'word_id':'W1','segment_id':'A1','start':0.2,'end':2.5,'midpoint':1.35,
         'text':'这是一条虚构的演示口播','confidence':0.99,'probability':0.99}]
+    transcript = '这是一条虚构的演示口播'
+    end = 2.5
+    if process_scenario:
+        if process_scenario not in {'food', 'plant_service'}:
+            raise ValueError('Explicit fictional process scenario required')
+        transcript = ('全虚构餐食店：先洗菜再切配，随后制作并核对本次口味。' if process_scenario == 'food'
+                      else '全虚构植物服务：先检查盆土再修剪，随后整理并说明本次养护。')
+        end = 5.5
+        words[0].update(text=transcript, end=end, midpoint=(.2 + end) / 2)
     write(audio,{'case_id':case_id,'duration_seconds':6,'speech_evidence_status':'detected',
-        'transcript_raw':'这是一条虚构的演示口播','segments':[{'segment_id':'A1','start':0.2,'end':2.5,
-            'source_text':'这是一条虚构的演示口播','word_refs':['W1']}],'words':words,'validation':{'passed':True}})
+        'transcript_raw':transcript,'segments':[{'segment_id':'A1','start':0.2,'end':end,
+            'source_text':transcript,'word_refs':['W1']}],'words':words,'validation':{'passed':True}})
     frames=[{'frame_id':f'F{i}','filename':f'F{i}','timestamp_seconds':i,'ocr_raw':'虚构步骤','scene_summary':'合成画面',
         'visible_facts':['虚构过程'],'visual_change_from_previous':'场景变化','new_visual_information':['步骤'],
         'uncertainties':[]} for i in range(6)]
@@ -95,7 +104,7 @@ def prepare(pipeline, case_id, attempt_id, *, uncertain=False):
     if uncertain: args.append('--defer-manual-review')
     run('generate_reverse_storyboard.py',args)
     candidate=root/'candidate_cases'/case_id/'case_v1.json'
-    args=['--case-id',case_id,'--industry','餐饮','--video',video,'--audio-v1',audio,'--narration-review',narration,
+    args=['--case-id',case_id,'--industry',process_scenario or '餐饮','--video',video,'--audio-v1',audio,'--narration-review',narration,
         '--visual-manifest',manifest,'--visual-v1',visual,'--shot-boundaries',shots,'--storyboard-v1',board,
         '--privacy-projection',privacy,'--source-url',f'https://www.douyin.com/video/{case_id}','--output-root',candidate.parent.parent]
     if uncertain: args.append('--defer-manual-review')
@@ -122,7 +131,9 @@ def prepare(pipeline, case_id, attempt_id, *, uncertain=False):
 if __name__=='__main__':
     socket.socket.connect=lambda *a,**k: (_ for _ in ()).throw(RuntimeError('No external transport in synthetic test'))
     pipeline=Path(sys.argv[2]).resolve();sys.path.insert(0,str(pipeline/'scripts'))
-    if sys.argv[1]=='prepare':
+    if sys.argv[1]=='compat-prepare':
+        prepare(pipeline,sys.argv[3],sys.argv[4],process_scenario=sys.argv[5])
+    elif sys.argv[1]=='prepare':
         prepare(pipeline,sys.argv[3],sys.argv[4],uncertain=len(sys.argv)>5)
     else:
         from case_analysis_v1 import Orchestrator
