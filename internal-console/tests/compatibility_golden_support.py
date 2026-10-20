@@ -98,7 +98,7 @@ def prepare_native_golden(node):
             'targets': targets, 'compatibility': response.json(), 'actor': actor}
 
 
-def prepare_native_business(node):
+def prepare_native_business(node, *, customer_name='明禾餐食（全虚构 Golden）'):
     """Independent owner-provided facts; no Case fact/claim feeds the Persona."""
     from test_customer_speaker_smart_intake_v1 import review_payload
     from test_customer_speaker_joint_confirmation import preview, submit
@@ -118,7 +118,7 @@ def prepare_native_business(node):
     ]
     material = '。'.join(quote for _, _, quote in facts) + '。本资料和客户完全虚构，仅用于隔离验收。'
     response = client.post('/api/customers/analyze', headers=headers, json={
-        'customer_name': '明禾餐食（全虚构 Golden）', 'industry': '餐饮', 'materials': material})
+        'customer_name': customer_name, 'industry': '餐饮', 'materials': material})
     assert response.status_code == 200, response.text
     body = response.json()
     import shutil

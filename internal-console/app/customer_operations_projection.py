@@ -39,7 +39,7 @@ def request_navigation_context(settings, request_id, mode, expected_business_id=
         if not path.is_file():
             raise CanonicalOperationError("NEWS_REQUEST_NOT_FOUND", "没有找到原创作请求。", "请从任务或作品记录重新进入。")
         request = _read(path)
-        if request.get("schema_version") != NEWS_REQUEST_SCHEMA or request.get("request_id") != request_id:
+        if request.get("schema_version") not in {NEWS_REQUEST_SCHEMA, "news-delivery-request-v1.1"} or request.get("request_id") != request_id:
             raise CanonicalOperationError("REQUEST_LINEAGE_INVALID", "创作请求身份不一致。", "请恢复原请求后重试。")
         owner = str(request.get("business_id") or "")
         status = (request.get("lifecycle") or {}).get("status")
@@ -49,7 +49,10 @@ def request_navigation_context(settings, request_id, mode, expected_business_id=
         if profile != ("news" if mode == "novel" else "mix"):
             raise CanonicalOperationError("REQUEST_PROFILE_MISMATCH", "创作类型与原请求不一致。", "请从原作品记录重新进入。")
         owner = str(request.get("persona_id") or "")
-        status = classify_request(pipeline_root=settings.pipeline_root, request_path=path)["effective_status"]
+        try:
+            status = classify_request(pipeline_root=settings.pipeline_root, request_path=path)["effective_status"]
+        except EffectiveLifecycleError as exc:
+            raise CanonicalOperationError("REQUEST_LINEAGE_INVALID", "创作记录需要重新核对。", "请从原任务查看需要处理的原因。") from exc
     if expected_business_id is not None and expected_business_id != owner:
         raise CanonicalOperationError("REQUEST_BUSINESS_MISMATCH", "创作记录与指定客户不匹配。", "请从原任务或客户作品记录重新进入。")
     customer = get_customer_detail(settings, owner)

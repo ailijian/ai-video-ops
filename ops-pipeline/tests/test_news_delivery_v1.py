@@ -13,6 +13,7 @@ SCRIPTS = ROOT / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 
 import news_delivery_v1 as subject
+from news_export_support import context as export_context
 
 
 def write_json(
@@ -602,6 +603,7 @@ def test_preview_request_plan_approval_export_closure(
 
     result, recovered = (
         subject.export_news_delivery(
+            export_context=export_context(fixture["pipeline"]),
             pipeline_root=fixture[
                 "pipeline"
             ],
@@ -690,6 +692,7 @@ def test_preview_request_plan_approval_export_closure(
 
     recovered_result, recovered = (
         subject.export_news_delivery(
+            export_context=export_context(fixture["pipeline"]),
             pipeline_root=fixture[
                 "pipeline"
             ],

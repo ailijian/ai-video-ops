@@ -321,6 +321,8 @@ def close_generation_export(
     pipeline_root: Path,
     request_id: str,
     excel_path: Path,
+    verify_only: bool = False,
+    authorization_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     pipeline_root = pipeline_root.expanduser().resolve()
     excel_path = excel_path.expanduser().resolve()
@@ -367,7 +369,11 @@ def close_generation_export(
     request = read_json(request_path)
     approved = read_json(approved_batch_path)
     approval_receipt = read_json(approval_receipt_path)
+    from generation_recovery_v1 import validate_approved_source
+    validate_approved_source(pipeline_root, request_id, approved, approval_receipt)
     export_receipt = read_json(export_receipt_path)
+    from delivery_receipt_recovery_v1 import validate_export_receipt
+    validate_export_receipt(pipeline_root, export_receipt, excel_path, request_id=request_id)
 
     if (
         str(request.get("request_id") or "") != request_id
@@ -417,6 +423,8 @@ def close_generation_export(
         / "content_ledger_v1.json"
     )
 
+    if verify_only and not closure_path.is_file():
+        raise ExportClosureError('EXPORT_CLOSURE_REQUIRED_ARTIFACT_MISSING', 'No completed canonical Closure exists')
     if closure_path.is_file():
         closure = read_json(closure_path)
         _validate_recovered_closure(
@@ -497,6 +505,15 @@ def close_generation_export(
             "Approved content Business Persona differs from Generation Request.",
         )
 
+    def authorize_pending_closure():
+        from delivery_receipt_recovery_v1 import export_paths,check,EXPORT,identity,source_snapshot,ReceiptRecoveryError
+        from generation_recovery_v1 import resolve_ref
+        intent_path,_=export_paths(pipeline_root,request_id)
+        if intent_path.is_file():
+            intent=check(read_json(intent_path),EXPORT);identity(authorization_context,intent)
+            if source_snapshot(pipeline_root,resolve_ref(pipeline_root,intent['sources']['batch_ref']))!=intent['sources']:
+                raise ReceiptRecoveryError('DELIVERY_SOURCE_CHANGED','Source changed before native Closure')
+    authorize_pending_closure()
     ledger_existed = ledger_path.is_file()
     if ledger_existed:
         ledger_before = read_json(ledger_path)
@@ -564,6 +581,7 @@ def close_generation_export(
             "latest_export_request_id": request_id,
         }
 
+        authorize_pending_closure()
         if ledger_existed:
             ledger_file_sha_after = (
                 replace_ledger_after_export(
@@ -658,6 +676,7 @@ def close_generation_export(
         },
     }
 
+    authorize_pending_closure()
     closure_sha = write_new_json(
         closure_path,
         closure,
@@ -707,6 +726,7 @@ def main() -> None:
         "--excel",
         required=True,
     )
+    parser.add_argument('--authorization-file')
     args = parser.parse_args()
 
     try:
@@ -718,6 +738,7 @@ def main() -> None:
                 args.request_id
             ).strip(),
             excel_path=Path(args.excel),
+            authorization_context=read_json(Path(args.authorization_file)) if args.authorization_file else None,
         )
     except ExportClosureError as exc:
         print(

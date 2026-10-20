@@ -105,6 +105,35 @@ def verify_storyboard_artifact(
     return path, read_json(path)
 
 
+def build_news_fingerprint_v1_2(case_path: Path) -> dict[str, Any]:
+    """Derived structural evidence from an actual frozen Native Human Case."""
+    case=read_json(case_path);storyboard_path,board=verify_storyboard_artifact(case)
+    receipt=read_json(case_path.with_name('approval_receipt.json'))
+    case_sha=sha256_file(case_path);storyboard_sha=sha256_file(storyboard_path)
+    if (case.get('lifecycle',{}).get('approved') is not True
+        or case.get('quality',{}).get('human_review_completed') is not True
+        or case.get('validation',{}).get('passed') is not True
+        or receipt.get('human_gate') is not True or receipt.get('decision')!='approved'
+        or receipt.get('case_sha256_after_approval')!=case_sha
+        or receipt.get('frozen_artifacts',{}).get('reverse_storyboard_v1',{}).get('sha256')!=storyboard_sha):
+        raise RuntimeError('News Fingerprint requires exact Native Case Approval/Storyboard lineage')
+    beats=board.get('micro_beat_sequence') or [];shots=board.get('shots') or []
+    if not beats or not shots or any(not isinstance(b,dict) or not b.get('semantic_role') for b in beats):
+        raise RuntimeError('Frozen News Micro-beat sequence is incomplete')
+    roles=[b['semantic_role'] for b in beats]
+    return {'schema_version':'case-fingerprint-news-v1.2','case_id':str(case['case_id']),
+        'production_profile':'news','source_case_sha256':case_sha,'source_storyboard_sha256':storyboard_sha,
+        'source_case':{'path':str(case_path.resolve()),'sha256':case_sha,'status':'approved','approved':True},
+        'fingerprint_scope':'case_structural_evidence_only',
+        'semantic_carrier_features':{'carrier_type':'on_screen_text_plus_visual_information_state',
+            'continuous_narration_required':False,'micro_beat_count':len(beats),'role_sequence':roles},
+        'visual_state_features':{'ordered_state_count':len(shots),'text_visual_relationship':'approved_micro_beat_sequence'},
+        'pattern_state':{'pattern_mining_performed':False,'pattern_created':False},
+        'pattern_mining_contract':{'this_artifact_is_not_a_pattern':True},
+        'authority':{'case_specific_facts_transferred':False,'effectiveness_claimed':False},
+        'created_at':receipt['approved_at']}
+
+
 def main() -> None:
     started = time.perf_counter()
 
@@ -132,6 +161,13 @@ def main() -> None:
 
     case = read_json(case_path)
     case_id = str(case.get("case_id") or "")
+    if case.get('storyboard',{}).get('micro_beat_sequence'):
+        from profile_compatibility_decisions_v1_1 import write_once
+        fingerprint=build_news_fingerprint_v1_2(case_path)
+        output=Path(args.output_root).resolve() if args.output_root else case_path.parents[2]/'fingerprints'
+        path=output/case_id/'case_fingerprint_v1.json';write_once(path,fingerprint)
+        print('NEWS STRUCTURAL FINGERPRINT V1.2 PASS');print(f'JSON: {path}')
+        return
 
     errors: list[str] = []
     warnings: list[str] = []

@@ -146,6 +146,8 @@ def load_profile_registry(
         status = str(profile.get("status") or "unknown")
 
         available = status == "production_ready"
+        if registry.get('schema_version')=='production-profile-registry-v1.2':
+            available=available or (profile_id=='news' and registry['eligibility']['purpose']=='isolated-validation')
 
         profiles[profile_id] = {
             "profile_id": profile_id,

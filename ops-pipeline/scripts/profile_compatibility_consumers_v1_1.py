@@ -7,7 +7,30 @@ from pathlib import Path
 
 from profile_compatibility_contract_v1_1 import CompatibilityError
 from profile_compatibility_decisions_v1_1 import read, file_sha
-from profile_compatibility_release_v1_1 import CONFIG, find_runtime_root, runtime_write
+from profile_compatibility_release_v1_1 import CONFIG, effective_runtime, find_runtime_root, resolve_ref, runtime_write
+
+
+def released_source_paths(pipeline_root, source_plan):
+    """Read exact effective source refs from the pinned release, or legacy None.
+
+    A configured runtime must never fall back to co-located legacy artifacts.
+    The native release reader owns activation, live withdrawal and SHA checks.
+    """
+    root = Path(pipeline_root).resolve()
+    pinned = source_plan.get('profile_compatibility_v1_1')
+    if not (root / CONFIG).is_file():
+        if pinned is not None:
+            raise CompatibilityError('A v1.1 source cannot use an unconfigured or legacy runtime')
+        return None
+    if not pinned:
+        raise CompatibilityError('Open Source Plan has no current Compatibility release binding')
+    active = effective_runtime(root, pinned=pinned)
+    targets = [v['target'] for v in active['graph']['heads'].values()
+               if v['effective'] and v['target']['target_profile']=='mix']
+    return {
+        key: sorted({resolve_ref(active['bundle_root'], target[key]) for target in targets})
+        for key in ('pattern_ref', 'fingerprint_ref')
+    }
 
 
 def guarded(function):
@@ -72,6 +95,39 @@ def guarded(function):
             path = root / 'data/production_plans' / request_id / 'generation_source_plan_v1.json'
             if plan is None and path.is_file():
                 plan = read(path)
+        from news_runtime_v1_2 import configured
+        from news_qualification_v1_2 import read_context
+        historical=read_context(root)
+        if historical:
+            if (function.__module__=='news_delivery_v1' and function.__name__=='approve_news_delivery'
+                and values.get('verify_only') is True and request_id==historical['request_id']):
+                # Original Native verifier has an explicit no-write mode.
+                return function(*args,**kwargs)
+            raise CompatibilityError('Qualification history can never admit a business write')
+        news_binding=(plan or {}).get('profile_compatibility_v1_2')
+        native_news=(bool(news_binding) or Path(function.__code__.co_filename).name in {'novel_news_v1.py','news_delivery_v1.py'}
+            or values.get('operation') in {'news_plan','news_export','novel_news_generate','novel_news_export'})
+        if configured(root) and (native_news or values.get('profile',values.get('target_profile'))=='news'):
+            request=None
+            if request_id:
+                candidates=[root/'data/generation_requests'/request_id/'generation_request_v1.json',
+                            root/'data/news_deliveries'/request_id/'news_delivery_request_v1.json']
+                present=[p for p in candidates if p.is_file()]
+                if len(present)!=1:raise CompatibilityError('Native News Request type/identity is ambiguous or missing')
+                request=read(present[0])
+                from news_runtime_v1_2 import validate_request_personas
+                validate_request_personas(root,request)
+            pinned=(plan or {}).get('profile_compatibility_v1_2') or (request or {}).get('profile_compatibility_v1_2')
+            if request_id and not pinned:raise CompatibilityError('News operation has no exact active v1.2 binding')
+            if (plan or {}).get('profile_compatibility_v1_1') or (request or {}).get('profile_compatibility_v1_1'):
+                raise CompatibilityError('News cannot mix compatibility reader versions')
+            if function.__module__=='app.background_task_service' and function.__name__=='create_background_task':
+                # Native status may run in a child. Windows CRT read locks
+                # cannot be inherited/reacquired there; the task owner fences
+                # only the final SQLite admission after native state reading.
+                effective_runtime(root,pinned=pinned)
+                return function(*args,**kwargs)
+            with runtime_write(root,pinned=pinned):return function(*args,**kwargs)
         if plan is None and function.__name__ not in {'confirm_content_creation', 'create_generation_request_handoff', 'resolve_generation_source_plan'}:
             raise CompatibilityError('Open operation has no pinned native Compatibility Source Plan')
         pinned = plan.get('profile_compatibility_v1_1') if plan else None

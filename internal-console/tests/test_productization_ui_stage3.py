@@ -64,7 +64,7 @@ def test_capacity_ready_limited_and_zero_states_are_productized():
     assert "当前有 ${available} 个值得做的内容方向" in create
     assert "你计划做 ${requested} 条，本次确认 ${recommended} 条" in create
     assert "现有创作结构可以支持" in create
-    assert "按 ${recommended} 条继续" in create
+    assert "开始本次创作（${recommended} 条）" in create
     assert "调整数量" in create
     assert "暂时没有值得继续做的新内容" in create
     assert "系统不会为了凑够数量重复已经做过的内容" in create
@@ -98,9 +98,9 @@ def test_creation_recovery_and_preparation_states_are_humanized():
         "本次创作已创建",
         "继续上次创作",
         "创作准备",
-        "还需要准备创作内容",
+        "正在核对创作依据",
         "准备完成",
-        "正在准备…",
+        "继续准备",
         "当前创作结构暂时不能支持这批内容",
         "这次创作暂时无法继续",
     ):

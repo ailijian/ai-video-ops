@@ -133,6 +133,11 @@ def test_validation_allowlist_and_on_are_enforced_for_direct_api(settings, monke
 
 
 def test_off_keeps_repurpose_preview_request_plan_review_and_export(settings, monkeypatch) -> None:
+    # Rollout routing unit: source admission is independently exercised through
+    # real native HTTP recovery tests, rather than an absent fixture Request.
+    from app import news_export_gateway
+    monkeypatch.setattr(news_export_gateway, '_state', lambda *args, **kwargs: {
+        'business_id':'business', 'stop_point_reached':False, 'next_action':'EXPORT_NEWS_EXCEL'})
     monkeypatch.setattr(main_module, "preview_news_creation", lambda *args, **kwargs: {"available": True})
     monkeypatch.setattr(main_module, "create_news_request", lambda *args, **kwargs: {"request_id": "news_rollout_001"})
     monkeypatch.setattr(main_module, "submit_news_review", lambda *args, **kwargs: {"approved": True})
@@ -159,13 +164,20 @@ def test_queued_novel_task_does_not_run_after_rollout_switches_off(settings, mon
     from app.database import apply_migrations
     apply_migrations(settings.database_path, settings.console_root / "migrations")
     provision_user(settings.database_path, "13800000000")
-    task = tasks.create_background_task(
-        enabled, operation="novel_news_generate", request_id="gen_rollout002", created_by_user_id=1,
-    )
+    from app.task_service import submit_task, STANDARD_BACKGROUND
+    def queued(rid):
+        # Execution-policy unit fixture; formal Native admission is exercised
+        # separately by REC-01 real HTTP/Task tests.
+        return submit_task(settings.database_path, task_id_prefix='novel-'+rid,
+            task_type='content_generation',subject_ref=rid,operation_identity='novel_news_generate:'+rid,
+            execution_lane=STANDARD_BACKGROUND,payload={'operation':'novel_news_generate','request_id':rid,
+                'novel_generation':{'operation_id':'a'*32}},stage='queued',created_by_user_id=1,
+            queue_max=20,gpu_pending_per_user_max=1)
+    task = queued('gen_rollout002')
     called: list[str] = []
     blocked = replace(settings, novel_news_rollout="off", background_worker_enabled=False)
     runner = tasks.BackgroundTaskRunner(blocked, handlers={
-        "novel_news_generate": lambda config, request_id: called.append(request_id) or {},
+        "novel_news_generate": lambda config, request_id, **identity: called.append(request_id) or {},
     })
     try:
         runner._run(task["task_id"])
@@ -175,11 +187,9 @@ def test_queued_novel_task_does_not_run_after_rollout_switches_off(settings, mon
     assert get_task(settings.database_path, task["task_id"])["error_code"] == "NOVEL_NEWS_NOT_AVAILABLE"
 
     validation = replace(settings, novel_news_rollout="validation", novel_news_validation_phones=("13800000000",))
-    allowed_task = tasks.create_background_task(
-        validation, operation="novel_news_generate", request_id="gen_rollout003", created_by_user_id=1,
-    )
+    allowed_task = queued('gen_rollout003')
     allowed_runner = tasks.BackgroundTaskRunner(validation, handlers={
-        "novel_news_generate": lambda config, request_id: called.append(request_id) or {},
+        "novel_news_generate": lambda config, request_id, **identity: called.append(request_id) or {},
     })
     try:
         allowed_runner._run(allowed_task["task_id"])

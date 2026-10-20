@@ -366,7 +366,10 @@ def resolve_matching_universe(
     from profile_compatibility_release_v1_1 import CONFIG, effective_runtime, resolve_ref
     if (pipeline_root / CONFIG).is_file():
         active = effective_runtime(pipeline_root)
-        targets = [v['target'] for v in active['graph']['heads'].values() if v['effective']]
+        # News has a separate native typed Source Plan. Generic matching keeps
+        # the original Mix scope even in an explicitly mixed isolated Release.
+        targets = [v['target'] for v in active['graph']['heads'].values()
+                   if v['effective'] and v['target']['target_profile']=='mix']
         bundle = active['bundle_root']
         def distinct(key):
             return sorted({resolve_ref(bundle, t[key]) for t in targets})
@@ -496,6 +499,9 @@ def resolve_generation_source_plan(
     pipeline_root = pipeline_root.expanduser().resolve()
 
     request_path, request, handoff = load_request_and_handoff(pipeline_root, request_id)
+    from news_runtime_v1_2 import configured,source_plan
+    if configured(pipeline_root) and request.get('target_profile')=='news':
+        return source_plan(pipeline_root,request_path,request)
     inputs = resolve_authority_inputs(pipeline_root, request, handoff)
 
     try:

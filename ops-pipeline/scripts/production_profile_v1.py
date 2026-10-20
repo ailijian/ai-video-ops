@@ -219,6 +219,10 @@ def validate_target_profile(registry: dict[str, Any], target_profile: str) -> di
 
 
 def validate_registry(registry: dict[str, Any]) -> None:
+    if registry.get('schema_version')=='production-profile-registry-v1.2':
+        from profile_compatibility_contract_v1_2 import validate_contract,REGISTRY
+        validate_contract(registry,REGISTRY)
+        return
     if registry.get('schema_version') == 'production-profile-registry-v1.1':
         from profile_compatibility_contract_v1_1 import REGISTRY, validate_contract
         validate_contract(registry, REGISTRY)
@@ -2969,3 +2973,65 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+def declared_news_profile_v1_2(template_ref):
+    """Pure definition; this is neither Compatibility nor runtime eligibility."""
+    from profile_compatibility_contract_v1_2 import PROFILE, validate_contract
+    value = {'schema_version': PROFILE, 'profile_id':'news', 'profile_version':'1.2',
+        'status':'definition_only', 'script_contract': {'shape':'micro_information_beats',
+            'minimum_beats':4,'maximum_beats':8,
+            'required_fields':['semantic_role','text','visual_anchor','order','duration_guidance','evidence_lineage']},
+        'storyboard_contract':{'shape':'micro_beat_sequence','narration_many_to_many_required':False},
+        'ordinary_scope':'price_offer_led_only','export_contract':{'writer':'export_dynamic_news_xlsx',
+            'template_ref':template_ref,'header_row':4,'first_data_row':5,'headers':'标题1..标题N',
+            'minimum_titles':4,'maximum_titles':8},'allowed_purposes':['isolated-validation'],
+        'automatic_production_promotion':False}
+    return validate_contract(value, PROFILE)
+
+
+def initialize_news_profile_v1_2(root, template_path):
+    from profile_compatibility_contract_v1_2 import RULES, STAGES, validate_contract
+    from profile_compatibility_decisions_v1_1 import DOMAIN, digest, ref, write_once
+    from pathlib import Path
+    root=Path(root).resolve()
+    profile=declared_news_profile_v1_2(ref(root,template_path))
+    directory=root/DOMAIN/'definitions'/digest(profile)
+    profile_path=directory/'profile.json';write_once(profile_path,profile)
+    rules={'schema_version':RULES,'target_profile':'news','profile_sha256':ref(root,profile_path)['sha256'],
+        'pattern_scope_required':True,'rule_version':'1.2','automatic_approval':False,
+        'ordinary_pattern_ids':['pcv1_news_price_offer_led_micro_information'],
+        'scope_limitation':'price_offer_led_only','allowed_purposes':['isolated-validation'],
+        'eligibility_stages':STAGES,'automatic_production_promotion':False}
+    rules_path=directory/'rules.json';write_once(rules_path,validate_contract(rules,RULES))
+    return {'profile_ref':ref(root,profile_path),'rules_ref':ref(root,rules_path)}
+
+
+def build_news_research_bundle_v1_2(root, case_ids):
+    """Derived input for the original deterministic Comparison owner."""
+    from pathlib import Path
+    from profile_compatibility_decisions_v1_1 import read,ref,resolve_ref
+    from build_case_fingerprint_v1 import build_news_fingerprint_v1_2
+    if len(case_ids)!=3 or len(set(case_ids))!=3:
+        raise RuntimeError('Three distinct Native Approved News Cases are required')
+    root=Path(root).resolve();cases=[]
+    for index,cid in enumerate(case_ids):
+        path=root/'data/cases'/cid/'case_v1.json';case=read(path)
+        fp_path=root/'data/fingerprints'/cid/'case_fingerprint_v1.json'
+        if read(fp_path)!=build_news_fingerprint_v1_2(path):
+            raise RuntimeError('Native News Fingerprint changed')
+        board=Path(case['storyboard']['artifact']['path']);value=read(board)
+        if value.get('schema_version')!='reverse-storyboard-v1.2-news-micro-beat':
+            raise RuntimeError('New News research requires native review-required Micro-beat extraction')
+        cases.append({'case_id':cid,'canonical_case_status':'approved','observed_source_profile':'news',
+            'research_ingestion_eligibility':'eligible_for_internal_research',
+            'research_role':'seed_evidence' if index==0 else 'core_evidence' if index==1 else 'variant_evidence',
+            'case_ref':{'path':str(path),'sha256':ref(root,path)['sha256']},
+            'fingerprint_ref':{'path':str(fp_path),'sha256':ref(root,fp_path)['sha256']},
+            'storyboard_ref':{'path':str(board),'sha256':ref(root,board)['sha256']},
+            'semantic_carrier':value['semantic_carrier'],'micro_beat_structure':value['micro_beat_sequence'],
+            'surface_characteristics':{'industry':case['identity']['industry'],
+                'surface_description':value['micro_beat_sequence'][0]['visual_state']},
+            'timing':{'duration_seconds':case['identity']['duration_seconds']}})
+    return {'schema_version':'news-cross-case-research-bundle-v1.2','status':'cross_case_research_ready',
+        'production_profile':'news','research_direction':'price_offer_led_micro_information',
+        'comparison_executed':False,'pattern_candidate_created':False,'canonical_approved_case_count':3,'cases':cases,
+        'authority':{'compatibility_approved':False,'pattern_approved':False,'customer_facts_transferred':False}}

@@ -281,6 +281,17 @@ def _candidate_generation_batches(
 
     if not root.exists():
         return []
+    if (root / 'recovery').exists():
+        from generation_recovery_v1 import graph, read, ready_for_review, RecoveryError
+        try:
+            selected = graph(pipeline_root, request_id)
+            if selected['pending'] or not selected['result'] or selected['result']['outcome'] != 'review_required':
+                return []
+            value = read(selected['batch'])
+            ids = (value.get('script_generation_contract') or {}).get('selected_concept_ids') or []
+            return [(selected['batch'], value)] if ready_for_review(value, ids) else []
+        except (RecoveryError, OSError, ValueError) as exc:
+            raise EffectiveLifecycleError('GENERATION_RECOVERY_GRAPH_INVALID', 'Cannot resolve the native effective generation') from exc
 
     result: list[
         tuple[Path, dict[str, Any]]
@@ -337,6 +348,11 @@ def _validate_approved_batch(
     approval = read_json(
         approval_path
     )
+    from generation_recovery_v1 import validate_approved_source, RecoveryError
+    try:
+        validate_approved_source(pipeline_root, str(request.get('request_id') or ''), batch, approval)
+    except (RecoveryError, OSError, ValueError) as exc:
+        raise EffectiveLifecycleError('GENERATION_RECOVERY_SOURCE_CHANGED', 'Approved output has a different effective source') from exc
 
     approved_ref = (
         approval.get(
@@ -496,7 +512,7 @@ def _validated_exports_for_request(
             receipt.get(
                 "schema_version"
             )
-            != MIX_EXPORT_RECEIPT_SCHEMA
+            not in {MIX_EXPORT_RECEIPT_SCHEMA, 'mix-excel-export-receipt-v1.1'}
             or receipt.get(
                 "validation_passed"
             )
@@ -560,6 +576,10 @@ def _validated_exports_for_request(
         ):
             continue
 
+        from delivery_receipt_recovery_v1 import validate_export_receipt
+        try:validate_export_receipt(pipeline_root,receipt,output_path,request_id=str(request.get('request_id') or request_path.parent.name))
+        except RuntimeError as exc:
+            raise EffectiveLifecycleError('GENERATION_EXPORT_RECEIPT_INVALID','Export publication identity does not validate') from exc
         exports.append(
             {
                 "receipt_path": (
@@ -621,6 +641,11 @@ def _reviewed_rejected_batch(
     receipt = read_json(
         receipt_path
     )
+    from generation_recovery_v1 import validate_approved_source, RecoveryError
+    try:
+        validate_approved_source(pipeline_root, request_id, reviewed, receipt)
+    except (RecoveryError, OSError, ValueError) as exc:
+        raise EffectiveLifecycleError('GENERATION_RECOVERY_SOURCE_CHANGED', 'Rejected review has a different effective source') from exc
     reviewed_sha = sha256_file(
         reviewed_path
     )
@@ -852,6 +877,17 @@ def classify_request(
         source_path = pipeline_root / "data" / "production_plans" / request_id / "generation_source_plan_v1.json"
         if closure_path.is_file():
             closure = read_json(closure_path)
+            if closure.get("schema_version") == "novel-news-export-closure-v1.1":
+                # The native Reader owns the versioned Receipt/Publication/ledger
+                # proof; navigation must consume that same terminal conclusion.
+                from novel_news_v1 import validate_novel_news_export
+                try:
+                    validate_novel_news_export(pipeline_root=pipeline_root, request_id=request_id)
+                except (RuntimeError, OSError, ValueError) as exc:
+                    raise EffectiveLifecycleError("NEWS_NOVEL_CLOSURE_INVALID", "Novel News closure failed native lineage validation.") from exc
+                result.update({"effective_terminal": True, "effective_status": "exported", "effective_stage": "TERMINAL", "terminal_reason": "validated_novel_news_export"})
+                result["evidence_refs"].append(evidence_ref(pipeline_root, closure_path))
+                return result
             receipt_path = root / "novel_news_export_receipt_v1.json"
             ledger_path = pipeline_root / "data" / "content_ledgers" / str(request["persona_id"]) / "content_ledger_v1.json"
             if not receipt_path.is_file() or not ledger_path.is_file():

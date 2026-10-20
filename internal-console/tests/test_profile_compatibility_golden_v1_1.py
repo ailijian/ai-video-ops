@@ -73,14 +73,14 @@ def test_native_golden_published_activation_and_official_creation_gate(node):
         exercise_creation_tasks(client, headers, runtime_settings, request_id, project)
 
 
-def exercise_creation_tasks(client, headers, settings, request_id, project):
+def exercise_creation_tasks(client, headers, settings, request_id, project,*,transport_operations=None):
     root = settings.pipeline_root
     env = {k: v for k, v in os.environ.items() if not k.startswith(('DEEPSEEK_', 'QYAPI_', 'AIVO_'))}
     env.update(PYTHONUTF8='1', PYTHONIOENCODING='utf-8')
     actual_run = subprocess.run
     def boundary_command(command, *args, **kwargs):
         name = Path(command[1]).name if len(command) > 1 else ''
-        mapping = {'resolve_generation_content_plan_v1.py': 'plan', 'resolve_generation_batch_v1.py': 'generate'}
+        mapping = transport_operations or {'resolve_generation_content_plan_v1.py': 'plan', 'resolve_generation_batch_v1.py': 'generate'}
         if name in mapping:
             rid = command[command.index('--request-id') + 1]
             command = [command[0], str(project / 'ops-pipeline/tests/compatibility_creation_synthetic.py'),
@@ -111,9 +111,21 @@ def exercise_creation_tasks(client, headers, settings, request_id, project):
         batch = read(batch_path)
         assert batch['status'] == 'review_required' and len(batch['contents']) == 1
         protected_batch = batch_path.read_bytes()
-        # A real attempted export before Human approval must fail with no file.
-        export_id, refused = start('export-mix')
-        assert refused['status'] == 'failed', refused
+        # A missing Human receipt is rejected before export intent/Task admission.
+        from app.database import connect
+        db = connect(settings.database_path)
+        try:
+            task_count_before = db.execute('SELECT count(*) FROM tasks').fetchone()[0]
+        finally:
+            db.close()
+        refused = client.post(f'/api/create/{request_id}/export-mix', headers=headers)
+        assert refused.status_code == 409 and refused.json()['detail']['code'] == 'HUMAN_BUNDLE_INVALID', refused.text
+        db = connect(settings.database_path)
+        try:
+            assert db.execute('SELECT count(*) FROM tasks').fetchone()[0] == task_count_before
+        finally:
+            db.close()
+        assert not (batch_path.parent / 'generation_export_intent_v1.json').exists()
         assert not list((root / 'output').glob('*' + request_id + '*.xlsx'))
         response = client.post(f'/api/create/{request_id}/review', headers=headers, json={
             'items': [{'content_id': batch['contents'][0]['content_id'], 'decision': 'revised',
@@ -133,8 +145,7 @@ def exercise_creation_tasks(client, headers, settings, request_id, project):
         runner._run(retry_id)
         exported = get_task(settings.database_path, retry_id)
         assert exported['status'] == 'completed', exported
-        assert get_task(settings.database_path, export_id)['status'] == 'failed'
-        assert exported['operation_identity'] == refused['operation_identity']
+        assert exported['task_type'] == 'excel_export'
         closure_path = root / 'data/generation_batches' / request_id / 'generation_export_closure_v1.json'
         closure = read(closure_path)
         ledger_path = Path(closure['content_ledger']['path'])
@@ -152,3 +163,43 @@ def exercise_creation_tasks(client, headers, settings, request_id, project):
     finally:
         runner.close()
         boundary.stop()
+
+
+def test_native_creation_uses_separate_activated_release_through_export(node):
+    """No canonical-root Case/FP/Pattern copies; only the model transport is synthetic."""
+    prepare_native_golden(node)
+    settings, accounts, storage = node
+    project = Path(__file__).resolve().parents[2]
+    repo, owner = committed_source_snapshot(project, storage / 's')
+    runtime = storage / 'runtime/ops-pipeline'
+    shutil.copytree(project / 'ops-pipeline/scripts', runtime / 'scripts', ignore=shutil.ignore_patterns('__pycache__'))
+    configure_runtime(runtime, settings.pipeline_root, purpose='isolated-validation')
+    package = owner.build_release(settings.pipeline_root, storage / 'p', repo,
+        contract_version='1.1', purpose='isolated-validation')
+    assert owner.verify_release(package, repo)['approved_cases'] == 3
+    staged = owner.stage_release_v1_1(package, runtime, repo)
+    owner.activate_release_v1_1(runtime, repo, staged, uuid.uuid4().hex)
+    assert owner.preflight(runtime, repo)['registry']['target_profiles'] == ['mix']
+    runtime_settings = replace(settings, pipeline_root=runtime,
+        pipeline_python_executable=str(project / 'ops-pipeline/.venv/Scripts/python.exe'))
+    assert not (runtime / 'data/patterns/approved').exists()
+    assert not (runtime / 'data/fingerprints').exists()
+    with TestClient(build_app(runtime_settings)) as client:
+        login = client.post('/api/auth/login', json={'phone': '13900000001', 'password': 'SyntheticCase2026!'})
+        assert login.status_code == 200, login.text
+        headers = {'X-CSRF-Token': login.json()['csrf_token']}
+        runtime_accounts = {**accounts, 'A': (client, headers, accounts['A'][2])}
+        business = prepare_native_business((runtime_settings, runtime_accounts, storage))
+        confirmed = client.post('/api/create/confirm', headers=headers, json={
+            'business_id': business['business_id'], 'speaker_id': business['speaker_id'],
+            'profile': 'mix', 'requested_quantity': 1, 'confirmed_quantity': 1,
+            'idempotency_key': 'portable_release_creation_once'})
+        assert confirmed.status_code == 200, confirmed.text
+        rid = confirmed.json()['result']['request_id']
+        resolved = client.post(f'/api/create/{rid}/resolve-sources', headers=headers)
+        assert resolved.status_code == 200, resolved.text
+        original_request = (runtime / 'data/generation_requests' / rid / 'generation_request_v1.json').read_bytes()
+        original_plan = (runtime / 'data/production_plans' / rid / 'generation_source_plan_v1.json').read_bytes()
+        exercise_creation_tasks(client, headers, runtime_settings, rid, project)
+        assert (runtime / 'data/generation_requests' / rid / 'generation_request_v1.json').read_bytes() == original_request
+        assert (runtime / 'data/production_plans' / rid / 'generation_source_plan_v1.json').read_bytes() == original_plan

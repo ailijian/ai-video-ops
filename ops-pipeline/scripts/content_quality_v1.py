@@ -1797,6 +1797,7 @@ def replace_ledger_after_export(
     path: Path,
     expected_current: dict[str, Any],
     replacement: dict[str, Any],
+    *, news_export_intent_ref: dict[str, Any] | None = None,
 ) -> str:
     """Atomically persist one validated append-only export closure."""
     path = path.expanduser().resolve()
@@ -1820,11 +1821,26 @@ def replace_ledger_after_export(
     payload = json.dumps(replacement, ensure_ascii=False, indent=2).encode("utf-8")
     temporary = path.with_suffix(path.suffix + ".export.tmp")
     if temporary.exists():
-        raise RuntimeError("Content Ledger export temporary path already exists.")
-    with temporary.open("xb") as handle:
-        handle.write(payload)
+        if news_export_intent_ref is None or temporary.read_bytes()!=payload:
+            raise RuntimeError("Content Ledger export temporary path already exists.")
+        from news_export_recovery_v1 import ledger_intent
+        appended=replacement['entries'][len(expected_current.get('entries') or []):]
+        if len(appended)!=1:
+            raise RuntimeError('News recovery must bind exactly one original semantic item')
+        item=appended[0]
+        ledger_intent(path.parents[3],news_export_intent_ref,business_id=replacement['business_id'],
+            request_id=item['batch_ref'],titles=[b['text'] for b in item['micro_information_beats']],
+            approved_sha256=item['approved_review_ref']['sha256'],
+            output_sha256=read_json(Path(item['export_receipt_ref']['path']))['output_sha256'])
+    else:
+        with temporary.open("xb") as handle:
+            handle.write(payload)
+            handle.flush()
+            import os
+            os.fsync(handle.fileno())
     if read_json(path) != expected_current:
-        temporary.unlink(missing_ok=True)
+        if news_export_intent_ref is None:
+            temporary.unlink(missing_ok=True)
         raise RuntimeError("Content Ledger changed during exported-content append.")
     temporary.replace(path)
     return hashlib.sha256(payload).hexdigest()

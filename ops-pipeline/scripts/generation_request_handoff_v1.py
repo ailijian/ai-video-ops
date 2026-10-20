@@ -679,6 +679,9 @@ def recover_existing(
     selected_opportunity_id: str | None = None,
 ) -> dict[str, Any]:
     request = read_json(request_path)
+    if request.get('profile_compatibility_v1_2'):
+        from news_runtime_v1_2 import current
+        current(pipeline_root,pinned=request['profile_compatibility_v1_2'])
 
     validate_existing_request(
         request,
@@ -1078,6 +1081,9 @@ def create_generation_request_handoff(
         request["created_by_user_id"] = created_by_user_id
         request["created_by_phone"] = created_by_phone
 
+    from news_runtime_v1_2 import configured,current
+    if configured(pipeline_root) and profile=='news':
+        request['profile_compatibility_v1_2']=current(pipeline_root)[1]
     created = write_atomic_new_json(
         request_path,
         request,

@@ -5,6 +5,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any, Callable
+from contextlib import contextmanager
 
 from .canonical_gateway import CanonicalOperationError
 from .config import Settings
@@ -48,6 +49,31 @@ BACKGROUND_OPERATIONS: dict[str, tuple[str, str]] = {
 from .compatibility_gate import guarded as compatibility_guarded
 
 
+@contextmanager
+def _news_task_admission(settings,request_id,operation):
+    from news_runtime_v1_2 import configured,current
+    if not configured(settings.pipeline_root) or operation not in {
+        'news_plan','news_export','novel_news_generate','novel_news_export'}:
+        yield
+        return
+    from profile_compatibility_decisions_v1_1 import read
+    from profile_compatibility_release_v1_1 import runtime_write
+    from profile_compatibility_contract_v1_1 import CompatibilityError
+    root=settings.pipeline_root
+    path=(root/'data/news_deliveries'/request_id/'news_delivery_request_v1.json'
+        if operation in {'news_plan','news_export'} else
+        root/'data/generation_requests'/request_id/'generation_request_v1.json')
+    pinned=read(path).get('profile_compatibility_v1_2')
+    if not pinned:raise CanonicalOperationError('PROFILE_COMPATIBILITY_BLOCKED','请先核对新闻体资格。','保留原操作，核对当前版本。')
+    try:
+        current(root,reuse_intent=pinned['reuse_intent'],pinned=pinned)
+        with runtime_write(root,pinned=pinned):yield
+    except CompatibilityError as exc:
+        raise CanonicalOperationError('PROFILE_COMPATIBILITY_BLOCKED',
+            '新闻体的兼容性或发布资格已变化。',
+            '请核对当前批准与发布版本；原请求和导出记录会保留，本次不会继续写入。') from exc
+
+
 @compatibility_guarded
 def create_background_task(
     settings: Settings,
@@ -55,9 +81,14 @@ def create_background_task(
     operation: str,
     request_id: str,
     created_by_user_id: int,
+    generation_recovery: dict[str, str] | None = None,
+    export_context: dict[str, Any] | None = None,
+    novel_generation: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if operation not in BACKGROUND_OPERATIONS:
         raise ValueError("unsupported background operation")
+    if operation == 'mix_export' and (settings.pipeline_root / 'data/generation_batches' / request_id / 'generation_export_closure_v1.json').exists():
+        raise CanonicalOperationError('EXPORT_ALREADY_CLOSED', '这次导出已有闭合记录。', '请读取原文件和记录；本次不会建立新任务。')
     if operation in {"novel_news_generate", "novel_news_export"}:
         require_novel_news_task(settings, created_by_user_id)
     if operation == "content_plan":
@@ -78,7 +109,16 @@ def create_background_task(
                 },
             )
     if operation in {"novel_news_generate", "novel_news_export"}:
-        state = novel_news_state(settings, request_id)
+        if operation == 'novel_news_generate' and novel_generation:
+            from novel_news_generation_recovery_v1 import head, current_identity, GenerationError
+            admitted = head(settings.pipeline_root, request_id)
+            if (not admitted or admitted['operation_id'] != novel_generation['operation_id']
+                    or admitted['sha256'] != novel_generation['intent_sha256']):
+                raise GenerationError('OPERATION_CONFLICT')
+            current_identity(admitted['intent'], novel_generation['authorization_context'])
+            state = {'stage': 'generation'}
+        else:
+            state = novel_news_state(settings, request_id)
         expected = "generation" if operation == "novel_news_generate" else "export"
         if state.get("stage") != expected:
             raise CanonicalOperationError(
@@ -86,19 +126,25 @@ def create_background_task(
                 "请刷新创作进度，不会建立重复后台任务。",
             )
     task_type, stage = BACKGROUND_OPERATIONS[operation]
-    return submit_task(
+    if operation == 'novel_news_generate' and not novel_generation:
+        raise CanonicalOperationError('NEWS_GENERATION_OPERATION_REQUIRED', '请从原新闻体页面确认生成。', '原操作记录会保留。')
+    with _news_task_admission(settings,request_id,operation):
+        return submit_task(
         settings.database_path,
         task_id_prefix=f"{operation}-{request_id}",
         task_type=task_type,
         subject_ref=request_id,
-        operation_identity=f"{operation}:{request_id}",
+        operation_identity=(f"{operation}:{request_id}:" + novel_generation['operation_id']) if novel_generation else f"{operation}:{request_id}",
         execution_lane=STANDARD_BACKGROUND,
-        payload={"operation": operation, "request_id": request_id},
+        payload={"operation": operation, "request_id": request_id,
+            **({'export_context':export_context} if export_context else {}),
+            **({'generation_recovery': generation_recovery} if generation_recovery else {}),
+            **({'novel_generation': novel_generation} if novel_generation else {})},
         stage=f"等待{stage}",
         created_by_user_id=created_by_user_id,
         queue_max=settings.task_queue_max,
         gpu_pending_per_user_max=settings.gpu_pending_per_user_max,
-    )
+        )
 
 
 class BackgroundTaskRunner:
@@ -145,9 +191,19 @@ class BackgroundTaskRunner:
                 state = get_content_delivery_state(self.settings, request_id)
                 done = {
                     "content_plan": bool((state.get("content_plan") or {}).get("ready")),
-                    "script_generation": bool((state.get("generation") or {}).get("ready")),
+                    "script_generation": bool((state.get("generation") or {}).get('generation_completed', (state.get("generation") or {}).get("ready"))),
                     "mix_export": bool(state.get("stop_point_reached")),
                 }[operation]
+                if operation == 'script_generation' and payload.get('generation_recovery'):
+                    from generation_recovery_v1 import operation_root, read, file_sha
+                    identity = payload['generation_recovery']
+                    directory = operation_root(self.settings.pipeline_root, request_id, identity['operation_id'])
+                    if file_sha(directory / 'intent.json') != identity['intent_sha256']:
+                        return 'failed'
+                    result = directory / 'result.json'
+                    if result.is_file():
+                        return 'completed' if read(result)['outcome'] == 'review_required' and done else 'failed'
+                    return None
             elif operation in {"news_plan", "news_export"}:
                 state = get_news_delivery_state(self.settings, request_id)
                 done = (
@@ -155,7 +211,35 @@ class BackgroundTaskRunner:
                     if operation == "news_plan"
                     else bool(state.get("stop_point_reached"))
                 )
-            elif operation in {"novel_news_generate", "novel_news_export"}:
+            elif operation == 'novel_news_generate':
+                identity = payload.get('novel_generation')
+                projection = novel_news_state(self.settings, request_id)
+                state = projection.get('generation') or {}
+                if state.get('recovery_state') == 'source_or_authorization_conflict' and projection.get('stage') != 'completed':
+                    update_task(self.settings.database_path, task_id,
+                        error_code=state.get('native_code') or 'NEWS_GENERATION_SOURCE_CHANGED',
+                        error_message='当前来源或授权已变化，原生成操作已阻断。')
+                    return 'failed'
+                if (not identity or identity.get('operation_id') != state.get('operation_id')
+                        or identity.get('intent_sha256') != state.get('intent_sha256')):
+                    update_task(self.settings.database_path, task_id, error_code='NEWS_GENERATION_OUTCOME_UNKNOWN',
+                                error_message='模型执行结果无法确认，系统不会自动重复生成。')
+                    return 'failed'
+                native = state.get('recovery_state')
+                if projection.get('stage') == 'completed':
+                    return 'completed'
+                if native == 'review_required':
+                    if state.get('result_present'):
+                        return 'completed'
+                    generate_novel_news(self.settings, request_id, task_id=task_id, **identity)
+                    return 'completed'
+                if native in {'not_dispatched', 'validated_result_unpublished'}:
+                    return None
+                update_task(self.settings.database_path, task_id,
+                    error_code='NEWS_GENERATION_OUTCOME_UNKNOWN' if native == 'dispatched_outcome_unknown' else 'NEWS_GENERATION_BLOCKED',
+                    error_message='模型执行结果无法确认，系统不会自动重复生成。' if native == 'dispatched_outcome_unknown' else '来源、授权或生成结果需要核对。')
+                return 'failed'
+            elif operation == "novel_news_export":
                 state = novel_news_state(self.settings, request_id)
                 done = state.get("stage") in (
                     {"review", "export", "completed"}
@@ -164,6 +248,8 @@ class BackgroundTaskRunner:
             else:
                 return "failed"
         except CanonicalOperationError:
+            if operation == 'novel_news_generate':
+                return 'failed'
             return None
         return "completed" if done else None
 
@@ -234,6 +320,13 @@ class BackgroundTaskRunner:
             def execute() -> dict[str, Any]:
                 if operation in {"novel_news_generate", "novel_news_export"}:
                     require_novel_news_task(self.settings, (task.get("created_by") or {}).get("user_id"))
+                if operation == 'novel_news_generate':
+                    if not payload.get('novel_generation'):
+                        raise CanonicalOperationError('NEWS_GENERATION_OUTCOME_UNKNOWN',
+                            '模型执行结果无法确认。', '系统不会自动重复生成。')
+                    # The Native owner holds the existing backup/Authority gates
+                    # for each mutation, never across external model latency.
+                    return self.handlers[operation](self.settings, request_id, task_id=task_id, **payload['novel_generation'])
                 lock_scope = "request"
                 lock_identity = request_id
                 if operation == "mix_export":
@@ -254,6 +347,11 @@ class BackgroundTaskRunner:
                     lock_identity,
                     timeout_seconds=0.0,
                 ):
+                    if operation == 'script_generation' and payload.get('generation_recovery'):
+                        # Use the same real Gateway checks and Task runner.
+                        return generate_scripts(self.settings, request_id, **payload['generation_recovery'])
+                    if operation in {'mix_export','news_export','novel_news_export'} and payload.get('export_context'):
+                        return self.handlers[operation](self.settings,request_id,**payload['export_context'])
                     return self.handlers[operation](self.settings, request_id)
 
             future = self.operation_executor.submit(execute)

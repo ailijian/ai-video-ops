@@ -52,6 +52,10 @@ Windows PowerShell 5.1 and Git. The runner never installs dependencies.
 # Complete isolated regression, with bounded parallel execution.
 python tools/verify.py
 
+# Windows nested worktrees: same full suite with short, isolated project .verify paths.
+# This explicitly loads only the repository storage adapter; no test or gate is skipped.
+python tools/verify.py --windows-short-temp
+
 # Resolve all changes since an explicit base, including staged/unstaged/untracked.
 python tools/verify.py --mode affected --base HEAD
 

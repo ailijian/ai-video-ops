@@ -544,6 +544,7 @@ def review_generation_batch_v2(
     *,
     batch_path: Path,
     review_input_path: Path,
+    authorization_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     batch_path = (
         batch_path
@@ -684,6 +685,31 @@ def review_generation_batch_v2(
     )
 
     root = batch_path.parent
+    from generation_recovery_v1 import runtime_for_generation, request_root
+    recovery_root = runtime_for_generation(batch_path, batch)
+    if recovery_root:
+        from generation_recovery_v1 import graph
+        if graph(recovery_root,request_id)['batch'].resolve()!=batch_path:
+            raise GenerationReviewV2Error('GENERATION_BATCH_NOT_REVIEWABLE','Not the native selected source Batch')
+    if recovery_root and authorization_context is not None:
+        from delivery_receipt_recovery_v1 import human_admission
+        human_intent = human_admission(recovery_root, batch_path, normalized_input, authorization_context)
+    elif recovery_root and ((recovery_root / __import__('profile_compatibility_release_v1_1').CONFIG).exists() or
+            (request_root(recovery_root, request_id) / 'generation_human_review_intent_v1.json').exists() or
+            ((request_root(recovery_root, request_id) / 'generation_human_review_v2.json').exists() and
+             not (request_root(recovery_root, request_id) / 'generation_batch_approval_receipt.json').exists())):
+        from delivery_receipt_recovery_v1 import ReceiptRecoveryError
+        raise ReceiptRecoveryError('DELIVERY_AUTHORIZATION_REQUIRED', 'This Human operation requires its trusted current principal')
+    if recovery_root and (request_root(recovery_root, request_id) / 'recovery').exists():
+        # Recovery changes only the source Batch, never the Request-root Human
+        # bundle. A client cannot choose an arbitrary destination or source.
+        pipeline_root = recovery_root
+        from resolve_generation_batch_v1 import generation_snapshot
+        from generation_recovery_v1 import resolve_ref, request_root
+        selected = generation_snapshot(pipeline_root, request_id, _partial_human_admission=authorization_context is not None)
+        if not selected['ready_for_human_review'] or resolve_ref(pipeline_root, selected['batch_ref']) != batch_path:
+            raise GenerationReviewV2Error('GENERATION_BATCH_NOT_REVIEWABLE', 'Not the effective recovery Batch')
+        root = request_root(pipeline_root, request_id)
     canonical_review_path = (
         root
         / "generation_human_review_v2.json"
@@ -711,7 +737,7 @@ def review_generation_batch_v2(
             or ""
         )
     else:
-        reviewed_at = now_iso()
+        reviewed_at = human_intent['reviewed_at'] if authorization_context is not None and human_intent else now_iso()
         canonical_review = {
             "schema_version": (
                 REVIEW_SCHEMA
@@ -750,11 +776,16 @@ def review_generation_batch_v2(
             },
         }
 
+        if authorization_context is not None:
+            human_admission(recovery_root,batch_path,normalized_input,authorization_context,canonical_review)
         write_or_validate_json(
             canonical_review_path,
             canonical_review,
         )
         recovered_review = False
+
+    if authorization_context is not None:
+        human_admission(recovery_root,batch_path,normalized_input,authorization_context,canonical_review)
 
     source_by_id = {
         str(
@@ -1284,10 +1315,9 @@ def review_generation_batch_v2(
             ),
         }
 
-        write_or_validate_json(
-            approval_receipt_path,
-            receipt,
-        )
+        if authorization_context is not None:
+            human_admission(recovery_root, batch_path, normalized_input, authorization_context)
+        write_or_validate_json(approval_receipt_path, receipt)
         final_status = "approved"
 
     else:
@@ -1425,10 +1455,9 @@ def review_generation_batch_v2(
             ),
         }
 
-        write_or_validate_json(
-            approval_receipt_path,
-            receipt,
-        )
+        if authorization_context is not None:
+            human_admission(recovery_root, batch_path, normalized_input, authorization_context)
+        write_or_validate_json(approval_receipt_path, receipt)
         final_status = "rejected"
 
     return {
@@ -1500,6 +1529,7 @@ def main() -> None:
         "--review-file",
         required=True,
     )
+    parser.add_argument('--authorization-file')
     args = parser.parse_args()
 
     try:
@@ -1511,9 +1541,10 @@ def main() -> None:
                 review_input_path=Path(
                     args.review_file
                 ),
+                authorization_context=read_json(Path(args.authorization_file)) if args.authorization_file else None,
             )
         )
-    except GenerationReviewV2Error as exc:
+    except (GenerationReviewV2Error, __import__('delivery_receipt_recovery_v1').ReceiptRecoveryError) as exc:
         print(
             json.dumps(
                 {

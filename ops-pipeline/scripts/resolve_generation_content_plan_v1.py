@@ -48,6 +48,7 @@ from generate_mix_scripts_v1 import (
     validate_generation_inputs,
 )
 from generation_request_handoff_v1 import _business_generation_lock
+from profile_compatibility_contract_v1_1 import CompatibilityError
 from show_customer_status_v1 import AuthorityResolutionError, load_content_ledger
 
 
@@ -148,7 +149,7 @@ def verify_lineage_ref(
     return path
 
 
-def load_request_and_source_plan(
+def read_request_and_source_plan(
     pipeline_root: Path,
     request_id: str,
 ) -> tuple[Path, dict[str, Any], Path, dict[str, Any]]:
@@ -196,30 +197,6 @@ def load_request_and_source_plan(
             "Generation Request schema or request_id is invalid.",
         )
 
-    lifecycle = request.get("lifecycle") or {}
-    authority = request.get("authority") or {}
-    if str(lifecycle.get("status") or "") != "created":
-        raise ContentPlanResolutionError(
-            "CONTENT_PLANNING_LIFECYCLE_CLOSED",
-            "Generation Request is not in the created lifecycle state.",
-        )
-    if (
-        lifecycle.get("generation_started") is True
-        or authority.get("script_generation_performed") is True
-        or authority.get("generation_batch_created") is True
-    ):
-        raise ContentPlanResolutionError(
-            "CONTENT_PLANNING_STAGE_CLOSED",
-            "Script generation already started; Content Planning is closed.",
-        )
-
-    batch_root = pipeline_root / "data" / "generation_batches" / request_id
-    if batch_root.exists() and any(batch_root.rglob("generation_batch_v1.json")):
-        raise ContentPlanResolutionError(
-            "CONTENT_PLANNING_STAGE_CLOSED",
-            "A Generation Batch already exists for this Request.",
-        )
-
     if (
         source_plan.get("schema_version") != SOURCE_PLAN_SCHEMA_VERSION
         or str(source_plan.get("request_id") or "") != request_id
@@ -253,6 +230,21 @@ def load_request_and_source_plan(
     return request_path, request, source_plan_path, source_plan
 
 
+def load_request_and_source_plan(pipeline_root: Path, request_id: str):
+    """Planning writer admission remains closed after any generation artifact."""
+    values = read_request_and_source_plan(pipeline_root, request_id)
+    request = values[1]
+    lifecycle, authority = request.get("lifecycle") or {}, request.get("authority") or {}
+    if str(lifecycle.get("status") or "") != "created":
+        raise ContentPlanResolutionError("CONTENT_PLANNING_LIFECYCLE_CLOSED", "Generation Request is not in the created lifecycle state.")
+    batch_root = pipeline_root / "data/generation_batches" / request_id
+    if (lifecycle.get("generation_started") is True or authority.get("script_generation_performed") is True
+            or authority.get("generation_batch_created") is True
+            or (batch_root.exists() and any(batch_root.rglob("generation_batch_v1.json")))):
+        raise ContentPlanResolutionError("CONTENT_PLANNING_STAGE_CLOSED", "A Generation Batch already exists or generation started; Content Planning is closed.")
+    return values
+
+
 def resolve_pattern_path(
     pipeline_root: Path,
     source_plan: dict[str, Any],
@@ -276,9 +268,12 @@ def resolve_pattern_path(
             "Selected Pattern requires pattern_id and approved_pattern_sha.",
         )
 
+    from profile_compatibility_consumers_v1_1 import released_source_paths
+    released = released_source_paths(pipeline_root, source_plan)
     pattern_root = pipeline_root / "data" / "patterns" / "approved"
+    candidates = released['pattern_ref'] if released is not None else pattern_root.rglob("pattern_v1.json")
     matches: list[Path] = []
-    for path in pattern_root.rglob("pattern_v1.json"):
+    for path in candidates:
         artifact = read_json(path)
         if str(artifact.get("pattern_id") or "") == pattern_id:
             matches.append(path)
@@ -309,6 +304,15 @@ def resolve_fingerprint_paths(
             "Generation Source Plan has no eligible Case pool.",
         )
 
+    from profile_compatibility_consumers_v1_1 import released_source_paths
+    released = released_source_paths(pipeline_root, source_plan)
+    fingerprints = {}
+    if released is not None:
+        for path in released['fingerprint_ref']:
+            case_id = str(read_json(path).get('case_id') or '')
+            if case_id in fingerprints:
+                raise ContentPlanResolutionError('CONTENT_PLAN_CASE_AUTHORITY_INVALID', 'Released Case Fingerprint identity is ambiguous.')
+            fingerprints[case_id] = path
     resolved: list[Path] = []
     seen: set[str] = set()
     for item in pool:
@@ -325,14 +329,14 @@ def resolve_fingerprint_paths(
                 "Eligible Case requires a unique case_id and fingerprint_sha.",
             )
 
-        path = (
+        path = fingerprints.get(case_id) if released is not None else (
             pipeline_root
             / "data"
             / "fingerprints"
             / case_id
             / "case_fingerprint_v1.json"
         )
-        if not path.is_file():
+        if path is None or not path.is_file():
             raise ContentPlanResolutionError(
                 "CONTENT_PLAN_CASE_AUTHORITY_MISSING",
                 f"Eligible Case Fingerprint is missing: {case_id}",
@@ -1054,7 +1058,7 @@ def main() -> None:
             pipeline_root=Path(args.pipeline_root),
             request_id=str(args.request_id).strip(),
         )
-    except ContentPlanResolutionError as exc:
+    except (ContentPlanResolutionError, CompatibilityError) as exc:
         print(
             json.dumps(
                 {"ok": False, "code": exc.code, "message": str(exc)},

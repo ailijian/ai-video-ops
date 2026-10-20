@@ -96,6 +96,7 @@ def _run_news_command(
     args: list[str],
     *,
     timeout_seconds: int = 120,
+    payload: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     executable = (
         settings.pipeline_python_executable
@@ -122,6 +123,7 @@ def _run_news_command(
             timeout=timeout_seconds,
             check=False,
             env=_pipeline_env(),
+            input=json.dumps(payload, ensure_ascii=False) if payload is not None else None,
         )
     except (
         OSError,
@@ -138,18 +140,26 @@ def _run_news_command(
     )
 
     if process.returncode != 0:
+        code = str((parsed or {}).get("code") or "NEWS_DELIVERY_FAILED")
+        reason = {
+            "NEWS_DELIVERY_CONTENT_LEDGER_MISSING": (
+                "该客户还没有可重新表达的历史内容。",
+                "请先完成一条内容的审核与导出或发布，或选择创作新内容。"),
+            "NEWS_DELIVERY_SOURCE_NOT_FOUND": (
+                "没有找到当前客户的所选历史内容。",
+                "请从当前客户已有内容中重新选择；不会使用其他客户的内容。"),
+            "NEWS_DELIVERY_SOURCE_NOT_STRONG_MEMORY": (
+                "所选历史内容尚未完成正式交付。",
+                "请先完成原内容的审核与导出或发布。"),
+            "NEWS_DELIVERY_SOURCE_NOT_ELIGIBLE": (
+                "所选历史内容不适用于本次新闻体。",
+                "请重新选择适用来源，并核对已批准的价格、服务及使用条件。"),
+        }.get(code)
         raise CanonicalOperationError(
-            str(
-                (parsed or {}).get("code")
-                or "NEWS_DELIVERY_FAILED"
-            ),
-            str(
-                (parsed or {}).get("message")
-                or process.stderr
-                or process.stdout
-                or "News Delivery 执行失败。"
-            ).strip(),
-            "不要覆盖现有 News artifacts；修复当前阶段后重试。",
+            code,
+            reason[0] if reason else "新闻体操作尚未完成。",
+            reason[1] if reason else "导出结果需要重新核对。" if code.startswith("NEWS_EXPORT_")
+            else "请核对已批准资料和来源；原操作记录会保留。",
         )
 
     if (
@@ -258,7 +268,7 @@ def _completed_news_deliveries(
             request.get(
                 "schema_version"
             )
-            != NEWS_REQUEST_SCHEMA
+            not in {NEWS_REQUEST_SCHEMA, "news-delivery-request-v1.1"}
             or request.get(
                 "business_id"
             )
@@ -429,7 +439,7 @@ def create_news_request(
 
     if (
         request.get("schema_version")
-        != NEWS_REQUEST_SCHEMA
+        not in {NEWS_REQUEST_SCHEMA, "news-delivery-request-v1.1"}
         or request.get("business_id")
         != business_id
         or request.get("speaker_id")
@@ -501,7 +511,7 @@ def get_active_news_request(
             request.get(
                 "schema_version"
             )
-            != NEWS_REQUEST_SCHEMA
+            not in {NEWS_REQUEST_SCHEMA, "news-delivery-request-v1.1"}
         ):
             continue
         if str(
@@ -604,7 +614,7 @@ def _project_plan(
     plan = _read_json(path)
     if (
         plan.get("schema_version")
-        != NEWS_PLAN_SCHEMA
+        not in {NEWS_PLAN_SCHEMA, "news-delivery-plan-v1.1"}
         or plan.get("status")
         != "review_required"
         or (
@@ -858,7 +868,7 @@ def _project_export(
         receipt.get(
             "schema_version"
         )
-        != NEWS_EXPORT_RECEIPT_SCHEMA
+        not in {NEWS_EXPORT_RECEIPT_SCHEMA, "news-dynamic-excel-export-receipt-v1.1"}
         or receipt.get(
             "validation_passed"
         )
@@ -904,7 +914,7 @@ def _project_export(
             closure.get(
                 "schema_version"
             )
-            != NEWS_CLOSURE_SCHEMA
+            not in {NEWS_CLOSURE_SCHEMA, "news-delivery-export-closure-v1.1"}
             or (
                 closure.get(
                     "validation"
@@ -942,7 +952,7 @@ def _project_export(
         )
 
     return {
-        "completed": True,
+        "completed": closed,
         "presentation_history_closed": (
             closed
         ),
@@ -996,7 +1006,7 @@ def get_news_delivery_state(
         request.get(
             "schema_version"
         )
-        != NEWS_REQUEST_SCHEMA
+        not in {NEWS_REQUEST_SCHEMA, "news-delivery-request-v1.1"}
         or request.get(
             "request_id"
         )
@@ -1017,8 +1027,15 @@ def get_news_delivery_state(
     export = _project_export(
         paths
     )
+    # The original native reader owns terminal validity and continuation state.
+    native = _run_news_command(settings, ["--action", "status", "--pipeline-root",
+        str(settings.pipeline_root), "--request-id", request_id])["result"]
+    export["completed"] = native.get("stop_point_reached") is True
+    export["presentation_history_closed"] = native.get("presentation_history_closed") is True
 
-    if (
+    if native.get("export_recovery_state") == "legacy_unbound_orphan":
+        next_action = "RECHECK_EXPORT"
+    elif (
         export["completed"]
         and export[
             "presentation_history_closed"
@@ -1049,6 +1066,7 @@ def get_news_delivery_state(
 
     return {
         "created_by": request_actor(request),
+        "export_recovery_state": native.get("export_recovery_state", "xlsx_not_generated"),
         "reviewed_by": {"phone": str(review["reviewer"])} if review.get("reviewer") else None,
         "approved_by": {"phone": str(review["reviewer"])} if review.get("approved") and review.get("reviewer") else None,
         "exported_by": completed_operation_actor(settings.database_path, request_id, "news_export") if include_actors and export["completed"] else None,
@@ -1141,7 +1159,7 @@ def resolve_news_plan(
         result.get(
             "schema_version"
         )
-        != NEWS_PLAN_SCHEMA
+        not in {NEWS_PLAN_SCHEMA, "news-delivery-plan-v1.1"}
         or (
             result.get(
                 "authority"
@@ -1275,6 +1293,7 @@ def submit_news_review(
 def export_news_excel(
     settings: Settings,
     request_id: str,
+    *, authorization_context=None,
 ) -> dict[str, Any]:
     request_id = _validate_request_id(request_id)
     parsed = _run_news_command(
@@ -1288,6 +1307,7 @@ def export_news_excel(
             request_id,
         ],
         timeout_seconds=180,
+        payload={"export_context": authorization_context},
     )
 
     result = parsed["result"]
@@ -1339,6 +1359,10 @@ def exported_news_excel_path(
     settings: Settings,
     request_id: str,
 ) -> Path:
+    native = _run_news_command(settings, ["--action", "status", "--pipeline-root",
+        str(settings.pipeline_root), "--request-id", _validate_request_id(request_id)])["result"]
+    if native.get("stop_point_reached") is not True:
+        raise CanonicalOperationError("NEWS_EXCEL_NOT_EXPORTED", "新闻体导出尚未完成。", "导出尚未完成，可继续原操作。")
     paths = _paths(
         settings,
         request_id,

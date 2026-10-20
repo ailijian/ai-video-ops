@@ -27,12 +27,18 @@ def release_node(compat, tmp_path):
     return settings, actor, targets, result, repo, owner, runtime, tmp_path / 'packages'
 
 
-def committed_source_snapshot(source_root, repo):
+def committed_source_snapshot(source_root, repo, *, complete=False):
     paths = ['ops-pipeline/scripts/' + name for name in (
         'production_profile_v1.py', 'profile_compatibility_contract_v1_1.py',
         'profile_compatibility_decisions_v1_1.py', 'profile_compatibility_authorization_v1.py',
         'profile_compatibility_release_v1_1.py', 'match_generation_sources_v1.py')]
     paths += ['deploy/creative-authority/authority_release.py']
+    if complete:
+        paths=sorted(str(p.relative_to(source_root)).replace('\\','/')
+            for directory in ('ops-pipeline/scripts','internal-console/app','internal-console/scripts',
+                              'internal-console/migrations','deploy/creative-authority')
+            for p in (source_root/directory).rglob('*')
+            if p.is_file() and p.suffix in {'.py','.sql'} and 'tests' not in p.parts)
     for relative in paths:
         path = repo / relative
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -40,6 +46,9 @@ def committed_source_snapshot(source_root, repo):
     def git(*args):
         return subprocess.check_output(['git', '-C', str(repo), *args], stderr=subprocess.DEVNULL, text=True)
     git('init', '-b', 'isolated-source-test')
+    # Runtime imports may populate bytecode after the first formal pack.
+    # Match the real repository's cache policy without ignoring source/data.
+    (repo / '.git/info/exclude').write_text('__pycache__/\n*.pyc\n', encoding='utf-8')
     git('config', 'user.name', 'Isolated source fixture')
     git('config', 'user.email', 'isolated-source@example.invalid')
     git('config', 'core.autocrlf', 'false')

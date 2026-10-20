@@ -14,6 +14,8 @@ from .content_gateway import _project_generation_source_plan
 from .path_safety import resolve_within, validate_identifier
 from .operator_projection import completed_operation_actor, request_actor
 from .subprocess_env import pipeline_subprocess_env
+from generation_recovery_v1 import RecoveryError
+from resolve_generation_batch_v1 import generation_snapshot
 
 
 REQUEST_SCHEMA = "generation-request-v1.0"
@@ -21,6 +23,11 @@ CONTENT_PLAN_SCHEMA = "content-plan-v1.1.1"
 GENERATION_BATCH_SCHEMA = "generation-batch-v1.0"
 APPROVED_BATCH_SCHEMA = "approved-generation-batch-v1.0"
 REVIEWED_BATCH_SCHEMA = "reviewed-generation-batch-v1.0"
+
+def _delivery_temporary_root(settings: Settings) -> Path:
+    directory = settings.repo_root / '.verify' / 'delivery-contexts'
+    directory.mkdir(parents=True, exist_ok=True)
+    return directory
 
 def _validate_request_id(request_id: str) -> str:
     try:
@@ -113,8 +120,18 @@ def _run_pipeline_command(
 
     parsed = _parse_json_output(process.stdout)
     if process.returncode != 0:
+        code = str((parsed or {}).get("code") or "CONTENT_DELIVERY_OPERATION_FAILED")
+        if code in {
+            'PROFILE_COMPATIBILITY_BLOCKED', 'CONTENT_PLAN_LINEAGE_MISMATCH',
+            'CONTENT_PLAN_PATTERN_AUTHORITY_INVALID', 'CONTENT_PLAN_PATTERN_AUTHORITY_AMBIGUITY',
+            'CONTENT_PLAN_CASE_AUTHORITY_INVALID', 'CONTENT_PLAN_CASE_AUTHORITY_MISSING',
+        }:
+            raise CanonicalOperationError(
+                code, '本次创作的参考来源或发布版本无法核验。',
+                '已保留原请求，请联系维护人员检查来源和当前发布版本，恢复后继续原操作。',
+            )
         raise CanonicalOperationError(
-            str((parsed or {}).get("code") or "CONTENT_DELIVERY_OPERATION_FAILED"),
+            code,
             str((parsed or {}).get("message") or "内容交付操作没有完成。"),
             "不要重复创建 Request；请从当前 canonical 状态恢复后继续。",
         )
@@ -137,6 +154,13 @@ def _request_paths(settings: Settings, request_id: str) -> dict[str, Path]:
         / "output"
         / f"{request_id}_approved_mix_scripts.xlsx"
     )
+    generation_path = batch_root / 'generation_batch_v1.json'
+    if (batch_root / 'recovery').exists():
+        from generation_recovery_v1 import graph
+        try:
+            generation_path = graph(settings.pipeline_root, request_id)['batch']
+        except (RecoveryError, OSError, ValueError) as exc:
+            raise CanonicalOperationError('GENERATION_RECOVERY_GRAPH_INVALID', '本次生成记录无法安全恢复。', '请保留记录并联系维护人员检查恢复链。') from exc
     return {
         "request": (
             settings.pipeline_root
@@ -175,7 +199,7 @@ def _request_paths(settings: Settings, request_id: str) -> dict[str, Path]:
         ),
         "batch_root": batch_root,
         "generation_batch": (
-            batch_root / "generation_batch_v1.json"
+            generation_path
         ),
         "human_review": (
             batch_root / "generation_human_review_v1.json"
@@ -528,10 +552,12 @@ def _project_content_plan(path: Path) -> dict[str, Any]:
     }
 
 
-def _project_generation_batch(path: Path) -> dict[str, Any]:
+def _project_generation_batch(path: Path, *, pipeline_root: Path | None = None, request_id: str | None = None) -> dict[str, Any]:
     if not path.is_file():
         return {
             "ready": False,
+            "artifact_present": False, "ready_for_human_review": False,
+            "recovery_state": "not_generated", "batch_ref": None, "review_pack_ref": None,
             "status": None,
             "generated_count": 0,
             "contents": [],
@@ -543,8 +569,13 @@ def _project_generation_batch(path: Path) -> dict[str, Any]:
             "Generation Batch schema 不合法。",
             "停止审核并恢复正确的 Generation Batch。",
         )
+    try:
+        native = generation_snapshot(pipeline_root or path.parents[3], request_id or str(batch.get('request_id') or ''))
+    except (RuntimeError, OSError, ValueError) as exc:
+        raise CanonicalOperationError(getattr(exc, 'code', 'GENERATION_RECOVERY_GRAPH_INVALID'), '生成记录的来源或校验已变化。', '请保留原始记录并检查来源，不能直接进入人工审核。') from exc
     return {
-        "ready": True,
+        **{key: value for key, value in native.items() if key != 'batch'},
+        "ready": native['ready_for_human_review'],
         "status": batch.get("status"),
         "sha256": _sha256_file(path),
         "generated_count": len(batch.get("contents") or []),
@@ -565,6 +596,14 @@ def _project_generation_batch(path: Path) -> dict[str, Any]:
 
 
 def _project_review(paths: dict[str, Path]) -> dict[str, Any]:
+    from delivery_receipt_recovery_v1 import human_state, ReceiptRecoveryError
+    try:
+        verdict = human_state(paths['approved_batch'].parent)
+    except ReceiptRecoveryError as exc:
+        raise CanonicalOperationError(exc.code, '审核文件与收据尚未通过一致性核对。', '请保留原操作并检查来源，不会自动批准。') from exc
+    if not verdict['completed']:
+        return {**verdict, 'status': verdict['state'], 'approved_item_count': 0,
+            'rejected_item_count': 0, 'revised_and_approved_count': 0, 'receipt_ready': False}
     approved_path = paths["approved_batch"]
     reviewed_path = paths["reviewed_batch"]
     approval_receipt = paths["approval_receipt"]
@@ -661,8 +700,11 @@ def _project_export(
     receipt = artifacts["receipt_path"]
 
     if not output.is_file():
+        from delivery_receipt_recovery_v1 import export_paths
+        intent,_=export_paths(settings.pipeline_root,request_id)
         return {
             "completed": False,
+            'state':'export_file_pending' if intent.is_file() else 'export_not_started','can_resume':intent.is_file(),
             "output_name": (
                 artifacts["desired_name"]
             ),
@@ -671,15 +713,19 @@ def _project_export(
         }
 
     if not receipt.is_file():
-        raise CanonicalOperationError(
-            "EXCEL_EXPORT_RECEIPT_MISSING",
-            "Excel 已存在但 Export Receipt 缺失。",
-            "不要重新导出；请先恢复对应 Export Receipt。",
-        )
+        from delivery_receipt_recovery_v1 import export_paths, validate_publication
+        intent,_=export_paths(settings.pipeline_root,request_id)
+        if intent.is_file():
+            validate_publication(settings.pipeline_root,intent,output)
+        return {'completed':False,'receipt_ready':False,'output_name':artifacts['desired_name'],
+            'state':'export_receipt_pending' if intent.is_file() else 'legacy_unbound_orphan',
+            'can_resume':intent.is_file(),'legacy_recovered':False}
 
     export_receipt = _read_json(
         receipt
     )
+    from delivery_receipt_recovery_v1 import validate_export_receipt
+    validate_export_receipt(settings.pipeline_root,export_receipt,output,request_id=request_id)
     if (
         export_receipt.get(
             "validation_passed"
@@ -848,10 +894,17 @@ def get_content_delivery_state(
     )
     generation = (
         _project_generation_batch(
-            paths["generation_batch"]
+            paths["generation_batch"], pipeline_root=settings.pipeline_root, request_id=request_id
         )
     )
     review = _project_review(paths)
+    if generation.get('pending_operation_id'):
+        from .database import connect
+        db=connect(settings.database_path)
+        try:
+            row=db.execute("SELECT status FROM tasks WHERE subject_ref=? AND json_extract(payload_json,'$.generation_recovery.operation_id')=? AND json_extract(payload_json,'$.generation_recovery.intent_sha256')=? ORDER BY rowid DESC LIMIT 1",(request_id,generation['pending_operation_id'],generation.get('pending_intent_sha256'))).fetchone()
+            generation['operation_status']=row['status'] if row else None
+        finally:db.close()
     export = _project_export(
         settings,
         request_id,
@@ -883,6 +936,8 @@ def get_content_delivery_state(
         next_action = "EXCEL_EXPORTED"
     elif review["approved"]:
         next_action = "EXPORT_EXCEL"
+    elif review.get('can_resume'):
+        next_action = 'RESUME_HUMAN_REVIEW'
     elif (
         review["completed"]
         and not review["approved"]
@@ -890,6 +945,8 @@ def get_content_delivery_state(
         next_action = "REVIEW_COMPLETE_NO_EXPORT"
     elif generation["ready"]:
         next_action = "HUMAN_REVIEW"
+    elif generation.get('artifact_present'):
+        next_action = 'RECOVER_GENERATION'
     elif content_plan["ready"]:
         next_action = "GENERATE_SCRIPTS"
     elif source_plan.get("source_coverage_supported"):
@@ -1016,6 +1073,7 @@ def resolve_content_plan(
 def generate_scripts(
     settings: Settings,
     request_id: str,
+    *, operation_id: str | None = None, intent_sha256: str | None = None,
 ) -> dict[str, Any]:
     request_id = _validate_request_id(request_id)
     _load_request(settings, request_id)
@@ -1028,12 +1086,12 @@ def generate_scripts(
             "请先完成 Content Plan，再生成脚本。",
         )
 
-    if paths["generation_batch"].is_file():
-        return {
-            "recovered": True,
-            "remote_model_called": False,
-            "state": get_content_delivery_state(settings, request_id),
-        }
+    if paths["generation_batch"].is_file() and not operation_id:
+        state = get_content_delivery_state(settings, request_id)
+        if state['generation'].get('ready_for_human_review'):
+            return {'recovered': True, 'remote_model_called': False, 'state': state}
+        if not state['generation'].get('can_recover_artifacts'):
+            raise CanonicalOperationError('GENERATION_BATCH_NOT_REVIEWABLE', '本次文案生成没有完成。', '原始记录已保留；请明确选择重试，继续同一次创作。')
 
     executable = settings.pipeline_python_executable or settings.python_executable
     result = _run_pipeline_command(
@@ -1051,6 +1109,7 @@ def generate_scripts(
             str(settings.pipeline_root),
             "--max-attempts",
             "3",
+            *(['--operation-id', operation_id, '--intent-sha256', intent_sha256] if operation_id else []),
         ],
         timeout_seconds=300,
         needs_deepseek=True,
@@ -1059,7 +1118,7 @@ def generate_scripts(
     if (
         result.get("ok") is not True
         or result.get("ready_for_human_review") is not True
-        or result.get("generation_batch_created") is not True
+        or (result.get("generation_batch_created") is not True and result.get('recovered') is not True)
         or result.get("content_ledger_written") is not False
         or result.get("excel_exported") is not False
     ):
@@ -1080,6 +1139,14 @@ def generate_scripts(
     }
 
 
+def delivery_authorization(settings, session):
+    from .case_library_access import principal
+    from generation_recovery_v1 import authorization
+    actor=principal(settings,int(session.user['id']))
+    return {'actor':actor,'authorization':authorization(settings.database_path,actor,
+        hashlib.sha256(session.token_hash.encode()).hexdigest())}
+
+
 def submit_generation_review(
     settings: Settings,
     request_id: str,
@@ -1087,6 +1154,7 @@ def submit_generation_review(
     reviewer: str,
     items: list[dict[str, Any]],
     note: str = "",
+    authorization_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     request_id = _validate_request_id(
         request_id
@@ -1100,10 +1168,10 @@ def submit_generation_review(
         request_id,
     )
 
-    if (
+    if authorization_context is None and (
         paths["approved_batch"].is_file()
         or paths["reviewed_batch"].is_file()
-    ):
+    ) and _project_review(paths)['completed']:
         state = get_content_delivery_state(
             settings,
             request_id,
@@ -1250,6 +1318,7 @@ def submit_generation_review(
 
     with tempfile.NamedTemporaryFile(
         mode="w",
+        dir=_delivery_temporary_root(settings),
         encoding="utf-8",
         suffix=".json",
         prefix=(
@@ -1272,20 +1341,21 @@ def submit_generation_review(
         or settings.python_executable
     )
 
+    authorization_file = None
+    if authorization_context is not None:
+        with tempfile.NamedTemporaryFile(mode='w',encoding='utf-8',suffix='.json',delete=False,dir=_delivery_temporary_root(settings)) as handle:
+            json.dump(authorization_context,handle);authorization_file=Path(handle.name)
     try:
         result = _run_pipeline_command(
             settings,
             [
                 executable,
-                str(
-                    settings.pipeline_root
-                    / "scripts"
-                    / "review_generation_batch_v2.py"
-                ),
+                str(settings.pipeline_root / 'scripts/review_generation_batch_v2.py'),
                 "--batch",
                 str(batch_path),
                 "--review-file",
                 str(temporary_review),
+                *(['--authorization-file', str(authorization_file)] if authorization_file else []),
             ],
             timeout_seconds=120,
         )
@@ -1293,6 +1363,7 @@ def submit_generation_review(
         temporary_review.unlink(
             missing_ok=True
         )
+        if authorization_file: authorization_file.unlink(missing_ok=True)
 
     if (
         result.get("ok") is not True
@@ -1340,6 +1411,8 @@ def submit_generation_review(
 def export_mix_excel(
     settings: Settings,
     request_id: str,
+    authorization_context: dict[str, Any] | None = None,
+    export_intent_ref: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     request_id = _validate_request_id(
         request_id
@@ -1398,15 +1471,23 @@ def export_mix_excel(
         output_path.is_file()
     )
 
-    if not excel_recovered:
-        output_path = artifacts[
-            "desired_path"
-        ]
+    if export_intent_ref:
+        from generation_recovery_v1 import ref
+        from delivery_receipt_recovery_v1 import export_paths
+        intent,_=export_paths(settings.pipeline_root,request_id)
+        if ref(settings.pipeline_root,intent)!=export_intent_ref:
+            raise CanonicalOperationError('DELIVERY_INTENT_CONFLICT','导出操作身份已变化。','请保留文件并核对原操作。')
+    if not excel_recovered or not artifacts['receipt_path'].is_file():
+        if not excel_recovered: output_path = artifacts['desired_path']
         executable = (
             settings.pipeline_python_executable
             or settings.python_executable
         )
 
+        authorization_file = None
+        if authorization_context is not None:
+            with tempfile.NamedTemporaryFile(mode='w',encoding='utf-8',suffix='.json',delete=False,dir=_delivery_temporary_root(settings)) as handle:
+                json.dump(authorization_context,handle);authorization_file=Path(handle.name)
         try:
             process = subprocess.run(
                 [
@@ -1430,6 +1511,7 @@ def export_mix_excel(
                     ),
                     "--output",
                     str(output_path),
+                    *(['--authorization-file',str(authorization_file)] if authorization_file else []),
                 ],
                 cwd=settings.repo_root,
                 capture_output=True,
@@ -1449,6 +1531,8 @@ def export_mix_excel(
                 "Mix Excel 导出暂时无法完成。",
                 "请保留 Approved Batch，稍后恢复导出。",
             ) from exc
+        finally:
+            if authorization_file: authorization_file.unlink(missing_ok=True)
 
         if process.returncode != 0:
             raise CanonicalOperationError(
@@ -1490,30 +1574,38 @@ def export_mix_excel(
         settings.pipeline_python_executable
         or settings.python_executable
     )
-    closure_result = (
-        _run_pipeline_command(
-            settings,
-            [
-                executable,
-                str(
-                    settings.pipeline_root
-                    / "scripts"
-                    / "close_generation_export_v1.py"
-                ),
-                "--request-id",
-                request_id,
-                "--pipeline-root",
-                str(
-                    settings.pipeline_root
-                ),
-                "--excel",
-                str(
-                    actual_output_path
-                ),
-            ],
-            timeout_seconds=120,
+    closure_authorization_file=None
+    if authorization_context is not None:
+        with tempfile.NamedTemporaryFile(mode='w',encoding='utf-8',suffix='.json',delete=False,dir=_delivery_temporary_root(settings)) as handle:
+            json.dump(authorization_context,handle);closure_authorization_file=Path(handle.name)
+    try:
+        closure_result = (
+            _run_pipeline_command(
+                settings,
+                [
+                    executable,
+                    str(
+                        settings.pipeline_root
+                        / "scripts"
+                        / "close_generation_export_v1.py"
+                    ),
+                    "--request-id",
+                    request_id,
+                    "--pipeline-root",
+                    str(
+                        settings.pipeline_root
+                    ),
+                    *(['--authorization-file',str(closure_authorization_file)] if closure_authorization_file else []),
+                    "--excel",
+                    str(
+                        actual_output_path
+                    ),
+                ],
+                timeout_seconds=120,
+            )
         )
-    )
+    finally:
+        if closure_authorization_file:closure_authorization_file.unlink(missing_ok=True)
 
     if (
         closure_result.get("ok")
@@ -1592,6 +1684,13 @@ def exported_excel_path(
             "正式 Excel 尚未导出。",
             "请先完成人工批准和 Excel Export。",
         )
+    verified=_project_export(settings,request_id,request)
+    if not verified['completed']:
+        raise CanonicalOperationError('EXPORT_RECEIPT_REQUIRED','交付确认尚未完成，当前不能下载。','请继续完成原导出操作；文件会保留。')
+    from delivery_receipt_recovery_v1 import export_paths
+    if export_paths(settings.pipeline_root,request_id)[0].is_file():
+        from close_generation_export_v1 import close_generation_export
+        close_generation_export(pipeline_root=settings.pipeline_root,request_id=request_id,excel_path=path,verify_only=True)
     return path
 
 
@@ -1611,4 +1710,83 @@ def exported_excel_filename(
     return export_filename_for_request(
         request
     )
+
+
+def completed_mix_export(settings: Settings, request_id: str) -> dict[str, Any] | None:
+    """Read-only original Closure verification; never enqueue or repair artifacts."""
+    from close_generation_export_v1 import close_generation_export, ExportClosureError
+    from .database import connect
+    from .task_service import get_task
+    request_id = _validate_request_id(request_id)
+    closure = settings.pipeline_root / 'data/generation_batches' / request_id / 'generation_export_closure_v1.json'
+    if not closure.is_file():
+        return None
+    try:
+        _load_request(settings, request_id)
+        excel = exported_excel_path(settings, request_id)
+        result = close_generation_export(pipeline_root=settings.pipeline_root, request_id=request_id, excel_path=excel, verify_only=True)
+    except (ExportClosureError, RecoveryError, OSError, ValueError) as exc:
+        raise CanonicalOperationError('EXPORT_CLOSURE_RECOVERY_INVALID', '已完成导出的文件或记录校验不一致。', '请保留历史记录并联系维护人员检查；本次未建立新任务。') from exc
+    db = connect(settings.database_path)
+    try:
+        row = db.execute("SELECT task_id FROM tasks WHERE task_type='excel_export' AND subject_ref=? AND operation_identity=? ORDER BY CASE status WHEN 'completed' THEN 0 WHEN 'running' THEN 1 WHEN 'queued' THEN 2 ELSE 3 END,created_at DESC,task_id LIMIT 1", (request_id, 'mix_export:' + request_id)).fetchone()
+    finally:
+        db.close()
+    return {'response_version': 'content-operation-response-v1.1', 'accepted': False, 'recovered': True,
+        'task': get_task(settings.database_path, row['task_id']) if row else None, 'canonical_result': result}
+
+
+def submit_mix_export(settings: Settings, request_id: str, created_by_user_id: int, authorization_context=None) -> dict[str, Any]:
+    completed = completed_mix_export(settings, request_id)
+    if completed is not None:
+        return completed  # Historical reads remain available after withdrawal.
+    return _queue_open_mix_export(settings, request_id, created_by_user_id, authorization_context)
+
+
+from .compatibility_gate import guarded as _compatibility_guarded
+
+
+@_compatibility_guarded
+def _queue_open_mix_export(settings: Settings, request_id: str, created_by_user_id: int, authorization_context=None) -> dict[str, Any]:
+    from .background_task_service import create_background_task
+    from .operation_lock import operation_lock, scoped_lock_key, OperationLockTimeout
+    _, request = _load_request(settings, request_id)
+    # The original writer holds this same Business lock. Check again INSIDE
+    # that lock so completion between the first read and enqueue cannot create
+    # another execution Task. Zero wait avoids reversing a writer's lock order.
+    # The calling Request gateway already holds the backup barrier. Reuse the
+    # original keyed lock directly, as other nested Console gateways do.
+    try:
+        with operation_lock(settings.pipeline_root, scoped_lock_key('business', str(request.get('persona_id') or '')), timeout_seconds=0.0):
+            completed = completed_mix_export(settings, request_id)
+            if completed is not None:
+                return completed
+            export_context=None
+            if authorization_context is not None:
+                from export_mix_excel_v1 import prepare_mix_export
+                from generation_recovery_v1 import ref
+                paths=_request_paths(settings,request_id)
+                if not _project_review(paths)['approved']:
+                    raise CanonicalOperationError('HUMAN_BUNDLE_INVALID','审核收据尚未完成。','请先继续完成原审核操作，不会建立导出任务。')
+                artifacts=_resolve_export_artifacts(settings,request_id,request)
+                if not paths['mix_template'].is_file():
+                    raise CanonicalOperationError('MIX_EXCEL_TEMPLATE_MISSING','原生导出模板缺失。','请恢复冻结模板后继续原操作，不会建立新任务。')
+                intent,_=prepare_mix_export(pipeline_root=settings.pipeline_root,request_id=request_id,
+                    batch_path=paths['approved_batch'],template_path=paths['mix_template'],
+                    output_path=artifacts['actual_path'],authorization_context=authorization_context)
+                export_context={'export_intent_ref':ref(settings.pipeline_root,intent),'authorization_context':authorization_context}
+                from .database import connect
+                from .task_service import resume_mix_export_task
+                db=connect(settings.database_path)
+                try:
+                    row=db.execute("SELECT task_id FROM tasks WHERE subject_ref=? AND operation_identity=? AND json_extract(payload_json,'$.export_context.export_intent_ref.sha256')=? ORDER BY rowid LIMIT 1",(request_id,'mix_export:'+request_id,export_context['export_intent_ref']['sha256'])).fetchone()
+                finally:db.close()
+                if row:
+                    task=resume_mix_export_task(settings.database_path,row['task_id'],export_context,queue_max=settings.task_queue_max)
+                    return {'accepted':True,'task':task}
+            task = create_background_task(settings, operation='mix_export', request_id=request_id,
+                created_by_user_id=created_by_user_id, **({'export_context':export_context} if export_context else {}))
+            return {'accepted': True, 'task': task}
+    except OperationLockTimeout as exc:
+        raise CanonicalOperationError('OPERATION_IN_PROGRESS', '这次导出正在处理。', '请等待当前操作完成后刷新，不会建立重复任务。') from exc
 

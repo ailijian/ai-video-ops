@@ -17,7 +17,6 @@ from pathlib import Path
 from typing import Any, Callable
 from xml.etree import ElementTree
 
-from openai import OpenAI
 from content_quality_v1 import (
     DEFAULT_CANDIDATE_POOL_SIZE,
     PLAN_SCHEMA_VERSION,
@@ -576,6 +575,9 @@ def persist_remote_failure_telemetry(
 
 
 def get_client() -> OpenAI:
+    # Read-only canonical resolvers and Console projections do not need the
+    # external provider SDK. Import it only at the actual model boundary.
+    from openai import OpenAI
     key = os.getenv("DEEPSEEK_API_KEY")
     if not key:
         raise RuntimeError(
@@ -1902,6 +1904,21 @@ def render_generation_prompt(
     remaining_slots: list[dict[str, Any]],
     avoid_titles: list[str],
 ) -> str:
+    material_aliases: dict[str, str] = {}
+
+    def model_constraints(value):
+        # Canonical material refs remain in the frozen plan and native validator.
+        # Opaque hashes are unnecessary at the transport boundary and can contain
+        # phone-shaped digit runs. Never exempt them from the privacy scanner.
+        projected = copy.deepcopy(value)
+        if isinstance(projected, dict):
+            for key in ("must_express_selected_material_centers", "must_not_absorb_other_selected_material_centers"):
+                for center in projected.get(key) or []:
+                    atom = center.get("fact_atom_ref") if isinstance(center, dict) else None
+                    if isinstance(atom, str) and re.fullmatch(r"[a-z][a-z0-9_]*::[a-f0-9]{20}", atom):
+                        center["fact_atom_ref"] = material_aliases.setdefault(atom, f"MATERIAL_CENTER_{len(material_aliases) + 1:03d}")
+        return projected
+
     prompt_context = {
         "persona": safe_input["persona"],
         "speaker": safe_input.get("speaker"),
@@ -1953,9 +1970,9 @@ def render_generation_prompt(
                         "visual_anchor": slot["selected_concept"].get(
                             "visual_anchor"
                         ),
-                        "generation_constraints": slot["selected_concept"].get(
+                        "generation_constraints": model_constraints(slot["selected_concept"].get(
                             "generation_constraints"
-                        ),
+                        )),
                     }
                     if slot.get("selected_concept")
                     else None

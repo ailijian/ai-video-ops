@@ -37,6 +37,8 @@ from .auth_service import (
     resolve_session,
 )
 from .background_task_service import BackgroundTaskRunner, create_background_task
+from .generation_recovery_gateway import preview as preview_generation_retry, confirm as confirm_generation_retry
+from .content_delivery_gateway import completed_mix_export, submit_mix_export
 from .canonical_gateway import (
     CanonicalOperationError,
     case_cover_path,
@@ -138,6 +140,7 @@ from .content_gateway import (
 )
 
 from .content_delivery_gateway import (
+    delivery_authorization,
     export_mix_excel,
     exported_excel_filename,
     exported_excel_path,
@@ -244,6 +247,15 @@ class SpeakerFinalConfirmationRequest(BaseModel):
     review_context: str = Field(max_length=200000)
     preview_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     confirmation: Literal["approve_speaker_profile"]
+
+
+class GenerationRecoveryPreviewRequest(BaseModel):
+    model_config = {'extra': 'forbid'}
+    operation_id: str = Field(pattern=r'^[a-f0-9]{32}$')
+
+
+class GenerationRecoveryConfirmRequest(GenerationRecoveryPreviewRequest):
+    preview_sha256: str = Field(pattern=r'^[a-f0-9]{64}$')
 
 
 class LoginRequest(BaseModel):
@@ -481,6 +493,16 @@ class CustomerPersonaApprovalRequest(BaseModel):
         default="",
         max_length=2000,
     )
+
+
+class NovelNewsGenerateRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+
+
+class NovelNewsRetryRequest(BaseModel):
+    model_config = {"extra": "forbid"}
+    parent_intent_sha256: str = Field(pattern="^[a-f0-9]{64}$")
+    confirmation: Literal['retry_unknown_generation_with_possible_additional_cost']
 
 
 class CustomerFinalConfirmationRequest(BaseModel):
@@ -901,11 +923,29 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             response.headers["Cache-Control"] = "no-cache, max-age=0, must-revalidate"
         return response
 
+    from delivery_receipt_recovery_v1 import ReceiptRecoveryError
+    from generation_recovery_v1 import RecoveryError
+
+    @app.exception_handler(RecoveryError)
+    async def recovery_lineage_error_handler(_: Request, exc: RecoveryError):
+        return JSONResponse(status_code=409,content={'detail':error_detail(exc.code,'原操作的来源或文件身份已变化。','请保留原记录并重新核对来源，不会自动继续审核或导出。')})
+
+    @app.exception_handler(ReceiptRecoveryError)
+    async def receipt_recovery_error_handler(_: Request, exc: ReceiptRecoveryError):
+        return JSONResponse(status_code=403 if exc.code in {'DELIVERY_AUTHORIZATION_REQUIRED','DELIVERY_ACTOR_CONFLICT'} else 409,
+            content={'detail':error_detail(exc.code,'原操作的来源、授权或文件尚未通过核对。',
+                '请保留原文件，使用原审核身份核对当前来源；不会自动批准或交付。')})
+
     @app.exception_handler(CanonicalOperationError)
     async def canonical_error_handler(
         _: Request, exc: CanonicalOperationError
     ) -> JSONResponse:
-        status_code = 404 if exc.code in {"CASE_OBJECT_NOT_FOUND", "CASE_NOT_FOUND", "CUSTOMER_NOT_FOUND", "SPEAKER_NOT_FOUND"} else 422 if exc.code in {"INVALID_BUSINESS_ID", "INVALID_SPEAKER_ID"} else 403 if exc.code in {"CASE_REVIEWER_REQUIRED", "BUSINESS_SCOPE_REVIEWER_REQUIRED", "NOVEL_NEWS_NOT_AVAILABLE", "REVIEW_ACTOR_MISMATCH"} else 409 if exc.code in {
+        status_code = 404 if exc.code in {"CASE_OBJECT_NOT_FOUND", "CASE_NOT_FOUND", "CUSTOMER_NOT_FOUND", "SPEAKER_NOT_FOUND"} else 422 if exc.code in {"INVALID_BUSINESS_ID", "INVALID_SPEAKER_ID", "GENERATION_RECOVERY_SCHEMA_INVALID"} else 403 if exc.code in {"DELIVERY_AUTHORIZATION_REQUIRED","DELIVERY_ACTOR_CONFLICT","CASE_REVIEWER_REQUIRED", "BUSINESS_SCOPE_REVIEWER_REQUIRED", "NOVEL_NEWS_NOT_AVAILABLE", "REVIEW_ACTOR_MISMATCH", "GENERATION_RECOVERY_AUTHORIZATION_REQUIRED"} else 409 if exc.code in {
+            'DELIVERY_SOURCE_CHANGED','DELIVERY_INTENT_CONFLICT','HUMAN_BUNDLE_INVALID','EXPORT_PUBLICATION_INVALID','EXPORT_LEGACY_UNBOUND_ORPHAN',
+            "GENERATION_RECOVERY_CONFLICT", "GENERATION_RECOVERY_GRAPH_INVALID", "GENERATION_RECOVERY_SOURCE_CHANGED",
+            "GENERATION_RECOVERY_SCOPE_UNSUPPORTED", "GENERATION_RECOVERY_OUTCOME_UNKNOWN", "GENERATION_RECOVERY_PENDING",
+            "GENERATION_BATCH_NOT_REVIEWABLE",
+            "EXPORT_ALREADY_CLOSED",
             "SPEAKER_BUSINESS_LINEAGE_MISMATCH",
             "LEGACY_SCOPE_REVIEW_BLOCKED", "PERSONA_APPROVAL_BLOCKED", "PERSONA_AMENDMENT_BLOCKED", "SCALAR_FACT_CONFLICT",
             "CASE_DISPLAY_CONFLICT",
@@ -1806,17 +1846,30 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/create/novel-news/{request_id}/generate")
     def novel_news_generate_route(
         request_id: str,
+        payload: NovelNewsGenerateRequest | None = None,
         x_csrf_token: str | None = Header(default=None, alias="X-CSRF-Token"),
         session: SessionContext = Depends(require_console_access),
     ) -> dict[str, Any]:
         require_csrf(session, x_csrf_token)
         require_novel_news(settings, str(session.user["phone"]))
-        task = create_background_task(
-            settings, operation="novel_news_generate", request_id=request_id,
-            created_by_user_id=int(session.user["id"]),
-        )
-        background_task_runner.schedule(task["task_id"])
-        return {"accepted": True, "task": task}
+        from .novel_news_generation_gateway import submit
+        result = submit(settings, request_id, int(session.user['id']), delivery_authorization(settings, session))
+        if result['accepted']:
+            background_task_runner.schedule(result['task']['task_id'])
+        return result
+
+    @app.post('/api/create/novel-news/{request_id}/retry-generation')
+    def novel_news_retry_route(request_id: str, payload: NovelNewsRetryRequest,
+        x_csrf_token: str | None = Header(default=None, alias='X-CSRF-Token'),
+        session: SessionContext = Depends(require_console_access)):
+        require_csrf(session, x_csrf_token)
+        require_novel_news(settings, str(session.user['phone']))
+        from .novel_news_generation_gateway import submit
+        result = submit(settings, request_id, int(session.user['id']), delivery_authorization(settings, session),
+                        expected_parent=payload.parent_intent_sha256)
+        if result['accepted']:
+            background_task_runner.schedule(result['task']['task_id'])
+        return result
 
     @app.post("/api/create/novel-news/{request_id}/review")
     def novel_news_review_route(
@@ -1840,12 +1893,12 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     ) -> dict[str, Any]:
         require_csrf(session, x_csrf_token)
         require_novel_news(settings, str(session.user["phone"]))
-        task = create_background_task(
-            settings, operation="novel_news_export", request_id=request_id,
-            created_by_user_id=int(session.user["id"]),
-        )
-        background_task_runner.schedule(task["task_id"])
-        return {"accepted": True, "task": task}
+        from .news_export_gateway import submit as submit_news_export
+        result = locked_authority_call('request', request_id, submit_news_export, settings,
+            request_id, int(session.user['id']), delivery_authorization(settings,session), novel=True)
+        if result.get('accepted'):
+            background_task_runner.schedule(result['task']['task_id'])
+        return result
 
     @app.get("/api/create/novel-news/{request_id}/excel")
     def novel_news_excel_route(
@@ -2025,6 +2078,26 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         background_task_runner.schedule(task["task_id"])
         return {"accepted": True, "task": task}
 
+    @app.post('/api/create/{request_id}/generation-recovery/preview')
+    def preview_generation_retry_route(request_id: str, payload: GenerationRecoveryPreviewRequest,
+        x_csrf_token: str | None = Header(default=None, alias='X-CSRF-Token'),
+        session: SessionContext = Depends(require_console_access)):
+        require_csrf(session, x_csrf_token)
+        require_if_novel_request(settings, request_id, str(session.user['phone']))
+        return locked_authority_call('request', request_id, preview_generation_retry,
+            settings, request_id, session, payload.operation_id)
+
+    @app.post('/api/create/{request_id}/generation-recovery/confirm')
+    def confirm_generation_retry_route(request_id: str, payload: GenerationRecoveryConfirmRequest,
+        x_csrf_token: str | None = Header(default=None, alias='X-CSRF-Token'),
+        session: SessionContext = Depends(require_console_access)):
+        require_csrf(session, x_csrf_token)
+        require_if_novel_request(settings, request_id, str(session.user['phone']))
+        task = locked_authority_call('request', request_id, confirm_generation_retry,
+            settings, request_id, session, payload.operation_id, payload.preview_sha256)
+        background_task_runner.schedule(task['task_id'])
+        return {'accepted': True, 'task': task}
+
     @app.post("/api/create/{request_id}/review")
     def generation_review_route(
         request_id: str,
@@ -2050,6 +2123,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                     for item in payload.items
                 ],
                 note=payload.note,
+                authorization_context=delivery_authorization(settings,session),
             )
         }
 
@@ -2064,14 +2138,13 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     ) -> dict[str, Any]:
         require_csrf(session, x_csrf_token)
         require_if_novel_request(settings, request_id, str(session.user["phone"]))
-        task = create_background_task(
-            settings,
-            operation="mix_export",
-            request_id=request_id,
-            created_by_user_id=int(session.user["id"]),
-        )
-        background_task_runner.schedule(task["task_id"])
-        return {"accepted": True, "task": task}
+        completed = completed_mix_export(settings, request_id)
+        if completed is not None:
+            return completed
+        result = locked_authority_call('request', request_id, submit_mix_export, settings, request_id, int(session.user['id']), delivery_authorization(settings,session))
+        if result.get('accepted'):
+            background_task_runner.schedule(result['task']['task_id'])
+        return result
 
     @app.get("/api/create/{request_id}/exported-excel")
     def download_exported_excel(
@@ -2239,14 +2312,12 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         )
         require_if_novel_request(settings, request_id, str(session.user["phone"]))
 
-        task = create_background_task(
-            settings,
-            operation="news_export",
-            request_id=request_id,
-            created_by_user_id=int(session.user["id"]),
-        )
-        background_task_runner.schedule(task["task_id"])
-        return {"accepted": True, "task": task}
+        from .news_export_gateway import submit as submit_news_export
+        result = locked_authority_call('request', request_id, submit_news_export, settings,
+            request_id, int(session.user['id']), delivery_authorization(settings,session), novel=False)
+        if result.get('accepted'):
+            background_task_runner.schedule(result['task']['task_id'])
+        return result
 
     @app.get("/api/create/news/{request_id}/excel")
     def download_news_excel_route(

@@ -1,4 +1,5 @@
 import { escapeHtml } from "./case-components.js?v=flow-closure-2";
+import { createPreparationOperation, pinNewsRequestLocation } from "./creation-entry-flow.js?v=entry-auto-2";
 import { createContentDeliveryViews } from "./content-delivery-views.js?v=productized-stage3-3";
 import { createNewsDeliveryViews } from "./news-delivery-views.js?v=productized-stage3-3";
 import { createNovelNewsViews } from "./novel-news-views.js?v=gate-c2-1";
@@ -22,6 +23,29 @@ export function createContentViews({
 }) {
   let options = null;
   let confirmationKey = null;
+  let entryVersion = 0;
+  let previewTimer = null;
+  let previewVersion = 0;
+  let preparing = false;
+  let checkCurrentEntry = null;
+
+  function currentEntryGuard() {
+    const version = previewVersion;
+    const route = window.location.href;
+    const form = document.querySelector("#content-entry-form");
+    return () => version === previewVersion && route === window.location.href && form === document.querySelector("#content-entry-form");
+  }
+
+  function schedulePreview(delay = 300) {
+    const form = document.querySelector("#content-entry-form");
+    if (!form || form.classList.contains("completed") || preparing) return;
+    clearTimeout(previewTimer);
+    const version = ++previewVersion;
+    confirmationKey = null;
+    document.querySelector("#capacity-preview-result").innerHTML = CreationState({
+      tone: "running", title: "正在检查创作条件", body: "正在核对所选类型、数量和可用创作结构。" });
+    previewTimer = setTimeout(() => { void checkCurrentEntry?.(version); }, delay);
+  }
 
   const deliveryViews = createContentDeliveryViews({ api, showToast, escapeHtml });
   const newsDeliveryViews = createNewsDeliveryViews({ api, showToast, escapeHtml });
@@ -88,9 +112,12 @@ export function createContentViews({
         ${CreationSummary(selectionSummary())}
         <button type="button" class="btn btn-ghost" data-edit-creation-selection>更换选择</button>`;
       compact.querySelector("[data-edit-creation-selection]")?.addEventListener("click", () => {
+        if (preparing) return;
         document.querySelector("#capacity-preview-result").innerHTML = "";
         unlockEntryForm();
+        schedulePreview();
       });
+      compact.querySelector("[data-edit-creation-selection]").disabled = preparing;
     }
   }
 
@@ -124,6 +151,7 @@ export function createContentViews({
     if (newsModes) newsModes.hidden = !news;
     if (quantityInput) quantityInput.disabled = news || document.querySelector("#content-entry-form")?.classList.contains("completed");
     if (submit && !submit.closest("form")?.classList.contains("completed")) submit.textContent = "查看可创作内容";
+    if (submit) submit.hidden = !news;
   }
 
   function syncSpeakerOptions(customer, requestedSpeaker = "") {
@@ -146,9 +174,8 @@ export function createContentViews({
       return CreationState({
         tone: "running",
         eyebrow: "创作准备",
-        title: "正在恢复创作准备",
+        title: "正在恢复原创作请求",
         body: "本次选择已经保留，可以安全继续。",
-        actions: `<button id="recover-source-handoff" class="btn btn-primary" type="button">继续准备</button>`,
       });
     }
     if (sourcePlan?.artifactExists === true && sourcePlan.coverageStatus !== "supported") {
@@ -175,9 +202,8 @@ export function createContentViews({
     if (!sourcePlan || sourcePlan.artifactExists !== true) {
       return CreationState({
         eyebrow: "创作准备",
-        title: "还需要准备创作内容",
-        body: "系统会整理客户信息、历史内容和可用参考。",
-        actions: `<button id="resolve-sources" class="btn btn-primary" type="button">准备创作内容</button>`,
+        title: "正在核对创作依据",
+        body: "系统正在整理客户信息、历史内容和可用参考。",
       });
     }
     return CreationState({
@@ -186,6 +212,53 @@ export function createContentViews({
       title: "准备完成",
       body: "已经找到足够的创作依据。",
     });
+  }
+
+  function preparationOperation(confirmation, active = null) {
+    const form = document.querySelector("#content-entry-form");
+    const route = window.location.href;
+    const version = entryVersion;
+    const host = document.querySelector("#capacity-preview-result");
+    if (form) {
+      form.dataset.requestedQuantity = String(confirmation.requested_quantity);
+      form.dataset.confirmedQuantity = String(confirmation.confirmed_quantity);
+    }
+    const current = () => entryVersion === version && window.location.href === route && document.querySelector("#content-entry-form") === form;
+    const operation = createPreparationOperation({ api, confirmation, active, isCurrent: current,
+      onStage(title) {
+        if (!current()) return;
+        host.innerHTML = CreationState({ tone: "running", eyebrow: "创作准备", title,
+          body: "本次选择已保留，准备完成后再由你生成内容。" });
+        lockEntryForm(title);
+      },
+    });
+    return async function resume() {
+      if (preparing || !current()) return;
+      preparing = true;
+      try {
+        if (await operation.continue()) {
+          preparing = false;
+          await restoreActiveRequest(false);
+        }
+      } catch (error) {
+        if (!current()) return;
+        preparing = false;
+        if (error.detail?.preflight && !operation.requestId) {
+          unlockEntryForm();
+          renderResult(error.detail.preflight);
+          showToast("创作条件已经变化，请核对最新结果后再确认。");
+          return;
+        }
+        host.innerHTML = CreationState({ tone: "warning", title: "创作准备尚未完成",
+          body: safeCreationMessage(error.detail?.next_action || error.message, "请继续原操作，系统会核对当前授权和来源。"),
+          content: `<p>已保存的步骤会继续保留，不会重新开始另一条创作。</p>`,
+          actions: `<button id="continue-creation-preparation" class="btn btn-primary" type="button">继续准备</button>` });
+        lockEntryForm("创作准备尚未完成");
+        host.querySelector("#continue-creation-preparation")?.addEventListener("click", resume);
+      } finally {
+        if (current()) preparing = false;
+      }
+    };
   }
 
   function renderRequestEstablished(host, {
@@ -242,26 +315,6 @@ export function createContentViews({
     });
   }
 
-  function bindResolveSourcesButton(host, requestId) {
-    const button = host.querySelector("#resolve-sources");
-    if (!button) return;
-    button.addEventListener("click", async () => {
-      button.disabled = true;
-      button.textContent = "正在准备…";
-      try {
-        await api(`/api/create/${encodeURIComponent(requestId)}/resolve-sources`, { method: "POST" });
-        showToast("创作内容准备完成。");
-        await restoreSelectedProfileRequest();
-      } catch (error) {
-        showToast(safeCreationMessage(error.detail?.next_action || error.detail?.message || error.message, "创作内容暂时无法准备，请稍后重试。"));
-        if (button.isConnected) {
-          button.disabled = false;
-          button.textContent = "准备创作内容";
-        }
-      }
-    });
-  }
-
   function activeSpeakerUnavailable(host) {
     host.innerHTML = CreationState({
       tone: "error",
@@ -273,11 +326,13 @@ export function createContentViews({
   }
 
   async function restoreActiveNewsRequest() {
+    const current = currentEntryGuard();
     const business = document.querySelector("#create-business");
     const host = document.querySelector("#capacity-preview-result");
     if (!business || !host) return false;
     try {
       const response = await api(`/api/create/news/active?business_id=${encodeURIComponent(business.value)}`);
+      if (!current()) return true;
       const active = response.active_request;
       if (!active) {
         unlockEntryForm();
@@ -297,9 +352,12 @@ export function createContentViews({
       document.querySelectorAll(".profile-choice").forEach((label) => label.classList.toggle("selected", label.querySelector("input").checked));
       syncProfileSpecificUi();
       lockEntryForm("继续上次新闻体创作");
+      pinNewsRequestLocation({requestId:active.request_id,businessId:business.value,speakerId:active.speaker_id,
+        newsMode:'cross_profile_repurpose'});
       await newsDeliveryViews.restore(active.request_id, host);
       return true;
     } catch (error) {
+      if (!current()) return true;
       host.innerHTML = CreationState({
         tone: "error",
         title: "这次创作暂时无法继续",
@@ -312,11 +370,13 @@ export function createContentViews({
   }
 
   async function restoreActiveNovelNewsRequest() {
+    const current = currentEntryGuard();
     const business = document.querySelector("#create-business");
     const host = document.querySelector("#capacity-preview-result");
     if (!business || !host) return false;
     try {
       const response = await api(`/api/create/active-request?business_id=${encodeURIComponent(business.value)}&profile=news`);
+      if (!current()) return true;
       const active = response.active_request;
       if (!active) { unlockEntryForm(); return false; }
       const speaker = document.querySelector("#create-speaker");
@@ -328,6 +388,8 @@ export function createContentViews({
         speaker.value = active.speaker_id;
       }
       lockEntryForm("继续上次新闻体 · 创作新内容");
+      pinNewsRequestLocation({requestId:active.request_id,businessId:business.value,speakerId:active.speaker_id,
+        newsMode:'novel_content'});
       if (active.handoff_ready === false) {
         host.innerHTML = CreationState({
           title: "继续上次新闻体创作",
@@ -358,6 +420,7 @@ export function createContentViews({
       await novelNewsViews.restore(active.request_id, host);
       return true;
     } catch (error) {
+      if (!current()) return true;
       host.innerHTML = CreationState({
         tone: "error", title: "新闻体创作暂时无法恢复",
         body: safeCreationMessage(error.detail?.next_action || error.detail?.message || error.message, "请查看任务记录。"),
@@ -368,7 +431,10 @@ export function createContentViews({
     }
   }
 
-  async function restoreActiveRequest() {
+  async function restoreActiveRequest(autoPrepare = true) {
+    const version = previewVersion;
+    const route = window.location.href;
+    const form = document.querySelector("#content-entry-form");
     const business = document.querySelector("#create-business");
     const host = document.querySelector("#capacity-preview-result");
     if (!business || !host) return false;
@@ -377,6 +443,7 @@ export function createContentViews({
       const response = await api(`/api/create/active-request?business_id=${encodeURIComponent(business.value)}`);
       active = response.active_request;
     } catch (error) {
+      if (version !== previewVersion || route !== window.location.href || form !== document.querySelector("#content-entry-form")) return true;
       host.innerHTML = CreationState({
         tone: "error",
         title: "这次创作暂时无法继续",
@@ -386,6 +453,7 @@ export function createContentViews({
       lockEntryForm("暂时无法继续");
       return true;
     }
+    if (version !== previewVersion || route !== window.location.href || form !== document.querySelector("#content-entry-form")) return true;
     if (!active) {
       unlockEntryForm();
       return false;
@@ -422,35 +490,17 @@ export function createContentViews({
       },
     });
     lockEntryForm("继续上次素材混剪创作");
-    if (active.handoff_ready === false) {
-      const recover = host.querySelector("#recover-source-handoff");
-      recover?.addEventListener("click", async () => {
-        recover.disabled = true;
-        recover.textContent = "正在恢复…";
-        try {
-          await api("/api/create/confirm", {
-            method: "POST",
-            body: JSON.stringify({
-              business_id: active.business_id,
-              speaker_id: active.speaker_id,
-              profile: active.profile,
-              requested_quantity: Number(active.requested_quantity),
-              confirmed_quantity: Number(active.confirmed_quantity),
-              idempotency_key: newConfirmationKey(),
-            }),
-          });
-          showToast("本次创作已经恢复。");
-          await restoreActiveRequest();
-        } catch (error) {
-          showToast(safeCreationMessage(error.detail?.next_action || error.detail?.message || error.message, "本次创作暂时无法恢复，请稍后重试。"));
-          if (recover.isConnected) {
-            recover.disabled = false;
-            recover.textContent = "继续准备";
-          }
-        }
-      });
-    } else {
-      bindResolveSourcesButton(host, active.request_id);
+    if (active.handoff_ready === false || !active.source_plan_artifact_exists) {
+      const resume = preparationOperation({ business_id: active.business_id, speaker_id: active.speaker_id,
+        profile: active.profile, requested_quantity: Number(active.requested_quantity),
+        confirmed_quantity: Number(active.confirmed_quantity), idempotency_key: `resume_${active.request_id}` }, active);
+      if (autoPrepare) await resume();
+      else {
+        host.innerHTML = CreationState({ tone: "warning", title: "创作准备尚未完成", body: "原请求已保留，请继续完成来源准备。",
+          actions: `<button id="continue-creation-preparation" class="btn btn-primary" type="button">继续准备</button>` });
+        host.querySelector("#continue-creation-preparation")?.addEventListener("click", resume);
+      }
+      return true;
     }
     bindAbandonRequest(host, active.request_id);
     if (active.source_coverage_supported === true) await deliveryViews.restore(active.request_id);
@@ -470,10 +520,13 @@ export function createContentViews({
       const input = document.querySelector("#create-quantity");
       input?.focus();
       input?.scrollIntoView({ behavior: "smooth", block: "center" });
+      schedulePreview();
     });
   }
 
   function renderResult(preview) {
+    const version = previewVersion;
+    const form = document.querySelector("#content-entry-form");
     const host = document.querySelector("#capacity-preview-result");
     if (!host) return;
     const entryForm = document.querySelector("#content-entry-form");
@@ -566,53 +619,26 @@ export function createContentViews({
           </details>` : ""}
         <p class="creation-governance-line">本次结果只判断内容是否值得继续做，不代表已获得相关素材使用权。</p>`,
       actions: recommendation.can_continue ? `
-        <button id="content-generation-next" class="btn btn-primary" type="button">按 ${recommended} 条继续</button>
+        <button id="content-generation-next" class="btn btn-primary" type="button">开始本次创作（${recommended} 条）</button>
         <button class="btn btn-secondary" type="button" data-adjust-quantity>调整数量</button>` : "",
     });
     bindAdjustQuantity(host);
     const next = host.querySelector("#content-generation-next");
     next?.addEventListener("click", async () => {
+      if (preparing || version !== previewVersion || form !== document.querySelector("#content-entry-form")) return;
       const key = confirmationKey || newConfirmationKey();
       confirmationKey = key;
       next.disabled = true;
       next.textContent = "正在创建本次创作…";
-      try {
-        const response = await api("/api/create/confirm", {
-          method: "POST",
-          body: JSON.stringify({
+      const resume = preparationOperation({
             business_id: preview.business.business_id,
             speaker_id: preview.speaker.speaker_id,
             profile,
             requested_quantity: requested,
             confirmed_quantity: recommended,
             idempotency_key: key,
-          }),
-        });
-        const result = response.result;
-        renderRequestEstablished(host, {
-          requestId: result.request_id,
-          businessId: preview.business.business_id,
-          profile,
-          requestedQuantity: requested,
-          confirmedQuantity: result.confirmed_quantity,
-          handoffReady: true,
-          recovered: Boolean(result.recovered),
-        });
-        lockEntryForm(result.recovered ? "继续上次素材混剪创作" : "本次创作已创建");
-        bindResolveSourcesButton(host, result.request_id);
-        showToast(result.recovered ? "已恢复上次创作。" : "本次创作已创建。");
-      } catch (error) {
-        if (error.detail?.preflight) {
-          renderResult(error.detail.preflight);
-          showToast("创作条件已经变化，已显示最新检查结果。");
-          return;
-        }
-        showToast(safeCreationMessage(error.detail?.next_action || error.detail?.message || error.message, "本次创作暂时无法创建，请稍后重试。"));
-        if (next.isConnected) {
-          next.disabled = false;
-          next.textContent = `按 ${recommended} 条继续`;
-        }
-      }
+      });
+      await resume();
     });
   }
 
@@ -725,37 +751,44 @@ export function createContentViews({
     const host = document.querySelector("#capacity-preview-result");
 
     business.addEventListener("change", async () => {
+      ++previewVersion;
       unlockEntryForm();
       syncSpeakerOptions(selectedCustomer(business.value));
       host.innerHTML = "";
       confirmationKey = null;
       lockEntryForm("正在检查现有创作…");
-      await restoreSelectedProfileRequest();
+      if (!await restoreSelectedProfileRequest()) schedulePreview();
     });
     speaker.addEventListener("change", () => {
       host.innerHTML = "";
       document.querySelector("#content-entry-form")?.classList.remove("has-capacity-result");
       confirmationKey = null;
+      schedulePreview();
     });
     document.querySelectorAll(".profile-choice input").forEach((input) => {
       input.addEventListener("change", async () => {
+        ++previewVersion;
         document.querySelectorAll(".profile-choice").forEach((label) => label.classList.toggle("selected", label.querySelector("input").checked));
         host.innerHTML = "";
         document.querySelector("#content-entry-form")?.classList.remove("has-capacity-result");
         confirmationKey = null;
         syncProfileSpecificUi();
         lockEntryForm("正在检查现有创作…");
-        await restoreSelectedProfileRequest();
+        if (!await restoreSelectedProfileRequest()) schedulePreview();
       });
     });
     document.querySelector("#create-quantity").addEventListener("input", () => {
       host.innerHTML = "";
       document.querySelector("#content-entry-form")?.classList.remove("has-capacity-result");
       confirmationKey = null;
+      schedulePreview();
     });
 
-    document.querySelector("#content-entry-form").addEventListener("submit", async (event) => {
-      event.preventDefault();
+    const entryForm = document.querySelector("#content-entry-form");
+    const route = window.location.href;
+    checkCurrentEntry = async (version) => {
+      const current = () => version === previewVersion && route === window.location.href && entryForm === document.querySelector("#content-entry-form");
+      if (!current() || entryForm.classList.contains("completed")) return;
       const errorBox = document.querySelector("#content-entry-error");
       errorBox.classList.remove("visible");
       const profile = selectedProfileValue();
@@ -776,10 +809,12 @@ export function createContentViews({
             method: "POST",
             body: JSON.stringify({ business_id: business.value, speaker_id: speakerId }),
           });
+          if (!current()) return;
           novelNewsViews.renderPreview(host, result.projection, {
             businessId: business.value, speakerId,
             onRequestCreated: async (requestId) => {
               lockEntryForm("继续新闻体 · 创作新内容");
+              pinNewsRequestLocation({requestId,businessId:business.value,speakerId,newsMode:'novel_content'});
               await novelNewsViews.restore(requestId, host);
             },
           });
@@ -791,9 +826,11 @@ export function createContentViews({
             method: "POST",
             body: JSON.stringify({ business_id: business.value, speaker_id: speakerId }),
           });
+          if (!current()) return;
           newsDeliveryViews.renderPreview(host, result.preview, {
             onRequestCreated: async (requestId) => {
               lockEntryForm("继续新闻体创作");
+              pinNewsRequestLocation({requestId,businessId:business.value,speakerId,newsMode:'cross_profile_repurpose'});
               await newsDeliveryViews.restore(requestId, host);
             },
           });
@@ -810,20 +847,39 @@ export function createContentViews({
             method: "POST",
             body: JSON.stringify({ business_id: business.value, speaker_id: speakerId, profile, quantity }),
           });
+          if (!current()) return;
           renderResult(result.preview);
         }
-        host.scrollIntoView({ behavior: "smooth", block: "start" });
       } catch (error) {
+        if (!current()) return;
+        const missingHistory = ["NEWS_DELIVERY_CONTENT_LEDGER_MISSING", "NEWS_DELIVERY_SOURCE_NOT_FOUND",
+          "NEWS_DELIVERY_SOURCE_NOT_STRONG_MEMORY", "NEWS_DELIVERY_SOURCE_NOT_ELIGIBLE"].includes(error.detail?.code);
+        host.innerHTML = CreationState({ tone: "warning", title: missingHistory ? "暂无可用的历史内容" : "创作条件暂未确认",
+          body: safeCreationMessage(error.detail?.next_action || error.message, "请重新检查当前创作条件。"),
+          actions: `<button type="button" class="btn btn-secondary" data-recheck-entry>重新检查</button>` });
+        host.querySelector("[data-recheck-entry]")?.addEventListener("click", () => schedulePreview(0));
         errorBox.textContent = safeCreationMessage(error.detail?.next_action || error.detail?.message || error.message, "当前可创作内容暂时无法读取，请稍后重试。");
         errorBox.classList.add("visible");
       } finally {
+        if (!current()) return;
         button.disabled = false;
         button.textContent = "查看可创作内容";
       }
+    };
+    entryForm.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      if (preparing || entryForm.classList.contains("completed")) return;
+      clearTimeout(previewTimer);
+      await checkCurrentEntry(++previewVersion);
     });
   }
 
   async function renderCreate() {
+    ++entryVersion;
+    ++previewVersion;
+    clearTimeout(previewTimer);
+    preparing = false;
+    checkCurrentEntry = null;
     const route = window.location.href;
     skeletonPage("创作");
     try {
@@ -838,7 +894,7 @@ export function createContentViews({
         const mode = context.mode;
         app.innerHTML = shell("创作记录", `<main class="page create-entry-page"><a class="back-link" href="/customers/${encodeURIComponent(context.business_id)}/content" data-route>← 返回 ${escapeHtml(context.display_name)} 的作品记录</a>${pageHeading("", `${context.display_name} · 创作记录`, "恢复原请求和审核结果；不会自动创建新任务。")}<div id="capacity-preview-result"><div id="content-delivery-host"></div></div></main>`);
         bindCommonActions();
-        if (["abandoned", "cancelled", "completed"].includes(context.status)) {
+        if (["abandoned", "cancelled"].includes(context.status) || (context.status === 'completed' && mode === 'mix')) {
           document.querySelector("#capacity-preview-result").innerHTML = CreationState({title:"本次创作已结束", body:"原请求和历史结果仍然保留；不会重新启动已结束的任务。"});
           return;
         }
@@ -857,7 +913,7 @@ export function createContentViews({
       renderForm(data);
       if (!document.querySelector("#content-entry-form")) return;
       lockEntryForm("正在检查现有创作…");
-      await restoreSelectedProfileRequest();
+      if (!await restoreSelectedProfileRequest()) schedulePreview(0);
     } catch (error) {
       if (window.location.href !== route) return;
       renderLoadError("创作入口暂时无法读取", error);

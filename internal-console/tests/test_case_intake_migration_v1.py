@@ -66,7 +66,7 @@ def test_migration_preserves_populated_backup_and_detects_repeated_start(tmp_pat
         if table != "schema_migrations":
             assert first[table] == rows
     assert get_task(copy, task["task_id"])["payload"]["profile"] == "mix"
-    assert len(first["schema_migrations"]) == len(before["schema_migrations"]) + 3
+    assert [row[0] for row in first['schema_migrations']]==sorted(p.stem for p in MIGRATIONS.glob('*.sql'))
     assert first['case_capability_events']==[]  # Migration never grants any account.
     assert first['profile_compatibility_capability_events'] == []
     with transaction(copy) as db:
@@ -101,7 +101,7 @@ def test_concurrent_initializers_apply_migration_once(tmp_path):
     with ThreadPoolExecutor(max_workers=2) as pool:
         list(pool.map(lambda _: apply_migrations(source, MIGRATIONS), range(2)))
     after = snapshot(source)
-    assert len(after["schema_migrations"]) == 6
+    assert [row[0] for row in after['schema_migrations']]==sorted(p.stem for p in MIGRATIONS.glob('*.sql'))
     assert after['profile_compatibility_capability_events'] == []
     assert after["users"] == before["users"] and after["tasks"] == before["tasks"]
 

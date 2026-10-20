@@ -260,11 +260,13 @@ def manifest_authority_rows(bundle: Path) -> tuple[list[dict[str, Any]], list[di
     return cases, patterns
 
 
-def build_release(pipeline_root: Path, release_parent: Path, repo_root: Path, *, contract_version="1.0", purpose=None, parent_release=None) -> Path:
-    if contract_version == '1.1':
+def build_release(pipeline_root: Path, release_parent: Path, repo_root: Path, *, contract_version="1.0", purpose=None, parent_release=None,
+                  validation_refs=None,eligibility_stage=None) -> Path:
+    if contract_version in {'1.1','1.2'}:
         sys.path.insert(0, str(repo_root / 'ops-pipeline/scripts'))
         from profile_compatibility_release_v1_1 import build_release as build_native
-        return build_native(pipeline_root, release_parent, repo_root, purpose=purpose, parent_release=parent_release)
+        return build_native(pipeline_root, release_parent, repo_root, purpose=purpose, parent_release=parent_release,
+            contract_version=contract_version,validation_refs=validation_refs,eligibility_stage=eligibility_stage)
     if contract_version != '1.0':
         raise AuthorityReleaseError('Unknown Authority release version')
     data_root = pipeline_root.resolve() / "data"
@@ -296,7 +298,7 @@ def build_release(pipeline_root: Path, release_parent: Path, repo_root: Path, *,
 def verify_release(release: Path, repo_root: Path) -> dict[str, Any]:
     release = release.resolve()
     manifest = read(release / "manifest.json")
-    if manifest.get('schema_version') == 'creative-authority-release-v1.1':
+    if manifest.get('schema_version') in {'creative-authority-release-v1.1','creative-authority-release-v1.2'}:
         sys.path.insert(0, str(repo_root / 'ops-pipeline/scripts'))
         from profile_compatibility_release_v1_1 import verify_release as verify_native
         return verify_native(release, repo_root)

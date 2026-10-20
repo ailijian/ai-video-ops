@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import replace
 from pathlib import Path
+import json
 
 import pytest
 from fastapi.testclient import TestClient
@@ -214,7 +215,9 @@ def test_review_route_forwards_authenticated_reviewer(
 ):
     calls = {}
 
-    def fake(settings, request_id, *, reviewer, items, note):
+    def fake(settings, request_id, *, reviewer, items, note, authorization_context):
+        assert authorization_context['actor']['user_id'] > 0
+        assert authorization_context['authorization']['database_path'] == str(settings.database_path.resolve())
         calls.update(
             {
                 "request_id": request_id,
@@ -275,7 +278,11 @@ def test_review_route_forwards_authenticated_reviewer(
         assert response.json()["result"]["approved"] is True
 
 
-def test_export_route_returns_durable_task(delivery_settings: Settings):
+def test_export_route_requires_a_complete_human_bundle_before_queue(delivery_settings: Settings):
+    request=delivery_settings.pipeline_root/'data/generation_requests/gen_fixture_001/generation_request_v1.json'
+    request.parent.mkdir(parents=True,exist_ok=True)
+    request.write_text(json.dumps({'schema_version':'generation-request-v1.0','request_id':'gen_fixture_001',
+        'persona_id':'fixture_pet_store','target_profile':'mix','confirmed_quantity':2}),encoding='utf-8')
     with TestClient(main_module.build_app(delivery_settings)) as client:
         provision_user(delivery_settings.database_path, "13800000000")
         csrf = login(client)
@@ -283,10 +290,8 @@ def test_export_route_returns_durable_task(delivery_settings: Settings):
             "/api/create/gen_fixture_001/export-mix",
             headers={"X-CSRF-Token": csrf},
         )
-        assert response.status_code == 200
-        task = response.json()["task"]
-        assert task["task_type"] == "excel_export"
-        assert task["payload"]["operation"] == "mix_export"
+        assert response.status_code == 409
+        assert response.json()['detail']['code'] == 'HUMAN_BUNDLE_INVALID'
 
 
 def test_download_route_returns_existing_file(

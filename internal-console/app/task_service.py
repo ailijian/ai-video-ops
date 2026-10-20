@@ -312,6 +312,75 @@ def ensure_task_capacity(connection, *, queue_max: int, gpu_pending_per_user_max
             raise TaskSubmissionError("GPU_PENDING_LIMIT_REACHED", "The user already has the maximum number of pending GPU tasks.")
 
 
+def resume_generation_recovery_task(database_path: Path, task_id: str, *, queue_max: int) -> dict[str, Any]:
+    """Scoped continuation after native intent/source admission; no new Task."""
+    with transaction(database_path, immediate=True) as db:
+        row = db.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+        payload = json.loads(row['payload_json']) if row else {}
+        if (not row or row['task_type'] != 'content_generation'
+                or payload.get('operation') != 'script_generation' or not payload.get('generation_recovery')):
+            raise TaskSubmissionError('GENERATION_RECOVERY_CONFLICT', 'Not a generation recovery Task')
+        if row['status'] == 'failed':
+            ensure_task_capacity(db, queue_max=queue_max, gpu_pending_per_user_max=1,
+                execution_lane=STANDARD_BACKGROUND, created_by_user_id=row['created_by_user_id'])
+            if db.execute("SELECT 1 FROM tasks WHERE operation_identity=? AND task_id<>? AND status IN ('queued','running')", (row['operation_identity'],task_id)).fetchone():
+                raise TaskSubmissionError('OPERATION_ALREADY_ACTIVE', 'Another generation operation is active')
+            db.execute("UPDATE tasks SET status='queued',stage='恢复原生成操作',worker_id=NULL,heartbeat_at=NULL,lease_expires_at=NULL,updated_at=? WHERE task_id=? AND status='failed'", (iso_utc(),task_id))
+    return get_task(database_path, task_id)
+
+
+def resume_novel_generation_task(database_path: Path, task_id: str, authorization_context: dict, *, queue_max: int) -> dict[str, Any]:
+    """Only after Native non-dispatch/prepared admission; never generic retry."""
+    with transaction(database_path, immediate=True) as db:
+        row = db.execute('SELECT * FROM tasks WHERE task_id=?', (task_id,)).fetchone()
+        payload = json.loads(row['payload_json']) if row else {}
+        if not row or payload.get('operation') != 'novel_news_generate' or not payload.get('novel_generation'):
+            raise TaskSubmissionError('NEWS_GENERATION_OPERATION_REQUIRED', 'Not an admitted Native attempt')
+        if row['status'] == 'failed':
+            ensure_task_capacity(db, queue_max=queue_max, gpu_pending_per_user_max=1,
+                execution_lane=STANDARD_BACKGROUND, created_by_user_id=row['created_by_user_id'])
+            payload['novel_generation']['authorization_context'] = authorization_context
+            db.execute("UPDATE tasks SET status='queued',stage='继续原生成操作',payload_json=?,worker_id=NULL,"
+                       "lease_expires_at=NULL,updated_at=? WHERE task_id=? AND status='failed'",
+                       (json.dumps(payload, ensure_ascii=False), iso_utc(), task_id))
+    return get_task(database_path, task_id)
+
+
+def resume_news_export_task(database_path: Path, task_id: str, authorization_context: dict, *, queue_max: int) -> dict[str, Any]:
+    """Continue the same admitted Native News delivery, not a second Task."""
+    with transaction(database_path, immediate=True) as db:
+        row = db.execute('SELECT * FROM tasks WHERE task_id=?', (task_id,)).fetchone()
+        payload = json.loads(row['payload_json']) if row else {}
+        if (not row or row['task_type'] != 'excel_export' or payload.get('operation') not in {'news_export','novel_news_export'}
+                or not payload.get('export_context')):
+            raise TaskSubmissionError('NEWS_EXPORT_TASK_UNBOUND', 'Original Native export Task required')
+        if row['status'] == 'failed':
+            ensure_task_capacity(db, queue_max=queue_max, gpu_pending_per_user_max=1,
+                execution_lane=STANDARD_BACKGROUND, created_by_user_id=row['created_by_user_id'])
+            payload['export_context'] = {'authorization_context': authorization_context}
+            db.execute("UPDATE tasks SET status='queued',stage='继续完成原导出操作',payload_json=?,worker_id=NULL,"
+                "heartbeat_at=NULL,lease_expires_at=NULL,error_code=NULL,error_message=NULL,updated_at=? WHERE task_id=? AND status='failed'",
+                (json.dumps(payload, ensure_ascii=False), iso_utc(), task_id))
+    return get_task(database_path, task_id)
+
+
+def resume_mix_export_task(database_path: Path, task_id: str, export_context: dict, *, queue_max: int) -> dict[str, Any]:
+    """Same admitted native export intent; refresh execution Session, not authority."""
+    with transaction(database_path,immediate=True) as db:
+        row=db.execute('SELECT * FROM tasks WHERE task_id=?',(task_id,)).fetchone()
+        payload=json.loads(row['payload_json']) if row else {}
+        if (not row or payload.get('operation')!='mix_export' or
+            (payload.get('export_context') or {}).get('export_intent_ref')!=export_context['export_intent_ref']):
+            raise TaskSubmissionError('DELIVERY_INTENT_CONFLICT','Not the original native export Task')
+        if row['status']=='failed':
+            ensure_task_capacity(db,queue_max=queue_max,gpu_pending_per_user_max=1,execution_lane=STANDARD_BACKGROUND,created_by_user_id=row['created_by_user_id'])
+            if db.execute("SELECT 1 FROM tasks WHERE operation_identity=? AND task_id<>? AND status IN ('queued','running')",(row['operation_identity'],task_id)).fetchone():
+                raise TaskSubmissionError('OPERATION_ALREADY_ACTIVE','Another export operation is active')
+            payload['export_context']=export_context
+            db.execute("UPDATE tasks SET status='queued',stage='继续完成原导出操作',payload_json=?,worker_id=NULL,lease_expires_at=NULL,updated_at=? WHERE task_id=? AND status='failed'",(json.dumps(payload,ensure_ascii=False),iso_utc(),task_id))
+    return get_task(database_path,task_id)
+
+
 def submit_task(
     database_path: Path,
     *,
@@ -340,6 +409,13 @@ def submit_task(
         if recovered:
             # Stable retry identity covers queued, failed, review and completed tasks.
             return get_task(database_path, recovered["task_id"])
+        recovery = payload.get('generation_recovery') if payload.get('operation') == 'script_generation' and task_type == 'content_generation' else None
+        if recovery:
+            row = connection.execute("SELECT task_id,payload_json FROM tasks WHERE task_type=? AND subject_ref=? AND json_extract(payload_json,'$.generation_recovery.operation_id')=?", (task_type, subject_ref, recovery['operation_id'])).fetchone()
+            if row:
+                if json.loads(row['payload_json']) != payload:
+                    raise TaskSubmissionError('GENERATION_RECOVERY_CONFLICT', 'Generation operation payload conflicts')
+                return get_task(database_path, row['task_id'])
         existing = connection.execute(
             f"""
             SELECT task_id FROM tasks
@@ -350,6 +426,10 @@ def submit_task(
             (task_type, operation_identity),
         ).fetchone()
         if existing is not None:
+            if recovery:
+                active = connection.execute('SELECT payload_json FROM tasks WHERE task_id=?', (existing['task_id'],)).fetchone()
+                if json.loads(active['payload_json']) != payload:
+                    raise TaskSubmissionError('OPERATION_ALREADY_ACTIVE', 'Another generation operation is still active')
             if allow_existing:
                 existing_id = str(existing["task_id"])
             else:

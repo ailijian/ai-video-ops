@@ -20,8 +20,9 @@ def write(p,v):
 
 
 class SyntheticModels:
-    def __init__(self, *, uncertain=False, fail=None):
+    def __init__(self, *, uncertain=False, fail=None, cut_indexes=None):
         self.uncertain=uncertain;self.fail=fail;self.calls=[]
+        self.cut_indexes={0,3} if cut_indexes is None else set(cut_indexes)
 
     def command(self,label,command,*args,**kwargs):
         name=Path(command[1]).stem
@@ -36,8 +37,8 @@ class SyntheticModels:
                     'evidence_frame_refs':[],'note':'合成模型边界，原声需由审核人核对'} for s in audio['segments']]}
             elif name=='build_shot_boundaries_v1':
                 frames=read(arg('--visual-v1'))['frames']
-                out={'decisions':[{'frame_id':f['frame_id'],'boundary_before':i in {0,3},
-                    'reason_type':'video_start' if i==0 else 'camera_view_change' if i==3 else 'same_shot_motion',
+                out={'decisions':[{'frame_id':f['frame_id'],'boundary_before':i in self.cut_indexes,
+                    'reason_type':'video_start' if i==0 else 'camera_view_change' if i in self.cut_indexes else 'same_shot_motion',
                     'reason':'合成切点观测','confidence':'high'} for i,f in enumerate(frames)]}
             else:
                 shots=read(arg('--shot-boundaries'))['shots']

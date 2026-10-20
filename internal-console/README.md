@@ -36,6 +36,82 @@ product/design rules and machine owners. Presentation rules and business
 interaction boundaries have distinct scopes; design freezes do not establish
 implementation or production availability.
 
+## Creation entry preparation
+
+The customer-scoped entry automatically previews the selected type and quantity;
+stale responses cannot replace a newer selection. One explicit Mix confirmation
+then sequences the existing `/api/create/confirm` and Request-scoped
+`resolve-sources` gateways. The frontend orchestration is in
+`static/assets/creation-entry-flow.js`; it creates no parallel Authority or Task.
+An interrupted continuation retains the same confirmation key/payload and exact
+Request. Opening an already-confirmed request with missing source preparation
+continues that preparation; it does not create another request. Native permission,
+Compatibility, immutable source and operation-lock checks remain mandatory.
+Source preparation never calls a model or performs content Human Review/export.
+News retains its existing native availability and permission gates.
+
+## Mix generation recovery
+
+`resolve_generation_batch_v1.py` owns native readiness and the append-only
+`generation-recovery-intent-v1.0`, `generation-recovery-dispatch-v1.0` and
+`generation-recovery-result-v1.0` companions defined in `generation_recovery_v1.py`.
+Only initial Mix batches with zero accepted content and exclusively transport /
+response failures can retry. Planning stays closed. Partial content, quality
+rejection, Human review and closed history do not acquire regeneration rights.
+
+Authenticated Session/CSRF routes
+`/api/create/{request_id}/generation-recovery/preview` and `/confirm` accept only
+operation ID and, for confirm, the frozen preview SHA. Caller, current sources,
+Business/Speaker/constraints, live memory and pinned Compatibility are independently
+rechecked by the native owner. Preview grants no execution or content approval.
+Root-relative references use exact artifact bytes; parent-chain selection never
+uses file time or SQLite as business authority. Unknown external outcomes require
+an explicit new operation; replay cannot silently repeat a provider request.
+
+Retry artifacts remain under the original Request's `recovery/<operation_id>/`.
+Human Review, Approved Batch, Receipt and Closure remain at the Request root,
+bound to the actual effective source Batch SHA. One native readiness result feeds
+the Gateway, UI and original Task reconciliation. Files alone never mean ready.
+Same-operation delivery replay returns the original Task; an interrupted pending
+operation can continue that Task after native admission, with original capacity,
+lease and locking rules. A terminal failed attempt requires an explicit new retry.
+
+Completed Mix export is verified read-only by the original Closure owner before
+enqueue. Response `content-operation-response-v1.1` contains `accepted=false`,
+`recovered=true`, `canonical_result`, and the original execution `task` (without
+rewriting its status), or null when no Task projection exists. Existing non-completed responses keep their
+`accepted/task` shape. JS handles canonical completion before Task polling.
+No duplicate Task, Closure or Ledger is created by completed replay. Historical
+closed interpretation and the current Compatibility write fence are unchanged.
+
+Native partial delivery uses the companion schemas in
+`ops-pipeline/scripts/delivery_receipt_recovery_v1.py`. An immutable
+`generation-human-review-intent-v1.0` freezes the trusted stable principal,
+current authorization state, exact source references, normalized decision,
+timestamp and expected Review bytes before the original Review → Approved →
+Approval Receipt writes. Missing receipts never project as approved. Explicit
+replay must match that decision and current native source/Compatibility checks.
+Legacy partial reviews without a trusted intent require an authenticated explicit
+reconfirmation; no Reader attributes a historical name to a current principal.
+
+Before a new export, `mix-export-intent-v1.0` freezes the same trusted identity,
+native Approved/Approval/source versions, frozen template and server-selected
+output path. The native exporter validates the complete workbook, retains an
+immutable staged workbook and writes `mix-export-publication-v1.0` before
+exclusive publication. A published workbook without its Receipt resumes only
+against this exact intent/witness and unchanged workbook bytes. Unbound legacy
+workbooks fail closed. New `mix-excel-export-receipt-v1.1` binds both companions;
+the historical v1.0 Reader remains supported without rewriting old receipts.
+
+Partial UI states offer **继续完成原操作**. Human approval requires its complete
+native receipt bundle; formal downloads require the Export Receipt and, for new
+bound exports, native Closure verification. Pending Closure rechecks current
+authorization and Compatibility before Ledger/Closure writes. Resuming export
+reuses the original Task; completed replay is read-only and adds no Task or
+Ledger entry. SQLite task status is only an execution projection. The native
+generation result separately reports `generation_completed` so an interrupted
+downstream Human receipt cannot turn a finished generation Task into a failure.
+
 ## Local setup
 
 Verification requires the declared `[dev]` dependencies and Node.js. From the

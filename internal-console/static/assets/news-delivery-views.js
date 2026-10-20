@@ -118,18 +118,21 @@ export function createNewsDeliveryViews({ api, showToast, escapeHtml }) {
       })}`;
     }
     if (state.next_action === "HUMAN_REVIEW") return reviewSurface(state);
+    if (state.next_action === "RECHECK_EXPORT") return CreationState({ tone: "warning",
+      title: "导出结果需要重新核对。", body: "原文件和记录已保留，请交由有权人员核对。" });
     if (state.next_action === "EXPORT_NEWS_EXCEL") {
       const count = Number(state.review?.approved_slot_count || 0);
       return `${sourceSummary(state)}${CreationState({
         tone: "success",
         eyebrow: "审核完成",
         title: `${count} 条标题可以导出`,
-        body: "导出文件只包含已经人工通过的标题。",
+        body: state.export_recovery_state && state.export_recovery_state !== "xlsx_not_generated"
+          ? "导出尚未完成，可继续原操作。" : "导出文件只包含已经人工通过的标题。",
         content: ExportSummary([
           { label: "内容类型", value: "新闻体" },
           { label: "通过数量", value: `${count} 条` },
         ]),
-        actions: `<button type="button" class="btn btn-primary" data-news-export>导出 Excel</button>`,
+        actions: `<button type="button" class="btn btn-primary" data-news-export>${state.export_recovery_state && state.export_recovery_state !== "xlsx_not_generated" ? "继续完成原操作" : "导出 Excel"}</button>`,
       })}`;
     }
     if (state.next_action === "NEWS_EXCEL_EXPORTED") {
@@ -251,7 +254,8 @@ export function createNewsDeliveryViews({ api, showToast, escapeHtml }) {
       exportButton.textContent = "正在完成导出…";
       try {
         const response = await api(`/api/create/news/${encodeURIComponent(state.request_id)}/export`, { method: "POST" });
-        watchTask(response.task, refresh, "导出已完成，已读取最新状态。");
+        if (response.accepted === false) await refresh();
+        else watchTask(response.task, refresh, "导出已完成，已读取最新状态。");
       } catch (error) {
         showToast(safeCreationMessage(error.detail?.next_action || error.detail?.message || error.message, "导出暂时无法完成，请稍后重试。"));
         if (exportButton.isConnected) {

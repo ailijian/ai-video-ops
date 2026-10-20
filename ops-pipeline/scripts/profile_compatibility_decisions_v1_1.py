@@ -21,6 +21,26 @@ from profile_compatibility_contract_v1_1 import (
 DOMAIN = Path('data/production_profiles/compatibility_v1_1')
 
 
+def contract_for_version(version):
+    import profile_compatibility_contract_v1_1 as old
+    if version in old.SCHEMAS:return old
+    import profile_compatibility_contract_v1_2 as news
+    if version in news.SCHEMAS:return news
+    raise CompatibilityError('Unknown Compatibility contract; no legacy downgrade')
+
+
+def contract_for_targets(decisions):
+    if not isinstance(decisions,list) or not decisions:
+        raise CompatibilityError('Explicit independent target decisions required')
+    profiles={d.get('target',{}).get('target_profile') for d in decisions if isinstance(d,dict)}
+    if profiles=={'news'}:
+        import profile_compatibility_contract_v1_2 as contract
+    elif profiles=={'mix'}:
+        import profile_compatibility_contract_v1_1 as contract
+    else:raise CompatibilityError('One explicit profile permission domain per Human operation required')
+    return contract
+
+
 def identity_path(path):
     value = str(path)
     if value.startswith('\\\\?\\UNC\\'):
@@ -97,12 +117,16 @@ def resolve_ref(root, reference):
 
 
 def target_id(target):
-    validate(target, TARGET)
+    contract=contract_for_targets([{'target':target}])
+    validate(target, contract.TARGET)
     return digest(target)
 
 
 def validate_target(root, target):
     """Native audit and independent Pattern scope; no derived Registry inputs."""
+    if target.get('target_profile')=='news':
+        from profile_compatibility_news_v1_2 import validate_target as validate_news_target
+        return validate_news_target(root,target)
     from production_profile_v1 import audit_case_profile_compatibility_v1, declared_mix_profile_v1_1
     validate(target, TARGET)
     for field, expected in {
@@ -228,18 +252,19 @@ def decision_graph(root, *, check_sources=False, expected_control_id=None):
     targets = {}
     for io_file in sorted(io_path(root / DOMAIN / 'decisions').glob('*.json')):
         path = identity_path(io_file)
-        receipt = validate_contract(read(path), APPROVAL)
+        raw=read(path);contract=contract_for_version(raw.get('schema_version'))
+        receipt = contract.validate_contract(raw, contract.APPROVAL)
         if not expected_control_id or receipt['control_id'] != expected_control_id:
             raise CompatibilityError('Decision belongs to another control Authority')
         if path.stem != receipt['operation_id']:
             raise CompatibilityError('Decision operation/path mismatch')
-        validate_grant_proof(receipt['authorization'])
+        validate_grant_proof(receipt['authorization'],capability=contract.CAPABILITY)
         if receipt['actor'] != receipt['authorization']['principal']:
             raise CompatibilityError('Decision actor mismatch')
-        preview = validate_contract(read(resolve_ref(root, receipt['preview_ref'])), PREVIEW)
+        preview = contract.validate_contract(read(resolve_ref(root, receipt['preview_ref'])), contract.PREVIEW)
         if any(receipt[k] != preview[k] for k in ('control_id', 'actor', 'authorization', 'operation_id', 'source_snapshot', 'decisions')):
             raise CompatibilityError('Decision differs from its authenticated preview')
-        snapshot = validate_contract(read(resolve_ref(root, receipt['source_snapshot'])), SNAPSHOT)
+        snapshot = contract.validate_contract(read(resolve_ref(root, receipt['source_snapshot'])), contract.SNAPSHOT)
         if snapshot['targets'] != [item['target'] for item in receipt['decisions']]:
             raise CompatibilityError('Decision/source snapshot mismatch')
         receipt_ref = ref(root, path)
@@ -305,18 +330,19 @@ def reviewer_operation(root, actor):
 def preview(root, database_path, actor, operation_id, decisions):
     root = Path(root).resolve()
     validate(operation_id, OPERATION)
-    authorization(database_path, actor)
+    contract=contract_for_targets(decisions)
+    authorization(database_path, actor,capability=contract.CAPABILITY)
     from profile_compatibility_release_v1_1 import CONFIG, initialize_control
     if (root / CONFIG).exists() and Path(read(root / CONFIG)['control_root']).resolve() != root:
         raise CompatibilityError('Compatibility decisions must be reviewed at their configured source Authority')
     control_id = initialize_control(root)['control_id']
     with reviewer_operation(root, actor):
-        grant = authorization(database_path, actor)
+        grant = authorization(database_path, actor,capability=contract.CAPABILITY)
         graph = decision_graph(root)
         directory = root / DOMAIN / 'operations' / operation_id
         path = directory / 'preview.json'
         if path.exists():
-            old = validate_contract(read(path), PREVIEW)
+            old = contract.validate_contract(read(path), contract.PREVIEW)
             if old['control_id'] != control_id or old['actor'] != actor or old['authorization'] != grant or old['decisions'] != decisions:
                 raise CompatibilityError('Operation preview replay conflicts')
             return {'operation_id': operation_id, 'preview_ref': ref(root, path), 'preview': old}
@@ -324,8 +350,7 @@ def preview(root, database_path, actor, operation_id, decisions):
             raise CompatibilityError('Explicit per-target decisions required')
         identities = set()
         for decision in decisions:
-            from profile_compatibility_contract_v1_1 import DECISION
-            validate(decision, DECISION)
+            validate(decision, contract.DECISION)
             if decision['action'] != 'withdraw':
                 validate_target(root, decision['target'])
             identity = target_id(decision['target'])
@@ -339,13 +364,13 @@ def preview(root, database_path, actor, operation_id, decisions):
                 raise CompatibilityError('Withdraw does not name current approval')
             if decision['action'] != 'withdraw' and decision['withdraws'] is not None:
                 raise CompatibilityError('Only withdraw can name an approval to withdraw')
-        snapshot = {'schema_version': SNAPSHOT, 'targets': [d['target'] for d in decisions]}
+        snapshot = {'schema_version': contract.SNAPSHOT, 'targets': [d['target'] for d in decisions]}
         snapshot_path = directory / 'source_snapshot.json'
-        write_once(snapshot_path, validate_contract(snapshot, SNAPSHOT))
-        value = {'schema_version': PREVIEW, 'operation_id': operation_id, 'control_id': control_id, 'actor': actor,
+        write_once(snapshot_path, contract.validate_contract(snapshot, contract.SNAPSHOT))
+        value = {'schema_version': contract.PREVIEW, 'operation_id': operation_id, 'control_id': control_id, 'actor': actor,
                  'authorization': grant, 'source_snapshot': ref(root, snapshot_path),
                  'decisions': decisions, 'created_at': datetime.now(timezone.utc).isoformat()}
-        write_once(path, validate_contract(value, PREVIEW))
+        write_once(path, contract.validate_contract(value, contract.PREVIEW))
         return {'operation_id': operation_id, 'preview_ref': ref(root, path), 'preview': value}
 
 
@@ -356,9 +381,10 @@ def decide(root, database_path, actor, operation_id, preview_sha256):
     if (root / CONFIG).exists() and Path(read(root / CONFIG)['control_root']).resolve() != root:
         raise CompatibilityError('Compatibility decisions must be confirmed at their configured source Authority')
     with reviewer_operation(root, actor):
-        grant = authorization(database_path, actor)
         path = root / DOMAIN / 'operations' / operation_id / 'preview.json'
-        value = validate_contract(read(path), PREVIEW)
+        raw=read(path);contract=contract_for_version(raw.get('schema_version'))
+        value = contract.validate_contract(raw, contract.PREVIEW)
+        grant = authorization(database_path, actor,capability=contract.CAPABILITY)
         control = read(root / DOMAIN / 'control.json')
         if (value['control_id'] != control.get('control_id') or control.get('schema_version') != 'compatibility-control-v1.1'
                 or file_sha(path) != preview_sha256 or value['actor'] != actor or value['authorization'] != grant):
@@ -366,7 +392,7 @@ def decide(root, database_path, actor, operation_id, preview_sha256):
         graph = decision_graph(root)
         receipt_path = root / DOMAIN / 'decisions' / f'{operation_id}.json'
         if receipt_path.exists():
-            receipt = validate_contract(read(receipt_path), APPROVAL)
+            receipt = contract.validate_contract(read(receipt_path), contract.APPROVAL)
             if receipt['preview_ref'] != ref(root, path):
                 raise CompatibilityError('Conflicting operation replay')
             for decision in receipt['decisions']:
@@ -379,17 +405,17 @@ def decide(root, database_path, actor, operation_id, preview_sha256):
             if decision['parent'] != graph['heads'].get(decision['target_id'], {}).get('head'):
                 raise CompatibilityError('Decision head advanced since preview')
         intent_path = path.with_name('decision_intent.json')
-        receipt = {**value, 'schema_version': APPROVAL, 'preview_ref': ref(root, path),
+        receipt = {**value, 'schema_version': contract.APPROVAL, 'preview_ref': ref(root, path),
                    'decided_at': datetime.now(timezone.utc).isoformat(), 'human_gate': True}
         del receipt['created_at']
         if intent_path.exists():
-            saved = validate_contract(read(intent_path), APPROVAL)
+            saved = contract.validate_contract(read(intent_path), contract.APPROVAL)
             if any(saved[k] != receipt[k] for k in receipt if k != 'decided_at'):
                 raise CompatibilityError('Interrupted Human decision conflicts with current preview')
             receipt = saved
         else:
-            write_once(intent_path, validate_contract(receipt, APPROVAL))
-        validate_contract(receipt, APPROVAL)
+            write_once(intent_path, contract.validate_contract(receipt, contract.APPROVAL))
+        contract.validate_contract(receipt, contract.APPROVAL)
         write_once(receipt_path, receipt)
         decision_graph(root)
         return {'receipt_ref': ref(root, receipt_path), 'receipt': receipt, 'recovered': False}
