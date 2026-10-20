@@ -1,5 +1,6 @@
 import { startTaskPolling } from "./task-progress.js";
 import {
+  bindContentReviewControls,
   ContentReviewItem,
   ContentReviewList,
   CreationCompletedState,
@@ -9,7 +10,7 @@ import {
   ExportSummary,
   TopicList,
   safeCreationMessage,
-} from "./creation-components.js?v=productized-stage3-3";
+} from "./creation-components.js?v=news-review-ui-2";
 
 export function createContentDeliveryViews({ api, showToast, escapeHtml }) {
   function watchTask(task, refresh, completedMessage) {
@@ -112,11 +113,10 @@ export function createContentDeliveryViews({ api, showToast, escapeHtml }) {
     }));
     return `
       <section class="work-surface creation-section content-review-surface">
-        ${CreationHeader({ title: "审核文案", description: "逐条确认，只有通过的内容才能进入最终导出。" })}
-        <div class="content-review-progress" data-review-progress>已处理 0 / ${contents.length}</div>
+        ${CreationHeader({ title: "审核文案", description: "默认选择通过，需调整时选择修改或不采用；核对后统一提交审核。" })}
+        <div class="content-review-progress" data-review-progress></div>
         ${ContentReviewList(rows)}
         <div class="creation-action-bar">
-          <button type="button" class="btn btn-secondary" data-approve-all>全部通过</button>
           <button type="button" class="btn btn-primary" data-submit-review disabled>提交审核</button>
         </div>
         <p class="creation-governance-line">修改文案只能调整表达，不能新增未经确认的事实。</p>
@@ -225,33 +225,9 @@ export function createContentDeliveryViews({ api, showToast, escapeHtml }) {
     return "";
   }
 
-  function updateReviewProgress(host) {
-    const items = Array.from(host.querySelectorAll("[data-content-review-item]"));
-    const completed = items.filter((item) => item.querySelector("input[data-content-decision]:checked")).length;
-    const progress = host.querySelector("[data-review-progress]");
-    const submit = host.querySelector("[data-submit-review]");
-    if (progress) progress.textContent = `已处理 ${completed} / ${items.length}`;
-    if (submit) submit.disabled = !items.length || completed !== items.length;
-  }
-
   function bindReview(host, state, refresh) {
-    host.querySelectorAll("[data-content-review-item]").forEach((item) => {
-      const editor = item.querySelector("[data-content-revision-editor]");
-      item.querySelectorAll("[data-content-decision]").forEach((input) => {
-        input.addEventListener("change", () => {
-          if (editor) editor.hidden = input.value !== "revised";
-          updateReviewProgress(host);
-        });
-      });
-    });
-    host.querySelector("[data-approve-all]")?.addEventListener("click", () => {
-      host.querySelectorAll("[data-content-review-item]").forEach((item) => {
-        const approved = item.querySelector('input[data-content-decision][value="approved"]');
-        const editor = item.querySelector("[data-content-revision-editor]");
-        if (approved) approved.checked = true;
-        if (editor) editor.hidden = true;
-      });
-      updateReviewProgress(host);
+    bindContentReviewControls(host, {
+      progressSelector: "[data-review-progress]", submitSelector: "[data-submit-review]",
     });
     const submit = host.querySelector("[data-submit-review]");
     submit?.addEventListener("click", async () => {
@@ -277,6 +253,7 @@ export function createContentDeliveryViews({ api, showToast, escapeHtml }) {
         items.push(record);
       }
       submit.disabled = true;
+      submit.dataset.reviewSubmitting = "true";
       submit.textContent = "正在保存审核结果…";
       try {
         const response = await api(`/api/create/${encodeURIComponent(state.request_id)}/review`, {
@@ -292,12 +269,12 @@ export function createContentDeliveryViews({ api, showToast, escapeHtml }) {
         showToast(safeCreationMessage(error.detail?.next_action || error.detail?.message || error.message, "审核结果暂时无法保存，请稍后重试。"));
         if (submit.isConnected) {
           submit.disabled = false;
+          submit.dataset.reviewSubmitting = "false";
           submit.textContent = "提交审核";
         }
         await refresh();
       }
     });
-    updateReviewProgress(host);
   }
 
   function bind(host, state, refresh) {

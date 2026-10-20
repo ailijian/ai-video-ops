@@ -43,14 +43,31 @@ def native_audit(root,case_id,case_ref,case_approval_ref,fingerprint_ref,storybo
 
 
 def validate_target(root,target):
+    validate_targets(root,[target])
+    return target
+
+
+def validate_targets(root,targets):
+    # Local to this synchronous graph validation, never cached between calls.
+    # All Case/FP/storyboard/audit checks still run independently per target.
+    from news_pattern_authority_v1_1 import validate_pattern
+    patterns={}
+    for target in targets:
+        validate(target,TARGET)
+        key=digest({k:target[k] for k in ('pattern_ref','pattern_approval_ref')})
+        if key not in patterns:
+            patterns[key]=validate_pattern(root,target['pattern_ref'],target['pattern_approval_ref'])
+        _validate_target(root,target,*patterns[key])
+    return targets
+
+
+def _validate_target(root,target,pattern,receipt):
     validate(target,TARGET)
     cid=target['case_id']
     for name,expected in [('case_ref',f'data/cases/{cid}/case_v1.json'),
         ('case_approval_ref',f'data/cases/{cid}/approval_receipt.json'),
         ('fingerprint_ref',f'data/fingerprints/{cid}/case_fingerprint_v1.json')]:
         if target[name]['path']!=expected:raise CompatibilityError('News target must name its canonical current source')
-    from news_pattern_authority_v1_1 import validate_pattern
-    pattern,receipt=validate_pattern(root,target['pattern_ref'],target['pattern_approval_ref'])
     if (pattern['pattern_id']!=target['pattern_id']
         or target['pattern_id']!='pcv1_news_price_offer_led_micro_information'
         or target['pattern_ref']['path']!=f"data/patterns/approved/{target['pattern_id']}/versions/{receipt['operation_id']}/pattern_v1.json"

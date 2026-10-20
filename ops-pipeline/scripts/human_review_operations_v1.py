@@ -8,9 +8,13 @@ import uuid
 from pathlib import Path
 
 
-def io_path(path):
-    """Windows extended paths for IO only; never change persisted identities."""
-    path = Path(path).resolve()
+def io_path(path, *, resolved=False):
+    """Windows extended paths for IO only; never change persisted identities.
+
+    ``resolved`` is for a Native owner that already resolved and checked the
+    canonical path boundary, avoiding duplicate OS path traversal per SHA read.
+    """
+    path = Path(path) if resolved else Path(path).resolve()
     if os.name == 'nt' and not str(path).startswith('\\\\?\\'):
         return Path('\\\\?\\'+str(path))
     return path

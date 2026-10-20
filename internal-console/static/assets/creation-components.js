@@ -61,6 +61,25 @@ export function CreationState({ tone = "neutral", eyebrow = "", title, body = ""
     </section>`;
 }
 
+// Presentation only: callers supply the outcome from their native preflight.
+export function CreationCapacityState({ requested, available, confirmed, limited = false,
+  availableLabel = "内容方向", title = "", body = "", details = "", actions = "" } = {}) {
+  return CreationState({
+    tone: limited ? "warning" : "success",
+    eyebrow: "内容方向",
+    title: title || `当前有 ${available} 个值得做的内容方向`,
+    body: body || (limited
+      ? `你计划做 ${requested} 条，本次确认 ${confirmed} 条；现有创作结构可以支持。系统不会为了凑够数量重复已经做过的内容。`
+      : `你计划做 ${requested} 条，本次确认 ${confirmed} 条；现有创作结构可以支持。`),
+    content: `${CreationMetricRow([
+      { label: "计划数量", value: requested },
+      { label: availableLabel, value: available },
+      { label: "本次确认", value: confirmed },
+    ])}${details}<p class="creation-governance-line">本次结果只判断内容是否值得继续做，不代表已获得相关素材使用权。</p>`,
+    actions,
+  });
+}
+
 export function TopicRow({ index, title, audienceNeed = "", coreExpression = "" } = {}) {
   return `
     <article class="topic-row">
@@ -101,7 +120,7 @@ export function ContentDecisionControl({ namespace, itemId, rejectDisabled = fal
   return `
     <div class="content-decision-control">
       <label>
-        <input type="radio" name="${escapeHtml(name)}" value="approved" data-content-decision>
+        <input type="radio" name="${escapeHtml(name)}" value="approved" checked data-content-decision>
         <span>通过</span>
       </label>
       <label>
@@ -130,6 +149,9 @@ export function ContentReviewItem({
   editorMode = "mix",
   rejectDisabled = false,
   rejectReason = "",
+  evidenceLabel = "查看生成依据",
+  editorTitleLabel = "标题",
+  showReviewNote = true,
 } = {}) {
   const warnings = (flags || []).filter(Boolean);
   return `
@@ -152,13 +174,14 @@ export function ContentReviewItem({
           <strong>需要注意</strong>
           ${warnings.map((flag) => `<p>${escapeHtml(flag)}</p>`).join("")}
         </div>` : ""}
-      ${CreationEvidenceDisclosure({ rows: evidenceRows })}
+      ${CreationEvidenceDisclosure({ label: evidenceLabel, rows: evidenceRows })}
       ${ContentDecisionControl({ namespace, itemId, rejectDisabled, rejectReason })}
       <div class="content-revision-editor" data-content-revision-editor hidden>
         <p>可以调整表达，不能新增未经确认的事实。</p>
         <div class="field">
-          <label>标题</label>
-          <input type="text" data-revised-title value="${escapeHtml(title || "")}">
+          <label>${escapeHtml(editorTitleLabel)}
+            <input type="text" data-revised-title value="${escapeHtml(title || "")}">
+          </label>
         </div>
         ${editorMode === "mix" ? `
           <div class="field">
@@ -166,18 +189,45 @@ export function ContentReviewItem({
             <textarea rows="7" data-revised-body>${escapeHtml(body || "")}</textarea>
           </div>` : ""}
       </div>
-      <details class="creation-note-disclosure">
+      ${showReviewNote ? `<details class="creation-note-disclosure">
         <summary>添加审核备注</summary>
         <div class="field">
           <label>审核备注（可选）</label>
           <input type="text" data-content-review-note placeholder="补充本次判断依据">
         </div>
-      </details>
+      </details>` : ""}
     </article>`;
 }
 
 export function ContentReviewList(items = []) {
   return `<div class="content-review-list">${items.join("")}</div>`;
+}
+
+// Shared local decisions only; each caller retains its native review writer.
+export function bindContentReviewControls(host, { progressSelector, submitSelector }) {
+  const update = () => {
+    const items = Array.from(host.querySelectorAll("[data-content-review-item]"));
+    const completed = items.filter((item) => item.querySelector("input[data-content-decision]:checked")).length;
+    const counts = { approved: 0, revised: 0, rejected: 0 };
+    items.forEach((item) => {
+      const decision = item.querySelector("input[data-content-decision]:checked")?.value;
+      if (decision in counts) counts[decision] += 1;
+    });
+    const progress = host.querySelector(progressSelector);
+    const submit = host.querySelector(submitSelector);
+    if (progress) progress.textContent = `当前选择：通过 ${counts.approved} · 修改 ${counts.revised} · 不采用 ${counts.rejected}`;
+    if (submit) submit.disabled = submit.dataset?.reviewSubmitting === "true" || !items.length || completed !== items.length;
+  };
+  host.querySelectorAll("[data-content-review-item]").forEach((item) => {
+    item.querySelectorAll("[data-content-decision]").forEach((input) => {
+      input.addEventListener("change", () => {
+        const editor = item.querySelector("[data-content-revision-editor]");
+        if (editor) editor.hidden = item.querySelector("input[data-content-decision]:checked")?.value !== "revised";
+        update();
+      });
+    });
+  });
+  update();
 }
 
 export function ExportSummary(items = []) {

@@ -1,15 +1,16 @@
 import { escapeHtml } from "./case-components.js?v=flow-closure-2";
 import { createPreparationOperation, pinNewsRequestLocation } from "./creation-entry-flow.js?v=entry-auto-2";
-import { createContentDeliveryViews } from "./content-delivery-views.js?v=productized-stage3-3";
-import { createNewsDeliveryViews } from "./news-delivery-views.js?v=productized-stage3-3";
-import { createNovelNewsViews } from "./novel-news-views.js?v=gate-c2-1";
+import { createContentDeliveryViews } from "./content-delivery-views.js?v=news-review-ui-2";
+import { createNewsDeliveryViews } from "./news-delivery-views.js?v=news-review-ui-2";
+import { createNovelNewsViews } from "./novel-news-views.js?v=news-review-ui-2";
 import {
   CreationHeader,
   CreationMetricRow,
+  CreationCapacityState,
   CreationState,
   CreationSummary,
   safeCreationMessage,
-} from "./creation-components.js?v=productized-stage3-3";
+} from "./creation-components.js?v=news-review-ui-2";
 
 export function createContentViews({
   app,
@@ -83,14 +84,12 @@ export function createContentViews({
       { label: "出镜人", value: speaker?.selectedOptions?.[0]?.textContent?.trim() || "" },
       { label: "内容类型", value: profile === "news" ? "新闻体" : "素材混剪" },
       ...(profile === "news" ? [{ label: "创作模式", value: selectedNewsModeValue() === "novel_content" ? "创作新内容" : "重新表达已有内容" }] : []),
-      ...(profile === "mix" && form?.dataset.confirmedQuantity
+      ...(form?.dataset.confirmedQuantity
         ? [
             { label: "计划数量", value: `${Number(form.dataset.requestedQuantity || 0)} 条` },
             { label: "本次确认", value: `${Number(form.dataset.confirmedQuantity || 0)} 条` },
           ]
-        : profile === "mix"
-          ? [{ label: "计划数量", value: `${Number(quantity?.value || 0)} 条` }]
-          : []),
+        : [{ label: "计划数量", value: `${Number(quantity?.value || 0)} 条` }]),
     ];
   }
 
@@ -146,12 +145,27 @@ export function createContentViews({
     const quantityField = document.querySelector("#create-quantity-field");
     const quantityInput = document.querySelector("#create-quantity");
     const submit = document.querySelector("#check-content-capacity");
-    if (quantityField) quantityField.hidden = news;
+    if (quantityField) quantityField.hidden = false;
     const newsModes = document.querySelector("#create-news-modes");
     if (newsModes) newsModes.hidden = !news;
-    if (quantityInput) quantityInput.disabled = news || document.querySelector("#content-entry-form")?.classList.contains("completed");
+    if (quantityInput) {
+      if (news) {
+        if (quantityInput.max !== "1") quantityInput.dataset.mixQuantity = quantityInput.value;
+        quantityInput.max = "1";
+        quantityInput.value = "1";
+      } else if (quantityInput.max === "1") {
+        quantityInput.max = "20";
+        quantityInput.value = quantityInput.dataset.mixQuantity || "4";
+      }
+      quantityInput.readOnly = news;
+      quantityInput.disabled = Boolean(document.querySelector("#content-entry-form")?.classList.contains("completed"));
+    }
+    const quantityHint = document.querySelector("#create-quantity-hint");
+    if (quantityHint) quantityHint.textContent = news
+      ? "当前新闻体每次制作 1 条视频，视频内的短信息不另计条数。"
+      : "系统会先检查当前还有多少值得做的新内容。";
     if (submit && !submit.closest("form")?.classList.contains("completed")) submit.textContent = "查看可创作内容";
-    if (submit) submit.hidden = !news;
+    if (submit) submit.hidden = true;
   }
 
   function syncSpeakerOptions(customer, requestedSpeaker = "") {
@@ -238,14 +252,16 @@ export function createContentViews({
       try {
         if (await operation.continue()) {
           preparing = false;
-          await restoreActiveRequest(false);
+          if (confirmation.profile === "news") await restoreActiveNovelNewsRequest();
+          else await restoreActiveRequest(false);
         }
       } catch (error) {
         if (!current()) return;
         preparing = false;
         if (error.detail?.preflight && !operation.requestId) {
           unlockEntryForm();
-          renderResult(error.detail.preflight);
+          if (confirmation.profile === "news") schedulePreview(0);
+          else renderResult(error.detail.preflight);
           showToast("创作条件已经变化，请核对最新结果后再确认。");
           return;
         }
@@ -351,6 +367,8 @@ export function createContentViews({
       if (radio) radio.checked = true;
       document.querySelectorAll(".profile-choice").forEach((label) => label.classList.toggle("selected", label.querySelector("input").checked));
       syncProfileSpecificUi();
+      const form = document.querySelector("#content-entry-form");
+      if (form) { form.dataset.requestedQuantity = "1"; form.dataset.confirmedQuantity = "1"; }
       lockEntryForm("继续上次新闻体创作");
       pinNewsRequestLocation({requestId:active.request_id,businessId:business.value,speakerId:active.speaker_id,
         newsMode:'cross_profile_repurpose'});
@@ -387,6 +405,8 @@ export function createContentViews({
         }
         speaker.value = active.speaker_id;
       }
+      const form = document.querySelector("#content-entry-form");
+      if (form) { form.dataset.requestedQuantity = "1"; form.dataset.confirmedQuantity = "1"; }
       lockEntryForm("继续上次新闻体 · 创作新内容");
       pinNewsRequestLocation({requestId:active.request_id,businessId:business.value,speakerId:active.speaker_id,
         newsMode:'novel_content'});
@@ -396,25 +416,13 @@ export function createContentViews({
           body: "内容方向已经确认，继续准备创作来源；不会重新建立内容方向。",
           actions: `<button type="button" class="btn btn-primary" data-recover-novel-handoff>继续准备</button>`,
         });
-        host.querySelector("[data-recover-novel-handoff]")?.addEventListener("click", async (event) => {
-          const button = event.currentTarget;
-          button.disabled = true;
-          try {
-            await api("/api/create/confirm", {
-              method: "POST",
-              body: JSON.stringify({
-                business_id: active.business_id, speaker_id: active.speaker_id,
-                profile: "news", requested_quantity: 1, confirmed_quantity: 1,
-                selected_opportunity_id: active.selected_opportunity_id,
-                idempotency_key: newConfirmationKey(),
-              }),
-            });
-            await restoreActiveNovelNewsRequest();
-          } catch (error) {
-            showToast(safeCreationMessage(error.detail?.next_action || error.detail?.message || error.message, "暂时无法恢复，请稍后重试。"));
-            if (button.isConnected) button.disabled = false;
-          }
-        });
+        const resume = preparationOperation({
+          business_id: active.business_id, speaker_id: active.speaker_id,
+          profile: "news", requested_quantity: 1, confirmed_quantity: 1,
+          selected_opportunity_id: active.selected_opportunity_id,
+          idempotency_key: `resume_${active.request_id}`,
+        }, active);
+        host.querySelector("[data-recover-novel-handoff]")?.addEventListener("click", resume);
         return true;
       }
       await novelNewsViews.restore(active.request_id, host);
@@ -599,25 +607,14 @@ export function createContentViews({
     entryForm?.classList.toggle("has-capacity-result", Boolean(recommendation.can_continue));
     confirmationKey = newConfirmationKey();
     const gaps = capacity.content_gap_summary || [];
-    host.innerHTML = CreationState({
-      tone: limited ? "warning" : "success",
-      eyebrow: "内容方向",
-      title: `当前有 ${available} 个值得做的内容方向`,
-      body: limited
-        ? `你计划做 ${requested} 条，本次确认 ${recommended} 条；现有创作结构可以支持。系统不会为了凑够数量重复已经做过的内容。`
-        : `你计划做 ${requested} 条，本次确认 ${recommended} 条；现有创作结构可以支持。`,
-      content: `
-        ${CreationMetricRow([
-          { label: "计划数量", value: requested },
-          { label: "内容方向", value: available },
-          { label: "本次确认", value: recommended },
-        ])}
+    host.innerHTML = CreationCapacityState({
+      requested, available, confirmed: recommended, limited,
+      details: `
         ${gaps.length ? `
           <details class="creation-evidence">
             <summary>查看后续补充方向</summary>
             <ul>${gaps.map((gap) => `<li>${escapeHtml(gap)}</li>`).join("")}</ul>
-          </details>` : ""}
-        <p class="creation-governance-line">本次结果只判断内容是否值得继续做，不代表已获得相关素材使用权。</p>`,
+          </details>` : ""}`,
       actions: recommendation.can_continue ? `
         <button id="content-generation-next" class="btn btn-primary" type="button">开始本次创作（${recommended} 条）</button>
         <button class="btn btn-secondary" type="button" data-adjust-quantity>调整数量</button>` : "",
@@ -709,7 +706,7 @@ export function createContentViews({
                   <div class="profile-choice-grid">
                     ${data.novel_news?.available === true ? `<label class="profile-choice selected">
                       <input type="radio" name="create-news-mode" value="novel_content" checked>
-                      <strong>创作新内容${data.novel_news.verification_badge ? " <span class=\"creation-verification-badge\">验证中</span>" : ""}</strong>
+                      <strong>创作新内容${data.novel_news.verification_badge ? " <span class=\"creation-verification-badge\" title=\"当前为隔离验收环境\">隔离验收</span>" : ""}</strong>
                       <span>从客户真实信息中寻找新的内容方向，用新闻体形式表达。</span>
                     </label>` : ""}
                     <label class="profile-choice ${data.novel_news?.available === true ? "" : "selected"}">
@@ -725,7 +722,7 @@ export function createContentViews({
                     <input id="create-quantity" type="number" min="1" max="20" step="1" value="4" inputmode="numeric" required>
                     <span>条</span>
                   </div>
-                  <span class="field-hint">系统会先检查当前还有多少值得做的新内容。</span>
+                  <span class="field-hint" id="create-quantity-hint">系统会先检查当前还有多少值得做的新内容。</span>
                 </div>
                 <div id="content-entry-error" class="form-error" role="alert"></div>
                 <button id="check-content-capacity" class="btn btn-primary" type="submit" ${speakers.length ? "" : "disabled"}>查看可创作内容</button>
@@ -805,6 +802,9 @@ export function createContentViews({
       button.textContent = "正在查看…";
       try {
         if (profile === "news" && selectedNewsModeValue() === "novel_content") {
+          if (Number(document.querySelector("#create-quantity").value) !== 1) {
+            throw new Error("当前新闻体每次制作 1 条视频，请按当前数量继续。");
+          }
           const result = await api("/api/create/novel-news/preview", {
             method: "POST",
             body: JSON.stringify({ business_id: business.value, speaker_id: speakerId }),
@@ -812,11 +812,8 @@ export function createContentViews({
           if (!current()) return;
           novelNewsViews.renderPreview(host, result.projection, {
             businessId: business.value, speakerId,
-            onRequestCreated: async (requestId) => {
-              lockEntryForm("继续新闻体 · 创作新内容");
-              pinNewsRequestLocation({requestId,businessId:business.value,speakerId,newsMode:'novel_content'});
-              await novelNewsViews.restore(requestId, host);
-            },
+            requestedQuantity: Number(document.querySelector("#create-quantity").value),
+            createPreparation: (confirmation) => preparationOperation(confirmation),
           });
           document.querySelector("#content-entry-form")?.classList.toggle(
             "has-capacity-result", Number(result.projection?.production_ready_count || 0) > 0,
@@ -829,6 +826,8 @@ export function createContentViews({
           if (!current()) return;
           newsDeliveryViews.renderPreview(host, result.preview, {
             onRequestCreated: async (requestId) => {
+              const form = document.querySelector("#content-entry-form");
+              if (form) { form.dataset.requestedQuantity = "1"; form.dataset.confirmedQuantity = "1"; }
               lockEntryForm("继续新闻体创作");
               pinNewsRequestLocation({requestId,businessId:business.value,speakerId,newsMode:'cross_profile_repurpose'});
               await newsDeliveryViews.restore(requestId, host);

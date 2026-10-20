@@ -13,7 +13,7 @@ import {
 
 import {
   createContentViews,
-} from "./content-views.js?v=entry-auto-1";
+} from "./content-views.js?v=news-review-ui-2";
 
 import {
   createContentOperationsViews,

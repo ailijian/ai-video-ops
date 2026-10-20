@@ -15,6 +15,7 @@ import subprocess
 import threading
 import tarfile
 import uuid
+import copy
 from contextlib import contextmanager
 from pathlib import Path
 
@@ -26,7 +27,7 @@ from profile_compatibility_contract_v1_1 import (
 )
 from profile_compatibility_decisions_v1_1 import (
     DOMAIN, bytes_for, decision_graph, digest, file_sha, read, ref,
-    resolve_ref, validate_target, write_once, write_bytes_once, identity_path,
+    resolve_ref, validate_target, validate_targets, write_once, write_bytes_once, identity_path,
 )
 
 CONFIG = DOMAIN / 'runtime_config.json'
@@ -434,6 +435,24 @@ def effective_runtime(runtime_root, *, pinned=None):
     from profile_compatibility_decisions_v1_1 import contract_for_version
     contract=contract_for_version('creative-authority-release-v1.2' if config['schema_version'].endswith('v1.2') else RELEASE)
     with control_read(control):
+        # Only the isolated News reader has retained Native qualification.
+        # Reuse is derived and process-local. Every access re-hashes all input
+        # bytes/inventories under the original control fence; no TTL or mtime
+        # grants permission. Two full passes establish a stable before/after
+        # fingerprint before any result becomes reusable.
+        checks=getattr(_read_scope,'news_checks',{})
+        cache_key=str(root)
+        previous=checks.get(cache_key)
+        before=None
+        news=contract.RELEASE.endswith('v1.2') and config['purpose']=='isolated-validation'
+        if news and previous:
+            from profile_compatibility_release_v1_2 import validation_fingerprint,validate_binding
+            before=validation_fingerprint(previous['roots'])
+            if before and before==previous['fingerprint'] and previous.get('active') is not None:
+                active=copy.deepcopy(previous['active'])
+                if pinned is not None:validate_binding(active,pinned)
+                return active
+            checks.pop(cache_key,None)
         pointer = read(root / POINTER)
         if set(pointer) != {'activation_ref'}:
             raise CompatibilityError('Invalid activation pointer')
@@ -474,9 +493,7 @@ def effective_runtime(runtime_root, *, pinned=None):
             raise CompatibilityError('兼容性决定已更新或撤回，请先发布并激活当前版本。')
         result = validate_bundle(manifest_path.parent / 'bundle', manifest)
         # Compare live sources as well as immutable staged snapshot.
-        for value in graph['heads'].values():
-            if value['effective']:
-                validate_target(control, value['target'])
+        validate_targets(control, [value['target'] for value in graph['heads'].values() if value['effective']])
         binding = {'activation_ref': pointer['activation_ref'], 'release_ref': activation['release_ref'],
                    'decision_head_sha256': graph['head_sha256'], 'control_id': config['control_id'],
                    'approval_refs': manifest['approval_refs']}
@@ -489,6 +506,15 @@ def effective_runtime(runtime_root, *, pinned=None):
             if pinned is not None:validate_binding(active,pinned)
         elif pinned is not None and pinned != binding:
             raise CompatibilityError('Open Request uses a different Compatibility activation; cannot continue writes')
+        if news:
+            from profile_compatibility_release_v1_2 import validation_roots,validation_fingerprint
+            roots=validation_roots(root,control,active)
+            after=validation_fingerprint(roots)
+            stable=bool(previous and before and before==after and roots==previous['roots'])
+            if len(checks)>=4:checks.pop(next(iter(checks)))
+            checks[cache_key]={'roots':roots,'fingerprint':after,
+                'active':copy.deepcopy(active) if stable else None}
+            _read_scope.news_checks=checks
         return active
 
 

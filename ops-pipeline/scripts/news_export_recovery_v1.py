@@ -222,12 +222,17 @@ def current_authority(root, binding):
                 raise NewsExportError('NEWS_EXPORT_AUTHORITY_CHANGED')
             yield
             return
-        from news_runtime_v1_2 import configured,current
-        if configured(root):
-            if not binding:
-                raise NewsExportError('NEWS_EXPORT_AUTHORITY_UNAVAILABLE','请先核对当前新闻体创作资格。')
-            current(root,reuse_intent=binding.get('reuse_intent'),pinned=binding)
+        from news_runtime_v1_2 import configured
+        typed_news = configured(root)
+        if typed_news and not binding:
+            raise NewsExportError('NEWS_EXPORT_AUTHORITY_UNAVAILABLE','请先核对当前新闻体创作资格。')
         with runtime_write(root, pinned=binding) as active:
+            if typed_news:
+                from profile_compatibility_contract_v1_2 import BINDING, validate_contract
+                from profile_compatibility_release_v1_2 import binding as exact_news_binding
+                validate_contract(binding, BINDING)
+                if binding != exact_news_binding(active, binding['reuse_intent']):
+                    raise NewsExportError('NEWS_EXPORT_AUTHORITY_CHANGED')
             if 'news' not in active['manifest']['profiles']:
                 raise NewsExportError('NEWS_EXPORT_NEWS_COMPATIBILITY_REQUIRED', '当前发布版本未批准新闻体创作。')
             yield

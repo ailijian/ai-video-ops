@@ -111,9 +111,22 @@ def resolve_ref(root, reference):
     safe_relative(reference['path'])
     root = Path(root).resolve()
     path = (root / reference['path']).resolve()
-    if not path.is_relative_to(root) or not io_path(path).is_file() or io_path(path).is_symlink() or file_sha(path) != reference['sha256']:
+    physical = io_path(path, resolved=True)
+    if not path.is_relative_to(root) or not physical.is_file() or physical.is_symlink() or hashlib.sha256(physical.read_bytes()).hexdigest() != reference['sha256']:
         raise CompatibilityError('Compatibility source version changed or is missing')
     return path
+
+
+def validate_targets(root, targets):
+    """One graph batch: shared News Pattern, independent exact Case checks."""
+    from profile_compatibility_news_v1_2 import validate_targets as validate_news_targets
+    news = [target for target in targets if target.get('target_profile') == 'news']
+    if news:
+        validate_news_targets(root, news)
+    for target in targets:
+        if target.get('target_profile') != 'news':
+            validate_target(root, target)
+    return targets
 
 
 def target_id(target):

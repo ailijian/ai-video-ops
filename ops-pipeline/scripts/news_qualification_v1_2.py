@@ -5,14 +5,14 @@ release carries only exact references and Native outcome evidence. Missing
 origins fail closed. A narrow read scope can inspect a completed qualification
 after its successor release is active, but can never admit a business write.
 """
-from contextlib import contextmanager
+from contextlib import contextmanager, ExitStack
 from contextvars import ContextVar
 from pathlib import Path
 from profile_compatibility_contract_v1_1 import CompatibilityError
 from profile_compatibility_contract_v1_2 import (EVIDENCE,QUALIFICATION,CONFIG as CONFIG_VERSION,
     ACTIVATION,RELEASE,validate_contract)
 from profile_compatibility_decisions_v1_1 import (DOMAIN,read,ref,resolve_ref,digest,
-    write_once,decision_graph,validate_target,file_sha)
+    write_once,decision_graph,validate_target,validate_targets,file_sha)
 from profile_compatibility_release_v1_1 import CONFIG,POINTER,_control,control_read
 
 _completed_read=ContextVar('news_completed_qualification_read',default=None)
@@ -78,8 +78,7 @@ def _archived_qualification(root,pinned):
             or manifest['decision_head_sha256']!=graph['head_sha256']
             or activation['decision_head_sha256']!=graph['head_sha256']):
             raise CompatibilityError('Qualification source decisions changed or were withdrawn')
-        for value in graph['heads'].values():
-            if value['effective']:validate_target(control,value['target'])
+        validate_targets(control,[value['target'] for value in graph['heads'].values() if value['effective']])
         bundle=path.parent/'bundle';result=validate_bundle(bundle,manifest)
         base={'activation_ref':pinned['activation_ref'],'release_ref':activation['release_ref'],
             'decision_head_sha256':graph['head_sha256'],'control_id':config['control_id'],
@@ -93,8 +92,16 @@ def _archived_qualification(root,pinned):
 
 @contextmanager
 def completed_read(root,request_id,binding):
-    if _completed_read.get() is not None:raise CompatibilityError('Nested qualification admission is forbidden')
     active=_archived_qualification(root,binding)
+    with _completed_read_scope(root,request_id,binding,active):
+        yield active
+
+
+@contextmanager
+def _completed_read_scope(root,request_id,binding,active):
+    if _completed_read.get() is not None:raise CompatibilityError('Nested qualification admission is forbidden')
+    from profile_compatibility_release_v1_2 import validate_binding
+    validate_binding(active,binding)
     token=_completed_read.set({'root':Path(root).resolve(),'request_id':request_id,
         'binding':binding,'active':active})
     try:yield active
@@ -165,6 +172,34 @@ def create_evidence(root,request_id,reuse_intent):
 
 def validate_evidence(source_root,evidence_ref):
     """Strict retained-origin verification used by the original Coverage owner."""
+    return _validate_evidence(source_root,evidence_ref,completed_read)
+
+
+def validate_evidence_batch(source_root,evidence_refs):
+    """Verify both Native results against one locked archived source graph.
+
+    Only the shared structural graph is reused within this call. Each route's
+    Human/XLSX/Receipt/Closure/Ledger verifier still executes independently.
+    No result survives this batch or a released control lock.
+    """
+    origins=[]
+    for evidence_ref in evidence_refs:
+        value=validate_contract(read(resolve_ref(source_root,evidence_ref)),EVIDENCE)
+        origins.append(Path(value['origin_runtime']['pipeline_root']).resolve())
+    controls={str(_control(root)[1]):_control(root)[1] for root in origins}
+    with ExitStack() as stack:
+        for key in sorted(controls):stack.enter_context(control_read(controls[key]))
+        archives={}
+
+        def shared_read(root,request_id,binding):
+            key=(str(Path(root).resolve()),digest({k:v for k,v in binding.items() if k!='reuse_intent'}))
+            if key not in archives:archives[key]=_archived_qualification(root,binding)
+            return _completed_read_scope(root,request_id,binding,archives[key])
+
+        return [_validate_evidence(source_root,item,shared_read) for item in evidence_refs]
+
+
+def _validate_evidence(source_root,evidence_ref,reader):
     value=validate_contract(read(resolve_ref(source_root,evidence_ref)),EVIDENCE)
     origin=value['origin_runtime'];root=Path(origin['pipeline_root']).resolve()
     if str(root)!=origin['pipeline_root'] or origin['configuration_ref']['path']!=CONFIG.as_posix():
@@ -182,7 +217,7 @@ def validate_evidence(source_root,evidence_ref):
         if name.endswith('_ref'):resolve_ref(root,item)
     request=read(resolve_ref(root,value['request_ref']));rid=request['request_id']
     if request.get('profile_compatibility_v1_2')!=binding:raise CompatibilityError('Qualification Request binding differs')
-    with completed_read(root,rid,binding):
+    with reader(root,rid,binding):
         actual,references,result=_native_result(root,rid,value['reuse_intent'])
         for name,path in references.items():
             if ref(root,path)!=value[name]:raise CompatibilityError('Qualification refers to another native artifact')

@@ -4,13 +4,14 @@ Same canonical control/decision domain and same pack/verify/atomic activation.
 No production scope, implicit Pattern expansion or second Compatibility store.
 """
 from pathlib import Path
+import hashlib
 import re
 from operation_lock_v1 import operation_lock
 from profile_compatibility_contract_v1_1 import CompatibilityError,CONTROL_LOCK,safe_relative
 from profile_compatibility_contract_v1_2 import (REGISTRY,COVERAGE,RELEASE,READER,BINDING,
     QUALIFICATION,VALIDATED,FOUNDER,validate_contract)
 from profile_compatibility_decisions_v1_1 import (DOMAIN,read,write_once,resolve_ref,ref,digest,
-    decision_graph,validate_target)
+    decision_graph,validate_target,validate_targets)
 
 
 def validate_machine_sources(repo,commit):
@@ -48,8 +49,8 @@ def eligibility(root,validation_refs=None,stage=None):
     else:
         if stage not in {VALIDATED,FOUNDER} or len(refs)!=2:
             raise CompatibilityError('Both independent native News outcomes are required')
-        from news_qualification_v1_2 import validate_evidence
-        results=[validate_evidence(root,r) for r in refs]
+        from news_qualification_v1_2 import validate_evidence_batch
+        results=validate_evidence_batch(root,refs)
         if {r['reuse_intent'] for r in results}!={'novel_content','cross_profile_repurpose'}:
             raise CompatibilityError('One path cannot qualify the other News path')
     return {'stage':stage,'purpose':'isolated-validation','validation_refs':refs}
@@ -59,7 +60,7 @@ def components(root,graph,admission):
     targets=[v['target'] for v in graph['heads'].values() if v['effective']]
     if not targets or not any(t['target_profile']=='news' for t in targets):
         raise CompatibilityError('This isolated reader requires exact independent News decisions')
-    for t in targets:validate_target(root,t)
+    validate_targets(root,targets)
     news=[t for t in targets if t['target_profile']=='news'];mix=[t for t in targets if t['target_profile']=='mix']
     if len({t['profile_ref']['sha256'] for t in news})!=1 or len({t['pattern_ref']['sha256'] for t in news})!=1:
         raise CompatibilityError('Narrow News qualification requires one exact Profile and Pattern scope')
@@ -198,3 +199,54 @@ def validate_binding(active,pinned):
     if pinned!=binding(active,pinned['reuse_intent']):
         raise CompatibilityError('News source/activation/decision scope changed; cannot continue the old operation')
     return pinned
+
+
+def validation_roots(runtime_root,control,active):
+    """Complete retained input trees for the isolated-only derived reader.
+
+    This is called only after the original strict verifier succeeded. It never
+    follows an unverified client-supplied origin or manufactures eligibility.
+    """
+    roots={Path(runtime_root).resolve(),Path(control).resolve()}
+    from profile_compatibility_release_v1_1 import _control
+    for item in active['manifest']['eligibility']['validation_refs']:
+        value=read(resolve_ref(active['bundle_root'],item))
+        origin=Path(value['origin_runtime']['pipeline_root']).resolve()
+        roots.add(origin);roots.add(_control(origin)[1])
+    return tuple(sorted(roots,key=str))
+
+
+def validation_fingerprint(roots):
+    """Fresh bytes and complete inventory, never mtime/TTL or a ready flag.
+
+    Include each private qualification origin, current sources, activation,
+    decisions, staged bundles, publication evidence and exported workbooks.
+    Operational lock files contain no business evidence. An unreadable tree
+    or symlink disables reuse; the original verifier then runs normally.
+    """
+    from human_review_operations_v1 import io_path
+    digest=hashlib.sha256()
+    def include(value):
+        if isinstance(value,str):value=value.encode('utf-8')
+        digest.update(len(value).to_bytes(8,'big'));digest.update(value)
+    try:
+        for root in roots:
+            include(str(root))
+            for name in ('data','output'):
+                directory=io_path(root/name)
+                include(str(directory))
+                if not directory.is_dir():
+                    include(name+':missing');continue
+                for path in sorted(directory.rglob('*')):
+                    relative=path.relative_to(directory)
+                    if '.locks' in relative.parts:continue
+                    if path.is_symlink() or (hasattr(path,'is_junction') and path.is_junction()):return None
+                    include(name+'/'+relative.as_posix())
+                    include('file' if path.is_file() else 'directory')
+                    if path.is_file():include(hashlib.sha256(path.read_bytes()).digest())
+        # Native qualification binds these exact verifier versions too.
+        for name in ('novel_news_v1.py','news_delivery_v1.py'):
+            include(Path(__file__).with_name(name).read_bytes())
+    except OSError:
+        return None
+    return digest.hexdigest()

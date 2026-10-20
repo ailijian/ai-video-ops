@@ -22,6 +22,7 @@ def test_create_mix_and_news_share_creation_primitives():
         "CreationSummary",
         "CreationState",
         "CreationMetricRow",
+        "CreationCapacityState",
         "TopicList",
         "TopicRow",
         "ContentReviewList",
@@ -34,7 +35,7 @@ def test_create_mix_and_news_share_creation_primitives():
         assert f"export function {name}" in shared
 
     import_contract = (
-        'from "./creation-components.js?v=productized-stage3-3"'
+        'from "./creation-components.js?v=news-review-ui-2"'
     )
     assert import_contract in create
     assert import_contract in mix
@@ -60,15 +61,18 @@ def test_create_entry_is_business_language_and_progressively_collapses():
 
 def test_capacity_ready_limited_and_zero_states_are_productized():
     create = read_asset("content-views.js")
+    shared = read_asset("creation-components.js")
 
     assert "当前有 ${available} 个值得做的内容方向" in create
-    assert "你计划做 ${requested} 条，本次确认 ${recommended} 条" in create
-    assert "现有创作结构可以支持" in create
+    assert "CreationCapacityState({" in create
+    assert "confirmed: recommended" in create
+    assert "你计划做 ${requested} 条，本次确认 ${confirmed} 条" in shared
+    assert "现有创作结构可以支持" in shared
     assert "开始本次创作（${recommended} 条）" in create
     assert "调整数量" in create
     assert "暂时没有值得继续做的新内容" in create
-    assert "系统不会为了凑够数量重复已经做过的内容" in create
-    assert "不代表已获得相关素材使用权" in create
+    assert "系统不会为了凑够数量重复已经做过的内容" in shared
+    assert "不代表已获得相关素材使用权" in shared
 
 
 def test_coverage_gap_presents_process_supplement_as_optional():
@@ -129,7 +133,7 @@ def test_mix_lifecycle_and_review_contract_are_complete():
         "选题已经准备好",
         "生成文案",
         "审核文案",
-        "已处理 0 /",
+        "默认选择通过",
         "提交审核",
         "本次没有通过审核的内容",
         "导出 Excel",
@@ -141,7 +145,7 @@ def test_mix_lifecycle_and_review_contract_are_complete():
     assert "ContentReviewItem" in mix
 
 
-def test_mix_review_revision_bulk_no_export_and_export_recovery_are_present():
+def test_mix_review_default_pass_revision_no_export_and_export_recovery_are_present():
     shared = read_asset("creation-components.js")
     mix = read_asset("content-delivery-views.js")
 
@@ -154,8 +158,7 @@ def test_mix_review_revision_bulk_no_export_and_export_recovery_are_present():
         assert contract in shared
 
     for contract in (
-        "data-approve-all",
-        "completed !== items.length",
+        "默认选择通过",
         "REVIEW_COMPLETE_NO_EXPORT",
         "本次没有通过审核的内容",
         "state.export?.completed === true",
@@ -163,6 +166,10 @@ def test_mix_review_revision_bulk_no_export_and_export_recovery_are_present():
         "完成导出",
     ):
         assert contract in mix
+    assert "bindContentReviewControls(host" in mix
+    assert "completed !== items.length" in shared
+    assert 'value="approved" checked data-content-decision' in shared
+    assert "data-approve-all" not in mix
 
 
 def test_news_lifecycle_selection_review_and_constraints_are_complete():
@@ -178,8 +185,8 @@ def test_news_lifecycle_selection_review_and_constraints_are_complete():
 
     for label in (
         "暂无适合生成新闻体的已有内容",
-        "选择已有内容",
-        "用所选内容生成标题",
+        "查看已有内容",
+        "开始本次创作（1 条）",
         "新闻体创作已开始",
         "生成标题",
         "审核标题",
@@ -201,8 +208,8 @@ def test_news_empty_selection_edit_export_completion_and_recovery_are_present():
 
     for label in (
         "暂无适合生成新闻体的已有内容",
-        "当前可使用 ${sources.length} 条已有内容",
-        "用所选内容生成标题",
+        "当前有 ${sources.length} 条可重新表达的已有内容",
+        "开始本次创作（1 条）",
         "生成标题",
         "正在生成标题…",
         "审核标题",
