@@ -5042,6 +5042,8 @@ def replace_json_if_unchanged(
     replacement: dict[str, Any],
 ) -> str:
     path = path.expanduser().resolve()
+    from ledger_history_v1 import prohibit_unversioned_ledger_write
+    prohibit_unversioned_ledger_write(path)
     if read_json(path) != expected_current:
         raise RuntimeError(f"Artifact changed before deterministic reevaluation: {path}")
     payload = json.dumps(replacement, ensure_ascii=False, indent=2).encode("utf-8")
@@ -6585,6 +6587,8 @@ def append_news_presentation_history(
     if information_units_after != information_units_before:
         raise RuntimeError("Presentation History duplicated Historical Exposure units.")
     ledger_path = ledger_path.expanduser().resolve()
+    from ledger_history_v1 import prohibit_unversioned_ledger_write
+    prohibit_unversioned_ledger_write(ledger_path)
     if read_json(ledger_path) != expected_ledger:
         raise RuntimeError("Content Ledger changed before Presentation History append.")
     payload = json.dumps(updated, ensure_ascii=False, indent=2).encode("utf-8")

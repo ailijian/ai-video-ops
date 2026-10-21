@@ -346,6 +346,23 @@ def resume_novel_generation_task(database_path: Path, task_id: str, authorizatio
     return get_task(database_path, task_id)
 
 
+def resume_publish_copy_task(database_path: Path, task_id: str, authorization_context: dict, *, queue_max: int) -> dict[str, Any]:
+    """Only admitted by the typed Native preview; preserve the original Task."""
+    with transaction(database_path, immediate=True) as db:
+        row = db.execute('SELECT * FROM tasks WHERE task_id=?', (task_id,)).fetchone()
+        payload = json.loads(row['payload_json']) if row else {}
+        if not row or payload.get('operation') not in {'publish_copy_generate', 'publish_copy_export'} or not payload.get('publish_copy'):
+            raise TaskSubmissionError('PUBLISH_COPY_OPERATION_REQUIRED', 'Original publish operation required')
+        if row['status'] == 'failed':
+            ensure_task_capacity(db, queue_max=queue_max, gpu_pending_per_user_max=1,
+                execution_lane=STANDARD_BACKGROUND, created_by_user_id=row['created_by_user_id'])
+            payload['publish_copy']['authorization_context'] = authorization_context
+            db.execute("UPDATE tasks SET status='queued',stage='继续完成原操作',payload_json=?,worker_id=NULL,"
+                "heartbeat_at=NULL,lease_expires_at=NULL,error_code=NULL,error_message=NULL,updated_at=? WHERE task_id=? AND status='failed'",
+                (json.dumps(payload, ensure_ascii=False), iso_utc(), task_id))
+    return get_task(database_path, task_id)
+
+
 def resume_news_export_task(database_path: Path, task_id: str, authorization_context: dict, *, queue_max: int) -> dict[str, Any]:
     """Continue the same admitted Native News delivery, not a second Task."""
     with transaction(database_path, immediate=True) as db:

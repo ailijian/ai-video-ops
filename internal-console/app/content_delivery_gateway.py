@@ -825,7 +825,11 @@ def _project_export_closure(
         or {}
     )
 
-    if (
+    anchor_path=paths['export_closure'].with_name('generation_export_anchor_evidence_v1.json')
+    history=None
+    if anchor_path.is_file():
+        history=_verify_completed_mix_export(settings,request_id,Path(closure['excel_export']['path']))
+    elif (
         not ledger_path.is_file()
         or ledger_ref.get(
             "sha256_after"
@@ -862,6 +866,7 @@ def _project_export_closure(
         "export_verified": bool(
             export.get("completed")
         ),
+        **({'history_anchor_ref':history['history_anchor_ref']} if history else {}),
     }
 
 
@@ -1689,8 +1694,7 @@ def exported_excel_path(
         raise CanonicalOperationError('EXPORT_RECEIPT_REQUIRED','交付确认尚未完成，当前不能下载。','请继续完成原导出操作；文件会保留。')
     from delivery_receipt_recovery_v1 import export_paths
     if export_paths(settings.pipeline_root,request_id)[0].is_file():
-        from close_generation_export_v1 import close_generation_export
-        close_generation_export(pipeline_root=settings.pipeline_root,request_id=request_id,excel_path=path,verify_only=True)
+        _verify_completed_mix_export(settings, request_id, path)
     return path
 
 
@@ -1712,9 +1716,22 @@ def exported_excel_filename(
     )
 
 
+def _verify_completed_mix_export(settings: Settings, request_id: str, excel: Path) -> dict[str, Any]:
+    # Native workbook and history validation uses the declared Pipeline runtime,
+    # just like export itself. Console must not acquire a parallel XLSX reader.
+    try:
+        return _run_pipeline_command(settings, [str(settings.pipeline_python_executable or settings.python_executable),
+            str(settings.repo_root / 'ops-pipeline/scripts/close_generation_export_v1.py'),
+            '--pipeline-root', str(settings.pipeline_root), '--request-id', request_id,
+            '--excel', str(excel), '--verify-history'])
+    except CanonicalOperationError as exc:
+        raise CanonicalOperationError(exc.code,'历史交付的文件或证据需要核对。',
+            '请保留原文件和收据；缺少真实历史证据时不能自动追认。') from exc
+
+
 def completed_mix_export(settings: Settings, request_id: str) -> dict[str, Any] | None:
     """Read-only original Closure verification; never enqueue or repair artifacts."""
-    from close_generation_export_v1 import close_generation_export, ExportClosureError
+    from close_generation_export_v1 import ExportClosureError
     from .database import connect
     from .task_service import get_task
     request_id = _validate_request_id(request_id)
@@ -1724,7 +1741,7 @@ def completed_mix_export(settings: Settings, request_id: str) -> dict[str, Any] 
     try:
         _load_request(settings, request_id)
         excel = exported_excel_path(settings, request_id)
-        result = close_generation_export(pipeline_root=settings.pipeline_root, request_id=request_id, excel_path=excel, verify_only=True)
+        result = _verify_completed_mix_export(settings, request_id, excel)
     except (ExportClosureError, RecoveryError, OSError, ValueError) as exc:
         raise CanonicalOperationError('EXPORT_CLOSURE_RECOVERY_INVALID', '已完成导出的文件或记录校验不一致。', '请保留历史记录并联系维护人员检查；本次未建立新任务。') from exc
     db = connect(settings.database_path)

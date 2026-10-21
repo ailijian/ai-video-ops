@@ -1,4 +1,5 @@
 import { startTaskPolling } from "./task-progress.js";
+import { mountPublishCopy } from './publish-copy-views.js';
 import {
   bindContentReviewControls,
   ContentReviewItem,
@@ -251,6 +252,7 @@ export function createNewsDeliveryViews({ api, showToast, escapeHtml }) {
       const state = response.state;
       host.innerHTML = `<div class="content-delivery-stack">${workflowHeader(state)}${renderBody(state)}</div>`;
       bindState(host, state, () => restore(requestId, host));
+      if (state.review?.approved || state.stop_point_reached) await mountPublishCopy(host, requestId, { api, showToast, escapeHtml });
       return state;
     } catch (error) {
       host.innerHTML = CreationState({

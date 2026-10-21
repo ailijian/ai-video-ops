@@ -984,6 +984,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 'CASE_REVISION_BOUNDARY_INVALID','CASE_REVISION_TIMELINE_INVALID'} else 409
         if exc.code.startswith('CASE_SHARE_'):
             status_code = 503 if exc.code=='CASE_SHARE_PUBLICATION_PENDING' else 409
+        if exc.code.startswith(('PUBLISH_COPY_', 'LEDGER_HISTORY_')):
+            status_code = 503 if exc.code in {'PUBLISH_COPY_DISABLED','PUBLISH_COPY_OPERATION_UNAVAILABLE'} else 409
         detail = error_detail(exc.code, exc.message, exc.next_action)
         detail.update(exc.details)
         return JSONResponse(
@@ -3967,6 +3969,8 @@ def build_app(settings: Settings | None = None) -> FastAPI:
     assets_path = static_path / "assets"
     from .case_evidence_review import register_routes as register_case_evidence_routes
     register_case_evidence_routes(app,settings,require_console_access,require_csrf,review_command,task_runner)
+    from .publish_copy_routes import register_routes as register_publish_copy_routes
+    register_publish_copy_routes(app, settings, require_console_access, require_csrf, background_task_runner)
     app.mount("/assets", StaticFiles(directory=assets_path), name="assets")
 
     @app.get("/{full_path:path}", include_in_schema=False)

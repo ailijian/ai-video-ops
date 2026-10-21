@@ -48,7 +48,11 @@ def test_withdraw_reapprove_and_reactivate_cannot_revive_old_open_operations(nod
             command=[settings.pipeline_python_executable,str(root/'scripts/close_generation_export_v1.py'),
                 '--pipeline-root',str(root),'--request-id',export['rid'],'--excel',str(excel)]
             closure=subprocess.run(command,capture_output=True,text=True,encoding='utf-8',env=flow['environment'])
-            assert closure.returncode!=0 and 'Compatibility' in closure.stderr,closure.stdout+closure.stderr
+            # The Native CLI now emits its bounded machine error rather than
+            # exposing an internal Compatibility traceback on stderr.
+            rejected=json.loads(closure.stdout)
+            assert closure.returncode!=0 and rejected['ok'] is False,closure.stdout+closure.stderr
+            assert rejected['code']=='PROFILE_COMPATIBILITY_BLOCKED',rejected
             assert {**inventory(human['directory']),**inventory(export['directory'])}==before
             db=connect(settings.database_path)
             try:assert db.execute('SELECT count(*) FROM tasks').fetchone()[0]==count

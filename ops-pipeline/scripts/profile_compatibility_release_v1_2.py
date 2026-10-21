@@ -5,7 +5,9 @@ No production scope, implicit Pattern expansion or second Compatibility store.
 """
 from pathlib import Path
 import hashlib
+import os
 import re
+import stat
 from operation_lock_v1 import operation_lock
 from profile_compatibility_contract_v1_1 import CompatibilityError,CONTROL_LOCK,safe_relative
 from profile_compatibility_contract_v1_2 import (REGISTRY,COVERAGE,RELEASE,READER,BINDING,
@@ -237,13 +239,34 @@ def validation_fingerprint(roots):
                 include(str(directory))
                 if not directory.is_dir():
                     include(name+':missing');continue
-                for path in sorted(directory.rglob('*')):
-                    relative=path.relative_to(directory)
-                    if '.locks' in relative.parts:continue
-                    if path.is_symlink() or (hasattr(path,'is_junction') and path.is_junction()):return None
-                    include(name+'/'+relative.as_posix())
-                    include('file' if path.is_file() else 'directory')
-                    if path.is_file():include(hashlib.sha256(path.read_bytes()).digest())
+                # Keep the exact original Path ordering and digest format, but
+                # derive relative names during traversal instead of repeatedly
+                # reparsing the same long absolute prefix for every file.
+                inventory=[];pending=[(str(directory),())]
+                while pending:
+                    parent,parts=pending.pop()
+                    with os.scandir(parent) as entries:
+                        for entry in entries:
+                            if entry.name=='.locks':continue
+                            relative=(*parts,entry.name)
+                            if entry.is_symlink():return None
+                            if entry.is_dir(follow_symlinks=False):
+                                meta=os.lstat(entry.path)
+                                if (stat.S_ISLNK(meta.st_mode) or getattr(meta,'st_reparse_tag',None)
+                                    ==getattr(stat,'IO_REPARSE_TAG_MOUNT_POINT',-1)):return None
+                                pending.append((entry.path,relative))
+                            inventory.append((Path(*relative),'/'.join(relative),entry.path))
+                for _,relative,path in sorted(inventory,key=lambda item:item[0]):
+                    # Fresh metadata at hashing time; no mtime or DirEntry
+                    # metadata cache can conceal a replaced file or link.
+                    meta=os.lstat(path)
+                    if (stat.S_ISLNK(meta.st_mode) or getattr(meta,'st_reparse_tag',None)
+                        ==getattr(stat,'IO_REPARSE_TAG_MOUNT_POINT',-1)):return None
+                    include(name+'/'+relative)
+                    is_file=stat.S_ISREG(meta.st_mode)
+                    include('file' if is_file else 'directory')
+                    if is_file:
+                        with open(path,'rb') as handle:include(hashlib.sha256(handle.read()).digest())
         # Native qualification binds these exact verifier versions too.
         for name in ('novel_news_v1.py','news_delivery_v1.py'):
             include(Path(__file__).with_name(name).read_bytes())

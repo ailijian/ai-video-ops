@@ -11,6 +11,17 @@ Neither the joint action nor its execution result grants media or production rig
 
 This map records existing owners and consumers. It introduces no new business authority.
 
+The Founder-approved [Generation Export Anchor v1](GENERATION_EXPORT_ANCHOR_V1_CONTRACT.md)
+adds exact Ledger snapshots and Native transition evidence for historical Mix
+delivery and supplemental export. Original Closure/Ledger owners retain their
+authority; the old v1.0 reader is unchanged and insufficient legacy evidence
+remains blocked.
+
+[Publish Copy / Supplemental Delivery v1](PUBLISH_COPY_V1_CONTRACT.md) derives
+publication fields from exact approved production sources. Its separate Human
+confirmation and versioned delivery never replace Native production approval,
+Closure, Content Ledger or media-rights authority.
+
 ## Customer restriction contract amendment — 2026-10-10
 
 Founder / Architecture verdict: `E2_A_CONTRACT_AMENDMENT_APPROVED_FOR_IMPLEMENTATION`.

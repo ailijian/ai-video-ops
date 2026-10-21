@@ -53,6 +53,7 @@ class Settings:
     case_acquisition_provider: str = "legacy_downloader"
     novel_news_rollout: str = "off"
     novel_news_validation_phones: tuple[str, ...] = ()
+    publish_copy_enabled: bool = False
 
     @classmethod
     def from_environment(cls) -> "Settings":
@@ -141,4 +142,5 @@ class Settings:
             case_acquisition_provider=acquisition_provider,
             novel_news_rollout=novel_news_rollout,
             novel_news_validation_phones=validation_phones,
+            publish_copy_enabled=os.environ.get('AIVO_PUBLISH_COPY_ENABLED', '0') == '1',
         )

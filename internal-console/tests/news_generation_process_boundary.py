@@ -34,6 +34,14 @@ def transport(prompt):
         deadline = time.monotonic() + 60
         while not control.is_file() and time.monotonic() < deadline:
             time.sleep(0.05)
+    if mode in {'pc_beats_7','pc_beats_8'}:
+        count=int(mode.rsplit('_',1)[1]);atoms=json.loads(prompt)['allowed_fact_atoms']
+        price=next(a for a in atoms if a['field']=='pricing_facts')
+        support=[a for a in atoms if a['field']=='included_service_facts']
+        assert len(support)>=count-1
+        return {'payload':{'beats':[{'semantic_role':'price_offer_first_semantic_anchor' if i==0 else 'approved_customer_information',
+            'text':atom['fact'],'visual_anchor':'全虚构套餐信息牌','duration_guidance':'2秒',
+            'source_fact_refs':[atom['fact_atom_id']]} for i,atom in enumerate([price,*support[:count-1]])]}}
     return novel_transport(prompt)
 
 

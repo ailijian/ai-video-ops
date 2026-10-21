@@ -43,6 +43,8 @@ BACKGROUND_OPERATIONS: dict[str, tuple[str, str]] = {
     "news_export": ("excel_export", "导出 News Excel"),
     "novel_news_generate": ("content_generation", "生成新闻体新内容"),
     "novel_news_export": ("excel_export", "导出新闻体新内容"),
+    "publish_copy_generate": ("content_generation", "生成发布信息"),
+    "publish_copy_export": ("excel_export", "导出完整交付"),
 }
 
 
@@ -155,6 +157,7 @@ class BackgroundTaskRunner:
         handlers: dict[str, Callable[[Settings, str], dict[str, Any]]] | None = None,
     ) -> None:
         self.settings = settings
+        from .publish_copy_gateway import generate as publish_generate, export as publish_export
         self.handlers = handlers or {
             "content_plan": resolve_content_plan,
             "script_generation": generate_scripts,
@@ -163,6 +166,8 @@ class BackgroundTaskRunner:
             "news_export": export_news_excel,
             "novel_news_generate": generate_novel_news,
             "novel_news_export": export_novel_news,
+            "publish_copy_generate": publish_generate,
+            "publish_copy_export": publish_export,
         }
         self.executor = ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="standard-background"
@@ -187,6 +192,26 @@ class BackgroundTaskRunner:
         operation = str(payload.get("operation") or "")
         request_id = str(payload.get("request_id") or task.get("subject_ref") or "")
         try:
+            if operation in {'publish_copy_generate', 'publish_copy_export'}:
+                from .publish_copy_gateway import native
+                state = native(self.settings, request_id, 'state')
+                if operation == 'publish_copy_export':
+                    result = native(self.settings, request_id, 'effective')
+                    if result:
+                        from profile_compatibility_decisions_v1_1 import read
+                        receipt = read(self.settings.pipeline_root / result['receipt_ref']['path'])
+                        confirmation = read(self.settings.pipeline_root / receipt['confirmation_ref']['path'])
+                        if confirmation['draft_ref'] == (payload.get('publish_copy') or {}).get('expected_draft_ref'):
+                            return 'completed'
+                    return None
+                execution = payload.get('publish_copy') or {}
+                if state.get('operation_id') != execution.get('operation_id'): return 'failed'
+                if state['state'] == 'draft_ready': return 'completed'
+                if state['state'] in {'not_dispatched', 'validated_result_unpublished'}: return None
+                update_task(self.settings.database_path, task_id, error_code='PUBLISH_COPY_OUTCOME_UNKNOWN'
+                    if state['state'] == 'dispatched_outcome_unknown' else 'PUBLISH_COPY_SOURCE_CHANGED',
+                    error_message='模型结果无法确认，系统不会自动重复调用。' if state['state'] == 'dispatched_outcome_unknown' else '来源或授权需要重新核对。')
+                return 'failed'
             if operation in {"content_plan", "script_generation", "mix_export"}:
                 state = get_content_delivery_state(self.settings, request_id)
                 done = {
@@ -248,7 +273,7 @@ class BackgroundTaskRunner:
             else:
                 return "failed"
         except CanonicalOperationError:
-            if operation == 'novel_news_generate':
+            if operation in {'novel_news_generate', 'publish_copy_generate', 'publish_copy_export'}:
                 return 'failed'
             return None
         return "completed" if done else None
@@ -318,6 +343,11 @@ class BackgroundTaskRunner:
                 return
 
             def execute() -> dict[str, Any]:
+                if operation in {'publish_copy_generate', 'publish_copy_export'}:
+                    # Native short fences and executor ownership do not hold a
+                    # Console process lock across external model latency.
+                    return self.handlers[operation](self.settings, request_id,
+                        **payload['publish_copy'], **({'task_id': task_id} if operation == 'publish_copy_generate' else {}))
                 if operation in {"novel_news_generate", "novel_news_export"}:
                     require_novel_news_task(self.settings, (task.get("created_by") or {}).get("user_id"))
                 if operation == 'novel_news_generate':

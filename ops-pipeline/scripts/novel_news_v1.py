@@ -564,6 +564,18 @@ def review_novel_news_plan(
     return approved
 
 
+def export_supplemental_delivery(*, pipeline_root, request_id, authorization_context, expected_draft_ref=None):
+    """PC3 delegation; the original Native writer owns both delivery formats."""
+    from creation_delivery_v1 import export
+    root = Path(pipeline_root).resolve()
+    def ensure(src):
+        export_novel_news(pipeline_root=root, request_id=request_id, export_context=authorization_context)
+        validate_novel_news_export(pipeline_root=root, request_id=request_id)
+        paths = _paths(root, request_id)
+        return paths['receipt'], paths['closure']
+    return export(root, request_id, authorization_context, native_owner='novel_news_v1', ensure_core=ensure, expected_draft_ref=expected_draft_ref)
+
+
 def _template(root: Path) -> Path:
     from news_runtime_v1_2 import configured,current
     from profile_compatibility_decisions_v1_1 import resolve_ref
@@ -578,6 +590,31 @@ def _template(root: Path) -> Path:
     if not candidate.is_file() or sha256_file(candidate) != contract.get("template_sha256"):
         raise NovelNewsError("NEWS_NOVEL_TEMPLATE_LINEAGE_INVALID", "Registered News Excel template is missing or changed.")
     return candidate
+
+
+def _native_ledger_entry(context, approved, beats, output_path, exported_at):
+    paths=context['paths'];request_id=context['request']['request_id']
+    content_id=request_id+'-N001';business_id=context['request']['persona_id']
+    titles=[b['text'] for b in beats]
+    return {
+        "content_id": content_id, "concept_ref": context["selected"]["concept_id"],
+        "business_id": business_id, "speaker_id": context["request"]["speaker_persona"],
+        "production_profile": "news", "profile": "news", "reuse_intent": "novel_content",
+        "batch_ref": request_id, "status": "exported",
+        "semantic_signature": context["selected"]["semantic_signature"],
+        "central_claim": context["selected"]["central_claim"],
+        "title": titles[0], "narration": "。".join(titles),
+        "primary_fact_refs": context["selected"]["primary_fact_refs"],
+        "supporting_fact_refs": context["selected"]["supporting_fact_refs"],
+        "primary_fact_atom_refs": context["selected"]["primary_fact_atom_refs"],
+        "fact_atom_refs": sorted({ref for beat in beats for ref in beat["source_fact_refs"]}),
+        "approved_at": approved["reviewed_at"], "exported_at": exported_at,
+        "new_semantic_content_count_delta": 1,
+        "micro_information_beats": beats,
+        "source_request_ref": {"path": str(paths["request"]), "sha256": sha256_file(paths["request"])},
+        "approved_review_ref": {"path": str(paths["approved"]), "sha256": sha256_file(paths["approved"])},
+        "export_receipt_ref": {"path": str(paths["receipt"]), "sha256": sha256_file(paths["receipt"])},
+    }
 
 
 def export_novel_news(*, pipeline_root: Path, request_id: str, exported_by: str = "",
@@ -640,6 +677,8 @@ def _export_novel_news_native(
     directory = paths["approved"].parent
     if paths["receipt"].is_file() and paths["closure"].is_file():
         validate_novel_news_export(pipeline_root=root, request_id=request_id)
+        from ledger_history_v1 import finish_completed_news_request
+        finish_completed_news_request(root,business_id,request_id,directory,paths['receipt'],paths['closure'],export_context)
         return {"request_id": request_id, "output_path": str(output_path), "output_name": output_path.name,
             "content_id": content_id, "presentation_id": request_id + "-P001",
             "new_semantic_content_count_delta": 1, "remote_model_called": False, "recovered": True}
@@ -673,25 +712,7 @@ def _export_novel_news_native(
         raise NewsExportError("NEWS_EXPORT_RECEIPT_CONFLICT")
     validate_receipt_publication(root, directory, receipt, output=output_path, template=template, titles=titles)
     exported_at = intent["created_at"]
-    entry = {
-        "content_id": content_id, "concept_ref": context["selected"]["concept_id"],
-        "business_id": business_id, "speaker_id": context["request"]["speaker_persona"],
-        "production_profile": "news", "profile": "news", "reuse_intent": "novel_content",
-        "batch_ref": request_id, "status": "exported",
-        "semantic_signature": context["selected"]["semantic_signature"],
-        "central_claim": context["selected"]["central_claim"],
-        "title": titles[0], "narration": "。".join(titles),
-        "primary_fact_refs": context["selected"]["primary_fact_refs"],
-        "supporting_fact_refs": context["selected"]["supporting_fact_refs"],
-        "primary_fact_atom_refs": context["selected"]["primary_fact_atom_refs"],
-        "fact_atom_refs": sorted({ref for beat in beats for ref in beat["source_fact_refs"]}),
-        "approved_at": approved["reviewed_at"], "exported_at": exported_at,
-        "new_semantic_content_count_delta": 1,
-        "micro_information_beats": beats,
-        "source_request_ref": {"path": str(paths["request"]), "sha256": sha256_file(paths["request"])},
-        "approved_review_ref": {"path": str(paths["approved"]), "sha256": sha256_file(paths["approved"])},
-        "export_receipt_ref": {"path": str(paths["receipt"]), "sha256": sha256_file(paths["receipt"])},
-    }
+    entry = _native_ledger_entry(context, approved, beats, output_path, exported_at)
     ledger_existed = ledger_path.is_file()
     ledger = _read(ledger_path) if ledger_existed else _empty_ledger(business_id=business_id, created_at=context["request"]["created_at"])
     if ledger.get("schema_version") != LEDGER_SCHEMA_VERSION or ledger.get("business_id") != business_id:
@@ -725,9 +746,15 @@ def _export_novel_news_native(
         ledger_path.parent.mkdir(parents=True, exist_ok=True)
         if ledger_existed:
             replace_ledger_after_export(ledger_path, ledger, updated,
-                news_export_intent_ref=receipt_publication(root,directory)['intent_ref'])
+                news_export_intent_ref=receipt_publication(root,directory)['intent_ref'],
+                history_context={'root':root,'business':business_id,'request_id':request_id,
+                    'kind':'novel_semantic','exported_at':exported_at})
         else:
-            _write_new(ledger_path, updated)
+            from ledger_history_v1 import transition
+            from profile_compatibility_decisions_v1_1 import bytes_for
+            with transition(root,business_id,request_id,'novel_semantic',ledger,updated,
+                    exported_at=exported_at,after_bytes=bytes_for(updated)):
+                _write_new(ledger_path, updated)
     presentation_id = request_id + "-P001"
     presentation = {
         "export_intent_ref": receipt_publication(root,directory)['intent_ref'],
@@ -756,6 +783,8 @@ def _export_novel_news_native(
             "ledger_sha256_after": sha256_file(ledger_path),
             "validation": {"passed": True, "case_fact_transfer": False},
         })
+    from ledger_history_v1 import finish_request
+    finish_request(root,business_id,request_id,paths['receipt'],paths['closure'])
     validate_novel_news_export(pipeline_root=root, request_id=request_id)
     closure = _read(paths["closure"])
     if closure.get("output_sha256") != sha256_file(output_path) or closure.get("semantic_entry_count_delta") != 1:

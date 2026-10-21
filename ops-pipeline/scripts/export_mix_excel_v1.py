@@ -221,6 +221,40 @@ def export_mix_excel(
     return receipt
 
 
+def export_supplemental_delivery(*, pipeline_root, request_id, authorization_context, expected_draft_ref=None):
+    """PC3: append a new delivery; never recertify it with the core Receipt."""
+    from creation_delivery_v1 import export
+    from close_generation_export_v1 import close_generation_export, ensure_generation_export_anchor
+    from profile_compatibility_decisions_v1_1 import read
+    root = Path(pipeline_root).resolve()
+    def ensure(src):
+        closure_path = src['_directory'] / 'generation_export_closure_v1.json'
+        if closure_path.is_file():
+            output = Path(read(closure_path)['excel_export']['path'])
+            ensure_generation_export_anchor(pipeline_root=root,request_id=request_id)
+        else:
+            old_intent = src['_directory'] / 'generation_export_intent_v1.json'
+            output = (Path(read(old_intent)['output_path']) if old_intent.is_file()
+                      else root / 'output' / ('Mix_' + request_id + '.xlsx'))
+            if not output.is_absolute(): output = root / output
+            template = root / 'output' / '素材混剪&数字人口播混剪文案导入模板.xlsx'
+            receipt_path=output.with_suffix('.export_receipt.json')
+            if receipt_path.is_file():
+                # Reuse the original Native receipt bytes. Compatibility's
+                # sorted JSON writer must never re-serialize a delivery receipt.
+                partial.validate_export_receipt(root,partial.read(receipt_path),output,request_id=request_id)
+                validate_workbook(output,template,partial.read(src['_directory']/'approved_generation_batch_v1.json')['contents'])
+            else:
+                receipt = export_mix_excel(src['_directory'] / 'approved_generation_batch_v1.json', template, output,
+                                           authorization_context=authorization_context)
+                partial.write_once(receipt_path, receipt)
+        if not closure_path.is_file():
+            close_generation_export(pipeline_root=root, request_id=request_id, excel_path=output,
+                                    authorization_context=authorization_context)
+        return output.with_suffix('.export_receipt.json'), closure_path
+    return export(root, request_id, authorization_context, native_owner='export_mix_excel_v1', ensure_core=ensure, expected_draft_ref=expected_draft_ref)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Export a Human Approved Mix Script Batch into the frozen Excel Contract."

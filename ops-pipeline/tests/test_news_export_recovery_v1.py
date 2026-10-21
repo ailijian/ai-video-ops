@@ -239,11 +239,23 @@ def test_ne09_15_semantic_counts_and_native_presentation_prefix(flow):
     old_receipt=sha(flow['receipt'])
     import news_delivery_v1 as owner
     extra=copy.deepcopy(presentations[0]);extra.update(presentation_id='unit-distinct-event',request_id='unit-distinct-request')
-    owner._append_presentation_history(ledger_path=ledger_path,
-        source_content_id=presentations[0]['source_content_ref'],entry=extra)
+    # This original unit probe tests prefix compatibility, not authorization
+    # for a second Request. Keep that projection check pure. Actual authorized
+    # later appends are exercised in test_generation_export_anchor_v1.py and
+    # test_publish_copy_concurrent_history_v1.py through real Native requests.
+    projected,recovered=owner._project_presentation_history(ledger,presentations[0]['source_content_ref'],extra)
+    assert not recovered and len(projected['extensions']['presentation_history_v1']['entries'])==2
+    assert projected['entries']==ledger['entries']
+    protocol.validate_ledger_prefix(projected,read(flow['closure'])['ledger_prefix'])
+    before=sha(ledger_path)
+    from ledger_history_v1 import LedgerHistoryError
+    with pytest.raises(LedgerHistoryError):
+        owner._append_presentation_history(ledger_path=ledger_path,
+            source_content_id=presentations[0]['source_content_ref'],entry=extra)
+    assert sha(ledger_path)==before
     flow['export'](flow['context'])
     assert sha(flow['receipt'])==old_receipt and len(read(ledger_path)['entries'])==1
-    assert len(read(ledger_path)['extensions']['presentation_history_v1']['entries'])==2
+    assert len(read(ledger_path)['extensions']['presentation_history_v1']['entries'])==1
     # Changing an older event is not a legitimate append.
     ledger=read(ledger_path);ledger['extensions']['presentation_history_v1']['entries'][0]['approved_titles'][0]='tampered'
     ledger_path.write_text(json.dumps(ledger,ensure_ascii=False),encoding='utf-8')

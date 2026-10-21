@@ -1679,6 +1679,8 @@ def append_ledger_file(
     new_entries: list[dict[str, Any]],
 ) -> tuple[dict[str, Any], str]:
     path = path.expanduser().resolve()
+    from ledger_history_v1 import prohibit_unversioned_ledger_write
+    prohibit_unversioned_ledger_write(path)
     if read_json(path) != expected_current:
         raise RuntimeError("Content Ledger changed before append.")
     updated = append_ledger_entries(expected_current, new_entries)
@@ -1797,9 +1799,24 @@ def replace_ledger_after_export(
     path: Path,
     expected_current: dict[str, Any],
     replacement: dict[str, Any],
-    *, news_export_intent_ref: dict[str, Any] | None = None,
+    *, news_export_intent_ref: dict[str, Any] | None = None, history_context: dict | None = None,
 ) -> str:
     """Atomically persist one validated append-only export closure."""
+    if history_context is not None:
+        from ledger_history_v1 import transition, bytes_for
+        c=history_context
+        with transition(c['root'],c['business'],c['request_id'],c['kind'],expected_current,replacement,
+                exported_at=c['exported_at'],after_bytes=bytes_for(replacement)):
+            return _replace_ledger_after_export_native(path,expected_current,replacement,
+                news_export_intent_ref=news_export_intent_ref)
+    if path.name=='content_ledger_v1.json' and path.parent.parent.name=='content_ledgers':
+        from ledger_history_v1 import home,LedgerHistoryError
+        if home(path.parents[3],expected_current['business_id']).is_dir():
+            raise LedgerHistoryError('NATIVE_WRITER_REQUIRED')
+    return _replace_ledger_after_export_native(path,expected_current,replacement,news_export_intent_ref=news_export_intent_ref)
+
+
+def _replace_ledger_after_export_native(path,expected_current,replacement,*,news_export_intent_ref=None):
     path = path.expanduser().resolve()
     if read_json(path) != expected_current:
         raise RuntimeError("Content Ledger changed before exported-content append.")
@@ -2226,6 +2243,8 @@ def replace_ledger_with_communicated_information(
     replacement: dict[str, Any],
 ) -> str:
     path = path.expanduser().resolve()
+    from ledger_history_v1 import prohibit_unversioned_ledger_write
+    prohibit_unversioned_ledger_write(path)
     if read_json(path) != expected_current:
         raise RuntimeError("Content Ledger changed before V1.1 backfill.")
     payload = json.dumps(replacement, ensure_ascii=False, indent=2).encode("utf-8")

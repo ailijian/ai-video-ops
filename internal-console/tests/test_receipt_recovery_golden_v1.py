@@ -131,7 +131,9 @@ def test_native_partial_persistence(node,point):
             replay=execute('/export-mix') if phase['cut'] else first_export
             assert task_count(settings)==export_task_count
             closure=directory/'generation_export_closure_v1.json'
-            ledger_files=list((root/'data/content_ledgers').rglob('*.json'))
+            # Immutable snapshots/events are evidence, not additional active
+            # business Ledgers. Count only the canonical path owned by Reader.
+            ledger_files=list((root/'data/content_ledgers').glob('*/content_ledger_v1.json'))
             result={'point':point,'injected':phase['used'],'review':review_result,'first_export_status':first_export.get('status'),
                     'replay_export_status':replay.get('status'),'replay_error':replay.get('error_code') or replay.get('body'),
                     'canonical_completed_response':bool(replay.get('canonical_response')),'retained_task_status':replay.get('retained_task_status'),

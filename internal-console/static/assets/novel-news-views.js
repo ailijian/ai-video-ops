@@ -1,4 +1,5 @@
 import { startTaskPolling } from "./task-progress.js";
+import { mountPublishCopy } from './publish-copy-views.js';
 import { bindContentReviewControls, ContentReviewItem, ContentReviewList, CreationCapacityState, CreationHeader, CreationState, CreationStepper, safeCreationMessage } from "./creation-components.js?v=news-review-ui-2";
 
 export function createNovelNewsViews({ api, showToast, escapeHtml }) {
@@ -204,6 +205,9 @@ export function createNovelNewsViews({ api, showToast, escapeHtml }) {
         if (button.isConnected) button.disabled = false;
       }
     }));
+    if (state.stage === 'export' || state.stage === 'completed') {
+      await mountPublishCopy(host, requestId, { api, showToast, escapeHtml });
+    }
   }
 
   return { renderPreview, restore };

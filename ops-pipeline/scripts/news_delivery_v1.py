@@ -2768,18 +2768,85 @@ def validate_presentation_history_chain(entries: list[dict]) -> None:
         versioned = True
 
 
-def _append_presentation_history(
-    *,
-    ledger_path: Path,
-    source_content_id: str,
-    entry: dict[str, Any],
-) -> tuple[
-    dict[str, Any],
-    bool,
-]:
-    current = read_json(
-        ledger_path
-    )
+def historical_ledger_material(root, request_id, kind, exported_at):
+    """Exact archived Native inputs for the Ledger owner's transition replay."""
+    from profile_compatibility_decisions_v1_1 import ref,resolve_ref,read,file_sha
+    from news_export_recovery_v1 import paths as publication_paths,check,INTENT,validate_prepared,bound_source_paths
+    from close_generation_export_v1 import _build_fact_atoms
+    from ledger_history_v1 import LedgerHistoryError
+    novel=request_id.startswith('gen_')
+    if novel:
+        import novel_news_v1 as owner
+        p=owner._paths(root,request_id);directory=p['approved'].parent
+        native_receipt=p['receipt'];native_closure=p['closure']
+    else:
+        directory=_request_root(root,request_id)
+        p={'request':_request_path(root,request_id),'plan':directory/'news_delivery_plan_v1.json',
+           'review':_review_path(root,request_id),'approved':_approved_path(root,request_id)}
+        native_receipt=directory/'news_dynamic_excel_export_receipt_v1.json';native_closure=directory/'news_delivery_export_closure_v1.json'
+    pp=publication_paths(directory);intent=check(read(pp['intent']),INTENT)
+    if intent['request_id']!=request_id or intent['created_at']!=exported_at:
+        raise LedgerHistoryError('NATIVE_SOURCE_INVALID')
+    for key in ('request','plan','review','approved'):
+        if resolve_ref(root,intent['sources'][key+'_ref'])!=p[key].resolve():
+            raise LedgerHistoryError('NATIVE_SOURCE_INVALID')
+    business_path=resolve_ref(root,intent['sources']['business_ref'])
+    speaker_path=resolve_ref(root,intent['sources']['speaker_ref'])
+    template=resolve_ref(root,intent['template_ref']);output=root/intent['output_path']
+    validate_prepared(root,directory,output=output,template=template,titles=intent['titles'],published=True)
+    sources={key:ref(root,path) for key,path in p.items() if key in {'request','plan','review','approved'}}
+    sources.update({key:ref(root,path) for key,path in {'business':business_path,'speaker':speaker_path,
+        'intent':pp['intent'],'prepared':pp['prepared'],'output':output,'template':template}.items()})
+    for n,path in enumerate(sorted(bound_source_paths(root,intent['sources']))):sources['lineage_'+str(n)]=ref(root,path)
+    request=read(p['request']);approved=read(p['approved']);review=read(p['review']);plan=read(p['plan'])
+    if request.get('request_id')!=request_id or approved.get('request_id')!=request_id:
+        raise LedgerHistoryError('NATIVE_SOURCE_INVALID')
+    if novel:
+        if (approved.get('human_gate') is not True or approved.get('status')!='approved_for_export'
+            or approved.get('plan_sha256')!=file_sha(p['plan']) or approved.get('reviewed_by')!=review.get('reviewed_by')
+            or approved.get('reviewed_at')!=review.get('reviewed_at')):
+            raise LedgerHistoryError('HUMAN_PROOF_REQUIRED')
+        decisions={b['beat_id']:b for b in review['decisions']};expected=[]
+        if len(decisions)!=len(plan['micro_information_beats']):raise LedgerHistoryError('HUMAN_PROOF_REQUIRED')
+        for beat in plan['micro_information_beats']:
+            decision=decisions[beat['beat_id']]
+            if decision['decision']=='rejected':continue
+            if decision['decision'] not in {'approved','revised'}:raise LedgerHistoryError('HUMAN_PROOF_REQUIRED')
+            value=dict(beat)
+            if decision['decision']=='revised':value['text']=str(decision.get('revised_text') or '').strip()
+            expected.append(value)
+        if expected!=approved['micro_information_beats'] or not 4<=len(expected)<=8:
+            raise LedgerHistoryError('HUMAN_PROOF_REQUIRED')
+        context={'paths':p,'request':request,'selected':request['selected_content']}
+        entry=owner._native_ledger_entry(context,approved,expected,output,exported_at)
+        if kind=='novel_semantic':
+            return {'kind':kind,'request_id':request_id,'source_refs':sources,'exported_at':exported_at,'entries':[entry],
+                'fact_atoms':_build_fact_atoms(read(business_path),file_sha(business_path),read(speaker_path),file_sha(speaker_path)),
+                'receipt_path':native_receipt,'closure_path':native_closure}
+        if kind!='novel_presentation':raise LedgerHistoryError('NATIVE_SOURCE_INVALID')
+        presentation={'export_intent_ref':ref(root,pp['intent']),
+            'presentation_id':request_id+'-P001','business_id':request['persona_id'],'speaker_id':request['speaker_persona'],
+            'request_id':request_id,'production_profile':'news','reuse_intent':'novel_content','semantic_novelty':False,
+            'semantic_content_created_separately':True,'source_content_ref':request_id+'-N001',
+            'selected_pattern_ref':approved['selected_pattern_id'],'status':'exported','approved_at':approved['reviewed_at'],
+            'exported_at':exported_at,'new_semantic_content_count_delta':0,'novel_capacity_delta':0,
+            'communicated_information_units_created':False,'approved_titles':intent['titles'],
+            'approval_ref':{'path':str(p['approved']),'sha256':file_sha(p['approved'])},
+            'export_ref':{'path':str(output),'sha256':file_sha(output)}}
+    else:
+        if (kind!='news_presentation' or approved.get('human_review',{}).get('human_gate') is not True
+            or approved['human_review']['review_sha256']!=file_sha(p['review'])
+            or approved['lineage']['plan_sha256']!=file_sha(p['plan']) or plan['request_sha256']!=file_sha(p['request'])):
+            raise LedgerHistoryError('HUMAN_PROOF_REQUIRED')
+        presentation=_presentation_history_entry(request=request,approved=approved,output_path=output,exported_at=exported_at)
+        presentation['approval_ref']={'path':str(p['approved']),'sha256':file_sha(p['approved'])}
+        presentation['export_intent_ref']=ref(root,pp['intent'])
+    return {'kind':kind,'request_id':request_id,'source_refs':sources,'exported_at':exported_at,
+        'source_content_id':presentation['source_content_ref'],'entry':presentation,
+        'receipt_path':native_receipt,'closure_path':native_closure}
+
+
+def _project_presentation_history(current, source_content_id, entry):
     source = _source_entry(
         current,
         source_content_id,
@@ -2941,51 +3008,79 @@ def _append_presentation_history(
             "Presentation History duplicated Historical Exposure units.",
         )
 
-    payload = json.dumps(
-        updated,
-        ensure_ascii=False,
-        indent=2,
-    ).encode("utf-8")
-    temporary = (
-        ledger_path
-        .with_suffix(
-            ledger_path.suffix
-            + ".news_presentation.tmp"
-        )
-    )
-    if temporary.exists():
-        from news_export_recovery_v1 import ledger_intent
-        proof=entry.get('export_intent_ref')
-        if not proof or temporary.read_bytes()!=payload:
-            raise NewsDeliveryError('NEWS_PRESENTATION_TEMP_CONFLICT', 'Retained presentation temporary differs from the original operation.')
-        ledger_intent(ledger_path.parents[3],proof,business_id=entry['business_id'],request_id=entry['request_id'],
-            titles=entry['approved_titles'],approved_sha256=entry['approval_ref']['sha256'],
-            output_sha256=entry['export_ref']['sha256'])
-    else:
-        with temporary.open('xb') as handle:
-            handle.write(payload)
-            handle.flush()
-            os.fsync(handle.fileno())
+    return updated, False
 
-    if (
-        canonical_sha256(
-            read_json(
-                ledger_path
+
+def _append_presentation_history(
+    *,
+    ledger_path: Path,
+    source_content_id: str,
+    entry: dict[str, Any],
+) -> tuple[
+    dict[str, Any],
+    bool,
+]:
+    current = read_json(ledger_path)
+    updated, recovered = _project_presentation_history(current, source_content_id, entry)
+    if recovered:
+        return current, True
+    entry = updated['extensions']['presentation_history_v1']['entries'][-1]
+    from contextlib import nullcontext
+    from ledger_history_v1 import transition, home, LedgerHistoryError
+    root=ledger_path.parents[3];rid=entry['request_id'];business=entry['business_id']
+    kind='news_presentation' if rid.startswith('news_') else 'novel_presentation'
+    native_intent=(root/'data/news_deliveries'/rid/'news_export_intent_v1.json' if rid.startswith('news_') else
+                   root/'data/generation_batches'/rid/'news_export_intent_v1.json')
+    if not native_intent.is_file() and home(root,business).is_dir():
+        raise LedgerHistoryError('NATIVE_WRITER_REQUIRED')
+    scope=transition(root,business,rid,kind,current,updated,exported_at=entry['exported_at'],
+        after_bytes=json.dumps(updated,ensure_ascii=False,indent=2).encode('utf-8')) if native_intent.is_file() else nullcontext()
+    with scope:
+        payload = json.dumps(
+            updated,
+            ensure_ascii=False,
+            indent=2,
+        ).encode("utf-8")
+        temporary = (
+            ledger_path
+            .with_suffix(
+                ledger_path.suffix
+                + ".news_presentation.tmp"
             )
         )
-        != canonical_sha256(
-            current
-        )
-    ):
-        raise NewsDeliveryError(
-            "NEWS_PRESENTATION_CONCURRENT_LEDGER_CHANGE",
-            "Content Ledger changed during Presentation History append.",
-        )
+        if temporary.exists():
+            from news_export_recovery_v1 import ledger_intent
+            proof=entry.get('export_intent_ref')
+            if not proof or temporary.read_bytes()!=payload:
+                raise NewsDeliveryError('NEWS_PRESENTATION_TEMP_CONFLICT', 'Retained presentation temporary differs from the original operation.')
+            ledger_intent(ledger_path.parents[3],proof,business_id=entry['business_id'],request_id=entry['request_id'],
+                titles=entry['approved_titles'],approved_sha256=entry['approval_ref']['sha256'],
+                output_sha256=entry['export_ref']['sha256'])
+        else:
+            with temporary.open('xb') as handle:
+                handle.write(payload)
+                handle.flush()
+                os.fsync(handle.fileno())
 
-    temporary.replace(
-        ledger_path
-    )
-    return updated, False
+        if (
+            canonical_sha256(
+                read_json(
+                    ledger_path
+                )
+            )
+            != canonical_sha256(
+                current
+            )
+        ):
+            raise NewsDeliveryError(
+                "NEWS_PRESENTATION_CONCURRENT_LEDGER_CHANGE",
+                "Content Ledger changed during Presentation History append.",
+            )
+
+        temporary.replace(
+            ledger_path
+        )
+        return updated, False
 
 
 def _export_name(
@@ -3223,6 +3318,8 @@ def _export_news_delivery_native(*, pipeline_root: Path, request_id: str,
     )
     if receipt_path.is_file() and closure_path.is_file():
         validate_news_delivery_export(pipeline_root=pipeline_root, request_id=request_id)
+        from ledger_history_v1 import finish_completed_news_request
+        finish_completed_news_request(pipeline_root,request['business_id'],request_id,root,receipt_path,closure_path,export_context)
         return {"request_id": request_id, "output_path": str(output_path), "output_name": output_name,
             "receipt_path": str(receipt_path), "closure_path": str(closure_path), "slot_count": len(titles),
             "stop_point_reached": True, "semantic_entry_count_delta": 0, "remote_model_called": False}, True
@@ -3711,6 +3808,8 @@ def _export_news_delivery_native(*, pipeline_root: Path, request_id: str,
             closure,
         )
 
+    from ledger_history_v1 import finish_request
+    finish_request(pipeline_root,request['business_id'],request_id,receipt_path,closure_path)
     validate_news_delivery_export(pipeline_root=pipeline_root, request_id=request_id)
 
     return {
@@ -3742,6 +3841,18 @@ def _export_news_delivery_native(*, pipeline_root: Path, request_id: str,
         "remote_model_called": False,
     }, False
 
+
+
+def export_supplemental_delivery(*, pipeline_root, request_id, authorization_context, expected_draft_ref=None):
+    """PC3 delegation preserves the original semantic and Presentation closure."""
+    from creation_delivery_v1 import export
+    root = Path(pipeline_root).resolve()
+    def ensure(src):
+        export_news_delivery(pipeline_root=root, request_id=request_id, export_context=authorization_context)
+        validate_news_delivery_export(pipeline_root=root, request_id=request_id)
+        directory = _request_root(root, request_id)
+        return directory / 'news_dynamic_excel_export_receipt_v1.json', directory / 'news_delivery_export_closure_v1.json'
+    return export(root, request_id, authorization_context, native_owner='news_delivery_v1', ensure_core=ensure, expected_draft_ref=expected_draft_ref)
 
 
 def validate_news_delivery_export(*, pipeline_root: Path, request_id: str) -> dict:
