@@ -1,0 +1,60 @@
+{
+  "record_type": "delivery_document_review_record",
+  "record_id": "BR-01",
+  "delivery": "CREATION_BATCH_UX_1",
+  "recorded_date": "2026-10-22",
+  "timezone": "Asia/Shanghai",
+  "source": {
+    "kind": "current_chat_user_message",
+    "title": "Codex｜CREATION-BATCH-UX-1｜Baseline Review Approved → Conditional Plan Draft",
+    "attribution": "用户在本 chat 提交并授权采用 ChatGPT 独立审查裁决；本 agent 未自行执行或伪造该独立审查。未提供外部审查报告URL。"
+  },
+  "verdicts": [
+    "CREATION_BATCH_UX_1_BASELINE_CURRENT_TRUTH_APPROVED_WITH_OPEN_GATES",
+    "CREATION_BATCH_UX_1_PLAN_DRAFT_ONLY_AUTHORIZED",
+    "CREATION_BATCH_UX_1_PLAN_FREEZE_NOT_AUTHORIZED",
+    "CREATION_BATCH_UX_1_IMPLEMENTATION_NOT_AUTHORIZED"
+  ],
+  "approved_scope": [
+    "baseline current truth credibility",
+    "gap scope"
+  ],
+  "not_approved": [
+    "D-P01/G02 final style rules",
+    "D-P02/G03 stage split",
+    "D-P03/G05 News count semantics",
+    "whole target Baseline freeze",
+    "Plan freeze",
+    "B1-B4 implementation",
+    "production release/4090/real provider/AUTH/OIDC/qudao"
+  ],
+  "code_checkpoint": {
+    "commit": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+    "checkpoint_branch": "codex/checkpoint-publish-copy-founder-uat-20261022",
+    "actual_checkout_branch": "main"
+  },
+  "reviewed_archive": {
+    "path": ".local/evidence/creation-batch-ux1-baseline-20261022/CREATION_BATCH_UX_1_BASELINE_REVIEW.zip",
+    "sha256": "357b518aabe1eefe3db0004b218512e9f26f6be6ccc8f1ae61ad4eee5c879575",
+    "manifest_sha256": "b9555b3613a590352c0e4c4889843282044e66855c95aef857fb01bf31a90014",
+    "baseline_snapshot_sha256": "bbcd3414b97ad6ff3587912df29de4644c7a4c27a68dfd39ce0b6a87bb61054a"
+  },
+  "baseline_input": {
+    "path": "docs/deliveries/creation-batch-ux-1/BASELINE.md",
+    "status": "Draft",
+    "revision": 1,
+    "sha256": "c8908e2296527425cbe1537ee607da1fdc5564801615f72ae34f05f1f74e3bb0",
+    "recoverable_content": ".local/evidence/creation-batch-ux1-plan-draft-20261022/inputs/BASELINE_BEFORE_REVIEW_METADATA.md"
+  },
+  "baseline_result": {
+    "path": "docs/deliveries/creation-batch-ux-1/BASELINE.md",
+    "status": "Draft",
+    "revision": 1,
+    "sha256": "34398530423f69953cb312a5170a788b8ed8f2d0c258bc597dafa81e80d4282c",
+    "transformation": "Review-state / scope / handoff metadata only. Goals, decisions, AC IDs, current truth and Gap records unchanged."
+  },
+  "revision_rule": "当前Draft未整体Approved；不是对Approved baseline的产品修订，Revision保持1。事实限定批准单独记录，未伪造G02/G03/G05产品批准。",
+  "explicit_user_authorization_exception": "delivery-baseline默认禁止向Draft传递正式Plan。本轮用户明确授权Conditional Plan Draft，且禁止Freeze/Execution；仅按该限定授权起草，不声称默认Approved Baseline handoff条件已满足。",
+  "not_a_business_approval_receipt": true,
+  "next": "Independent Plan Review; unresolved product/architecture/Authority gates must close before any freeze or implementation."
+}

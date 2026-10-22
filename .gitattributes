@@ -1,0 +1,4 @@
+# Preserve reviewed delivery bytes and manifest SHA-256 across checkouts.
+/docs/deliveries/creation-batch-ux-1/* -text
+# This retained artifact uses CRLF; recognize its existing line endings in diffs.
+/docs/deliveries/creation-batch-ux-1/CAPABILITY_MATRIX.json whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

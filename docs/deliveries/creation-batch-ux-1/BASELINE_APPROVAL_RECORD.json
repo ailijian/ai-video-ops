@@ -1,0 +1,105 @@
+{
+  "record_type": "retained_delivery_approval_provenance",
+  "record_id": "BR-02",
+  "recorded_now": true,
+  "not_a_native_business_approval_receipt": true,
+  "source": {
+    "kind": "actual_user_messages_in_current_chat",
+    "external_report_url": null,
+    "freeze_request": "冻结baseline",
+    "explicitly_selected_skill": "delivery-baseline",
+    "explicit_decision_answers": [
+      {
+        "id": "D-P01",
+        "question": "D-P01：是否采用决策表中三类定义及其来源、事实、人物和禁止主张约束：persona＝本人真实观点/经历；story＝有来源的真实事件；conversion＝已批准服务价值与合法 CTA？",
+        "answer": "采用 D-P01 候选定义"
+      },
+      {
+        "id": "D-P02",
+        "question": "D-P02：阶段一人设＋故事推荐合计10条，阶段二合计30条，采用哪种交互？两种方案均不预设均分比例，修改后按明确确认的实际目标校验。",
+        "answer": "合计推荐，代理商明确分配（方案A）"
+      },
+      {
+        "id": "D-P03",
+        "question": "D-P03：阶段推荐的新闻数量如何计算？各方案均保留 Novel/Repurpose 原生来源及历史身份，并分别统计交付视频数与新增语义数，不为凑量自动换源。",
+        "answer": "推荐数量默认 Novel；Repurpose 显式另选"
+      }
+    ],
+    "source_note": "正文、问题与答案摘录自本对话实际用户消息；Skill本机路径不作为原消息的逐字节序列化复制。按先后顺序记录，无可核验消息时间戳，未虚构消息ID/签章。不是仅据PLAN声明推断批准。"
+  },
+  "approved_object": {
+    "delivery": "creation-batch-ux-1",
+    "path": "docs/deliveries/creation-batch-ux-1/BASELINE.md",
+    "status": "Approved",
+    "revision": 1,
+    "sha256": "13844cf74cd3eaf3a80e104fad26fbf56aa4548204c26597ab2e9623625fd0c3",
+    "content": ".local/evidence/creation-batch-ux1-plan-revision-r2-20261022/inputs/BASELINE_1384_APPROVED.md"
+  },
+  "identity_chain": [
+    {
+      "kind": "original_baseline_archive_member",
+      "sha256": "bbcd3414b97ad6ff3587912df29de4644c7a4c27a68dfd39ce0b6a87bb61054a",
+      "revision": 1,
+      "status": "Draft",
+      "recoverable": "original Baseline ZIP / BASELINE.md"
+    },
+    {
+      "kind": "relocated_draft",
+      "sha256": "c8908e2296527425cbe1537ee607da1fdc5564801615f72ae34f05f1f74e3bb0",
+      "revision": 1,
+      "status": "Draft",
+      "recoverable": "inputs/BASELINE_C890_DRAFT.md"
+    },
+    {
+      "kind": "BR01_limited_current_truth_metadata",
+      "sha256": "34398530423f69953cb312a5170a788b8ed8f2d0c258bc597dafa81e80d4282c",
+      "revision": 1,
+      "status": "Draft",
+      "recoverable": "inputs/BASELINE_3439_DRAFT.md"
+    },
+    {
+      "kind": "first_target_approval_with_authorized_product_choices",
+      "sha256": "13844cf74cd3eaf3a80e104fad26fbf56aa4548204c26597ab2e9623625fd0c3",
+      "revision": 1,
+      "status": "Approved",
+      "recoverable": "inputs/BASELINE_1384_APPROVED.md"
+    }
+  ],
+  "transition": "既有Draft首次批准；用户冻结请求持续有效，随后明确授权三项产品规则补充。Draft修订不递增Revision；不是对Approved Baseline的Amendment。",
+  "ac_source": {
+    "AC-01..AC-07": "与3439 Draft逐字相同，原BL-0审计AC与历史对象不重写。",
+    "AC-08": {
+      "decision": "D-P01",
+      "meaning": "已批准三Style语义/事实/人物/禁止主张及可区别判据",
+      "normalization": "将已选择规则转成可观察AC；非新产品含义"
+    },
+    "AC-09": {
+      "decision": "D-P02方案A",
+      "meaning": "初始未分配、代理商明确分配、无默认比例及实际合计校验",
+      "normalization": "将已选择交互转成可观察AC；非新增默认比例"
+    },
+    "AC-10": {
+      "decision": "D-P03推荐方案",
+      "meaning": "Novel默认、Repurpose独立选择，交付/语义/Presentation分开",
+      "normalization": "将已选择计数规则转成可观察AC；非Native语义修改"
+    }
+  },
+  "normalization_scope_note": "Founder明确选择的是规则及冻结操作，未逐字签署新增AC编号。本agent在首次批准操作中将其忠实归一为AC-08..10，并在本对话交接中返回完整结果SHA。记录不把Agent手改Status、测试PASS或BR-01当作新产品批准。",
+  "code_checkpoint": {
+    "head": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+    "parent": "629a934d6a3a73525e7e14bec12f85e50f5fb4fa",
+    "checkpoint_branch": "codex/checkpoint-publish-copy-founder-uat-20261022",
+    "actual_branch": "main"
+  },
+  "method": "delivery-baseline / ai-native-workflow-2026-09-06-governance-verification-1; public contract allows current chat approval, attributable input + explicit corrections and prescribed metadata transition",
+  "retention_note": "本记录本轮补齐此前实际事件的可携带证据；不声称BR-02在批准当时已存在，不重写BR-01/旧包/旧SHA，不要求Founder重复批准。",
+  "not_approved": [
+    "C01-C08 Native contracts",
+    "Native admission B / A03",
+    "Export multi-parent A04",
+    "PR-4 new proposed defaults",
+    "Plan Freeze",
+    "B1-B4 implementation",
+    "production / real model / 4090 / AUTH/OIDC"
+  ]
+}

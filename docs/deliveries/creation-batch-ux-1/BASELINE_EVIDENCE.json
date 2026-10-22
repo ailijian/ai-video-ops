@@ -1,0 +1,3103 @@
+{
+  "schema_version": "creation-batch-ux-1-baseline-evidence-v1",
+  "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+  "classification_definition": {
+    "CODE_PROVEN": "当前源码静态证明",
+    "RUNTIME_PROVEN": "准确版本上的已运行证据，范围必须另读",
+    "FOUNDER_ACCEPTED": "Founder 目标或有出处的有限 UAT 接受",
+    "PROPOSED": "未获批准方案（本包不提供正式方案）",
+    "UNKNOWN": "缺少可信证据",
+    "BLOCKED": "明确现有门禁或依赖阻断"
+  },
+  "sources": [
+    {
+      "id": "S001",
+      "path": "ops-pipeline/scripts/content_creation_entry_v1.py",
+      "function": "build_content_creation_entry",
+      "start_line": 466,
+      "end_line": 723,
+      "checkout_sha256": "656d3579477d25a5fc786ef9d94837fc358456bc20acac50904a066a3585fc66",
+      "git_blob_sha256": "43c5ae0239342386055d7aca595ae4f00e3cb2b9971e5e3d27d456feb0fdd268",
+      "git_blob_oid": "90ed9667af60ba0dad802728624560a137254f6c",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S001.txt",
+      "excerpt_sha256": "950a3ae411d9fab4a3352d31bce08752e8238d3ae874c473a8fc46f40a75801c"
+    },
+    {
+      "id": "S002",
+      "path": "internal-console/app/main.py",
+      "function": "ContentCapacityPreviewRequest",
+      "start_line": 522,
+      "end_line": 541,
+      "checkout_sha256": "3b09b0238a113ad50f8e53264eba4dc0a8e5786afc040a03db43d353fcfc83f1",
+      "git_blob_sha256": "9d21c1310d345a6299cdaf38574bb3a4c85734153aab4aaf40585abb2da2b891",
+      "git_blob_oid": "81edcb5f289abeb7d8cc06e8b9f9edb0b0568090",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S002.txt",
+      "excerpt_sha256": "f9ab8b0c1e5f0b190ea688fab5f1b72e52f6c67ba8d4c849c965702eb2adf36b"
+    },
+    {
+      "id": "S003",
+      "path": "internal-console/app/main.py",
+      "function": "ContentGenerationConfirmRequest",
+      "start_line": 544,
+      "end_line": 576,
+      "checkout_sha256": "3b09b0238a113ad50f8e53264eba4dc0a8e5786afc040a03db43d353fcfc83f1",
+      "git_blob_sha256": "9d21c1310d345a6299cdaf38574bb3a4c85734153aab4aaf40585abb2da2b891",
+      "git_blob_oid": "81edcb5f289abeb7d8cc06e8b9f9edb0b0568090",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S003.txt",
+      "excerpt_sha256": "eaeffe2ba2e64ed8020eda4aef30bf79b45b0a93fbd2e6c1fe520be9186ea9a7"
+    },
+    {
+      "id": "S004",
+      "path": "internal-console/app/content_gateway.py",
+      "function": "list_creation_options",
+      "start_line": 880,
+      "end_line": 956,
+      "checkout_sha256": "e28a2dc866382ffe32feb452c963747a544a2d75f3f054091d67e430662d78f5",
+      "git_blob_sha256": "8725b94ac33b0c5f66add56b2bf8ca9008261e181e73b513144843736dd0a167",
+      "git_blob_oid": "3b2896443859e09032bd0881c1da114075dbb8e8",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S004.txt",
+      "excerpt_sha256": "2fdf7a83d945ccbb068fd6e7de820798a6c5e2826fa6e6f9c24546fde9df9f41"
+    },
+    {
+      "id": "S005",
+      "path": "internal-console/static/assets/content-views.js",
+      "function": null,
+      "start_line": 642,
+      "end_line": 777,
+      "checkout_sha256": "c2acc8345b697d8b6f627512f6a209003e44afda63c01092efa641c349d8faf6",
+      "git_blob_sha256": "01d8c722047327af8292b33556303ec785e99b672742b627a177eb5e8b3d6a61",
+      "git_blob_oid": "069aa18ef0165e367660f0be3549befba9958030",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S005.txt",
+      "excerpt_sha256": "63ef0c6755277fbcb64aa3abd0907382c4465df15ab548891d42c00850530123"
+    },
+    {
+      "id": "S006",
+      "path": "internal-console/static/assets/customer-views.js",
+      "function": null,
+      "start_line": 1365,
+      "end_line": 1388,
+      "checkout_sha256": "342dead20ea12a6a7bf49a904401536b58120904b40775771ec8682f3f343291",
+      "git_blob_sha256": "30fbe3e956ae9ae46bba09ec5e7784d528186c9c85514c9ef1435b2474793668",
+      "git_blob_oid": "a1935504ab58ea925c475aa89cef867ed1c62e4b",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S006.txt",
+      "excerpt_sha256": "537c69132d427c9020fd039d4747b5f67b2f25a9d16e89031a555e35fdd0aeca"
+    },
+    {
+      "id": "S007",
+      "path": "ops-pipeline/scripts/show_customer_status_v1.py",
+      "function": "resolve_current_persona",
+      "start_line": 194,
+      "end_line": 268,
+      "checkout_sha256": "6936949f8ffeec3a80126dd8fdac48b12fd261fd1a377c40db7f2b850979e821",
+      "git_blob_sha256": "e589d08ad427121782c8dbe0d961d7111991b092a5a56ccf898d3720e4afa66c",
+      "git_blob_oid": "d9a8027a1ef4a88e7f6b0809f2ea739d033ac3a0",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S007.txt",
+      "excerpt_sha256": "d4de38aec6aae96adfb48634da0639f557e65960640d86ea8a53a1c1856ba4b0"
+    },
+    {
+      "id": "S008",
+      "path": "ops-pipeline/scripts/show_customer_status_v1.py",
+      "function": "resolve_speaker_persona",
+      "start_line": 271,
+      "end_line": 317,
+      "checkout_sha256": "6936949f8ffeec3a80126dd8fdac48b12fd261fd1a377c40db7f2b850979e821",
+      "git_blob_sha256": "e589d08ad427121782c8dbe0d961d7111991b092a5a56ccf898d3720e4afa66c",
+      "git_blob_oid": "d9a8027a1ef4a88e7f6b0809f2ea739d033ac3a0",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S008.txt",
+      "excerpt_sha256": "09b167517e7dd93093b22dfb5b800db1fe1ba855f4957f4cbf3818788694c3e0"
+    },
+    {
+      "id": "S009",
+      "path": "ops-pipeline/scripts/generation_feasibility_v1.py",
+      "function": "preview_generation_feasibility",
+      "start_line": 10,
+      "end_line": 80,
+      "checkout_sha256": "bd3285a170e71b9bcc6603d50d5c905af1bdd3e20cf7bdcf1066c507e18b40ce",
+      "git_blob_sha256": "a37fbe951f2da091fe100833ede152b494d9ef33b69f732291786fd8f2553fc4",
+      "git_blob_oid": "12f2a51c787262786a39501a86f2fd37700831ba",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S009.txt",
+      "excerpt_sha256": "554949959e09662112d66cbb7f142c8e8c70c89b836529ca6611fbd58c7d6c4a"
+    },
+    {
+      "id": "S010",
+      "path": "ops-pipeline/scripts/customer_constraints_v1.py",
+      "function": "assert_production_allowed",
+      "start_line": 453,
+      "end_line": 461,
+      "checkout_sha256": "0f7aaff7c6948dda29bb07048ac1a7aa2aa08778d85c767609ad9fff3606a0bc",
+      "git_blob_sha256": "a7f260c841a8ff7f3fd0b62097a6355c4a11ddbb956600a0b518c754f2fa160e",
+      "git_blob_oid": "476c78333fbb1e8e170ef0616c17d8defa668a07",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S010.txt",
+      "excerpt_sha256": "0fa3fb6b784604191142938481e4ffdfe75b48e63bc9f8c1fabd967a18a1d999"
+    },
+    {
+      "id": "S011",
+      "path": "ops-pipeline/scripts/generation_request_handoff_v1.py",
+      "function": "request_id_for",
+      "start_line": 459,
+      "end_line": 467,
+      "checkout_sha256": "3827caab2815c3d79570f29a32619bebd528d1243152cd2f4f97c36a76817293",
+      "git_blob_sha256": "c023bc4d2cd50924cd89cac298144bcf467ba8913ad6967a70e8ef69ca2b9381",
+      "git_blob_oid": "1096eeedb98c46decb9b042d740dabaeb80bf625",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S011.txt",
+      "excerpt_sha256": "ff3b85261f2365e68593466284214ef1afb3561d94068020e340f1c02755db11"
+    },
+    {
+      "id": "S012",
+      "path": "ops-pipeline/scripts/generation_request_handoff_v1.py",
+      "function": "validate_confirmation",
+      "start_line": 470,
+      "end_line": 521,
+      "checkout_sha256": "3827caab2815c3d79570f29a32619bebd528d1243152cd2f4f97c36a76817293",
+      "git_blob_sha256": "c023bc4d2cd50924cd89cac298144bcf467ba8913ad6967a70e8ef69ca2b9381",
+      "git_blob_oid": "1096eeedb98c46decb9b042d740dabaeb80bf625",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S012.txt",
+      "excerpt_sha256": "b581ae4a53dc52c351af8850fbfac8fd7b198ff497c03107793cbd5c8e65084b"
+    },
+    {
+      "id": "S013",
+      "path": "ops-pipeline/scripts/generation_request_handoff_v1.py",
+      "function": "create_generation_request_handoff",
+      "start_line": 742,
+      "end_line": 1136,
+      "checkout_sha256": "3827caab2815c3d79570f29a32619bebd528d1243152cd2f4f97c36a76817293",
+      "git_blob_sha256": "c023bc4d2cd50924cd89cac298144bcf467ba8913ad6967a70e8ef69ca2b9381",
+      "git_blob_oid": "1096eeedb98c46decb9b042d740dabaeb80bf625",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S013.txt",
+      "excerpt_sha256": "707cf6c15c4da390d08a2e4bc0ba2beb7c9d98f6998ff3f288a1694631b2d5e1"
+    },
+    {
+      "id": "S014",
+      "path": "ops-pipeline/scripts/resolve_generation_source_plan_v1.py",
+      "function": "resolve_generation_source_plan",
+      "start_line": 493,
+      "end_line": 571,
+      "checkout_sha256": "ebedcd75562c2c7c2efdc97b275bc14033e5d381d5067c8deb6ceb9685a0f053",
+      "git_blob_sha256": "2b51e22cc4b4b2b9b9663b8e091a8205ceacb9b9f1692f019cb42c8c713026fc",
+      "git_blob_oid": "a6d185256ba7ccdb77131105f46ecaad9fe43d94",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S014.txt",
+      "excerpt_sha256": "edca0b757674525e3e4daa1a082348f4f7b7fe5d405507427c6cbf94b114cac3"
+    },
+    {
+      "id": "S015",
+      "path": "ops-pipeline/scripts/resolve_generation_source_plan_v1.py",
+      "function": "resolve_authority_inputs",
+      "start_line": 300,
+      "end_line": 351,
+      "checkout_sha256": "ebedcd75562c2c7c2efdc97b275bc14033e5d381d5067c8deb6ceb9685a0f053",
+      "git_blob_sha256": "2b51e22cc4b4b2b9b9663b8e091a8205ceacb9b9f1692f019cb42c8c713026fc",
+      "git_blob_oid": "a6d185256ba7ccdb77131105f46ecaad9fe43d94",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S015.txt",
+      "excerpt_sha256": "d88da8cf672d58dd18da914ce44bf1b1fb5ec42b0cb412cab1c47fbd97de71ab"
+    },
+    {
+      "id": "S016",
+      "path": "ops-pipeline/scripts/profile_compatibility_consumers_v1_1.py",
+      "function": "released_source_paths",
+      "start_line": 13,
+      "end_line": 33,
+      "checkout_sha256": "9f747c210c4c4f6f7cbe409a45e025063a8ddbe3811274a06fdc177de2d4fb80",
+      "git_blob_sha256": "cd26f749a1d12c8a280668bf6d3b70898b86085bbfe37362daa5115345471e8b",
+      "git_blob_oid": "7222805f8c82c75f7dd360563f26bbf1caf54476",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S016.txt",
+      "excerpt_sha256": "3bde762af7f59567d5493e29a6949597ba217cda9a556041b9130c135f32e927"
+    },
+    {
+      "id": "S017",
+      "path": "ops-pipeline/scripts/resolve_generation_content_plan_v1.py",
+      "function": "content_quality_contract",
+      "start_line": 359,
+      "end_line": 389,
+      "checkout_sha256": "f9604991b17affe93b6d8aa875b290393c9ef2e10a8bf0881b59303e67bbc88b",
+      "git_blob_sha256": "1ba608e5bd1f5dcdb69fd3bdbe533b2d80f57d68abaf014725c4e17630a29d2e",
+      "git_blob_oid": "33fcb3147356f819efc4dd9f0dc8256050a4cdf2",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S017.txt",
+      "excerpt_sha256": "3ef961f48ec6e658a6539107d3e4381aa6b875709aa74ed7bc9466b9a97125ec"
+    },
+    {
+      "id": "S018",
+      "path": "ops-pipeline/scripts/resolve_generation_content_plan_v1.py",
+      "function": "resolve_generation_content_plan",
+      "start_line": 889,
+      "end_line": 1040,
+      "checkout_sha256": "f9604991b17affe93b6d8aa875b290393c9ef2e10a8bf0881b59303e67bbc88b",
+      "git_blob_sha256": "1ba608e5bd1f5dcdb69fd3bdbe533b2d80f57d68abaf014725c4e17630a29d2e",
+      "git_blob_oid": "33fcb3147356f819efc4dd9f0dc8256050a4cdf2",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S018.txt",
+      "excerpt_sha256": "94590ffe0eb1e97d72faa5a5129b0309268e0d356a40a0607f21b12993357a75"
+    },
+    {
+      "id": "S019",
+      "path": "ops-pipeline/scripts/resolve_generation_content_plan_v1.py",
+      "function": "validate_final_plan",
+      "start_line": 663,
+      "end_line": 731,
+      "checkout_sha256": "f9604991b17affe93b6d8aa875b290393c9ef2e10a8bf0881b59303e67bbc88b",
+      "git_blob_sha256": "1ba608e5bd1f5dcdb69fd3bdbe533b2d80f57d68abaf014725c4e17630a29d2e",
+      "git_blob_oid": "33fcb3147356f819efc4dd9f0dc8256050a4cdf2",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S019.txt",
+      "excerpt_sha256": "6279300625661ae10712d6ca4e08814ac551a671bb9dfa88e480644d54b302d1"
+    },
+    {
+      "id": "S020",
+      "path": "ops-pipeline/scripts/resolve_generation_batch_v1.py",
+      "function": "augment_and_validate_batch",
+      "start_line": 775,
+      "end_line": 940,
+      "checkout_sha256": "37448ac210b73734d3164fe69336eed3f2c70cc78b71ca04a66e76d3c5f70a10",
+      "git_blob_sha256": "a7810617ef7610d92caa2e3975b8ee5f471a5278b6d86799101623ddc87fd6d5",
+      "git_blob_oid": "c1adc7cd4cb8a7342437a43deea1c71de9a00297",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S020.txt",
+      "excerpt_sha256": "c21aa49c7c1818118b76d3175b2fef85e43ab81a0e28e6720e7bec228fde22b8"
+    },
+    {
+      "id": "S021",
+      "path": "ops-pipeline/scripts/resolve_generation_batch_v1.py",
+      "function": "result_from_batch",
+      "start_line": 1112,
+      "end_line": 1151,
+      "checkout_sha256": "37448ac210b73734d3164fe69336eed3f2c70cc78b71ca04a66e76d3c5f70a10",
+      "git_blob_sha256": "a7810617ef7610d92caa2e3975b8ee5f471a5278b6d86799101623ddc87fd6d5",
+      "git_blob_oid": "c1adc7cd4cb8a7342437a43deea1c71de9a00297",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S021.txt",
+      "excerpt_sha256": "e700e424243c805510e2b9a37da8b7d6d1770b4d3c391b7d59c6cd350392e451"
+    },
+    {
+      "id": "S022",
+      "path": "ops-pipeline/scripts/resolve_generation_batch_v1.py",
+      "function": "resolve_generation_batch",
+      "start_line": 1507,
+      "end_line": 1708,
+      "checkout_sha256": "37448ac210b73734d3164fe69336eed3f2c70cc78b71ca04a66e76d3c5f70a10",
+      "git_blob_sha256": "a7810617ef7610d92caa2e3975b8ee5f471a5278b6d86799101623ddc87fd6d5",
+      "git_blob_oid": "c1adc7cd4cb8a7342437a43deea1c71de9a00297",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S022.txt",
+      "excerpt_sha256": "5f84e7e6c22553bdfb6597796c348782b2fd14c0876c9584d2b9444a82bed4dd"
+    },
+    {
+      "id": "S023",
+      "path": "ops-pipeline/scripts/generate_mix_scripts_v1.py",
+      "function": null,
+      "start_line": 313,
+      "end_line": 413,
+      "checkout_sha256": "1155890d8754977a8a2a9f3ac3a9ab9a7465cded0b7e78467a16ff6c80664a4b",
+      "git_blob_sha256": "e02de1f2fb6d234b1735c0dc6d2e9ff9fd8e95fa7785e571c7be11a2eef40215",
+      "git_blob_oid": "55918312c3e434faa29a674e228c8a836e2cd181",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S023.txt",
+      "excerpt_sha256": "3b1cee3ba3af48d808e54a9cdf7310eb1de061b0d1d1950040cf843f3aec5c58"
+    },
+    {
+      "id": "S024",
+      "path": "ops-pipeline/scripts/generate_mix_scripts_v1.py",
+      "function": "generation_slots",
+      "start_line": 970,
+      "end_line": 971,
+      "checkout_sha256": "1155890d8754977a8a2a9f3ac3a9ab9a7465cded0b7e78467a16ff6c80664a4b",
+      "git_blob_sha256": "e02de1f2fb6d234b1735c0dc6d2e9ff9fd8e95fa7785e571c7be11a2eef40215",
+      "git_blob_oid": "55918312c3e434faa29a674e228c8a836e2cd181",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S024.txt",
+      "excerpt_sha256": "7f35b53bb66226b1a30f2830e9e1896c00bf161954bce2fa5435e3202921be8e"
+    },
+    {
+      "id": "S025",
+      "path": "ops-pipeline/scripts/generate_mix_scripts_v1.py",
+      "function": "render_generation_prompt",
+      "start_line": 1902,
+      "end_line": 2040,
+      "checkout_sha256": "1155890d8754977a8a2a9f3ac3a9ab9a7465cded0b7e78467a16ff6c80664a4b",
+      "git_blob_sha256": "e02de1f2fb6d234b1735c0dc6d2e9ff9fd8e95fa7785e571c7be11a2eef40215",
+      "git_blob_oid": "55918312c3e434faa29a674e228c8a836e2cd181",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S025.txt",
+      "excerpt_sha256": "af6da2a6bef743ec06792035148d1c074ab98d5f8361ffb86e966f1f22c136bb"
+    },
+    {
+      "id": "S026",
+      "path": "ops-pipeline/scripts/generation_request_handoff_v1.py",
+      "function": null,
+      "start_line": 835,
+      "end_line": 932,
+      "checkout_sha256": "3827caab2815c3d79570f29a32619bebd528d1243152cd2f4f97c36a76817293",
+      "git_blob_sha256": "c023bc4d2cd50924cd89cac298144bcf467ba8913ad6967a70e8ef69ca2b9381",
+      "git_blob_oid": "1096eeedb98c46decb9b042d740dabaeb80bf625",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S026.txt",
+      "excerpt_sha256": "1633927d24bf0baf098c82adbdc85c4c26198fe5351754dd10b8b28d61697f03"
+    },
+    {
+      "id": "S027",
+      "path": "ops-pipeline/scripts/news_runtime_v1_2.py",
+      "function": "feasibility",
+      "start_line": 68,
+      "end_line": 88,
+      "checkout_sha256": "cb45d02ed5199b15d8f70a09785de530135bf3e9fe35ff5f27381d3089107c08",
+      "git_blob_sha256": "1d0be179ce1ec2d81954b86f5a49a45868f34a759eb0211e9a0cff0017eec911",
+      "git_blob_oid": "8a6a57e7450ce525d12ba72cc1794c713cd55df7",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S027.txt",
+      "excerpt_sha256": "7100f9966d7ed5234c816c6c92b93fe9adaddef471bd19ff83b001b2a8302824"
+    },
+    {
+      "id": "S028",
+      "path": "ops-pipeline/scripts/news_runtime_v1_2.py",
+      "function": "source_plan",
+      "start_line": 91,
+      "end_line": 122,
+      "checkout_sha256": "cb45d02ed5199b15d8f70a09785de530135bf3e9fe35ff5f27381d3089107c08",
+      "git_blob_sha256": "1d0be179ce1ec2d81954b86f5a49a45868f34a759eb0211e9a0cff0017eec911",
+      "git_blob_oid": "8a6a57e7450ce525d12ba72cc1794c713cd55df7",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S028.txt",
+      "excerpt_sha256": "1315db2bfe2dcd9de54bec2130bccfd4e4bfde1bff1e3d7b6fd88487ef019513"
+    },
+    {
+      "id": "S029",
+      "path": "ops-pipeline/scripts/news_qualification_v1_2.py",
+      "function": "completed_read",
+      "start_line": 93,
+      "end_line": 97,
+      "checkout_sha256": "4b97494bfe0b96614fb0ac39109ba89ee3d2fa1b53e64a7bde2202619174d355",
+      "git_blob_sha256": "da97caab246f4d91943bfa61021a506eccf1334c89e96a019fe9e214d632586b",
+      "git_blob_oid": "e48ece510db2dcfc83270900ee695a992d2268f7",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S029.txt",
+      "excerpt_sha256": "25de3bac630bb74ab938ffad140e9fe2522c436e5849129247053b2f6a77e28e"
+    },
+    {
+      "id": "S030",
+      "path": "ops-pipeline/scripts/novel_news_v1.py",
+      "function": "_normalize_beats",
+      "start_line": 224,
+      "end_line": 277,
+      "checkout_sha256": "e1ad95ac4073eb98608614b89f988868964d3d897d452ce111fbecec4ec18766",
+      "git_blob_sha256": "00038223e54873f5abd8b9cee6ef64706fd3a91a73e75863ebe8b3cccb5fa6f1",
+      "git_blob_oid": "6a5774b6679e8dbc6e287f113d37d3cef4233954",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S030.txt",
+      "excerpt_sha256": "0845a6cfa3a71f78250fac1d6c914f6e844c9ce36ed8dea3c6f2872054155b71"
+    },
+    {
+      "id": "S031",
+      "path": "ops-pipeline/scripts/novel_news_v1.py",
+      "function": "review_novel_news_plan",
+      "start_line": 513,
+      "end_line": 564,
+      "checkout_sha256": "e1ad95ac4073eb98608614b89f988868964d3d897d452ce111fbecec4ec18766",
+      "git_blob_sha256": "00038223e54873f5abd8b9cee6ef64706fd3a91a73e75863ebe8b3cccb5fa6f1",
+      "git_blob_oid": "6a5774b6679e8dbc6e287f113d37d3cef4233954",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S031.txt",
+      "excerpt_sha256": "f3fdc4055db89915d2472c22b79e35f99e07393459da0588485e62ae6544363b"
+    },
+    {
+      "id": "S032",
+      "path": "ops-pipeline/scripts/novel_news_v1.py",
+      "function": "_native_ledger_entry",
+      "start_line": 595,
+      "end_line": 617,
+      "checkout_sha256": "e1ad95ac4073eb98608614b89f988868964d3d897d452ce111fbecec4ec18766",
+      "git_blob_sha256": "00038223e54873f5abd8b9cee6ef64706fd3a91a73e75863ebe8b3cccb5fa6f1",
+      "git_blob_oid": "6a5774b6679e8dbc6e287f113d37d3cef4233954",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S032.txt",
+      "excerpt_sha256": "45880d1bf85e697d10a4f2bb092ba8cf1d6d9c0e961ad728cb173a13fa5e216a"
+    },
+    {
+      "id": "S033",
+      "path": "ops-pipeline/scripts/novel_news_v1.py",
+      "function": null,
+      "start_line": 753,
+      "end_line": 793,
+      "checkout_sha256": "e1ad95ac4073eb98608614b89f988868964d3d897d452ce111fbecec4ec18766",
+      "git_blob_sha256": "00038223e54873f5abd8b9cee6ef64706fd3a91a73e75863ebe8b3cccb5fa6f1",
+      "git_blob_oid": "6a5774b6679e8dbc6e287f113d37d3cef4233954",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S033.txt",
+      "excerpt_sha256": "3a2ce13b03c50c11e94a79304752ab1f0f91ac85a30f1e066e37388c12036936"
+    },
+    {
+      "id": "S034",
+      "path": "ops-pipeline/scripts/news_delivery_v1.py",
+      "function": "create_news_delivery_request",
+      "start_line": 1283,
+      "end_line": 1517,
+      "checkout_sha256": "9012b22ba3eefc4956403bc15aa49a1acf27dedd3d2ef409b2e6170196cb4c8a",
+      "git_blob_sha256": "32ef08037d40bc9563bf20de0c298cc723e2af0cd8859555571891d5714b578d",
+      "git_blob_oid": "56a168ed3b6be2568a7601f151ba8dc78023903b",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S034.txt",
+      "excerpt_sha256": "947b65b25019920b287d1730f403af3f6e8765158727b5d52d09e99d37013f94"
+    },
+    {
+      "id": "S035",
+      "path": "ops-pipeline/scripts/news_delivery_v1.py",
+      "function": "resolve_news_delivery_plan",
+      "start_line": 1779,
+      "end_line": 2095,
+      "checkout_sha256": "9012b22ba3eefc4956403bc15aa49a1acf27dedd3d2ef409b2e6170196cb4c8a",
+      "git_blob_sha256": "32ef08037d40bc9563bf20de0c298cc723e2af0cd8859555571891d5714b578d",
+      "git_blob_oid": "56a168ed3b6be2568a7601f151ba8dc78023903b",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S035.txt",
+      "excerpt_sha256": "3014b2be3eef7d437077e9f3b33a64e7b37191bb02e011e61f5965b303711bee"
+    },
+    {
+      "id": "S036",
+      "path": "ops-pipeline/scripts/news_delivery_v1.py",
+      "function": "approve_news_delivery",
+      "start_line": 2124,
+      "end_line": 2634,
+      "checkout_sha256": "9012b22ba3eefc4956403bc15aa49a1acf27dedd3d2ef409b2e6170196cb4c8a",
+      "git_blob_sha256": "32ef08037d40bc9563bf20de0c298cc723e2af0cd8859555571891d5714b578d",
+      "git_blob_oid": "56a168ed3b6be2568a7601f151ba8dc78023903b",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S036.txt",
+      "excerpt_sha256": "470f5a1029dc6c40d57369434a4951a61dbe049d31379d862081018fa0b7d60b"
+    },
+    {
+      "id": "S037",
+      "path": "ops-pipeline/scripts/news_delivery_v1.py",
+      "function": null,
+      "start_line": 3735,
+      "end_line": 3845,
+      "checkout_sha256": "9012b22ba3eefc4956403bc15aa49a1acf27dedd3d2ef409b2e6170196cb4c8a",
+      "git_blob_sha256": "32ef08037d40bc9563bf20de0c298cc723e2af0cd8859555571891d5714b578d",
+      "git_blob_oid": "56a168ed3b6be2568a7601f151ba8dc78023903b",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S037.txt",
+      "excerpt_sha256": "bdc54ea2f2572a3763d50345dc35f237ff060395efc8fbdfe83d896ebe2492f9"
+    },
+    {
+      "id": "S038",
+      "path": "ops-pipeline/scripts/review_generation_batch_v2.py",
+      "function": null,
+      "start_line": 543,
+      "end_line": 707,
+      "checkout_sha256": "ee5f480b2fde8a583324a5c5423bb1e0836f96ee73e8b3a7ebb0a4734852ab00",
+      "git_blob_sha256": "eede2a6ae3e6bc04aa4470985118bc3c82310d5bed2e6af75f892e8b9e9b818a",
+      "git_blob_oid": "6fbc6d4055eb936545421e9fce78dc947b3ccc07",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S038.txt",
+      "excerpt_sha256": "1a4057307be1d0e476211d6e2f6d2102c632c470ed2261145a70a0a7e7afe82f"
+    },
+    {
+      "id": "S039",
+      "path": "ops-pipeline/scripts/delivery_receipt_recovery_v1.py",
+      "function": "human_admission",
+      "start_line": 112,
+      "end_line": 149,
+      "checkout_sha256": "77f56c6d6fb73ab11b506998db636b31536e3a32e3d5539c7334b04ed35810f6",
+      "git_blob_sha256": "cd6679d0b1a7bf0af2ed02ed94399b0368e8c177915081d5f7fe74bbcb284313",
+      "git_blob_oid": "da0b4fcefaa74e3666dce8bf4e82c17b8dedcdcb",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S039.txt",
+      "excerpt_sha256": "3c0c1a74518738df512bcd8801468be4244a790defdf0e04eff49672315d1061"
+    },
+    {
+      "id": "S040",
+      "path": "ops-pipeline/scripts/delivery_receipt_recovery_v1.py",
+      "function": "human_state",
+      "start_line": 151,
+      "end_line": 187,
+      "checkout_sha256": "77f56c6d6fb73ab11b506998db636b31536e3a32e3d5539c7334b04ed35810f6",
+      "git_blob_sha256": "cd6679d0b1a7bf0af2ed02ed94399b0368e8c177915081d5f7fe74bbcb284313",
+      "git_blob_oid": "da0b4fcefaa74e3666dce8bf4e82c17b8dedcdcb",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S040.txt",
+      "excerpt_sha256": "ee118c6bf93ccc9ee338c1f3a4389fc84bbcb60912ebcec93a2ee3085b5921a2"
+    },
+    {
+      "id": "S041",
+      "path": "internal-console/app/content_delivery_gateway.py",
+      "function": "submit_generation_review",
+      "start_line": 1155,
+      "end_line": 1414,
+      "checkout_sha256": "072a748116437cf254f28454b5086ed39a59610f3d200c754356061727738ab5",
+      "git_blob_sha256": "6d435adac153e3167c1fcf01913fe32f8a0e6a6bfc4dae1221d2ec58d4d86424",
+      "git_blob_oid": "af2c06f63cb91b014ba857ba52e64a9ee8908734",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S041.txt",
+      "excerpt_sha256": "a7b6d566143844aa70f238778d90fbb781ee377cc1af21188d66215f5e5ee966"
+    },
+    {
+      "id": "S042",
+      "path": "ops-pipeline/scripts/novel_news_v1.py",
+      "function": "validate_novel_news_export",
+      "start_line": 798,
+      "end_line": 838,
+      "checkout_sha256": "e1ad95ac4073eb98608614b89f988868964d3d897d452ce111fbecec4ec18766",
+      "git_blob_sha256": "00038223e54873f5abd8b9cee6ef64706fd3a91a73e75863ebe8b3cccb5fa6f1",
+      "git_blob_oid": "6a5774b6679e8dbc6e287f113d37d3cef4233954",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S042.txt",
+      "excerpt_sha256": "daa473ef5760f844baa251a5702c339aa117c5dbb68e038d88ffe98783a3cade"
+    },
+    {
+      "id": "S043",
+      "path": "ops-pipeline/scripts/news_delivery_v1.py",
+      "function": "validate_news_delivery_export",
+      "start_line": 3858,
+      "end_line": 3911,
+      "checkout_sha256": "9012b22ba3eefc4956403bc15aa49a1acf27dedd3d2ef409b2e6170196cb4c8a",
+      "git_blob_sha256": "32ef08037d40bc9563bf20de0c298cc723e2af0cd8859555571891d5714b578d",
+      "git_blob_oid": "56a168ed3b6be2568a7601f151ba8dc78023903b",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S043.txt",
+      "excerpt_sha256": "a5eec7e84853d28b265295396367cfd650ec084430de9ff91465a10d14f066c1"
+    },
+    {
+      "id": "S044",
+      "path": "ops-pipeline/scripts/news_export_recovery_v1.py",
+      "function": "verify_native_human_bundle",
+      "start_line": 396,
+      "end_line": 428,
+      "checkout_sha256": "7ff7efca250648ad392e94552ae030b1055fe8cd7a9107cf0c3369d42f3e7f00",
+      "git_blob_sha256": "923562c3f48b9825294eb7728f329df4b8a0c1a8cd4349855c2e4a2d291f90ad",
+      "git_blob_oid": "0a147956cdc2e88a823bf82fd0fac401004b1aea",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S044.txt",
+      "excerpt_sha256": "56b4676b4d50530f607729791a33e88351b1d67c2731c70b139cfa32325c7827"
+    },
+    {
+      "id": "S045",
+      "path": "ops-pipeline/scripts/novel_news_v1.py",
+      "function": "prepare_novel_news_generation",
+      "start_line": 364,
+      "end_line": 386,
+      "checkout_sha256": "e1ad95ac4073eb98608614b89f988868964d3d897d452ce111fbecec4ec18766",
+      "git_blob_sha256": "00038223e54873f5abd8b9cee6ef64706fd3a91a73e75863ebe8b3cccb5fa6f1",
+      "git_blob_oid": "6a5774b6679e8dbc6e287f113d37d3cef4233954",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S045.txt",
+      "excerpt_sha256": "abe4ec5289886c88dbbd38819acf2952a956e23aaf014727ca7b50156963109a"
+    },
+    {
+      "id": "S046",
+      "path": "ops-pipeline/scripts/novel_news_v1.py",
+      "function": "novel_generation_state",
+      "start_line": 389,
+      "end_line": 441,
+      "checkout_sha256": "e1ad95ac4073eb98608614b89f988868964d3d897d452ce111fbecec4ec18766",
+      "git_blob_sha256": "00038223e54873f5abd8b9cee6ef64706fd3a91a73e75863ebe8b3cccb5fa6f1",
+      "git_blob_oid": "6a5774b6679e8dbc6e287f113d37d3cef4233954",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S046.txt",
+      "excerpt_sha256": "2083c44ea4db43e79209b4487d16cc1662a9aa9387bba87a0c5de21b086a7e2e"
+    },
+    {
+      "id": "S047",
+      "path": "ops-pipeline/scripts/novel_news_v1.py",
+      "function": "generate_novel_news_plan",
+      "start_line": 444,
+      "end_line": 510,
+      "checkout_sha256": "e1ad95ac4073eb98608614b89f988868964d3d897d452ce111fbecec4ec18766",
+      "git_blob_sha256": "00038223e54873f5abd8b9cee6ef64706fd3a91a73e75863ebe8b3cccb5fa6f1",
+      "git_blob_oid": "6a5774b6679e8dbc6e287f113d37d3cef4233954",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S047.txt",
+      "excerpt_sha256": "f107dea16465273aac021d9d94d5006eff523505c871d1337c438b3b3fb9715c"
+    },
+    {
+      "id": "S048",
+      "path": "ops-pipeline/scripts/novel_news_generation_recovery_v1.py",
+      "function": "append",
+      "start_line": 170,
+      "end_line": 200,
+      "checkout_sha256": "ab6076bb9c0cca18decc76a5bdbce1afc4fa6946acafe4b94f53e681c00fec8a",
+      "git_blob_sha256": "6724683880a63d0f265d5479007616a09a08dcfdf3f681ff3ef5d85d1902f093",
+      "git_blob_oid": "64378cfcb87cd0f3e670756d3bb25ab167207636",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S048.txt",
+      "excerpt_sha256": "c29568bffe69f343658aa17d9f5c54b9c2862b1c28212d0c59e2cbe2da4b6eb4"
+    },
+    {
+      "id": "S049",
+      "path": "ops-pipeline/scripts/novel_news_generation_recovery_v1.py",
+      "function": "project_task_execution",
+      "start_line": 231,
+      "end_line": 267,
+      "checkout_sha256": "ab6076bb9c0cca18decc76a5bdbce1afc4fa6946acafe4b94f53e681c00fec8a",
+      "git_blob_sha256": "6724683880a63d0f265d5479007616a09a08dcfdf3f681ff3ef5d85d1902f093",
+      "git_blob_oid": "64378cfcb87cd0f3e670756d3bb25ab167207636",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S049.txt",
+      "excerpt_sha256": "2bcee361f93b846746f5510c44e6297108e3522de6c4c2694e47425dfe3c424c"
+    },
+    {
+      "id": "S050",
+      "path": "ops-pipeline/scripts/resolve_generation_batch_v1.py",
+      "function": "require_retry_scope",
+      "start_line": 1351,
+      "end_line": 1359,
+      "checkout_sha256": "37448ac210b73734d3164fe69336eed3f2c70cc78b71ca04a66e76d3c5f70a10",
+      "git_blob_sha256": "a7810617ef7610d92caa2e3975b8ee5f471a5278b6d86799101623ddc87fd6d5",
+      "git_blob_oid": "c1adc7cd4cb8a7342437a43deea1c71de9a00297",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S050.txt",
+      "excerpt_sha256": "1d856361efe7d4990db58e2d2f3588b4f99a236149941e950270d0d2d37e3712"
+    },
+    {
+      "id": "S051",
+      "path": "ops-pipeline/scripts/resolve_generation_batch_v1.py",
+      "function": "preview_generation_recovery",
+      "start_line": 1362,
+      "end_line": 1381,
+      "checkout_sha256": "37448ac210b73734d3164fe69336eed3f2c70cc78b71ca04a66e76d3c5f70a10",
+      "git_blob_sha256": "a7810617ef7610d92caa2e3975b8ee5f471a5278b6d86799101623ddc87fd6d5",
+      "git_blob_oid": "c1adc7cd4cb8a7342437a43deea1c71de9a00297",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S051.txt",
+      "excerpt_sha256": "7ca4c2c3bde26f27c8a321fc007a88a8b3dd16a825f24461cd0681d553e0f87a"
+    },
+    {
+      "id": "S052",
+      "path": "ops-pipeline/scripts/resolve_generation_batch_v1.py",
+      "function": "confirm_generation_recovery",
+      "start_line": 1384,
+      "end_line": 1410,
+      "checkout_sha256": "37448ac210b73734d3164fe69336eed3f2c70cc78b71ca04a66e76d3c5f70a10",
+      "git_blob_sha256": "a7810617ef7610d92caa2e3975b8ee5f471a5278b6d86799101623ddc87fd6d5",
+      "git_blob_oid": "c1adc7cd4cb8a7342437a43deea1c71de9a00297",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S052.txt",
+      "excerpt_sha256": "5fefe1d743bd2b11a5128704fda4ecb5305cb643b641418f5090c2ca65bc7711"
+    },
+    {
+      "id": "S053",
+      "path": "ops-pipeline/scripts/resolve_generation_batch_v1.py",
+      "function": "execute_generation_recovery",
+      "start_line": 1413,
+      "end_line": 1504,
+      "checkout_sha256": "37448ac210b73734d3164fe69336eed3f2c70cc78b71ca04a66e76d3c5f70a10",
+      "git_blob_sha256": "a7810617ef7610d92caa2e3975b8ee5f471a5278b6d86799101623ddc87fd6d5",
+      "git_blob_oid": "c1adc7cd4cb8a7342437a43deea1c71de9a00297",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S053.txt",
+      "excerpt_sha256": "423c540ff3195e4ce092a147e421e6299cd2f9adb944c3f5eb6c3bf589c40ee7"
+    },
+    {
+      "id": "S054",
+      "path": "ops-pipeline/scripts/generation_recovery_v1.py",
+      "function": "graph",
+      "start_line": 236,
+      "end_line": 313,
+      "checkout_sha256": "04734b589225400884355dab8aae58d1dd809618cc71a4b294af558eab83c8fa",
+      "git_blob_sha256": "8179ea9a946362445833c13e67428ddf12555e81045f015d5eefb8d6c189587a",
+      "git_blob_oid": "c792253e43e0d69fb5e01e4110213efdd242a0d6",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S054.txt",
+      "excerpt_sha256": "7c9a3965e20c1fd772bdcebcc74aae1643849c5af087903153d16068f170a737"
+    },
+    {
+      "id": "S055",
+      "path": "ops-pipeline/scripts/news_export_recovery_v1.py",
+      "function": "prepare_publication",
+      "start_line": 243,
+      "end_line": 296,
+      "checkout_sha256": "7ff7efca250648ad392e94552ae030b1055fe8cd7a9107cf0c3369d42f3e7f00",
+      "git_blob_sha256": "923562c3f48b9825294eb7728f329df4b8a0c1a8cd4349855c2e4a2d291f90ad",
+      "git_blob_oid": "0a147956cdc2e88a823bf82fd0fac401004b1aea",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S055.txt",
+      "excerpt_sha256": "0c34e5dae162629be005d90491f1086abd0a4aa45e5123f9a5eb20d099ea2471"
+    },
+    {
+      "id": "S056",
+      "path": "ops-pipeline/scripts/news_export_recovery_v1.py",
+      "function": "validate_prepared",
+      "start_line": 299,
+      "end_line": 305,
+      "checkout_sha256": "7ff7efca250648ad392e94552ae030b1055fe8cd7a9107cf0c3369d42f3e7f00",
+      "git_blob_sha256": "923562c3f48b9825294eb7728f329df4b8a0c1a8cd4349855c2e4a2d291f90ad",
+      "git_blob_oid": "0a147956cdc2e88a823bf82fd0fac401004b1aea",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S056.txt",
+      "excerpt_sha256": "cd2f76790b34ab17c35011f22e7824dc629bb6bac82a37522fa239e42dc27219"
+    },
+    {
+      "id": "S057",
+      "path": "ops-pipeline/scripts/news_export_recovery_v1.py",
+      "function": "partial_state",
+      "start_line": 446,
+      "end_line": 459,
+      "checkout_sha256": "7ff7efca250648ad392e94552ae030b1055fe8cd7a9107cf0c3369d42f3e7f00",
+      "git_blob_sha256": "923562c3f48b9825294eb7728f329df4b8a0c1a8cd4349855c2e4a2d291f90ad",
+      "git_blob_oid": "0a147956cdc2e88a823bf82fd0fac401004b1aea",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S057.txt",
+      "excerpt_sha256": "9ab0f72c05bc10065bd9861a7a4be870defba3f8e5371ca7de5c40a40fd08ddf"
+    },
+    {
+      "id": "S058",
+      "path": "internal-console/app/news_export_gateway.py",
+      "function": "submit",
+      "start_line": 34,
+      "end_line": 77,
+      "checkout_sha256": "886cecd1b6f759ec117f74e5f74ee1f3ba342772aae482142b10572311bd7e18",
+      "git_blob_sha256": "131301935fb425f740af73d87fda4c4ece266a48065f915bb4b279adb7a9d405",
+      "git_blob_oid": "08e8d3a542a3449da34caec0419ba9f29589ef5f",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S058.txt",
+      "excerpt_sha256": "b445d3e64452132d6eee2b016382301f9caea795b7994e60c424902e687791a0"
+    },
+    {
+      "id": "S059",
+      "path": "internal-console/app/content_delivery_gateway.py",
+      "function": "submit_mix_export",
+      "start_line": 1756,
+      "end_line": 1760,
+      "checkout_sha256": "072a748116437cf254f28454b5086ed39a59610f3d200c754356061727738ab5",
+      "git_blob_sha256": "6d435adac153e3167c1fcf01913fe32f8a0e6a6bfc4dae1221d2ec58d4d86424",
+      "git_blob_oid": "af2c06f63cb91b014ba857ba52e64a9ee8908734",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S059.txt",
+      "excerpt_sha256": "0e5504affbdd04dc29678ca633c62d6c3ff9c0343e1c2fca505e7b31a6ce8f9e"
+    },
+    {
+      "id": "S060",
+      "path": "internal-console/app/publish_copy_gateway.py",
+      "function": "submit",
+      "start_line": 41,
+      "end_line": 87,
+      "checkout_sha256": "ca6cf5ae68a9bc580617c190b9d6ae156b99e38578c1255eaded6d22658a8b16",
+      "git_blob_sha256": "b7188125e035729af2e1ca89a6f943be788cb578b43c0c739258f1008a3e89d9",
+      "git_blob_oid": "5fd2da7c4605246d8cb78627dae1b3b817b3c47e",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S060.txt",
+      "excerpt_sha256": "3b49c98ddd873c8196d364111653ac7832c26b3c8f96ab8e0ed2d2d466594d51"
+    },
+    {
+      "id": "S061",
+      "path": "internal-console/app/task_service.py",
+      "function": "submit_task",
+      "start_line": 401,
+      "end_line": 507,
+      "checkout_sha256": "5566b618a8cba34eb219fad73c5d402334666cc36fe09b850d12a1c7adbec45d",
+      "git_blob_sha256": "fdaf3c09ffb30a9f65a88f9624514227e5800c989001dd28fee7765fafbf7fe2",
+      "git_blob_oid": "9fb138ab2a4f778a3b534e4fd166ab1f23dc90c5",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S061.txt",
+      "excerpt_sha256": "d69ce9e9f4c2d2736af9e1eab4f6407e08619be0129ee8a78f59cef0c2bb00bf"
+    },
+    {
+      "id": "S062",
+      "path": "internal-console/app/task_service.py",
+      "function": "ensure_task_capacity",
+      "start_line": 304,
+      "end_line": 312,
+      "checkout_sha256": "5566b618a8cba34eb219fad73c5d402334666cc36fe09b850d12a1c7adbec45d",
+      "git_blob_sha256": "fdaf3c09ffb30a9f65a88f9624514227e5800c989001dd28fee7765fafbf7fe2",
+      "git_blob_oid": "9fb138ab2a4f778a3b534e4fd166ab1f23dc90c5",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S062.txt",
+      "excerpt_sha256": "db82943552f1111a245c142ebe0e8b3eda1d5ca7df2d9845dc7310cad4e0ff4f"
+    },
+    {
+      "id": "S063",
+      "path": "internal-console/app/task_service.py",
+      "function": "recover_expired_tasks",
+      "start_line": 762,
+      "end_line": 808,
+      "checkout_sha256": "5566b618a8cba34eb219fad73c5d402334666cc36fe09b850d12a1c7adbec45d",
+      "git_blob_sha256": "fdaf3c09ffb30a9f65a88f9624514227e5800c989001dd28fee7765fafbf7fe2",
+      "git_blob_oid": "9fb138ab2a4f778a3b534e4fd166ab1f23dc90c5",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S063.txt",
+      "excerpt_sha256": "602ef6f140730689331b318d8819e4fe1fa73b015cc982c19ff667119c9438f5"
+    },
+    {
+      "id": "S064",
+      "path": "internal-console/app/background_task_service.py",
+      "function": null,
+      "start_line": 152,
+      "end_line": 185,
+      "checkout_sha256": "3ad2df367bad36713237872427ce92562b7b29e296f7462a6a3bfdbc41c15870",
+      "git_blob_sha256": "12c7b5223f1e2ac6185faf564cba62844dcf1cb60747b769569cebf4ba6955c0",
+      "git_blob_oid": "ea34ae0d62c5be1246032f5834b6a734d299b6a8",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S064.txt",
+      "excerpt_sha256": "c080d970b8917ec57a35bad79312ac5a9e57209a023042115bdab6c47eb2a338"
+    },
+    {
+      "id": "S065",
+      "path": "internal-console/app/config.py",
+      "function": null,
+      "start_line": 35,
+      "end_line": 57,
+      "checkout_sha256": "a0359f8a78c867b902e6f2fd093ddc59c0639e0d37e5e962348ef16433e7412f",
+      "git_blob_sha256": "194e195677d72be31f15a1b5c96870732b54b5397ffa0c51c27b5d8d01c300c1",
+      "git_blob_oid": "34c791e5a1a62d4d0aa3569118e201e758b8329c",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S065.txt",
+      "excerpt_sha256": "44d0633b8f33ab4774b699f1a60371162cf3de5bb993171c3579df89b287b433"
+    },
+    {
+      "id": "S066",
+      "path": "internal-console/app/background_task_service.py",
+      "function": null,
+      "start_line": 360,
+      "end_line": 410,
+      "checkout_sha256": "3ad2df367bad36713237872427ce92562b7b29e296f7462a6a3bfdbc41c15870",
+      "git_blob_sha256": "12c7b5223f1e2ac6185faf564cba62844dcf1cb60747b769569cebf4ba6955c0",
+      "git_blob_oid": "ea34ae0d62c5be1246032f5834b6a734d299b6a8",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S066.txt",
+      "excerpt_sha256": "6bff809f51cb129dcb893c60c5dac10efc682fc1a012e48e19420200b4371c11"
+    },
+    {
+      "id": "S067",
+      "path": "ops-pipeline/scripts/publish_copy_sources_v1.py",
+      "function": "source",
+      "start_line": 8,
+      "end_line": 101,
+      "checkout_sha256": "3dcf630dc8dc6a55a21353d933ebffca8af90dbcadad8caf1a49f0dbea059750",
+      "git_blob_sha256": "d6fad1e29c768408b2a183c5268f2d623613eba8a59f076e6a8e1560119619c4",
+      "git_blob_oid": "5c2a4befa6efb0bbf09f033fb299bb6228611185",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S067.txt",
+      "excerpt_sha256": "d54cd4867153759392da44539e2cb4a46102993412b6952cda868c09f6d0deb0"
+    },
+    {
+      "id": "S068",
+      "path": "ops-pipeline/scripts/publish_copy_v1.py",
+      "function": "prompt_for",
+      "start_line": 166,
+      "end_line": 187,
+      "checkout_sha256": "c682023dc71b309beb5e127a0a21f5d5889dbe809c806d5aef4526b14b54d8e0",
+      "git_blob_sha256": "e751faf56832983c06bfa8c79dc0d5a538c427559c55d56d7b0cd221a77bf527",
+      "git_blob_oid": "89f6f7007564b8ff796ccbec8294b18d030280a3",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S068.txt",
+      "excerpt_sha256": "1da59bf46aff17fdb3d48cb8f619fab004147e404d83d3f60b58eee127532466"
+    },
+    {
+      "id": "S069",
+      "path": "ops-pipeline/scripts/publish_copy_v1.py",
+      "function": "validate_payload",
+      "start_line": 102,
+      "end_line": 164,
+      "checkout_sha256": "c682023dc71b309beb5e127a0a21f5d5889dbe809c806d5aef4526b14b54d8e0",
+      "git_blob_sha256": "e751faf56832983c06bfa8c79dc0d5a538c427559c55d56d7b0cd221a77bf527",
+      "git_blob_oid": "89f6f7007564b8ff796ccbec8294b18d030280a3",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S069.txt",
+      "excerpt_sha256": "8e20a6ceae6342006e3cd94398206182357664f4838d58171d74541923144a2c"
+    },
+    {
+      "id": "S070",
+      "path": "ops-pipeline/scripts/publish_copy_v1.py",
+      "function": "prepare",
+      "start_line": 217,
+      "end_line": 247,
+      "checkout_sha256": "c682023dc71b309beb5e127a0a21f5d5889dbe809c806d5aef4526b14b54d8e0",
+      "git_blob_sha256": "e751faf56832983c06bfa8c79dc0d5a538c427559c55d56d7b0cd221a77bf527",
+      "git_blob_oid": "89f6f7007564b8ff796ccbec8294b18d030280a3",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S070.txt",
+      "excerpt_sha256": "4caf39009acb4e2620e9a39041d6530ef8cba43ef7111d2ed3b56fa6d509ff7c"
+    },
+    {
+      "id": "S071",
+      "path": "ops-pipeline/scripts/publish_copy_v1.py",
+      "function": "run",
+      "start_line": 307,
+      "end_line": 346,
+      "checkout_sha256": "c682023dc71b309beb5e127a0a21f5d5889dbe809c806d5aef4526b14b54d8e0",
+      "git_blob_sha256": "e751faf56832983c06bfa8c79dc0d5a538c427559c55d56d7b0cd221a77bf527",
+      "git_blob_oid": "89f6f7007564b8ff796ccbec8294b18d030280a3",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S071.txt",
+      "excerpt_sha256": "283b848d050c8005c206864711863e1cf6430878d938199449d9d63d68dcf339"
+    },
+    {
+      "id": "S072",
+      "path": "ops-pipeline/scripts/publish_copy_v1.py",
+      "function": "edit",
+      "start_line": 364,
+      "end_line": 373,
+      "checkout_sha256": "c682023dc71b309beb5e127a0a21f5d5889dbe809c806d5aef4526b14b54d8e0",
+      "git_blob_sha256": "e751faf56832983c06bfa8c79dc0d5a538c427559c55d56d7b0cd221a77bf527",
+      "git_blob_oid": "89f6f7007564b8ff796ccbec8294b18d030280a3",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S072.txt",
+      "excerpt_sha256": "fd4b98bad2f4c71e5fece88529db7680c6923acb3fd136100c059a658e6414bf"
+    },
+    {
+      "id": "S073",
+      "path": "ops-pipeline/scripts/publish_copy_v1.py",
+      "function": "confirm",
+      "start_line": 387,
+      "end_line": 411,
+      "checkout_sha256": "c682023dc71b309beb5e127a0a21f5d5889dbe809c806d5aef4526b14b54d8e0",
+      "git_blob_sha256": "e751faf56832983c06bfa8c79dc0d5a538c427559c55d56d7b0cd221a77bf527",
+      "git_blob_oid": "89f6f7007564b8ff796ccbec8294b18d030280a3",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S073.txt",
+      "excerpt_sha256": "f1bb108489c432b1ec22ad7ae49a74c539932b310d00c42e1ce5dbcfc6697629"
+    },
+    {
+      "id": "S074",
+      "path": "ops-pipeline/scripts/publish_copy_v1.py",
+      "function": "_state",
+      "start_line": 416,
+      "end_line": 436,
+      "checkout_sha256": "c682023dc71b309beb5e127a0a21f5d5889dbe809c806d5aef4526b14b54d8e0",
+      "git_blob_sha256": "e751faf56832983c06bfa8c79dc0d5a538c427559c55d56d7b0cd221a77bf527",
+      "git_blob_oid": "89f6f7007564b8ff796ccbec8294b18d030280a3",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S074.txt",
+      "excerpt_sha256": "f2832001adacd1a25ee1e9939dffb2df479cdd93d224d3c8fb4ee3ffb90edcb1"
+    },
+    {
+      "id": "S075",
+      "path": "ops-pipeline/scripts/publish_copy_excel_v1.py",
+      "function": "template",
+      "start_line": 22,
+      "end_line": 26,
+      "checkout_sha256": "bbc75dcc2d42bc95b0053123be9db73ae3261e7b418d2872ac19fa89ca0498ff",
+      "git_blob_sha256": "772046cff343e07eef4fab3140fc0f7df13b3ecc6e443f3471ea6c9a985e2f01",
+      "git_blob_oid": "9c0097b0140c19e407982840ed1a6c94da48b49e",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S075.txt",
+      "excerpt_sha256": "d00e90778d6e2ce3601d97c54657d06325d3cb1a4440265ac607026599036b0d"
+    },
+    {
+      "id": "S076",
+      "path": "ops-pipeline/scripts/publish_copy_excel_v1.py",
+      "function": "rows",
+      "start_line": 28,
+      "end_line": 37,
+      "checkout_sha256": "bbc75dcc2d42bc95b0053123be9db73ae3261e7b418d2872ac19fa89ca0498ff",
+      "git_blob_sha256": "772046cff343e07eef4fab3140fc0f7df13b3ecc6e443f3471ea6c9a985e2f01",
+      "git_blob_oid": "9c0097b0140c19e407982840ed1a6c94da48b49e",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S076.txt",
+      "excerpt_sha256": "036de9db305dc56f907caff38ed8a77b41fd18226b6bb8ff16b539408fae8610"
+    },
+    {
+      "id": "S077",
+      "path": "ops-pipeline/scripts/creation_delivery_v1.py",
+      "function": "export",
+      "start_line": 134,
+      "end_line": 144,
+      "checkout_sha256": "257c9cdee2e365f3ee0e858d5a1e6a70c8cbab9542ad664cd6fb52d708cececc",
+      "git_blob_sha256": "d9ad7c700508bafdd6ec274e11c32f2da2eb9529e404467fa7eb5982ecca81c3",
+      "git_blob_oid": "21a6cefc9c2ce9f302e1e6d7de7a0e6898ef81bf",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S077.txt",
+      "excerpt_sha256": "fe7bd6044860fe64e175b2df6b84d1975767da9f4389a086ece48e882ec179d1"
+    },
+    {
+      "id": "S078",
+      "path": "ops-pipeline/scripts/creation_delivery_v1.py",
+      "function": "validate_completed",
+      "start_line": 79,
+      "end_line": 132,
+      "checkout_sha256": "257c9cdee2e365f3ee0e858d5a1e6a70c8cbab9542ad664cd6fb52d708cececc",
+      "git_blob_sha256": "d9ad7c700508bafdd6ec274e11c32f2da2eb9529e404467fa7eb5982ecca81c3",
+      "git_blob_oid": "21a6cefc9c2ce9f302e1e6d7de7a0e6898ef81bf",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S078.txt",
+      "excerpt_sha256": "f6949f711ff4f3f28421fff289026c7a4923abc55fdacd9d0d47b28e878a8e53"
+    },
+    {
+      "id": "S079",
+      "path": "ops-pipeline/scripts/creation_delivery_v1.py",
+      "function": "event_head",
+      "start_line": 55,
+      "end_line": 75,
+      "checkout_sha256": "257c9cdee2e365f3ee0e858d5a1e6a70c8cbab9542ad664cd6fb52d708cececc",
+      "git_blob_sha256": "d9ad7c700508bafdd6ec274e11c32f2da2eb9529e404467fa7eb5982ecca81c3",
+      "git_blob_oid": "21a6cefc9c2ce9f302e1e6d7de7a0e6898ef81bf",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S079.txt",
+      "excerpt_sha256": "e83e051fc062e91baf417758412ce330421e3490ea1748a618700cbc267f7164"
+    },
+    {
+      "id": "S080",
+      "path": "ops-pipeline/scripts/creation_delivery_v1.py",
+      "function": "read_version",
+      "start_line": 263,
+      "end_line": 270,
+      "checkout_sha256": "257c9cdee2e365f3ee0e858d5a1e6a70c8cbab9542ad664cd6fb52d708cececc",
+      "git_blob_sha256": "d9ad7c700508bafdd6ec274e11c32f2da2eb9529e404467fa7eb5982ecca81c3",
+      "git_blob_oid": "21a6cefc9c2ce9f302e1e6d7de7a0e6898ef81bf",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S080.txt",
+      "excerpt_sha256": "87a437a1628b4b36458afcbac8c7c9a9fe3ce3ee92f2a46fd19ab2cc69793070"
+    },
+    {
+      "id": "S081",
+      "path": "ops-pipeline/scripts/creation_delivery_v1.py",
+      "function": null,
+      "start_line": 20,
+      "end_line": 52,
+      "checkout_sha256": "257c9cdee2e365f3ee0e858d5a1e6a70c8cbab9542ad664cd6fb52d708cececc",
+      "git_blob_sha256": "d9ad7c700508bafdd6ec274e11c32f2da2eb9529e404467fa7eb5982ecca81c3",
+      "git_blob_oid": "21a6cefc9c2ce9f302e1e6d7de7a0e6898ef81bf",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S081.txt",
+      "excerpt_sha256": "18b2b3d956a98df4bee7f050c072b924ab09f8498169c54a900256a766d16112"
+    },
+    {
+      "id": "S082",
+      "path": "ops-pipeline/scripts/close_generation_export_v1.py",
+      "function": "read_completed_generation_export",
+      "start_line": 376,
+      "end_line": 390,
+      "checkout_sha256": "8a3368cbf066fad2e94d2a5b3e76d853c087c28c06a0d1bb13bb60d3b6483232",
+      "git_blob_sha256": "8135ced3a92d588160044e9d0c24c7c1208b5f2f6134d457936dda200e76f49d",
+      "git_blob_oid": "e902b671018aee09c0f71eae8776efc816ef489a",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S082.txt",
+      "excerpt_sha256": "9c68178183de5b5db80c8568430c0cda73a39a1dd48830c184c71f2714709b34"
+    },
+    {
+      "id": "S083",
+      "path": "ops-pipeline/scripts/close_generation_export_v1.py",
+      "function": "ensure_generation_export_anchor",
+      "start_line": 393,
+      "end_line": 401,
+      "checkout_sha256": "8a3368cbf066fad2e94d2a5b3e76d853c087c28c06a0d1bb13bb60d3b6483232",
+      "git_blob_sha256": "8135ced3a92d588160044e9d0c24c7c1208b5f2f6134d457936dda200e76f49d",
+      "git_blob_oid": "e902b671018aee09c0f71eae8776efc816ef489a",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S083.txt",
+      "excerpt_sha256": "7aacc18b3c2aa6dcfaabf6021bad359160f63f90e3b0814bb1ebc8b3b8316448"
+    },
+    {
+      "id": "S084",
+      "path": "ops-pipeline/scripts/ledger_history_v1.py",
+      "function": "validate_anchor",
+      "start_line": 269,
+      "end_line": 298,
+      "checkout_sha256": "7968b6fbb7791db862be440c6732c105259fb891fd78466621f031217fdb7372",
+      "git_blob_sha256": "882bf252c983a7e6073474e7f01488ad86a1f405ec6f31b0fb382b07cffef918",
+      "git_blob_oid": "fd3ed89e5514325e70dbd42cd30d182e903f5ee8",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S084.txt",
+      "excerpt_sha256": "1204bfd7c62bce9165379b120e9a9f0e11f08621c7f8cc1ab5c0f79fc751189f"
+    },
+    {
+      "id": "S085",
+      "path": "ops-pipeline/scripts/ledger_history_v1.py",
+      "function": "validate_transition",
+      "start_line": 119,
+      "end_line": 135,
+      "checkout_sha256": "7968b6fbb7791db862be440c6732c105259fb891fd78466621f031217fdb7372",
+      "git_blob_sha256": "882bf252c983a7e6073474e7f01488ad86a1f405ec6f31b0fb382b07cffef918",
+      "git_blob_oid": "fd3ed89e5514325e70dbd42cd30d182e903f5ee8",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S085.txt",
+      "excerpt_sha256": "26f0eaf264270e0c217f055cbbc9ea9a89d4a99b61d5748b87eee85bee288070"
+    },
+    {
+      "id": "S086",
+      "path": "ops-pipeline/scripts/ledger_history_v1.py",
+      "function": "prohibit_unversioned_ledger_write",
+      "start_line": 332,
+      "end_line": 336,
+      "checkout_sha256": "7968b6fbb7791db862be440c6732c105259fb891fd78466621f031217fdb7372",
+      "git_blob_sha256": "882bf252c983a7e6073474e7f01488ad86a1f405ec6f31b0fb382b07cffef918",
+      "git_blob_oid": "fd3ed89e5514325e70dbd42cd30d182e903f5ee8",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S086.txt",
+      "excerpt_sha256": "f3fe87efa02b451e2767acf4f8b02612114ac515fd2b17bd2b7fa87f96c39686"
+    },
+    {
+      "id": "S087",
+      "path": "ops-pipeline/scripts/production_profile_v1.py",
+      "function": "decide_compatibility_v1_1",
+      "start_line": 78,
+      "end_line": 80,
+      "checkout_sha256": "510e64c251e240b9696c9f63322934c6987d1b25d085f845caa0b5bce23a5681",
+      "git_blob_sha256": "4d99c5ae48335cbcd2d459664524dee6d8a2b1c79cae0b568fecd107791509c7",
+      "git_blob_oid": "d381e9fe7629c43c12f26936bfa4c87973067e60",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S087.txt",
+      "excerpt_sha256": "a49a322448b56474bfb32ccc8d838ff4017cc8bc42c62b40836dec52d7d2d036"
+    },
+    {
+      "id": "S088",
+      "path": "ops-pipeline/scripts/profile_compatibility_decisions_v1_1.py",
+      "function": "decide",
+      "start_line": 390,
+      "end_line": 434,
+      "checkout_sha256": "3ce6dc096ae4eedc5574e097d0293360787b6c233f92e34c8faaca71cc53eb7c",
+      "git_blob_sha256": "b2b7c97d09706f6f88bfd0ce75f2af7c4622672d3e7b1642b62380d4b4ccfd33",
+      "git_blob_oid": "b06c5f91eb6117427bafde2dca6632ba90076081",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S088.txt",
+      "excerpt_sha256": "a643fcba448dee4947cce1f044e570f80eb0edea219c79bc75e267cb050f3f8f"
+    },
+    {
+      "id": "S089",
+      "path": "ops-pipeline/scripts/profile_compatibility_release_v1_1.py",
+      "function": "effective_runtime",
+      "start_line": 432,
+      "end_line": 518,
+      "checkout_sha256": "b173920b8ef34290d46e89f8d344499512a43f454b47fe900dd8988ee7624fcd",
+      "git_blob_sha256": "a66abed6e482d72c8a2384da69d237addbf7b88f38cf6fc6f67a26746b01b42b",
+      "git_blob_oid": "afd32bd363e935115e23409af4450687a2d564ee",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S089.txt",
+      "excerpt_sha256": "cfd788aa72a69f20483eac0435b7e63014a6148e852f418a9f6badc8674748c5"
+    },
+    {
+      "id": "S090",
+      "path": "ops-pipeline/scripts/profile_compatibility_release_v1_1.py",
+      "function": "runtime_write",
+      "start_line": 521,
+      "end_line": 525,
+      "checkout_sha256": "b173920b8ef34290d46e89f8d344499512a43f454b47fe900dd8988ee7624fcd",
+      "git_blob_sha256": "a66abed6e482d72c8a2384da69d237addbf7b88f38cf6fc6f67a26746b01b42b",
+      "git_blob_oid": "afd32bd363e935115e23409af4450687a2d564ee",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S090.txt",
+      "excerpt_sha256": "de90f496780525b1a0f134e765b9b2d7f5ad9b08a7539c76c4a90b0b53614a78"
+    },
+    {
+      "id": "S091",
+      "path": "ops-pipeline/scripts/news_runtime_v1_2.py",
+      "function": "current",
+      "start_line": 15,
+      "end_line": 31,
+      "checkout_sha256": "cb45d02ed5199b15d8f70a09785de530135bf3e9fe35ff5f27381d3089107c08",
+      "git_blob_sha256": "1d0be179ce1ec2d81954b86f5a49a45868f34a759eb0211e9a0cff0017eec911",
+      "git_blob_oid": "8a6a57e7450ce525d12ba72cc1794c713cd55df7",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S091.txt",
+      "excerpt_sha256": "25dbe941227fcaaccf4918a76b817d13df4149009b78289f77aaf7e9e3ed3db8"
+    },
+    {
+      "id": "S092",
+      "path": "ops-pipeline/scripts/profile_compatibility_release_v1_2.py",
+      "function": "eligibility",
+      "start_line": 47,
+      "end_line": 58,
+      "checkout_sha256": "61c1d8a73229d70785497ca7bcbed9b78ad9effce4b08382af22fb68ef6de0ab",
+      "git_blob_sha256": "58122183fb88fc2ce93a43b09013d6d3e36821fcb8cddfb951caa22fa7767e84",
+      "git_blob_oid": "61b9eb06a42e17f3efc45026f57b79fc12d00d04",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S092.txt",
+      "excerpt_sha256": "c8d634042fe7f7f7571f42c5fbf63bdb8d064a2ffd416c637b4f8e5f29c7928e"
+    },
+    {
+      "id": "S093",
+      "path": "ops-pipeline/scripts/customer_constraints_v1.py",
+      "function": "production_policy",
+      "start_line": 433,
+      "end_line": 450,
+      "checkout_sha256": "0f7aaff7c6948dda29bb07048ac1a7aa2aa08778d85c767609ad9fff3606a0bc",
+      "git_blob_sha256": "a7f260c841a8ff7f3fd0b62097a6355c4a11ddbb956600a0b518c754f2fa160e",
+      "git_blob_oid": "476c78333fbb1e8e170ef0616c17d8defa668a07",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S093.txt",
+      "excerpt_sha256": "c58437d0284c0a1ee12449efc5024decbf6990c0112f1831ca665adc65c0cd72"
+    },
+    {
+      "id": "S094",
+      "path": "ops-pipeline/scripts/news_runtime_v1_2.py",
+      "function": "validate_personas",
+      "start_line": 44,
+      "end_line": 52,
+      "checkout_sha256": "cb45d02ed5199b15d8f70a09785de530135bf3e9fe35ff5f27381d3089107c08",
+      "git_blob_sha256": "1d0be179ce1ec2d81954b86f5a49a45868f34a759eb0211e9a0cff0017eec911",
+      "git_blob_oid": "8a6a57e7450ce525d12ba72cc1794c713cd55df7",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S094.txt",
+      "excerpt_sha256": "7870acbe38f7d227905f82614471fccb69480c0e835823fb0aede9348b86c907"
+    },
+    {
+      "id": "S095",
+      "path": "internal-console/app/customer_operations_projection.py",
+      "function": "request_navigation_context",
+      "start_line": 22,
+      "end_line": 60,
+      "checkout_sha256": "6e99f8394fdf4c7396a1bdfa6071efef3113760f7d0976924e8b2ba2d4b49972",
+      "git_blob_sha256": "b4cd38e22de187c0f4898bf48858c761ca3da2ec2aa4507a950d204137f39690",
+      "git_blob_oid": "ea7cd74152a36d98c919361007c1ef4f85285e69",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S095.txt",
+      "excerpt_sha256": "3fc30ec3a26ac644229a64c15eb4346aefd980a2be137cb8480282183e0982c9"
+    },
+    {
+      "id": "S096",
+      "path": "internal-console/static/assets/content-views.js",
+      "function": null,
+      "start_line": 143,
+      "end_line": 168,
+      "checkout_sha256": "c2acc8345b697d8b6f627512f6a209003e44afda63c01092efa641c349d8faf6",
+      "git_blob_sha256": "01d8c722047327af8292b33556303ec785e99b672742b627a177eb5e8b3d6a61",
+      "git_blob_oid": "069aa18ef0165e367660f0be3549befba9958030",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S096.txt",
+      "excerpt_sha256": "adc5f3b0fa47698132bc0a07c452eccad60d6781be037d443df9c29164f0443c"
+    },
+    {
+      "id": "S097",
+      "path": "internal-console/static/assets/creation-entry-flow.js",
+      "function": null,
+      "start_line": 1,
+      "end_line": 50,
+      "checkout_sha256": "83141ccd81b2b93b5ac4e1fa2f9928748dba1ed653480291c4e78deca85765cc",
+      "git_blob_sha256": "d8056fc3f98557414517864852adec50877c4c3cb078bae8abf7fc486b7abf3b",
+      "git_blob_oid": "8869710e86e16926fd5c778a325d3ec2644525ab",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S097.txt",
+      "excerpt_sha256": "2be52c4595a78712be9906dbb85422160fa2a54c64e14ca620840efda02afa86"
+    },
+    {
+      "id": "S098",
+      "path": "internal-console/static/assets/publish-copy-views.js",
+      "function": null,
+      "start_line": 1,
+      "end_line": 231,
+      "checkout_sha256": "8b90515d093077b125bc0549d771c877ac38ce26802b7562ff9499b3c3a2f1cc",
+      "git_blob_sha256": "e25bbc0131b43454aed506d548964905072d84326a2084572c60208479f37281",
+      "git_blob_oid": "fd636a410845adb7ab90f6f299054639508847ec",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S098.txt",
+      "excerpt_sha256": "cae113963706bd8a5d0ae8eaafe776d9db0795bcdc7a6d4d98aa705acb098f6c"
+    },
+    {
+      "id": "S099",
+      "path": "internal-console/app/customer_operations_projection.py",
+      "function": "creation_record_index",
+      "start_line": 79,
+      "end_line": 135,
+      "checkout_sha256": "6e99f8394fdf4c7396a1bdfa6071efef3113760f7d0976924e8b2ba2d4b49972",
+      "git_blob_sha256": "b4cd38e22de187c0f4898bf48858c761ca3da2ec2aa4507a950d204137f39690",
+      "git_blob_oid": "ea7cd74152a36d98c919361007c1ef4f85285e69",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S099.txt",
+      "excerpt_sha256": "0424c8d54e08838c6b810aed86360f0f75ac7a5ef8b5209d6751fc017a32c120"
+    },
+    {
+      "id": "S100",
+      "path": "ops-pipeline/scripts/production_profile_v1.py",
+      "function": "declared_mix_profile_v1_1",
+      "start_line": 88,
+      "end_line": 107,
+      "checkout_sha256": "510e64c251e240b9696c9f63322934c6987d1b25d085f845caa0b5bce23a5681",
+      "git_blob_sha256": "4d99c5ae48335cbcd2d459664524dee6d8a2b1c79cae0b568fecd107791509c7",
+      "git_blob_oid": "d381e9fe7629c43c12f26936bfa4c87973067e60",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S100.txt",
+      "excerpt_sha256": "42e1f0a72ab671d087814aeff9e031944643e6ea9d4d2f20b1a20141cca20d23"
+    },
+    {
+      "id": "S101",
+      "path": "ops-pipeline/scripts/production_profile_v1.py",
+      "function": "declared_news_profile_v1_2",
+      "start_line": 2976,
+      "end_line": 2988,
+      "checkout_sha256": "510e64c251e240b9696c9f63322934c6987d1b25d085f845caa0b5bce23a5681",
+      "git_blob_sha256": "4d99c5ae48335cbcd2d459664524dee6d8a2b1c79cae0b568fecd107791509c7",
+      "git_blob_oid": "d381e9fe7629c43c12f26936bfa4c87973067e60",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S101.txt",
+      "excerpt_sha256": "5abc35b421f510fba98fed67cc690c132f89c00fd8250d85494fe41db7ee9098"
+    },
+    {
+      "id": "S102",
+      "path": "ops-pipeline/scripts/generate_mix_scripts_v1.py",
+      "function": null,
+      "start_line": 5807,
+      "end_line": 5822,
+      "checkout_sha256": "1155890d8754977a8a2a9f3ac3a9ab9a7465cded0b7e78467a16ff6c80664a4b",
+      "git_blob_sha256": "e02de1f2fb6d234b1735c0dc6d2e9ff9fd8e95fa7785e571c7be11a2eef40215",
+      "git_blob_oid": "55918312c3e434faa29a674e228c8a836e2cd181",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S102.txt",
+      "excerpt_sha256": "9c7bf13bf379cea34137bd899d4d6897c22c78081887a885a20db2731d3ddb84"
+    },
+    {
+      "id": "S103",
+      "path": "internal-console/app/config.py",
+      "function": null,
+      "start_line": 140,
+      "end_line": 146,
+      "checkout_sha256": "a0359f8a78c867b902e6f2fd093ddc59c0639e0d37e5e962348ef16433e7412f",
+      "git_blob_sha256": "194e195677d72be31f15a1b5c96870732b54b5397ffa0c51c27b5d8d01c300c1",
+      "git_blob_oid": "34c791e5a1a62d4d0aa3569118e201e758b8329c",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S103.txt",
+      "excerpt_sha256": "c910e1a605367c9274dfeee52092a6a378b36c3519d6bbe3a8674168e2a8e949"
+    },
+    {
+      "id": "S104",
+      "path": "internal-console/app/novel_news_rollout.py",
+      "function": "novel_news_available",
+      "start_line": 13,
+      "end_line": 21,
+      "checkout_sha256": "d0a933bb97e99f87b88e9e7cd913f59cbe6fdb7bfdf0916f8e4d1e04b1cb8e73",
+      "git_blob_sha256": "d0a933bb97e99f87b88e9e7cd913f59cbe6fdb7bfdf0916f8e4d1e04b1cb8e73",
+      "git_blob_oid": "704a7274648a34406541aaeef432b352f8dbe09f",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S104.txt",
+      "excerpt_sha256": "4db211f5acfedb2213f2bc8820fbbdc1d79830adbc8a9bf483c4a0174d80550d"
+    },
+    {
+      "id": "S105",
+      "path": "internal-console/app/publish_copy_gateway.py",
+      "function": "native",
+      "start_line": 7,
+      "end_line": 26,
+      "checkout_sha256": "ca6cf5ae68a9bc580617c190b9d6ae156b99e38578c1255eaded6d22658a8b16",
+      "git_blob_sha256": "b7188125e035729af2e1ca89a6f943be788cb578b43c0c739258f1008a3e89d9",
+      "git_blob_oid": "5fd2da7c4605246d8cb78627dae1b3b817b3c47e",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S105.txt",
+      "excerpt_sha256": "dcf6e6c3174760fe6efc47b143138a3ada98ba728b39691a090b3d7070798b76"
+    },
+    {
+      "id": "S106",
+      "path": "ops-pipeline/scripts/content_quality_v1.py",
+      "function": "semantic_duplicate_reasons",
+      "start_line": 556,
+      "end_line": 582,
+      "checkout_sha256": "1e8e6b62f37a3022c40515401dac5af31b3b171bff4d610e311c30d97992147c",
+      "git_blob_sha256": "48a09a3ce540bb0fd575000c209491ae5d131657fdf1b31b77230531f188fcb7",
+      "git_blob_oid": "f642337d22cae47a1a86687861e112f062b33770",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S106.txt",
+      "excerpt_sha256": "68668d20fba7c83748d800196e59342e015da795900ecf824cabd0c9ec5b9498"
+    },
+    {
+      "id": "S107",
+      "path": "ops-pipeline/scripts/content_quality_v1.py",
+      "function": "build_content_plan_v1_1_1",
+      "start_line": 3354,
+      "end_line": 3572,
+      "checkout_sha256": "1e8e6b62f37a3022c40515401dac5af31b3b171bff4d610e311c30d97992147c",
+      "git_blob_sha256": "48a09a3ce540bb0fd575000c209491ae5d131657fdf1b31b77230531f188fcb7",
+      "git_blob_oid": "f642337d22cae47a1a86687861e112f062b33770",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S107.txt",
+      "excerpt_sha256": "d2e5aa31fcbbb711a1dfebfef28d0d2f28a402885d0fc3bcd96977e5101ea843"
+    },
+    {
+      "id": "S108",
+      "path": "ops-pipeline/scripts/content_quality_v1.py",
+      "function": "append_ledger_entries",
+      "start_line": 1609,
+      "end_line": 1626,
+      "checkout_sha256": "1e8e6b62f37a3022c40515401dac5af31b3b171bff4d610e311c30d97992147c",
+      "git_blob_sha256": "48a09a3ce540bb0fd575000c209491ae5d131657fdf1b31b77230531f188fcb7",
+      "git_blob_oid": "f642337d22cae47a1a86687861e112f062b33770",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S108.txt",
+      "excerpt_sha256": "71d4ae8392996442f3d9a117ee1e0d0814af3db85c0942988751fc3916e9ef98"
+    },
+    {
+      "id": "S109",
+      "path": "ops-pipeline/scripts/publish_copy_v1.py",
+      "function": "memory_sha",
+      "start_line": 292,
+      "end_line": 294,
+      "checkout_sha256": "c682023dc71b309beb5e127a0a21f5d5889dbe809c806d5aef4526b14b54d8e0",
+      "git_blob_sha256": "e751faf56832983c06bfa8c79dc0d5a538c427559c55d56d7b0cd221a77bf527",
+      "git_blob_oid": "89f6f7007564b8ff796ccbec8294b18d030280a3",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S109.txt",
+      "excerpt_sha256": "00554498e0b0183e68063e7d0744b729f5c13ed87cdc5e40085fe636f4e18d43"
+    },
+    {
+      "id": "S110",
+      "path": "ops-pipeline/scripts/approve_persona_v1.py",
+      "function": "approve_persona",
+      "start_line": 78,
+      "end_line": 189,
+      "checkout_sha256": "d2f8b791c6095b000007892c1ccdb54cf2bb901d20ea8b0b1795e05d238e8136",
+      "git_blob_sha256": "cf1da4df6e42b4f6c3a84a573ee0c19a498850953493b89bfccdfbbf319d9aae",
+      "git_blob_oid": "02ab432a25f16e292e0daec6de1a6295f1a5b0c7",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S110.txt",
+      "excerpt_sha256": "4b03b750234816c218cc61f3644bae9cc2d4dd2c31fa2dc4e7828457fad73e2d"
+    },
+    {
+      "id": "S111",
+      "path": "ops-pipeline/scripts/approve_case_v1.py",
+      "function": "validate_source_provenance",
+      "start_line": 127,
+      "end_line": 247,
+      "checkout_sha256": "202561b435a3fb1870962aab550356c9c4feb90b2972178996de2911134d3c2c",
+      "git_blob_sha256": "db582e4fe030190b310dc7674526da26da74f3cc2b7a6e8afe7cf0613e52babd",
+      "git_blob_oid": "30f05cc7481d41d73a23a122acd68e67adec3bf7",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S111.txt",
+      "excerpt_sha256": "1fcde73458ac06f0ff79a85262aeae968b6833315606e1e65c836d9cd1305d8f"
+    },
+    {
+      "id": "S112",
+      "path": "ops-pipeline/scripts/approve_case_v1.py",
+      "function": "main",
+      "start_line": 250,
+      "end_line": 621,
+      "checkout_sha256": "202561b435a3fb1870962aab550356c9c4feb90b2972178996de2911134d3c2c",
+      "git_blob_sha256": "db582e4fe030190b310dc7674526da26da74f3cc2b7a6e8afe7cf0613e52babd",
+      "git_blob_oid": "30f05cc7481d41d73a23a122acd68e67adec3bf7",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S112.txt",
+      "excerpt_sha256": "0916e141542309b3ec2f898967f9e01f648819afa1b146372ea13e372772a3ff"
+    },
+    {
+      "id": "S113",
+      "path": "ops-pipeline/scripts/approve_pattern_v1.py",
+      "function": "approve_pattern",
+      "start_line": 833,
+      "end_line": 964,
+      "checkout_sha256": "84690d37e5ab0b04b49e66f0ff756aacea03401ebd154a28e8579bb3743ed5a5",
+      "git_blob_sha256": "268e4f438b6ce1a50e901865d74078efb8a994edb549d12124164bea8a376a22",
+      "git_blob_oid": "6529e88986cb00699e4c7fd9b9b2ce3c372e7833",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S113.txt",
+      "excerpt_sha256": "33aa1945f1166b6e0279228f0fa3c8260a018690450376c085a96192f98ea531"
+    },
+    {
+      "id": "S114",
+      "path": "ops-pipeline/scripts/news_pattern_authority_v1_1.py",
+      "function": "approve_pattern",
+      "start_line": 142,
+      "end_line": 159,
+      "checkout_sha256": "063c0a4d2589a91fd46f2c3ade5633b4f802e66ff0078781af8c3eb930641f64",
+      "git_blob_sha256": "8f529da6798eb1b025d02b5f942ca0d1650dcd934f6ed8fe5513dade95c38df9",
+      "git_blob_oid": "fb2770c0c692826493e4234b82c7f6ba48351ee2",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S114.txt",
+      "excerpt_sha256": "721163657fbe42ffce5fc742f3b708c55b5a971ec0358768ca6a99b75bf2801b"
+    },
+    {
+      "id": "S115",
+      "path": "ops-pipeline/scripts/resolve_generation_request_v1.py",
+      "function": "resolve_generation_request",
+      "start_line": 113,
+      "end_line": 458,
+      "checkout_sha256": "e00d09c4b40bc037fcb1cac555440f16f0e18e327b8dccb6dead3c07ff80941a",
+      "git_blob_sha256": "e00d09c4b40bc037fcb1cac555440f16f0e18e327b8dccb6dead3c07ff80941a",
+      "git_blob_oid": "3b5d30e60fd5d661280315e276a38a1ff1157d44",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S115.txt",
+      "excerpt_sha256": "4072a0c468716bdc0fff70e41c1768c913a231b1d02d673524cc0cff8ab127e6"
+    },
+    {
+      "id": "S116",
+      "path": "ops-pipeline/scripts/content_quality_v1.py",
+      "function": "build_fact_atom_catalog",
+      "start_line": 2049,
+      "end_line": 2089,
+      "checkout_sha256": "1e8e6b62f37a3022c40515401dac5af31b3b171bff4d610e311c30d97992147c",
+      "git_blob_sha256": "48a09a3ce540bb0fd575000c209491ae5d131657fdf1b31b77230531f188fcb7",
+      "git_blob_oid": "f642337d22cae47a1a86687861e112f062b33770",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S116.txt",
+      "excerpt_sha256": "f26d94a7dad5c051b25161a5b0be8cab90c19164acf260e3423120f1573529b4"
+    },
+    {
+      "id": "S117",
+      "path": "ops-pipeline/scripts/privacy_projection_v1.py",
+      "function": "project_value",
+      "start_line": 269,
+      "end_line": 285,
+      "checkout_sha256": "4730000ce963c7a7f8622d2b7b545108ff1e20220d07432c6e2571d0aa436e7e",
+      "git_blob_sha256": "ba2fb0edf1c7198d7f657b9446d0395b2467657d154d171afd6997008791e417",
+      "git_blob_oid": "683089df79dad800ade6af6874bf358abf9d90cb",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S117.txt",
+      "excerpt_sha256": "5d00e9f83cc682732ba7a51c27ad373bf9ef6606b085e608749d1c0adb7196aa"
+    },
+    {
+      "id": "S118",
+      "path": "ops-pipeline/scripts/review_generation_batch_v2.py",
+      "function": "review_generation_batch_v2",
+      "start_line": 542,
+      "end_line": 1515,
+      "checkout_sha256": "ee5f480b2fde8a583324a5c5423bb1e0836f96ee73e8b3a7ebb0a4734852ab00",
+      "git_blob_sha256": "eede2a6ae3e6bc04aa4470985118bc3c82310d5bed2e6af75f892e8b9e9b818a",
+      "git_blob_oid": "6fbc6d4055eb936545421e9fce78dc947b3ccc07",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S118.txt",
+      "excerpt_sha256": "e1528ab2616303adaae454fdf3a4f2726b61b99111bb3f1232a42b8755185dc6"
+    },
+    {
+      "id": "S119",
+      "path": "ops-pipeline/scripts/close_generation_export_v1.py",
+      "function": "close_generation_export",
+      "start_line": 407,
+      "end_line": 803,
+      "checkout_sha256": "8a3368cbf066fad2e94d2a5b3e76d853c087c28c06a0d1bb13bb60d3b6483232",
+      "git_blob_sha256": "8135ced3a92d588160044e9d0c24c7c1208b5f2f6134d457936dda200e76f49d",
+      "git_blob_oid": "e902b671018aee09c0f71eae8776efc816ef489a",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S119.txt",
+      "excerpt_sha256": "01efb50e56c834f507ef6370553f74b88ec75ff3e146e1464ac226f7104e1301"
+    },
+    {
+      "id": "S120",
+      "path": "internal-console/app/customer_gateway.py",
+      "function": "get_customer_detail",
+      "start_line": 988,
+      "end_line": 1135,
+      "checkout_sha256": "001441749b49af5453afe5836185756a3da37e88f82105b179a92fa407927690",
+      "git_blob_sha256": "ba9d8be416b9aa8fd642f68c1d9ef80f11dcc71ccc9b3eb95e5a54a575c3a57e",
+      "git_blob_oid": "4038d040e7248ea772db29680d87941a6d1321d0",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S120.txt",
+      "excerpt_sha256": "478d50ae5030a0c48a62690a84789cf1e964f3185b574582986c857262de55d1"
+    },
+    {
+      "id": "S121",
+      "path": "internal-console/app/customer_operations_projection.py",
+      "function": "list_customer_operations",
+      "start_line": 326,
+      "end_line": 365,
+      "checkout_sha256": "6e99f8394fdf4c7396a1bdfa6071efef3113760f7d0976924e8b2ba2d4b49972",
+      "git_blob_sha256": "b4cd38e22de187c0f4898bf48858c761ca3da2ec2aa4507a950d204137f39690",
+      "git_blob_oid": "ea7cd74152a36d98c919361007c1ef4f85285e69",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S121.txt",
+      "excerpt_sha256": "34cab725d88b574150ad3e0b33f292a1925efb72a2a8b6a038a4823481964f04"
+    },
+    {
+      "id": "S122",
+      "path": "internal-console/app/canonical_gateway.py",
+      "function": "approve_case_candidate",
+      "start_line": 1783,
+      "end_line": 1806,
+      "checkout_sha256": "1aa602205b14603de80b5b35a64a5e53e5672757f5ba3e19322ba3f75b96c315",
+      "git_blob_sha256": "39a104c08b5719b960921c1b93fe62f2555b4f1159c1e8fc0986deb689863b6c",
+      "git_blob_oid": "fa93102b736673d24a0a105070315b44cbcfcc8f",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S122.txt",
+      "excerpt_sha256": "92185edb4005d7083a24bfe0fa1d376d337c4cb3edf36ca434a1755445bf0fe4"
+    },
+    {
+      "id": "S123",
+      "path": "internal-console/app/main.py",
+      "function": "generation_review_route",
+      "start_line": 2103,
+      "end_line": 2130,
+      "checkout_sha256": "3b09b0238a113ad50f8e53264eba4dc0a8e5786afc040a03db43d353fcfc83f1",
+      "git_blob_sha256": "9d21c1310d345a6299cdaf38574bb3a4c85734153aab4aaf40585abb2da2b891",
+      "git_blob_oid": "81edcb5f289abeb7d8cc06e8b9f9edb0b0568090",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S123.txt",
+      "excerpt_sha256": "035ec3abd316eb755bba0b0edd89cb4abba400f399bd719ca0a3e41787b90627"
+    },
+    {
+      "id": "S124",
+      "path": "deploy/creative-authority/authority_release.py",
+      "function": "build_release",
+      "start_line": 263,
+      "end_line": 295,
+      "checkout_sha256": "1cec0d911e903bbd76583e9be4af31ba1600aff964faa346d4974436871ab4a3",
+      "git_blob_sha256": "26a2a83050dca5f72dff92231a7585d5735e8196f03961cc60f03e415a98a302",
+      "git_blob_oid": "09ed55408d8107d35daa62786a716041efa95671",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S124.txt",
+      "excerpt_sha256": "aaacbe3bf877b92db7ebbe71113ab7337644f4a332ae6a40e661e5bfaf0957f0"
+    },
+    {
+      "id": "S125",
+      "path": "deploy/creative-authority/authority_release.py",
+      "function": "verify_release",
+      "start_line": 298,
+      "end_line": 329,
+      "checkout_sha256": "1cec0d911e903bbd76583e9be4af31ba1600aff964faa346d4974436871ab4a3",
+      "git_blob_sha256": "26a2a83050dca5f72dff92231a7585d5735e8196f03961cc60f03e415a98a302",
+      "git_blob_oid": "09ed55408d8107d35daa62786a716041efa95671",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S125.txt",
+      "excerpt_sha256": "85f691aa7b89ee7a9d2a776220da9972f1ce45677408d79bdfde0e4ed4695231"
+    },
+    {
+      "id": "S126",
+      "path": "deploy/creative-authority/authority_release.py",
+      "function": "stage_release_v1_1",
+      "start_line": 672,
+      "end_line": 675,
+      "checkout_sha256": "1cec0d911e903bbd76583e9be4af31ba1600aff964faa346d4974436871ab4a3",
+      "git_blob_sha256": "26a2a83050dca5f72dff92231a7585d5735e8196f03961cc60f03e415a98a302",
+      "git_blob_oid": "09ed55408d8107d35daa62786a716041efa95671",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S126.txt",
+      "excerpt_sha256": "5fb4c5260c5cf6c8c629e1d9ec316b98eff09e08d79fbab2228d4ca555d20790"
+    },
+    {
+      "id": "S127",
+      "path": "deploy/creative-authority/authority_release.py",
+      "function": "activate_release_v1_1",
+      "start_line": 678,
+      "end_line": 681,
+      "checkout_sha256": "1cec0d911e903bbd76583e9be4af31ba1600aff964faa346d4974436871ab4a3",
+      "git_blob_sha256": "26a2a83050dca5f72dff92231a7585d5735e8196f03961cc60f03e415a98a302",
+      "git_blob_oid": "09ed55408d8107d35daa62786a716041efa95671",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S127.txt",
+      "excerpt_sha256": "9bb63b2f87b46ec59324046f020db1ffc541a8047fc26e763b436aa43c0c2040"
+    },
+    {
+      "id": "S128",
+      "path": "ops-pipeline/scripts/publish_copy_excel_v1.py",
+      "function": null,
+      "start_line": 15,
+      "end_line": 26,
+      "checkout_sha256": "bbc75dcc2d42bc95b0053123be9db73ae3261e7b418d2872ac19fa89ca0498ff",
+      "git_blob_sha256": "772046cff343e07eef4fab3140fc0f7df13b3ecc6e443f3471ea6c9a985e2f01",
+      "git_blob_oid": "9c0097b0140c19e407982840ed1a6c94da48b49e",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S128.txt",
+      "excerpt_sha256": "7c9ef885158a4d64bb6375988094bcf65c13b60681fe91901a810306bb83fb3e"
+    },
+    {
+      "id": "S129",
+      "path": "ops-pipeline/scripts/review_generation_batch_v2.py",
+      "function": null,
+      "start_line": 13,
+      "end_line": 24,
+      "checkout_sha256": "ee5f480b2fde8a583324a5c5423bb1e0836f96ee73e8b3a7ebb0a4734852ab00",
+      "git_blob_sha256": "eede2a6ae3e6bc04aa4470985118bc3c82310d5bed2e6af75f892e8b9e9b818a",
+      "git_blob_oid": "6fbc6d4055eb936545421e9fce78dc947b3ccc07",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S129.txt",
+      "excerpt_sha256": "bb9561936340345b342d101b74b20ecc049b67ca2b8ec1e4ef70fbbf8e2495f4"
+    },
+    {
+      "id": "S130",
+      "path": "ops-pipeline/scripts/news_delivery_v1.py",
+      "function": null,
+      "start_line": 27,
+      "end_line": 48,
+      "checkout_sha256": "9012b22ba3eefc4956403bc15aa49a1acf27dedd3d2ef409b2e6170196cb4c8a",
+      "git_blob_sha256": "32ef08037d40bc9563bf20de0c298cc723e2af0cd8859555571891d5714b578d",
+      "git_blob_oid": "56a168ed3b6be2568a7601f151ba8dc78023903b",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S130.txt",
+      "excerpt_sha256": "dca50f6613e9d92e9ca255419c37c5020a8d45028807126975f299c94ffe54f2"
+    },
+    {
+      "id": "S131",
+      "path": "ops-pipeline/scripts/news_export_recovery_v1.py",
+      "function": null,
+      "start_line": 20,
+      "end_line": 82,
+      "checkout_sha256": "7ff7efca250648ad392e94552ae030b1055fe8cd7a9107cf0c3369d42f3e7f00",
+      "git_blob_sha256": "923562c3f48b9825294eb7728f329df4b8a0c1a8cd4349855c2e4a2d291f90ad",
+      "git_blob_oid": "0a147956cdc2e88a823bf82fd0fac401004b1aea",
+      "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+      "excerpt": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/source/S131.txt",
+      "excerpt_sha256": "ba7d7e91442b8240ff1f7cdb6ef4476fffbe470aa05b626a2ea059e2b6245b52"
+    }
+  ],
+  "claims": [
+    {
+      "id": "CT01",
+      "classification": "CODE_PROVEN",
+      "claim": "当前只选择一个 production profile；数量 1–20；preview 不写 Request、Ledger 或媒体权利。",
+      "source_ids": [
+        "S001",
+        "S002",
+        "S003"
+      ],
+      "test_modules": [
+        "pipeline:test_content_creation_entry_v1"
+      ],
+      "limitation": null,
+      "executed_test_evidence": [
+        {
+          "module": "pipeline:test_content_creation_entry_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/0-pipeline.xml.json",
+              "raw_junit_sha256": "9cd6120fa81abb20b30de193689f9ab77b51355935650c1ba42d1d0a21d314f4",
+              "observed_cases": 10,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            },
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/BL0-pipeline.json",
+              "raw_junit_sha256": "c045d4e705071ff5d2a043e8fe67b86a8fa6acc1b2337f5c1106efce5e20768b",
+              "observed_cases": 10,
+              "scope": "this BL-0 targeted run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "ops-pipeline/tests/test_content_creation_entry_v1.py",
+          "test_source_sha256": "169ae402667a8008a510cc5722fcd40b030ab4004e520d05dc5eb1e5477891b8"
+        }
+      ]
+    },
+    {
+      "id": "CT02",
+      "classification": "CODE_PROVEN",
+      "claim": "Customer → 独立 /create 页面，带 Business 上下文、Approved Speaker 选择，已有资料无需重填。",
+      "source_ids": [
+        "S004",
+        "S005",
+        "S006"
+      ],
+      "test_modules": [
+        "console:test_customer_operations_navigation"
+      ],
+      "limitation": null,
+      "executed_test_evidence": [
+        {
+          "module": "console:test_customer_operations_navigation",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/3-console.xml.json",
+              "raw_junit_sha256": "5ef02279ca14996a2a44f3f6df4e2e5de86e7d7519935c799df55e6ffd82a73d",
+              "observed_cases": 22,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            },
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/BL0-console.json",
+              "raw_junit_sha256": "b64ee8b0e2d420f97d9528d3e30d68455b860889c8f9cd25bb1e5b8d3f572684",
+              "observed_cases": 22,
+              "scope": "this BL-0 targeted run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_customer_operations_navigation.py",
+          "test_source_sha256": "8926ffc7b404f3c18ae08c18df64bc9b0759e51b185bb5d87bd4a3cd2652d993"
+        }
+      ]
+    },
+    {
+      "id": "CT03",
+      "classification": "CODE_PROVEN",
+      "claim": "资格依赖 exact Approved Business/Speaker lineage、事实、限制及当前原生匹配资格。",
+      "source_ids": [
+        "S007",
+        "S008",
+        "S009",
+        "S010"
+      ],
+      "test_modules": [
+        "pipeline:test_content_creation_entry_v1",
+        "console:test_news_capability_domains_v1_2"
+      ],
+      "limitation": null,
+      "executed_test_evidence": [
+        {
+          "module": "pipeline:test_content_creation_entry_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/0-pipeline.xml.json",
+              "raw_junit_sha256": "9cd6120fa81abb20b30de193689f9ab77b51355935650c1ba42d1d0a21d314f4",
+              "observed_cases": 10,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            },
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/BL0-pipeline.json",
+              "raw_junit_sha256": "c045d4e705071ff5d2a043e8fe67b86a8fa6acc1b2337f5c1106efce5e20768b",
+              "observed_cases": 10,
+              "scope": "this BL-0 targeted run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "ops-pipeline/tests/test_content_creation_entry_v1.py",
+          "test_source_sha256": "169ae402667a8008a510cc5722fcd40b030ab4004e520d05dc5eb1e5477891b8"
+        },
+        {
+          "module": "console:test_news_capability_domains_v1_2",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/4-console.xml.json",
+              "raw_junit_sha256": "b80c1a15bb924becd579ba47d628be36ab338946b1f9b141f0db83b10d436170",
+              "observed_cases": 3,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_news_capability_domains_v1_2.py",
+          "test_source_sha256": "7e2f9a905092da6e24e3146efea3f0cc223b57ddf34892353f41bacb1eda64c7"
+        }
+      ]
+    },
+    {
+      "id": "CT04",
+      "classification": "CODE_PROVEN",
+      "claim": "Request 写入由 generation_request_handoff 唯一拥有；Business+key 稳定 ID，同客户同 profile 的 active Request 阻止重复并行建立。",
+      "source_ids": [
+        "S011",
+        "S012",
+        "S013"
+      ],
+      "test_modules": [
+        "pipeline:test_generation_request_handoff_v1"
+      ],
+      "limitation": null,
+      "executed_test_evidence": [
+        {
+          "module": "pipeline:test_generation_request_handoff_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/0-pipeline.xml.json",
+              "raw_junit_sha256": "9cd6120fa81abb20b30de193689f9ab77b51355935650c1ba42d1d0a21d314f4",
+              "observed_cases": 19,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            },
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/BL0-pipeline.json",
+              "raw_junit_sha256": "c045d4e705071ff5d2a043e8fe67b86a8fa6acc1b2337f5c1106efce5e20768b",
+              "observed_cases": 19,
+              "scope": "this BL-0 targeted run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "ops-pipeline/tests/test_generation_request_handoff_v1.py",
+          "test_source_sha256": "3e8182dc59514df6274961a2ced59530b6828de4acbe04bb786519cfa263c006"
+        }
+      ]
+    },
+    {
+      "id": "CT05",
+      "classification": "CODE_PROVEN",
+      "claim": "Source Plan 复用原 matcher；Case、Pattern、Fingerprint、Compatibility 的 SHA 绑定不可由 UI profile hint 代替。",
+      "source_ids": [
+        "S014",
+        "S015",
+        "S016"
+      ],
+      "test_modules": [
+        "pipeline:test_generation_source_lineage_v1",
+        "console:test_creation_release_sources_v1_1"
+      ],
+      "limitation": null,
+      "executed_test_evidence": [
+        {
+          "module": "pipeline:test_generation_source_lineage_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/0-pipeline.xml.json",
+              "raw_junit_sha256": "9cd6120fa81abb20b30de193689f9ab77b51355935650c1ba42d1d0a21d314f4",
+              "observed_cases": 2,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "ops-pipeline/tests/test_generation_source_lineage_v1.py",
+          "test_source_sha256": "47ff0dfd88fa7e8b3a16f02dcf806e968e759afb3a7d52e42b9c032298acea42"
+        },
+        {
+          "module": "console:test_creation_release_sources_v1_1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/4-console.xml.json",
+              "raw_junit_sha256": "b80c1a15bb924becd579ba47d628be36ab338946b1f9b141f0db83b10d436170",
+              "observed_cases": 17,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_creation_release_sources_v1_1.py",
+          "test_source_sha256": "64c648d417c07d56221108edb775e3c47a8276e3fa5f3e4b00f59d08156d428a"
+        }
+      ]
+    },
+    {
+      "id": "CT06",
+      "classification": "CODE_PROVEN",
+      "claim": "原生 Mix Content Plan 是 v1.1.1；候选调用组大小 min(10,pool) 是规划策略，不是批次容量证明。",
+      "source_ids": [
+        "S017",
+        "S018",
+        "S019"
+      ],
+      "test_modules": [
+        "pipeline:test_resolve_generation_content_plan_v1"
+      ],
+      "limitation": null,
+      "executed_test_evidence": [
+        {
+          "module": "pipeline:test_resolve_generation_content_plan_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/0-pipeline.xml.json",
+              "raw_junit_sha256": "9cd6120fa81abb20b30de193689f9ab77b51355935650c1ba42d1d0a21d314f4",
+              "observed_cases": 8,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "ops-pipeline/tests/test_resolve_generation_content_plan_v1.py",
+          "test_source_sha256": "b4d690bd517e344d3018f824d9a2aa686a01c75b31bcb9c4c56bdcb436e554ae"
+        }
+      ]
+    },
+    {
+      "id": "CT07",
+      "classification": "CODE_PROVEN",
+      "claim": "Mix 生成绑定 final concept、semantic signature、Central Claim、Request 和 memory SHA；生成失败不保证精确交付 requested 数量。",
+      "source_ids": [
+        "S020",
+        "S021",
+        "S022"
+      ],
+      "test_modules": [
+        "pipeline:test_resolve_generation_batch_v1"
+      ],
+      "limitation": null,
+      "executed_test_evidence": [
+        {
+          "module": "pipeline:test_resolve_generation_batch_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/0-pipeline.xml.json",
+              "raw_junit_sha256": "9cd6120fa81abb20b30de193689f9ab77b51355935650c1ba42d1d0a21d314f4",
+              "observed_cases": 12,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "ops-pipeline/tests/test_resolve_generation_batch_v1.py",
+          "test_source_sha256": "7177c6b7adc292bda10f8cc5123c54d7b275eab8f38ae099a646c3560c370e55"
+        }
+      ]
+    },
+    {
+      "id": "CT08",
+      "classification": "CODE_PROVEN",
+      "claim": "Mix 内部有 first_person_viewpoint / story / bounded_known_story 等角度，未建立三个 Founder 业务 subtype 的正式可选合同。",
+      "source_ids": [
+        "S023",
+        "S024",
+        "S025",
+        "S003"
+      ],
+      "test_modules": [
+        "pipeline:test_content_quality_v1"
+      ],
+      "limitation": "检索公开入口、handoff、planning/generation、review/export identity，未发现 creative_style/operating_stage 或这三个业务类型的独立配额；内部 angle 不等于正式 subtype。",
+      "executed_test_evidence": [
+        {
+          "module": "pipeline:test_content_quality_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/0-pipeline.xml.json",
+              "raw_junit_sha256": "9cd6120fa81abb20b30de193689f9ab77b51355935650c1ba42d1d0a21d314f4",
+              "observed_cases": 45,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "ops-pipeline/tests/test_content_quality_v1.py",
+          "test_source_sha256": "99f5628b399eeafe472c60eea7c3f7f3df53621488e301a757f79f2cbe1d0d14"
+        }
+      ]
+    },
+    {
+      "id": "CT09",
+      "classification": "CODE_PROVEN",
+      "claim": "Novel News 一个 Request 绑定一个显式新内容 opportunity；v1.2 资格当前为隔离 price_offer_led 条件，非全体新闻方向。",
+      "source_ids": [
+        "S026",
+        "S027",
+        "S028",
+        "S029"
+      ],
+      "test_modules": [
+        "console:test_news_novel_runtime_v1_2",
+        "console:test_news_qualification_complete_v1_2"
+      ],
+      "limitation": null,
+      "executed_test_evidence": [
+        {
+          "module": "console:test_news_novel_runtime_v1_2",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/5-console.xml.json",
+              "raw_junit_sha256": "3170f2066bf48e4a504fadb2ded0ecb16dd8fddb5eb366fb6262d03b29af4424",
+              "observed_cases": 1,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_news_novel_runtime_v1_2.py",
+          "test_source_sha256": "44bc1e637986f74ea92efafed721458d60ca7dbb6b07d7bb23c04c41d026c92c"
+        },
+        {
+          "module": "console:test_news_qualification_complete_v1_2",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/1-console.xml.json",
+              "raw_junit_sha256": "fc2efacbd415bc71dd07965460cae9833c932eaa33204fc57a26259f825c6b80",
+              "observed_cases": 1,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_news_qualification_complete_v1_2.py",
+          "test_source_sha256": "80ce6205adc37956b5dba29fe4457be60532d9c1c27a81b9b247e80f3bd1fb58"
+        }
+      ]
+    },
+    {
+      "id": "CT10",
+      "classification": "CODE_PROVEN",
+      "claim": "Novel News 4–8 Beats 组成一个视频，必须逐 Beat Human review；新语义 +1，presentation 新语义 +0。",
+      "source_ids": [
+        "S030",
+        "S031",
+        "S032",
+        "S033"
+      ],
+      "test_modules": [
+        "pipeline:test_novel_news_v1"
+      ],
+      "limitation": null,
+      "executed_test_evidence": [
+        {
+          "module": "pipeline:test_novel_news_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/0-pipeline.xml.json",
+              "raw_junit_sha256": "9cd6120fa81abb20b30de193689f9ab77b51355935650c1ba42d1d0a21d314f4",
+              "observed_cases": 8,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "ops-pipeline/tests/test_novel_news_v1.py",
+          "test_source_sha256": "79b842f7f4001515b31e46edeb6c4b6320772f3e4efa9fe29ba6f1da1646dc7e"
+        }
+      ]
+    },
+    {
+      "id": "CT11",
+      "classification": "CODE_PROVEN",
+      "claim": "Repurpose News 使用历史 semantic content，独立 Request/Plan/Review，不新增 semantic Ledger，仅 append presentation。",
+      "source_ids": [
+        "S034",
+        "S035",
+        "S036",
+        "S037"
+      ],
+      "test_modules": [
+        "pipeline:test_news_delivery_v1",
+        "console:test_news_repurpose_runtime_v1_2"
+      ],
+      "limitation": null,
+      "executed_test_evidence": [
+        {
+          "module": "pipeline:test_news_delivery_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/0-pipeline.xml.json",
+              "raw_junit_sha256": "9cd6120fa81abb20b30de193689f9ab77b51355935650c1ba42d1d0a21d314f4",
+              "observed_cases": 8,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "ops-pipeline/tests/test_news_delivery_v1.py",
+          "test_source_sha256": "e4264b0384d25de40a61773e145780f7756ff86c6e373ba74f90db52b64fb843"
+        },
+        {
+          "module": "console:test_news_repurpose_runtime_v1_2",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/3-console.xml.json",
+              "raw_junit_sha256": "5ef02279ca14996a2a44f3f6df4e2e5de86e7d7519935c799df55e6ffd82a73d",
+              "observed_cases": 1,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_news_repurpose_runtime_v1_2.py",
+          "test_source_sha256": "1815d9daaf1002bac60d5a7f5bb2ddd66507332a2e20c4cbd86cf502cbd24f76"
+        }
+      ]
+    },
+    {
+      "id": "CT12",
+      "classification": "CODE_PROVEN",
+      "claim": "Mix Human Review V2 是 item-level，可批准子集；只有完整原生 Human/Approved/Receipt bundle 可成为已批准源。",
+      "source_ids": [
+        "S038",
+        "S039",
+        "S040",
+        "S041"
+      ],
+      "test_modules": [
+        "pipeline:test_review_generation_batch_v2",
+        "console:test_receipt_recovery_golden_v1"
+      ],
+      "limitation": null,
+      "executed_test_evidence": [
+        {
+          "module": "pipeline:test_review_generation_batch_v2",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/0-pipeline.xml.json",
+              "raw_junit_sha256": "9cd6120fa81abb20b30de193689f9ab77b51355935650c1ba42d1d0a21d314f4",
+              "observed_cases": 5,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "ops-pipeline/tests/test_review_generation_batch_v2.py",
+          "test_source_sha256": "5e1de37189a4da6732d0648750e9f571de8a9fd83fa1a2e203d716805fea6bf9"
+        },
+        {
+          "module": "console:test_receipt_recovery_golden_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/3-console.xml.json",
+              "raw_junit_sha256": "5ef02279ca14996a2a44f3f6df4e2e5de86e7d7519935c799df55e6ffd82a73d",
+              "observed_cases": 9,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_receipt_recovery_golden_v1.py",
+          "test_source_sha256": "5c44d0004765fc8d31268c5f4820293193c9dfb29aede67cd79dea3bee210ac7"
+        }
+      ]
+    },
+    {
+      "id": "CT13",
+      "classification": "CODE_PROVEN",
+      "claim": "Novel/Repurpose export 的 completed reader 验证 Human、来源、XLSX、Receipt、Closure、Ledger，不因 Task completed 自动获准。",
+      "source_ids": [
+        "S042",
+        "S043",
+        "S044"
+      ],
+      "test_modules": [
+        "pipeline:test_news_export_recovery_v1",
+        "console:test_news_export_recovery_http_v1"
+      ],
+      "limitation": null,
+      "executed_test_evidence": [
+        {
+          "module": "pipeline:test_news_export_recovery_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/0-pipeline.xml.json",
+              "raw_junit_sha256": "9cd6120fa81abb20b30de193689f9ab77b51355935650c1ba42d1d0a21d314f4",
+              "observed_cases": 77,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "ops-pipeline/tests/test_news_export_recovery_v1.py",
+          "test_source_sha256": "3db49311b95c68e533c4e860d99759d4d8f423dbd84457e3cb9381c8ff6ca19a"
+        },
+        {
+          "module": "console:test_news_export_recovery_http_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/1-console.xml.json",
+              "raw_junit_sha256": "fc2efacbd415bc71dd07965460cae9833c932eaa33204fc57a26259f825c6b80",
+              "observed_cases": 14,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_news_export_recovery_http_v1.py",
+          "test_source_sha256": "becdbcb08c14db052eddc75cff439a3eb0660c7092f93461adab6363f19dd4f1"
+        }
+      ]
+    },
+    {
+      "id": "CT14",
+      "classification": "CODE_PROVEN",
+      "claim": "REC-01 dispatch 无 response 判 outcome unknown，不自动重发；显式 retry 新 parent operation；已保存 response 本地恢复。",
+      "source_ids": [
+        "S045",
+        "S046",
+        "S047",
+        "S048",
+        "S049"
+      ],
+      "test_modules": [
+        "pipeline:test_novel_news_generation_recovery_v1",
+        "console:test_news_generation_recovery_v1"
+      ],
+      "limitation": null,
+      "executed_test_evidence": [
+        {
+          "module": "pipeline:test_novel_news_generation_recovery_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/0-pipeline.xml.json",
+              "raw_junit_sha256": "9cd6120fa81abb20b30de193689f9ab77b51355935650c1ba42d1d0a21d314f4",
+              "observed_cases": 13,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "ops-pipeline/tests/test_novel_news_generation_recovery_v1.py",
+          "test_source_sha256": "be8b9bf32b08e12e6da126d93a6357ddd10a90d68323d8f67306035a17a04f34"
+        },
+        {
+          "module": "console:test_news_generation_recovery_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/3-console.xml.json",
+              "raw_junit_sha256": "5ef02279ca14996a2a44f3f6df4e2e5de86e7d7519935c799df55e6ffd82a73d",
+              "observed_cases": 10,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_news_generation_recovery_v1.py",
+          "test_source_sha256": "7dffb19c2a219b096263029ea351167a07673ab015a32f0417b6194f67ca9f1d"
+        }
+      ]
+    },
+    {
+      "id": "CT15",
+      "classification": "CODE_PROVEN",
+      "claim": "C3-05 仅初次 zero-output transport/response 故障可重试；partial/quality/review/closed 不获重生成权。",
+      "source_ids": [
+        "S050",
+        "S051",
+        "S052",
+        "S053",
+        "S054"
+      ],
+      "test_modules": [
+        "pipeline:test_generation_recovery_contract_v1",
+        "console:test_generation_recovery_golden_v1"
+      ],
+      "limitation": null,
+      "executed_test_evidence": [
+        {
+          "module": "pipeline:test_generation_recovery_contract_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/0-pipeline.xml.json",
+              "raw_junit_sha256": "9cd6120fa81abb20b30de193689f9ab77b51355935650c1ba42d1d0a21d314f4",
+              "observed_cases": 41,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            },
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/BL0-pipeline.json",
+              "raw_junit_sha256": "c045d4e705071ff5d2a043e8fe67b86a8fa6acc1b2337f5c1106efce5e20768b",
+              "observed_cases": 41,
+              "scope": "this BL-0 targeted run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "ops-pipeline/tests/test_generation_recovery_contract_v1.py",
+          "test_source_sha256": "e2caa10af51ea82c6a429eb98f86ea30dba282ddcc35ae7140a06525cb16ad8b"
+        },
+        {
+          "module": "console:test_generation_recovery_golden_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/5-console.xml.json",
+              "raw_junit_sha256": "3170f2066bf48e4a504fadb2ded0ecb16dd8fddb5eb366fb6262d03b29af4424",
+              "observed_cases": 3,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_generation_recovery_golden_v1.py",
+          "test_source_sha256": "939557f2f9ca7e8d6a3c96a42a42ea42ac3b1d3b914e51431fdbfe3832859918"
+        }
+      ]
+    },
+    {
+      "id": "CT16",
+      "classification": "CODE_PROVEN",
+      "claim": "News Native Export Recovery 使用 immutable Intent/Prepared、exclusive publication，partial 不自动收养 unbound orphan。",
+      "source_ids": [
+        "S055",
+        "S056",
+        "S057",
+        "S058"
+      ],
+      "test_modules": [
+        "pipeline:test_news_export_recovery_v1",
+        "console:test_news_export_recovery_http_v1"
+      ],
+      "limitation": null,
+      "executed_test_evidence": [
+        {
+          "module": "pipeline:test_news_export_recovery_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/0-pipeline.xml.json",
+              "raw_junit_sha256": "9cd6120fa81abb20b30de193689f9ab77b51355935650c1ba42d1d0a21d314f4",
+              "observed_cases": 77,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "ops-pipeline/tests/test_news_export_recovery_v1.py",
+          "test_source_sha256": "3db49311b95c68e533c4e860d99759d4d8f423dbd84457e3cb9381c8ff6ca19a"
+        },
+        {
+          "module": "console:test_news_export_recovery_http_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/1-console.xml.json",
+              "raw_junit_sha256": "fc2efacbd415bc71dd07965460cae9833c932eaa33204fc57a26259f825c6b80",
+              "observed_cases": 14,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_news_export_recovery_http_v1.py",
+          "test_source_sha256": "becdbcb08c14db052eddc75cff439a3eb0660c7092f93461adab6363f19dd4f1"
+        }
+      ]
+    },
+    {
+      "id": "CT17",
+      "classification": "CODE_PROVEN",
+      "claim": "已完成导出 replay 在 enqueue 前读 Native completion，复用旧 Task 或 null，不生成替代 Task。",
+      "source_ids": [
+        "S059",
+        "S058",
+        "S060"
+      ],
+      "test_modules": [
+        "console:test_content_delivery_console_v1",
+        "console:test_news_export_recovery_http_v1",
+        "console:test_publish_copy_process_recovery_v1"
+      ],
+      "limitation": null,
+      "executed_test_evidence": [
+        {
+          "module": "console:test_content_delivery_console_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/2-console.xml.json",
+              "raw_junit_sha256": "634690995539666d10bf4d39ed97717154657668f3de9325883fbc4a5abacf45",
+              "observed_cases": 8,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_content_delivery_console_v1.py",
+          "test_source_sha256": "d14a2e6dd4f04dd028c0c2dc5f9a633c1a56c5c8c50c37888b69763a56566d13"
+        },
+        {
+          "module": "console:test_news_export_recovery_http_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/1-console.xml.json",
+              "raw_junit_sha256": "fc2efacbd415bc71dd07965460cae9833c932eaa33204fc57a26259f825c6b80",
+              "observed_cases": 14,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_news_export_recovery_http_v1.py",
+          "test_source_sha256": "becdbcb08c14db052eddc75cff439a3eb0660c7092f93461adab6363f19dd4f1"
+        },
+        {
+          "module": "console:test_publish_copy_process_recovery_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/2-console.xml.json",
+              "raw_junit_sha256": "634690995539666d10bf4d39ed97717154657668f3de9325883fbc4a5abacf45",
+              "observed_cases": 1,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_publish_copy_process_recovery_v1.py",
+          "test_source_sha256": "b57c0b3f61f6443d78aacbccec91667b61e8216a727df52a81da129e5f697c85"
+        }
+      ]
+    },
+    {
+      "id": "CT18",
+      "classification": "CODE_PROVEN",
+      "claim": "Task 是 SQLite execution projection，有容量控制与 lease；standard background/operation executor 各一 worker，不是 40 路模型并发。",
+      "source_ids": [
+        "S061",
+        "S062",
+        "S063",
+        "S064",
+        "S065",
+        "S066"
+      ],
+      "test_modules": [
+        "console:test_content_delivery_console_v1",
+        "console:test_local_production_hardening_v1"
+      ],
+      "limitation": null,
+      "executed_test_evidence": [
+        {
+          "module": "console:test_content_delivery_console_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/2-console.xml.json",
+              "raw_junit_sha256": "634690995539666d10bf4d39ed97717154657668f3de9325883fbc4a5abacf45",
+              "observed_cases": 8,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_content_delivery_console_v1.py",
+          "test_source_sha256": "d14a2e6dd4f04dd028c0c2dc5f9a633c1a56c5c8c50c37888b69763a56566d13"
+        },
+        {
+          "module": "console:test_local_production_hardening_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/5-console.xml.json",
+              "raw_junit_sha256": "3170f2066bf48e4a504fadb2ded0ecb16dd8fddb5eb366fb6262d03b29af4424",
+              "observed_cases": 22,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_local_production_hardening_v1.py",
+          "test_source_sha256": "401c27faf1ac8ac7c823d9c6240c775bb92b07b952961739cd72697e68c788b5"
+        }
+      ]
+    },
+    {
+      "id": "CT19",
+      "classification": "CODE_PROVEN",
+      "claim": "Publish Copy 源仅 Native approved Mix/Novel/Repurpose；safe facts/constraints/精确 approved SHA 是唯一派生上下文。",
+      "source_ids": [
+        "S067",
+        "S068",
+        "S069"
+      ],
+      "test_modules": [
+        "console:test_publish_copy_native_v1",
+        "console:test_publish_copy_http_fences_v1"
+      ],
+      "limitation": null,
+      "executed_test_evidence": [
+        {
+          "module": "console:test_publish_copy_native_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/5-console.xml.json",
+              "raw_junit_sha256": "3170f2066bf48e4a504fadb2ded0ecb16dd8fddb5eb366fb6262d03b29af4424",
+              "observed_cases": 3,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_publish_copy_native_v1.py",
+          "test_source_sha256": "9e15f226564892cec0d05b9e3955ebb8f659f12c4113f28bfbad1dc38413b529"
+        },
+        {
+          "module": "console:test_publish_copy_http_fences_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/4-console.xml.json",
+              "raw_junit_sha256": "b80c1a15bb924becd579ba47d628be36ab338946b1f9b141f0db83b10d436170",
+              "observed_cases": 1,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_publish_copy_http_fences_v1.py",
+          "test_source_sha256": "ebb63b0a99e5b0a8851d25cf1e4aba370ea85471b82279e447f26ea4a01cd8a0"
+        }
+      ]
+    },
+    {
+      "id": "CT20",
+      "classification": "CODE_PROVEN",
+      "claim": "Publish Copy 每次最多 5 targets；Intent→Dispatch→Response→Draft/Result；partial 可保留，整目标集完成且显式 Human confirm 后才能交付。",
+      "source_ids": [
+        "S070",
+        "S071",
+        "S072",
+        "S073",
+        "S074"
+      ],
+      "test_modules": [
+        "pipeline:test_publish_copy_contract_v1",
+        "console:test_publish_copy_many_beats_v1",
+        "console:test_publish_copy_evidence_integrity_v1"
+      ],
+      "limitation": null,
+      "executed_test_evidence": [
+        {
+          "module": "pipeline:test_publish_copy_contract_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/0-pipeline.xml.json",
+              "raw_junit_sha256": "9cd6120fa81abb20b30de193689f9ab77b51355935650c1ba42d1d0a21d314f4",
+              "observed_cases": 42,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            },
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/BL0-pipeline.json",
+              "raw_junit_sha256": "c045d4e705071ff5d2a043e8fe67b86a8fa6acc1b2337f5c1106efce5e20768b",
+              "observed_cases": 42,
+              "scope": "this BL-0 targeted run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "ops-pipeline/tests/test_publish_copy_contract_v1.py",
+          "test_source_sha256": "50b03b93140fad5a856cc1d7d2c72aa54445584b79ca391ddbcaca665e0d9aae"
+        },
+        {
+          "module": "console:test_publish_copy_many_beats_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/3-console.xml.json",
+              "raw_junit_sha256": "5ef02279ca14996a2a44f3f6df4e2e5de86e7d7519935c799df55e6ffd82a73d",
+              "observed_cases": 1,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_publish_copy_many_beats_v1.py",
+          "test_source_sha256": "859e5acd724c4f7f6e60c2710eac9c57e6d9def1454f4b0a6abb24af5bbfa8af"
+        },
+        {
+          "module": "console:test_publish_copy_evidence_integrity_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/1-console.xml.json",
+              "raw_junit_sha256": "fc2efacbd415bc71dd07965460cae9833c932eaa33204fc57a26259f825c6b80",
+              "observed_cases": 1,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_publish_copy_evidence_integrity_v1.py",
+          "test_source_sha256": "4c8e99b0114c11a8410eb6c5398c32914e02e4bce098d43ca951ef8f1d188953"
+        }
+      ]
+    },
+    {
+      "id": "CT21",
+      "classification": "CODE_PROVEN",
+      "claim": "新版 Excel：一行一个视频，制作标题/口播+发布标题/正文/话题；Mix5列、News4列；News 全 Beats 映射到1–6制作短标题。",
+      "source_ids": [
+        "S075",
+        "S076",
+        "S069",
+        "S128"
+      ],
+      "test_modules": [
+        "console:test_publish_copy_many_beats_v1",
+        "console:test_publish_copy_delivery_integrity_v1"
+      ],
+      "limitation": null,
+      "executed_test_evidence": [
+        {
+          "module": "console:test_publish_copy_many_beats_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/3-console.xml.json",
+              "raw_junit_sha256": "5ef02279ca14996a2a44f3f6df4e2e5de86e7d7519935c799df55e6ffd82a73d",
+              "observed_cases": 1,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_publish_copy_many_beats_v1.py",
+          "test_source_sha256": "859e5acd724c4f7f6e60c2710eac9c57e6d9def1454f4b0a6abb24af5bbfa8af"
+        },
+        {
+          "module": "console:test_publish_copy_delivery_integrity_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/2-console.xml.json",
+              "raw_junit_sha256": "634690995539666d10bf4d39ed97717154657668f3de9325883fbc4a5abacf45",
+              "observed_cases": 1,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_publish_copy_delivery_integrity_v1.py",
+          "test_source_sha256": "09906272260131b5fd1e7187925023e73aa7c54c3b95471b24b597372a3bddba"
+        }
+      ]
+    },
+    {
+      "id": "CT22",
+      "classification": "CODE_PROVEN",
+      "claim": "Delivery version 在原 Request 下，由各 Native writer 委托共享 mechanics；intent/prepared/receipt/completion/effective chain，不新增语义或 Closure。",
+      "source_ids": [
+        "S077",
+        "S078",
+        "S079",
+        "S080",
+        "S081"
+      ],
+      "test_modules": [
+        "console:test_publish_copy_delivery_integrity_v1",
+        "console:test_publish_copy_selected_target_v1",
+        "console:test_publish_copy_process_recovery_v1"
+      ],
+      "limitation": null,
+      "executed_test_evidence": [
+        {
+          "module": "console:test_publish_copy_delivery_integrity_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/2-console.xml.json",
+              "raw_junit_sha256": "634690995539666d10bf4d39ed97717154657668f3de9325883fbc4a5abacf45",
+              "observed_cases": 1,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_publish_copy_delivery_integrity_v1.py",
+          "test_source_sha256": "09906272260131b5fd1e7187925023e73aa7c54c3b95471b24b597372a3bddba"
+        },
+        {
+          "module": "console:test_publish_copy_selected_target_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/4-console.xml.json",
+              "raw_junit_sha256": "b80c1a15bb924becd579ba47d628be36ab338946b1f9b141f0db83b10d436170",
+              "observed_cases": 1,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_publish_copy_selected_target_v1.py",
+          "test_source_sha256": "f071b8902929e077454e900f6ce64070c56f29ee4bb36475bb345b38c342edb2"
+        },
+        {
+          "module": "console:test_publish_copy_process_recovery_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/2-console.xml.json",
+              "raw_junit_sha256": "634690995539666d10bf4d39ed97717154657668f3de9325883fbc4a5abacf45",
+              "observed_cases": 1,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_publish_copy_process_recovery_v1.py",
+          "test_source_sha256": "b57c0b3f61f6443d78aacbccec91667b61e8216a727df52a81da129e5f697c85"
+        }
+      ]
+    },
+    {
+      "id": "CT23",
+      "classification": "CODE_PROVEN",
+      "claim": "Mix historical anchor 验证 authentic 原 Ledger snapshot 和 Native transition 全对象；缺失历史不可从今天重建。",
+      "source_ids": [
+        "S082",
+        "S083",
+        "S084",
+        "S085",
+        "S086"
+      ],
+      "test_modules": [
+        "console:test_generation_export_anchor_v1",
+        "console:test_ledger_history_process_recovery_v1"
+      ],
+      "limitation": null,
+      "executed_test_evidence": [
+        {
+          "module": "console:test_generation_export_anchor_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/1-console.xml.json",
+              "raw_junit_sha256": "fc2efacbd415bc71dd07965460cae9833c932eaa33204fc57a26259f825c6b80",
+              "observed_cases": 1,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_generation_export_anchor_v1.py",
+          "test_source_sha256": "a4830926182a8f86b474725529d49472bd333c0e0632e9a5ce665826809787b1"
+        },
+        {
+          "module": "console:test_ledger_history_process_recovery_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/1-console.xml.json",
+              "raw_junit_sha256": "fc2efacbd415bc71dd07965460cae9833c932eaa33204fc57a26259f825c6b80",
+              "observed_cases": 1,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_ledger_history_process_recovery_v1.py",
+          "test_source_sha256": "fae3b3a71a17fd1b811d639eb14f6ca4361f6a073dae1b58cf6c02a6fce2e5bd"
+        }
+      ]
+    },
+    {
+      "id": "CT24",
+      "classification": "CODE_PROVEN",
+      "claim": "Compatibility approval、release activation、live withdrawal control 是独立生产门；新写入核对当前图，历史 receipt 不改写。",
+      "source_ids": [
+        "S087",
+        "S088",
+        "S089",
+        "S090",
+        "S091",
+        "S092"
+      ],
+      "test_modules": [
+        "console:test_profile_compatibility_release_v1_1",
+        "console:test_news_release_v1_2"
+      ],
+      "limitation": null,
+      "executed_test_evidence": [
+        {
+          "module": "console:test_profile_compatibility_release_v1_1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/1-console.xml.json",
+              "raw_junit_sha256": "fc2efacbd415bc71dd07965460cae9833c932eaa33204fc57a26259f825c6b80",
+              "observed_cases": 17,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_profile_compatibility_release_v1_1.py",
+          "test_source_sha256": "9d359e97e42372ee4705c5cb647bc60e6055c34487c21f84001cd616c85a541d"
+        },
+        {
+          "module": "console:test_news_release_v1_2",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/4-console.xml.json",
+              "raw_junit_sha256": "b80c1a15bb924becd579ba47d628be36ab338946b1f9b141f0db83b10d436170",
+              "observed_cases": 1,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_news_release_v1_2.py",
+          "test_source_sha256": "0e0243dc4f14265a6f35a9ff89c26ecd32649b0225d7dd7f9390b43841286ac1"
+        }
+      ]
+    },
+    {
+      "id": "CT25",
+      "classification": "CODE_PROVEN",
+      "claim": "Business restriction 未解阻断；所有非 Mix 消费者在存在 derived restriction contract 时 fail closed。",
+      "source_ids": [
+        "S093",
+        "S010",
+        "S094"
+      ],
+      "test_modules": [
+        "pipeline:test_customer_constraints_e2_v1",
+        "console:test_news_capability_domains_v1_2"
+      ],
+      "limitation": null,
+      "executed_test_evidence": [
+        {
+          "module": "pipeline:test_customer_constraints_e2_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/0-pipeline.xml.json",
+              "raw_junit_sha256": "9cd6120fa81abb20b30de193689f9ab77b51355935650c1ba42d1d0a21d314f4",
+              "observed_cases": 28,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "ops-pipeline/tests/test_customer_constraints_e2_v1.py",
+          "test_source_sha256": "098a27c1350301e4e07e9689a987ac6e3594a541d9b565bf332125474a61209c"
+        },
+        {
+          "module": "console:test_news_capability_domains_v1_2",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/4-console.xml.json",
+              "raw_junit_sha256": "b80c1a15bb924becd579ba47d628be36ab338946b1f9b141f0db83b10d436170",
+              "observed_cases": 3,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_news_capability_domains_v1_2.py",
+          "test_source_sha256": "7e2f9a905092da6e24e3146efea3f0cc223b57ddf34892353f41bacb1eda64c7"
+        }
+      ]
+    },
+    {
+      "id": "CT26",
+      "classification": "CODE_PROVEN",
+      "claim": "Cross-business identity / request / target / SHA 检查存在；不能由此宣称已实现代理商租户隔离或 OIDC。",
+      "source_ids": [
+        "S095",
+        "S079",
+        "S069"
+      ],
+      "test_modules": [
+        "console:test_customer_operations_navigation",
+        "console:test_publish_copy_http_fences_v1"
+      ],
+      "limitation": "现有 Console access/shared-customer boundary；未验证多租户授权矩阵。",
+      "executed_test_evidence": [
+        {
+          "module": "console:test_customer_operations_navigation",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/3-console.xml.json",
+              "raw_junit_sha256": "5ef02279ca14996a2a44f3f6df4e2e5de86e7d7519935c799df55e6ffd82a73d",
+              "observed_cases": 22,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            },
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/BL0-console.json",
+              "raw_junit_sha256": "b64ee8b0e2d420f97d9528d3e30d68455b860889c8f9cd25bb1e5b8d3f572684",
+              "observed_cases": 22,
+              "scope": "this BL-0 targeted run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_customer_operations_navigation.py",
+          "test_source_sha256": "8926ffc7b404f3c18ae08c18df64bc9b0759e51b185bb5d87bd4a3cd2652d993"
+        },
+        {
+          "module": "console:test_publish_copy_http_fences_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/4-console.xml.json",
+              "raw_junit_sha256": "b80c1a15bb924becd579ba47d628be36ab338946b1f9b141f0db83b10d436170",
+              "observed_cases": 1,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_publish_copy_http_fences_v1.py",
+          "test_source_sha256": "ebb63b0a99e5b0a8851d25cf1e4aba370ea85471b82279e447f26ea4a01cd8a0"
+        }
+      ]
+    },
+    {
+      "id": "CT27",
+      "classification": "CODE_PROVEN",
+      "claim": "UI 有 Request 内审核、进度、恢复、发布信息、下载和按客户历史；无阶段/四类型配比/跨 Request 整批聚合状态。",
+      "source_ids": [
+        "S096",
+        "S005",
+        "S097",
+        "S098",
+        "S099"
+      ],
+      "test_modules": [
+        "console:test_customer_operations_navigation",
+        "console:test_javascript"
+      ],
+      "limitation": null,
+      "executed_test_evidence": [
+        {
+          "module": "console:test_customer_operations_navigation",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/3-console.xml.json",
+              "raw_junit_sha256": "5ef02279ca14996a2a44f3f6df4e2e5de86e7d7519935c799df55e6ffd82a73d",
+              "observed_cases": 22,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            },
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/BL0-console.json",
+              "raw_junit_sha256": "b64ee8b0e2d420f97d9528d3e30d68455b860889c8f9cd25bb1e5b8d3f572684",
+              "observed_cases": 22,
+              "scope": "this BL-0 targeted run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_customer_operations_navigation.py",
+          "test_source_sha256": "8926ffc7b404f3c18ae08c18df64bc9b0759e51b185bb5d87bd4a3cd2652d993"
+        },
+        {
+          "module": "console:test_javascript",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/3-console.xml.json",
+              "raw_junit_sha256": "5ef02279ca14996a2a44f3f6df4e2e5de86e7d7519935c799df55e6ffd82a73d",
+              "observed_cases": 1,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            },
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/BL0-console.json",
+              "raw_junit_sha256": "b64ee8b0e2d420f97d9528d3e30d68455b860889c8f9cd25bb1e5b8d3f572684",
+              "observed_cases": 1,
+              "scope": "this BL-0 targeted run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_javascript.py",
+          "test_source_sha256": "c19a1be42faf12663de73d790f509b98f0dc48ac5d0447589f7684d0049fc6f1"
+        }
+      ]
+    },
+    {
+      "id": "CT28",
+      "classification": "CODE_PROVEN",
+      "claim": "时长是 guidance，不是已验证成片时长或 subtype 固定约束。",
+      "source_ids": [
+        "S100",
+        "S101",
+        "S102",
+        "S030"
+      ],
+      "test_modules": [
+        "pipeline:test_novel_news_v1",
+        "pipeline:test_news_contract_v1_2"
+      ],
+      "limitation": "本仓库无最终视频生产/QA 完整实现；不证明任何目标成片时长。",
+      "executed_test_evidence": [
+        {
+          "module": "pipeline:test_novel_news_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/0-pipeline.xml.json",
+              "raw_junit_sha256": "9cd6120fa81abb20b30de193689f9ab77b51355935650c1ba42d1d0a21d314f4",
+              "observed_cases": 8,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "ops-pipeline/tests/test_novel_news_v1.py",
+          "test_source_sha256": "79b842f7f4001515b31e46edeb6c4b6320772f3e4efa9fe29ba6f1da1646dc7e"
+        },
+        {
+          "module": "pipeline:test_news_contract_v1_2",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/0-pipeline.xml.json",
+              "raw_junit_sha256": "9cd6120fa81abb20b30de193689f9ab77b51355935650c1ba42d1d0a21d314f4",
+              "observed_cases": 2,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "ops-pipeline/tests/test_news_contract_v1_2.py",
+          "test_source_sha256": "86c88783ee05d6bf74ea0ebce5ceea3588a8601c21b89a6e4ba6dbbfe2ddd83b"
+        }
+      ]
+    },
+    {
+      "id": "CT29",
+      "classification": "CODE_PROVEN",
+      "claim": "News rollout 与 Publish Copy 默认关闭；代码存在或隔离验收不等于当前生产开通。",
+      "source_ids": [
+        "S065",
+        "S103",
+        "S104",
+        "S105"
+      ],
+      "test_modules": [
+        "console:test_novel_news_rollout_v1"
+      ],
+      "limitation": null,
+      "executed_test_evidence": [
+        {
+          "module": "console:test_novel_news_rollout_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/4-console.xml.json",
+              "raw_junit_sha256": "b80c1a15bb924becd579ba47d628be36ab338946b1f9b141f0db83b10d436170",
+              "observed_cases": 5,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_novel_news_rollout_v1.py",
+          "test_source_sha256": "03250ad8bd6c0cf2f801686c240d996c173436654c752f71808adb36a93db52a"
+        }
+      ]
+    },
+    {
+      "id": "CT30",
+      "classification": "CODE_PROVEN",
+      "claim": "原生 Content Quality 有 business-wide semantic/presentation memory 和重复理由；无跨新 Batch 预留语义 Slot 协议。",
+      "source_ids": [
+        "S106",
+        "S107",
+        "S108",
+        "S109"
+      ],
+      "test_modules": [
+        "pipeline:test_content_quality_v1",
+        "console:test_publish_copy_concurrent_history_v1"
+      ],
+      "limitation": null,
+      "executed_test_evidence": [
+        {
+          "module": "pipeline:test_content_quality_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/0-pipeline.xml.json",
+              "raw_junit_sha256": "9cd6120fa81abb20b30de193689f9ab77b51355935650c1ba42d1d0a21d314f4",
+              "observed_cases": 45,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "ops-pipeline/tests/test_content_quality_v1.py",
+          "test_source_sha256": "99f5628b399eeafe472c60eea7c3f7f3df53621488e301a757f79f2cbe1d0d14"
+        },
+        {
+          "module": "console:test_publish_copy_concurrent_history_v1",
+          "observations": [
+            {
+              "junit_projection": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/tests/5-console.xml.json",
+              "raw_junit_sha256": "3170f2066bf48e4a504fadb2ded0ecb16dd8fddb5eb366fb6262d03b29af4424",
+              "observed_cases": 1,
+              "scope": "historical exact-commit full isolated run",
+              "all_passed": true
+            }
+          ],
+          "test_source_path": "internal-console/tests/test_publish_copy_concurrent_history_v1.py",
+          "test_source_sha256": "cfe66c8cbb76a03fa3b5dace217db48033a5211bc63b643c9f36d9dc6811010e"
+        }
+      ]
+    }
+  ],
+  "runtime_evidence": [
+    {
+      "classification": "RUNTIME_PROVEN",
+      "record": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/TEST_EVIDENCE.json",
+      "scope": "historical exact-commit full + current BL-0 targeted; never live/model/production"
+    },
+    {
+      "classification": "FOUNDER_ACCEPTED",
+      "record": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/FOUNDER_ACCEPTANCE_PROJECTION.json",
+      "scope": "bounded reported functional UAT, matched source lineage"
+    },
+    {
+      "classification": "RUNTIME_PROVEN",
+      "record": "../../../.local/evidence/creation-batch-ux1-baseline-20261022/review/evidence/HISTORICAL_MOBILE_SCOPE.json",
+      "scope": "historical only, source mismatch prohibits promotion to current mobile PASS"
+    }
+  ]
+}

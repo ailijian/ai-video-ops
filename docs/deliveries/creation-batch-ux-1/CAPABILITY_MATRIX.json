@@ -1,0 +1,541 @@
+{
+  "schema_version": "creation-batch-ux-1-capability-matrix-v1",
+  "status": "Draft",
+  "checkpoint": "ceac16dabf1d680f72d1f4a02ca9aa07f2dda7dd",
+  "allowed_statuses": [
+    "VERIFIED_SUPPORTED",
+    "IMPLEMENTED_NOT_VERIFIED",
+    "PARTIALLY_SUPPORTED",
+    "UNSUPPORTED",
+    "UNKNOWN"
+  ],
+  "status_scope": "VERIFIED_SUPPORTED is bounded to observed isolated native flow; it never means general production/model/batch readiness.",
+  "layers": {
+    "production_profile": "Native production format/rules and Authority eligibility (currently mix/news entry)",
+    "creative_style": "Business content intent; three Founder Mix types have no formal identity today",
+    "operating_stage": "Founder business schedule/quantity recommendation, not generation qualification",
+    "delivery_template": "Exact frozen Excel presentation; confers no production or publishing permission"
+  },
+  "types": [
+    {
+      "type_id": "mix_native",
+      "business_label": "原生素材混剪",
+      "production_profile": "mix",
+      "creative_style": {
+        "current_formal_value": null,
+        "internal_angles_only": []
+      },
+      "operating_stage": {
+        "current_contract": null,
+        "founder_target": "FOUNDER_TARGET.md"
+      },
+      "delivery_template": {
+        "path": "ops-pipeline/templates/delivery/publish_v1/mix.xlsx",
+        "sha256": "75edbcca01a03c49750c2184d74bfe1edb4ab086d299dd5b7f50f350b246cab0"
+      },
+      "native_owner": "resolve_generation_batch_v1.resolve_generation_batch / review_generation_batch_v2.review_generation_batch_v2 / export_mix_excel_v1",
+      "capability_status": "VERIFIED_SUPPORTED",
+      "formal_business_type_status": "VERIFIED_SUPPORTED",
+      "support_scope": "已验证的是通用Mix原生链、item审核和交付，非三种业务 subtype。",
+      "evidence_classification": [
+        "CODE_PROVEN",
+        "RUNTIME_PROVEN"
+      ],
+      "evidence_claims": [
+        "CT03",
+        "CT04",
+        "CT06",
+        "CT07",
+        "CT12",
+        "CT15",
+        "CT21"
+      ],
+      "source_ids": [
+        "S007",
+        "S008",
+        "S009",
+        "S010",
+        "S011",
+        "S012",
+        "S013",
+        "S017",
+        "S018",
+        "S019",
+        "S020",
+        "S021",
+        "S022",
+        "S038",
+        "S039",
+        "S040",
+        "S041",
+        "S050",
+        "S051",
+        "S052",
+        "S053",
+        "S054",
+        "S075",
+        "S076",
+        "S069",
+        "S128"
+      ],
+      "audit_dimensions": {
+        "entry_and_owner": "POST /api/create/confirm → generation_request_handoff_v1",
+        "prompt_pattern_style": "No formal subtype parameter. Native mixed angles + selected Approved Pattern.",
+        "approved_type_rules": "Native production profile, not a permanent business-type catalog",
+        "output_distinguishability": "Native schema and exact lineage distinguish Mix/Novel/Repurpose; real-model quality NOT_VALIDATED",
+        "business_speaker_fact_gates": [
+          "current Approved Business",
+          "exact Business-bound Approved Speaker",
+          "Known fact projection",
+          "current restrictions",
+          "first-person scope",
+          "privacy"
+        ],
+        "additional_compatibility": "Native exact profile Pattern/Compatibility + activated release + live control; News independent reviewers and qualification",
+        "executed_tests": [
+          "console:test_generation_recovery_golden_v1",
+          "console:test_news_capability_domains_v1_2",
+          "console:test_publish_copy_delivery_integrity_v1",
+          "console:test_publish_copy_many_beats_v1",
+          "console:test_receipt_recovery_golden_v1",
+          "pipeline:test_content_creation_entry_v1",
+          "pipeline:test_generation_recovery_contract_v1",
+          "pipeline:test_generation_request_handoff_v1",
+          "pipeline:test_resolve_generation_batch_v1",
+          "pipeline:test_resolve_generation_content_plan_v1",
+          "pipeline:test_review_generation_batch_v2"
+        ],
+        "target_duration": "guidance only; no subtype fixed duration or measured final-video guarantee",
+        "independent_quantity": "Mix 1–20 admission, capacity may reduce, not 20-video throughput proof",
+        "batch_type_identity": "Native Request/content/Concept/Beat/Slot identity exists; no mixed-type Batch contract"
+      },
+      "unknowns": [
+        "real-model quality",
+        "20/40 mixed batch capacity",
+        "batch-level identity",
+        "production eligibility/current live rollout"
+      ]
+    },
+    {
+      "type_id": "news_novel",
+      "business_label": "新闻体：新内容",
+      "production_profile": "news",
+      "creative_style": {
+        "current_formal_value": null,
+        "internal_angles_only": []
+      },
+      "operating_stage": {
+        "current_contract": null,
+        "founder_target": "FOUNDER_TARGET.md"
+      },
+      "delivery_template": {
+        "path": "ops-pipeline/templates/delivery/publish_v1/news.xlsx",
+        "sha256": "5f33e04db8cc35cb70578830b8cfd4a01267f36ffadce19a4b2e48f08cd54d84"
+      },
+      "native_owner": "novel_news_v1",
+      "capability_status": "VERIFIED_SUPPORTED",
+      "formal_business_type_status": "VERIFIED_SUPPORTED",
+      "support_scope": "仅隔离且已资格的 price_offer_led graph；一个视频/Request；真实模型与生产不可据此通过。",
+      "evidence_classification": [
+        "CODE_PROVEN",
+        "RUNTIME_PROVEN"
+      ],
+      "evidence_claims": [
+        "CT09",
+        "CT10",
+        "CT13",
+        "CT14",
+        "CT16",
+        "CT24"
+      ],
+      "source_ids": [
+        "S026",
+        "S027",
+        "S028",
+        "S029",
+        "S030",
+        "S031",
+        "S032",
+        "S033",
+        "S042",
+        "S043",
+        "S044",
+        "S045",
+        "S046",
+        "S047",
+        "S048",
+        "S049",
+        "S055",
+        "S056",
+        "S057",
+        "S058",
+        "S087",
+        "S088",
+        "S089",
+        "S090",
+        "S091",
+        "S092"
+      ],
+      "audit_dimensions": {
+        "entry_and_owner": "POST /api/create/confirm → generation_request_handoff_v1",
+        "prompt_pattern_style": "Native News Pattern with exact structural sources and separate novel/repurpose contracts.",
+        "approved_type_rules": "Native production profile, not a permanent business-type catalog",
+        "output_distinguishability": "Native schema and exact lineage distinguish Mix/Novel/Repurpose; real-model quality NOT_VALIDATED",
+        "business_speaker_fact_gates": [
+          "current Approved Business",
+          "exact Business-bound Approved Speaker",
+          "Known fact projection",
+          "current restrictions",
+          "first-person scope",
+          "privacy"
+        ],
+        "additional_compatibility": "Native exact profile Pattern/Compatibility + activated release + live control; News independent reviewers and qualification",
+        "executed_tests": [
+          "console:test_news_export_recovery_http_v1",
+          "console:test_news_generation_recovery_v1",
+          "console:test_news_novel_runtime_v1_2",
+          "console:test_news_qualification_complete_v1_2",
+          "console:test_news_release_v1_2",
+          "console:test_profile_compatibility_release_v1_1",
+          "pipeline:test_news_export_recovery_v1",
+          "pipeline:test_novel_news_generation_recovery_v1",
+          "pipeline:test_novel_news_v1"
+        ],
+        "target_duration": "guidance only; no subtype fixed duration or measured final-video guarantee",
+        "independent_quantity": "Exactly one video/presentation per Request; 4–8 Beats/Slots are within-video units",
+        "batch_type_identity": "Native Request/content/Concept/Beat/Slot identity exists; no mixed-type Batch contract"
+      },
+      "unknowns": [
+        "real-model quality",
+        "20/40 mixed batch capacity",
+        "batch-level identity",
+        "production eligibility/current live rollout"
+      ]
+    },
+    {
+      "type_id": "news_repurpose",
+      "business_label": "新闻体：重新表达已有内容",
+      "production_profile": "news",
+      "creative_style": {
+        "current_formal_value": null,
+        "internal_angles_only": []
+      },
+      "operating_stage": {
+        "current_contract": null,
+        "founder_target": "FOUNDER_TARGET.md"
+      },
+      "delivery_template": {
+        "path": "ops-pipeline/templates/delivery/publish_v1/news.xlsx",
+        "sha256": "5f33e04db8cc35cb70578830b8cfd4a01267f36ffadce19a4b2e48f08cd54d84"
+      },
+      "native_owner": "news_delivery_v1",
+      "capability_status": "VERIFIED_SUPPORTED",
+      "formal_business_type_status": "VERIFIED_SUPPORTED",
+      "support_scope": "一个Presentation/Request；原 semantic 内容复用；新增semantic delta=0；不是Novel。",
+      "evidence_classification": [
+        "CODE_PROVEN",
+        "RUNTIME_PROVEN"
+      ],
+      "evidence_claims": [
+        "CT11",
+        "CT13",
+        "CT16",
+        "CT24"
+      ],
+      "source_ids": [
+        "S034",
+        "S035",
+        "S036",
+        "S037",
+        "S042",
+        "S043",
+        "S044",
+        "S055",
+        "S056",
+        "S057",
+        "S058",
+        "S087",
+        "S088",
+        "S089",
+        "S090",
+        "S091",
+        "S092"
+      ],
+      "audit_dimensions": {
+        "entry_and_owner": "POST /api/create/news/request → news_delivery_v1.create_news_delivery_request",
+        "prompt_pattern_style": "Native News Pattern with exact structural sources and separate novel/repurpose contracts.",
+        "approved_type_rules": "Native production profile, not a permanent business-type catalog",
+        "output_distinguishability": "Native schema and exact lineage distinguish Mix/Novel/Repurpose; real-model quality NOT_VALIDATED",
+        "business_speaker_fact_gates": [
+          "current Approved Business",
+          "exact Business-bound Approved Speaker",
+          "Known fact projection",
+          "current restrictions",
+          "first-person scope",
+          "privacy"
+        ],
+        "additional_compatibility": "Native exact profile Pattern/Compatibility + activated release + live control; News independent reviewers and qualification",
+        "executed_tests": [
+          "console:test_news_export_recovery_http_v1",
+          "console:test_news_release_v1_2",
+          "console:test_news_repurpose_runtime_v1_2",
+          "console:test_profile_compatibility_release_v1_1",
+          "pipeline:test_news_delivery_v1",
+          "pipeline:test_news_export_recovery_v1"
+        ],
+        "target_duration": "guidance only; no subtype fixed duration or measured final-video guarantee",
+        "independent_quantity": "Exactly one video/presentation per Request; 4–8 Beats/Slots are within-video units",
+        "batch_type_identity": "Native Request/content/Concept/Beat/Slot identity exists; no mixed-type Batch contract"
+      },
+      "unknowns": [
+        "real-model quality",
+        "20/40 mixed batch capacity",
+        "batch-level identity",
+        "production eligibility/current live rollout"
+      ]
+    },
+    {
+      "type_id": "persona",
+      "business_label": "人设型",
+      "production_profile": "mix",
+      "creative_style": {
+        "current_formal_value": null,
+        "internal_angles_only": [
+          "first_person_viewpoint",
+          "operator_principle"
+        ]
+      },
+      "operating_stage": {
+        "current_contract": null,
+        "founder_target": "FOUNDER_TARGET.md"
+      },
+      "delivery_template": {
+        "path": "ops-pipeline/templates/delivery/publish_v1/mix.xlsx",
+        "sha256": "75edbcca01a03c49750c2184d74bfe1edb4ab086d299dd5b7f50f350b246cab0"
+      },
+      "native_owner": "resolve_generation_batch_v1.resolve_generation_batch / review_generation_batch_v2.review_generation_batch_v2 / export_mix_excel_v1",
+      "capability_status": "PARTIALLY_SUPPORTED",
+      "formal_business_type_status": "UNSUPPORTED",
+      "support_scope": "first_person_viewpoint/operator_principle角度存在；没有正式人设型类型合同、独立数量和贯穿身份。",
+      "evidence_classification": [
+        "CODE_PROVEN"
+      ],
+      "evidence_claims": [
+        "CT08",
+        "CT03",
+        "CT07"
+      ],
+      "source_ids": [
+        "S023",
+        "S024",
+        "S025",
+        "S003",
+        "S007",
+        "S008",
+        "S009",
+        "S010",
+        "S020",
+        "S021",
+        "S022"
+      ],
+      "audit_dimensions": {
+        "entry_and_owner": "POST /api/create/confirm → generation_request_handoff_v1",
+        "prompt_pattern_style": "No formal subtype parameter. Native mixed angles + selected Approved Pattern.",
+        "approved_type_rules": "UNKNOWN: no formal subtype rule established",
+        "output_distinguishability": "UNKNOWN / NOT_VALIDATED for Founder subtype",
+        "business_speaker_fact_gates": [
+          "current Approved Business",
+          "exact Business-bound Approved Speaker",
+          "Known fact projection",
+          "current restrictions",
+          "first-person scope",
+          "privacy"
+        ],
+        "additional_compatibility": "Approved Pattern + scoped Approved Case/FP + active exact release/live control; subtype mapping UNKNOWN",
+        "executed_tests": [
+          "console:test_news_capability_domains_v1_2",
+          "pipeline:test_content_creation_entry_v1",
+          "pipeline:test_content_quality_v1",
+          "pipeline:test_resolve_generation_batch_v1"
+        ],
+        "target_duration": "guidance only; no subtype fixed duration or measured final-video guarantee",
+        "independent_quantity": "UNSUPPORTED for subtype",
+        "batch_type_identity": "UNSUPPORTED: no Batch-level type identity"
+      },
+      "unknowns": [
+        "real-model quality",
+        "20/40 mixed batch capacity",
+        "batch-level identity",
+        "formal type semantics",
+        "approved type Pattern/Compatibility mapping",
+        "per-type quotas",
+        "type-preserving generation/review/export"
+      ]
+    },
+    {
+      "type_id": "story",
+      "business_label": "故事型",
+      "production_profile": "mix",
+      "creative_style": {
+        "current_formal_value": null,
+        "internal_angles_only": [
+          "bounded_known_story",
+          "quote_with_provenance"
+        ]
+      },
+      "operating_stage": {
+        "current_contract": null,
+        "founder_target": "FOUNDER_TARGET.md"
+      },
+      "delivery_template": {
+        "path": "ops-pipeline/templates/delivery/publish_v1/mix.xlsx",
+        "sha256": "75edbcca01a03c49750c2184d74bfe1edb4ab086d299dd5b7f50f350b246cab0"
+      },
+      "native_owner": "resolve_generation_batch_v1.resolve_generation_batch / review_generation_batch_v2.review_generation_batch_v2 / export_mix_excel_v1",
+      "capability_status": "PARTIALLY_SUPPORTED",
+      "formal_business_type_status": "UNSUPPORTED",
+      "support_scope": "bounded_known_story/customer_story角度存在且依赖Known story或授权quote；没有正式故事型可选合同。",
+      "evidence_classification": [
+        "CODE_PROVEN"
+      ],
+      "evidence_claims": [
+        "CT08",
+        "CT03",
+        "CT07"
+      ],
+      "source_ids": [
+        "S023",
+        "S024",
+        "S025",
+        "S003",
+        "S007",
+        "S008",
+        "S009",
+        "S010",
+        "S020",
+        "S021",
+        "S022"
+      ],
+      "audit_dimensions": {
+        "entry_and_owner": "POST /api/create/confirm → generation_request_handoff_v1",
+        "prompt_pattern_style": "No formal subtype parameter. Native mixed angles + selected Approved Pattern.",
+        "approved_type_rules": "UNKNOWN: no formal subtype rule established",
+        "output_distinguishability": "UNKNOWN / NOT_VALIDATED for Founder subtype",
+        "business_speaker_fact_gates": [
+          "current Approved Business",
+          "exact Business-bound Approved Speaker",
+          "Known fact projection",
+          "current restrictions",
+          "first-person scope",
+          "privacy"
+        ],
+        "additional_compatibility": "Approved Pattern + scoped Approved Case/FP + active exact release/live control; subtype mapping UNKNOWN",
+        "executed_tests": [
+          "console:test_news_capability_domains_v1_2",
+          "pipeline:test_content_creation_entry_v1",
+          "pipeline:test_content_quality_v1",
+          "pipeline:test_resolve_generation_batch_v1"
+        ],
+        "target_duration": "guidance only; no subtype fixed duration or measured final-video guarantee",
+        "independent_quantity": "UNSUPPORTED for subtype",
+        "batch_type_identity": "UNSUPPORTED: no Batch-level type identity"
+      },
+      "unknowns": [
+        "real-model quality",
+        "20/40 mixed batch capacity",
+        "batch-level identity",
+        "formal type semantics",
+        "approved type Pattern/Compatibility mapping",
+        "per-type quotas",
+        "type-preserving generation/review/export"
+      ]
+    },
+    {
+      "type_id": "high_conversion",
+      "business_label": "高转化型",
+      "production_profile": "mix",
+      "creative_style": {
+        "current_formal_value": null,
+        "internal_angles_only": []
+      },
+      "operating_stage": {
+        "current_contract": null,
+        "founder_target": "FOUNDER_TARGET.md"
+      },
+      "delivery_template": {
+        "path": "ops-pipeline/templates/delivery/publish_v1/mix.xlsx",
+        "sha256": "75edbcca01a03c49750c2184d74bfe1edb4ab086d299dd5b7f50f350b246cab0"
+      },
+      "native_owner": "resolve_generation_batch_v1.resolve_generation_batch / review_generation_batch_v2.review_generation_batch_v2 / export_mix_excel_v1",
+      "capability_status": "UNSUPPORTED",
+      "formal_business_type_status": "UNSUPPORTED",
+      "support_scope": "content_intent=mixed、cta_intent=none；未找到正式独立高转化策略及其批准规则。conversion coverage标签不能代替支持。",
+      "evidence_classification": [
+        "CODE_PROVEN"
+      ],
+      "evidence_claims": [
+        "CT08",
+        "CT04",
+        "CT24"
+      ],
+      "source_ids": [
+        "S023",
+        "S024",
+        "S025",
+        "S003",
+        "S011",
+        "S012",
+        "S013",
+        "S087",
+        "S088",
+        "S089",
+        "S090",
+        "S091",
+        "S092"
+      ],
+      "audit_dimensions": {
+        "entry_and_owner": "POST /api/create/confirm → generation_request_handoff_v1",
+        "prompt_pattern_style": "No formal subtype parameter. Native mixed angles + selected Approved Pattern.",
+        "approved_type_rules": "UNKNOWN: no formal subtype rule established",
+        "output_distinguishability": "UNKNOWN / NOT_VALIDATED for Founder subtype",
+        "business_speaker_fact_gates": [
+          "current Approved Business",
+          "exact Business-bound Approved Speaker",
+          "Known fact projection",
+          "current restrictions",
+          "first-person scope",
+          "privacy"
+        ],
+        "additional_compatibility": "Approved Pattern + scoped Approved Case/FP + active exact release/live control; subtype mapping UNKNOWN",
+        "executed_tests": [
+          "console:test_news_release_v1_2",
+          "console:test_profile_compatibility_release_v1_1",
+          "pipeline:test_content_quality_v1",
+          "pipeline:test_generation_request_handoff_v1"
+        ],
+        "target_duration": "guidance only; no subtype fixed duration or measured final-video guarantee",
+        "independent_quantity": "UNSUPPORTED for subtype",
+        "batch_type_identity": "UNSUPPORTED: no Batch-level type identity"
+      },
+      "unknowns": [
+        "real-model quality",
+        "20/40 mixed batch capacity",
+        "batch-level identity",
+        "formal type semantics",
+        "approved type Pattern/Compatibility mapping",
+        "per-type quotas",
+        "type-preserving generation/review/export"
+      ]
+    }
+  ],
+  "templates": {
+    "mix": {
+      "path": "ops-pipeline/templates/delivery/publish_v1/mix.xlsx",
+      "sha256": "75edbcca01a03c49750c2184d74bfe1edb4ab086d299dd5b7f50f350b246cab0"
+    },
+    "news": {
+      "path": "ops-pipeline/templates/delivery/publish_v1/news.xlsx",
+      "sha256": "5f33e04db8cc35cb70578830b8cfd4a01267f36ffadce19a4b2e48f08cd54d84"
+    }
+  }
+}

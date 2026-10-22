@@ -68,6 +68,23 @@ Runtime artifact paths in the Authority Map and Artifact Lifecycle are relative 
 
 The superseded [Working Architecture](../product/AI短视频代运营生产工作流与案例资产架构_V0.1_Working_Architecture.md), [Content Quality candidate](../product/Content%20Uniqueness%20&%20Editorial%20Quality%20V1｜产品与工程冻结框架.md), and [Customer Intake design record](../design/Customer%20Intake%20&%20Persona%20Onboarding%20V1｜产品与工程冻结框架.md) remain historical references. The [UI audit](../design/INTERNAL_CONSOLE_PRODUCTIZATION_UI_AUDIT_V1.md) is evidence for its recorded checkpoint, not the current UI specification. Approval receipts prove gates; neither receipts nor completed task projections create business requirements. Preserve valuable lineage under the Artifact Lifecycle rather than deleting old versions by age.
 
+## Delivery baselines
+
+The [Delivery index](../deliveries/README.md) routes delivery-scoped Baselines and
+their approval status. [CREATION_BATCH_UX_1](../deliveries/creation-batch-ux-1/README.md)
+has one [Approved / Frozen Baseline, Revision 1](../deliveries/creation-batch-ux-1/BASELINE.md).
+The Founder selected D-P01/02/03 and requested target freeze; the earlier
+[BR-01 decision](../deliveries/creation-batch-ux-1/BASELINE_REVIEW_RECORD.md) remains
+the historical limited Current Truth review. The attributable target approval
+chain is retained in [BR-02](../deliveries/creation-batch-ux-1/BASELINE_APPROVAL_RECORD.md).
+[Plan Revision 5](../deliveries/creation-batch-ux-1/PLAN.md) remains a conditional
+draft for renewed independent review. The user explicitly resolved DR-01/02;
+Design Readiness is PASS for planning scope. Planning Preflight on actual R4 inputs is PASS; contract candidates, UI details,
+responsibilities and isolated development environment checks are prepared. Old
+reviews remain historical. Native qualifications and A03/A04 engineering scope decisions,
+Plan freeze and execution remain unauthorized. These delivery documents do not supersede
+machine Authority or authorize deployment or production use.
+
 ## Current boundaries
 
 - `show_customer_status_v1.py` is read-only and derived-only.

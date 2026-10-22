@@ -1,0 +1,26 @@
+{
+  "record_type": "retained_independent_plan_review_provenance",
+  "source": "用户当前提交《Independent Plan Review → Targeted Revision》；用户归属ChatGPT独立审查，非本agent独立复审",
+  "external_report_url": null,
+  "reviewed_plan_sha256": "fb845c980df7feb15e81e543a5bbcb5543ee917a8c82f0bdda6212e7c58c4a1c",
+  "verdicts": [
+    "CREATION_BATCH_UX_1_PLAN_DRAFT_DIRECTION_ACCEPTED",
+    "CREATION_BATCH_UX_1_PLAN_REVISION_REQUIRED",
+    "CREATION_BATCH_UX_1_PLAN_FREEZE_NOT_AUTHORIZED",
+    "CREATION_BATCH_UX_1_IMPLEMENTATION_NOT_AUTHORIZED"
+  ],
+  "applies_to": "原fb845 Plan；新R2仍需再次独立Review",
+  "direction_accepted": [
+    "B1-B4 overall direction",
+    "Native Authority preservation",
+    "incremental capacity and recovery"
+  ],
+  "not_granted": [
+    "Native A03/A04 approval",
+    "Plan Freeze",
+    "implementation"
+  ],
+  "PR2_product_scope": "用户本次明确News一份/Mix一份汇总，零行无文件；不是按三Style各一文件或文件列表",
+  "PR1_source_status": "ChatGPT推荐B；Native正式审批和必要体验确认仍待办",
+  "PR4_source_status": "新默认及结束行为按用户要求仅列Proposed Product Rules；重复已批规则不重开"
+}
