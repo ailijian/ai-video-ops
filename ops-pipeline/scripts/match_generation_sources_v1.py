@@ -107,7 +107,8 @@ def load_request(
     if not io_path(path).is_file():
         raise FileNotFoundError(path)
     request = read_json(path)
-    if request.get("schema_version") != "generation-request-v1.0":
+    from creative_style_v1 import request_schema_supported
+    if not request_schema_supported(request):
         raise RuntimeError("Generation Request schema_version is invalid.")
     request_id = str(request.get("request_id") or "")
     if not request_id or any(character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-" for character in request_id):

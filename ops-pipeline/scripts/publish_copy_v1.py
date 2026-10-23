@@ -28,11 +28,16 @@ def base(root, rid):
 
 def lock(root, rid): return operation_lock(root, 'publish-copy:' + identifier(rid))
 
+def delivery_fence(root, rid):
+    # Acquired before backup/Business/Publish locks by every draft writer and
+    # delegated delivery. Core writers retain their own non-reentrant locks.
+    return operation_lock(root, 'publish-copy-delivery:' + identifier(rid))
+
 @contextmanager
 def _write_locks(root, rid, src):
     from news_qualification_v1_2 import prohibit_write
     prohibit_write(root)
-    with mutation_fence(root), current_authority(root, src), operation_lock(root, 'business:' + src['business_id']), lock(root, rid):
+    with delivery_fence(root, rid), mutation_fence(root), current_authority(root, src), operation_lock(root, 'business:' + src['business_id']), lock(root, rid):
         yield
 
 @contextmanager
@@ -68,6 +73,12 @@ def chain(root, paths, *, parent_key='parent'):
     return head
 
 def attempt(root, rid): return chain(root, base(root, rid).glob('attempts/*/intent.json'))
+
+def _generation_intent(path):
+    value = read(path)
+    if value.get('schema_version') not in ('publish-copy-generation-intent-v1.0', 'publish-copy-generation-intent-v1.1'):
+        raise PublishCopyError('CONTRACT_INVALID')
+    return check(value, value['schema_version'])
 def draft(root, rid): return chain(root, base(root, rid).glob('drafts/*.json'))
 
 def _clean(text): return re.sub(r'[\W_]+', '', text, flags=re.UNICODE)
@@ -214,7 +225,25 @@ def configured_model():
     import os
     return os.getenv('DEEPSEEK_MODEL') or 'deepseek-chat'
 
-def prepare(root, rid, context, *, target_ids=None, expected_parent=None):
+def _automatic_batch(root, rid, src, reference, context, *, require_running=False):
+    """C03 narrows automatic dispatch; it grants no Human or Publish approval."""
+    import native_batch_v1 as owner
+    from creative_style_v1 import pinned
+    value = pinned(reference)
+    bid = value['batch_id']
+    owner.assert_principal(root, bid, context)
+    if reference != owner.batch_ref(root, bid) or value['business_id'] != src['business_id']:
+        raise PublishCopyError('BATCH_BINDING_INVALID')
+    group = next((g for g in owner.groups(root, bid) if g['request_id'] == rid), None)
+    request_path = owner.request_path(root,rid)
+    if group is None or not request_path.is_file(): raise PublishCopyError('BATCH_BINDING_INVALID')
+    request = read(request_path)
+    admission = owner.validate_admission(request.get('batch_admission_ref'), root=root, context=context, request=request)
+    if admission['batch_intent_ref'] != reference: raise PublishCopyError('BATCH_BINDING_INVALID')
+    if require_running and not owner.running(root, bid): raise PublishCopyError('BATCH_PAUSED_OR_ENDED')
+
+
+def prepare(root, rid, context, *, target_ids=None, expected_parent=None, automatic_batch_ref=None):
     model=configured_model()
     src = source(root, rid); proof = identity(context)
     targets = target_ids or [i['target_id'] for i in src['items']][:5]
@@ -225,10 +254,13 @@ def prepare(root, rid, context, *, target_ids=None, expected_parent=None):
         'parameters': {'version': VERSION, 'model': model, 'transport': 'deepseek-json-0.7-10000-v1',
             'owner_sha256': file_sha(Path(__file__)), 'memory_sha256': memory_sha(root, src['business_id']), 'target_ids': targets},
         'actor': context['actor'], 'authorization': proof}
+    if automatic_batch_ref is not None: material['batch_intent_ref'] = automatic_batch_ref
     with write_scope(root, rid, src):
+        if automatic_batch_ref is not None:
+            _automatic_batch(root, rid, src, automatic_batch_ref, context, require_running=True)
         current = attempt(root, rid)
         if current:
-            previous = {key: current[1][key] for key in material}
+            previous = {key: current[1].get(key) for key in material}
             if expected_parent is None:
                 if previous == material: return current
                 raise PublishCopyError('EXPLICIT_RETRY_REQUIRED')
@@ -239,7 +271,7 @@ def prepare(root, rid, context, *, target_ids=None, expected_parent=None):
         parent = ref(root, current[0]) if current else None
         op = digest({'request_id': rid, 'parent': parent, **material})[:32]
         source_ref = save_source_snapshot(root, rid, src)
-        value = {'schema_version': 'publish-copy-generation-intent-v1.0', 'request_id': rid,
+        value = {'schema_version': 'publish-copy-generation-intent-v1.1' if automatic_batch_ref is not None else 'publish-copy-generation-intent-v1.0', 'request_id': rid,
                  'operation_id': op, 'parent': parent, 'source_refs': src['refs'],
                  'source_snapshot_ref': source_ref, **material, 'created_at': now()}
         path = base(root, rid) / 'attempts' / op / 'intent.json'
@@ -280,6 +312,8 @@ def _current(root, rid, path, intent, context):
     if not latest or ref(root, latest[0]) != ref(root, path): raise PublishCopyError('SUPERSEDED')
     validate_identity(context, intent)
     src = source(root, rid)
+    if intent.get('batch_intent_ref') is not None:
+        _automatic_batch(root, rid, src, intent['batch_intent_ref'], context)
     if src['source_sha256'] != intent['source_sha256']: raise PublishCopyError('SOURCE_CHANGED')
     if (intent['parameters']['owner_sha256'] != file_sha(Path(__file__))
         or intent['parameters']['model'] != configured_model()
@@ -295,7 +329,7 @@ def memory_sha(root, business_id):
 
 def bind_task(root, rid, operation_id, task_id, context):
     path = base(root, rid) / 'attempts' / identifier(operation_id, r'[a-f0-9]{32}') / 'intent.json'
-    intent = check(read(path), 'publish-copy-generation-intent-v1.0')
+    intent = _generation_intent(path)
     src = _current(root, rid, path, intent, context)
     # _current performs the complete source, authorization, owner, memory and
     # prompt checks under these same locks. An additional source-only scan just
@@ -307,7 +341,7 @@ def bind_task(root, rid, operation_id, task_id, context):
 def run(root, rid, operation_id, context, *, transport=None, task_id=None):
     identifier(operation_id, r'[a-f0-9]{32}')
     path = base(root, rid) / 'attempts' / operation_id / 'intent.json'
-    intent = check(read(path), 'publish-copy-generation-intent-v1.0')
+    intent = _generation_intent(path)
     with operation_lock(root, 'publish-copy-executor:' + operation_id, timeout_seconds=0):
         src = _current(root, rid, path, intent, context)
         if task_id:
@@ -321,10 +355,16 @@ def run(root, rid, operation_id, context, *, transport=None, task_id=None):
         response = _evidence(root, path, intent, 'response')
         if not response:
             with _write_locks(root, rid, src):
-                _current(root, rid, path, intent, context)
-                if _evidence(root, path, intent, 'dispatch'):
-                    raise PublishCopyError('OUTCOME_UNKNOWN', '模型调用结果无法确认，系统不会自动重复生成；重新尝试可能产生额外费用。')
-                _record(root, path, intent, 'dispatch', dispatched_at=now())
+                from contextlib import nullcontext
+                fence = (operation_lock(root, 'creation-batch-provider:' + src['business_id'])
+                         if intent.get('batch_intent_ref') else nullcontext())
+                with fence:
+                    _current(root, rid, path, intent, context)
+                    if _evidence(root, path, intent, 'dispatch'):
+                        raise PublishCopyError('OUTCOME_UNKNOWN', '模型调用结果无法确认，系统不会自动重复生成；重新尝试可能产生额外费用。')
+                    if intent.get('batch_intent_ref'):
+                        _automatic_batch(root, rid, src, intent['batch_intent_ref'], context, require_running=True)
+                    _record(root, path, intent, 'dispatch', dispatched_at=now())
             if transport is None:
                 from generate_mix_scripts_v1 import default_transport
                 transport = default_transport(intent['parameters']['model'])
@@ -488,15 +528,26 @@ def verify_draft(root, src, value):
         raise PublishCopyError('DRAFT_SOURCE_INVALID')
     validate_payload(value['payload'], src, target_ids=[i['target_id'] for i in value['payload']['items']])
 
-def export_delivery(root, rid, context, expected_draft_ref=None):
+def export_delivery(root, rid, context, expected_draft_ref=None, automatic_batch_ref=None):
     current = draft(root, rid)
     if expected_draft_ref is not None and (not current or ref(root, current[0]) != expected_draft_ref):
         raise PublishCopyError('DRAFT_CHANGED')
     src = source(root, rid)
+    confirmed=confirmation(root,rid,current[1]) if current else None
+    if not confirmed:raise PublishCopyError('CONFIRMED_DRAFT_REQUIRED')
+    validate_identity(context,confirmed[1])
+    if automatic_batch_ref is not None:
+        _automatic_batch(root, rid, src, automatic_batch_ref, context)
+        if not current or not confirmation(root, rid, current[1]): raise PublishCopyError('CONFIRMED_DRAFT_REQUIRED')
+        import native_batch_v1 as owner
+        owner.issue_local_delivery(root, __import__('creative_style_v1').pinned(automatic_batch_ref)['batch_id'], context,
+            phase='publish_parent_export', subject_id=rid, operation_id=current[1]['draft_id'],
+            source_sha256=digest({'source': src['source_sha256'], 'draft': ref(root, current[0])}))
     if src['mode'] == 'mix': from export_mix_excel_v1 import export_supplemental_delivery as writer
     elif src['mode'] == 'novel_content': from novel_news_v1 import export_supplemental_delivery as writer
     else: from news_delivery_v1 import export_supplemental_delivery as writer
-    return writer(pipeline_root=root, request_id=rid, authorization_context=context, expected_draft_ref=expected_draft_ref)
+    return writer(pipeline_root=root, request_id=rid, authorization_context=context,
+        expected_draft_ref=expected_draft_ref or ref(root, current[0]))
 
 def delivery_version(root,rid,delivery_id):
     from creation_delivery_v1 import read_version
@@ -515,13 +566,14 @@ def main():
         if args.command == 'state': result = state(root, rid)
         elif args.command == 'project': result = project(root, rid)
         elif args.command == 'prepare':
-            path, value = prepare(root, rid, context, target_ids=payload.get('target_ids'), expected_parent=payload.get('expected_parent'))
+            path, value = prepare(root, rid, context, target_ids=payload.get('target_ids'), expected_parent=payload.get('expected_parent'),
+                automatic_batch_ref=payload.get('automatic_batch_ref'))
             result = {'operation_id': value['operation_id'], 'intent_ref': ref(root, path)}
         elif args.command == 'bind-task': result = {'task_ref': ref(root, bind_task(root, rid, payload['operation_id'], payload['task_id'], context))}
         elif args.command == 'run': result = run(root, rid, payload['operation_id'], context, task_id=payload.get('task_id'))
         elif args.command == 'edit': result = edit(root, rid, payload['draft_ref'], payload['payload'], context)
         elif args.command == 'confirm': result = confirm(root, rid, payload['draft_ref'], context)
-        elif args.command == 'export': result = export_delivery(root, rid, context, payload.get('expected_draft_ref'))
+        elif args.command == 'export': result = export_delivery(root, rid, context, payload.get('expected_draft_ref'), payload.get('automatic_batch_ref'))
         elif args.command == 'version': result = delivery_version(root,rid,payload['delivery_id'])
         else:
             from creation_delivery_v1 import effective

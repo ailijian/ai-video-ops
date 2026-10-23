@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from functools import wraps
 from pathlib import Path
 from typing import Any
+import creative_style_v1 as creative_style
 
 from operation_lock_v1 import OperationLockTimeout, operation_lock, scoped_lock_key
 
@@ -281,6 +282,7 @@ def _active_in_flight_request_exists(
     business_id: str,
     profile: str,
     exclude_request_id: str | None = None,
+    batch_admission_ref: dict | None = None,
 ) -> bool:
     root = (
         pipeline_root
@@ -339,6 +341,10 @@ def _active_in_flight_request_exists(
             pipeline_root,
             path,
         ):
+            if batch_admission_ref is not None:
+                from native_batch_v1 import active_exception
+                if active_exception(pipeline_root, request, batch_admission_ref):
+                    continue
             return True
 
     return False
@@ -352,7 +358,12 @@ def _find_equivalent_active_request(
     requested_quantity: int,
     confirmed_quantity: int,
     selected_opportunity_id: str | None = None,
+    creative_style_id: str | None = None,
 ) -> tuple[Path, dict[str, Any]] | None:
+    if creative_style_id is not None:
+        # B1 confirmed single-slot intents cannot adopt a different operation.
+        # B2 admission is not authorized; retain the existing active-request stop.
+        return None
     # Effective lifecycle, not immutable Request status alone, decides in-flight.
     # Profile scope is explicit: old News validation Requests cannot block Mix.
 
@@ -429,6 +440,8 @@ def _find_equivalent_active_request(
             continue
 
         if (request.get("selected_content") or {}).get("concept_id") != selected_opportunity_id:
+            continue
+        if not creative_style.request_schema_supported(request) or request.get("creative_style") is not None:
             continue
 
         confirmation = (
@@ -570,11 +583,17 @@ def validate_existing_request(
     idempotency_key: str,
     require_idempotency_match: bool = True,
     selected_opportunity_id: str | None = None,
+    creative_style_id: str | None = None,
+    configuration: dict | None = None,
+    authorization_context: dict | None = None,
+    batch_admission_ref: dict | None = None,
 ) -> None:
     confirmation = request.get("confirmation") or {}
 
     same = (
-        request.get("schema_version") == REQUEST_SCHEMA_VERSION
+        creative_style.request_schema_supported(request)
+        and request.get('batch_admission_ref') == batch_admission_ref
+        and (request.get("creative_style") or {}).get("style_id") == creative_style_id
         and request.get("persona_id") == business_id
         and request.get("speaker_persona") == speaker_id
         and request.get("target_profile") == profile
@@ -587,6 +606,14 @@ def validate_existing_request(
     if require_idempotency_match:
         expected_key_sha = sha256_text(idempotency_key)
         same = same and confirmation.get("idempotency_key_sha256") == expected_key_sha
+    if creative_style_id and same:
+        same = same and confirmation.get("configuration_payload") == creative_style.normalize_configuration(configuration, creative_style_id)
+        intent = creative_style.pinned(request["style_intent_ref"])
+        same = same and intent["actor_intent"]["actor_id"] == str((authorization_context or {}).get("actor", {}).get("user_id"))
+        original_principal = creative_style.pinned(intent["actor_intent"]["permission_snapshot"])
+        same = same and original_principal["actor"] == authorization_context["actor"]
+        same = same and all(original_principal["authorization"][key] == authorization_context["authorization"][key]
+                            for key in ["user_state_sha256", "database_path"])
 
     if not same:
         raise GenerationRequestError(
@@ -677,6 +704,10 @@ def recover_existing(
     idempotency_key: str,
     require_idempotency_match: bool = True,
     selected_opportunity_id: str | None = None,
+    creative_style_id: str | None = None,
+    configuration: dict | None = None,
+    authorization_context: dict | None = None,
+    batch_admission_ref: dict | None = None,
 ) -> dict[str, Any]:
     request = read_json(request_path)
     if request.get('profile_compatibility_v1_2'):
@@ -693,6 +724,10 @@ def recover_existing(
         idempotency_key=(idempotency_key),
         require_idempotency_match=(require_idempotency_match),
         selected_opportunity_id=selected_opportunity_id,
+        creative_style_id=creative_style_id,
+        configuration=configuration,
+        authorization_context=authorization_context,
+        batch_admission_ref=batch_admission_ref,
     )
 
     if handoff_path.is_file():
@@ -754,10 +789,29 @@ def create_generation_request_handoff(
     created_by_user_id: int | None = None,
     created_by_phone: str | None = None,
     selected_opportunity_id: str | None = None,
+    creative_style_id: str | None = None,
+    configuration: dict | None = None,
+    authorization_context: dict | None = None,
+    style_preflight_sha256: str | None = None,
+    batch_admission_ref: dict | None = None,
 ) -> dict[str, Any]:
     pipeline_root = pipeline_root.expanduser().resolve()
 
     profile = str(profile or "").strip().lower()
+    style_identity = None
+    if creative_style_id is not None:
+        try:
+            rule = creative_style.definition(creative_style_id, executable=True)
+            if profile != "mix" or confirmed_quantity not in rule["allowed_quantities"]:
+                raise creative_style.CreativeStyleError("CREATIVE_STYLE_QUANTITY_UNSUPPORTED", "Style permits one Mix video only")
+            creative_style.active_qualification(pipeline_root)
+            from delivery_receipt_recovery_v1 import identity as validate_principal, actor_phone, ReceiptRecoveryError
+            validate_principal(authorization_context)
+            if (created_by_user_id != authorization_context['actor']['user_id']
+                    or str(created_by_phone) != actor_phone(authorization_context)):
+                raise ReceiptRecoveryError('DELIVERY_ACTOR_CONFLICT', 'Style creator differs from the trusted current principal')
+        except creative_style.CreativeStyleError as exc:
+            raise GenerationRequestError(exc.code, str(exc)) from exc
 
     idempotency_key = str(idempotency_key or "").strip()
 
@@ -784,6 +838,24 @@ def create_generation_request_handoff(
 
     handoff_path = request_root / ("generation_source_planning_" "handoff_v1.json")
 
+    admission = None
+    if batch_admission_ref is not None:
+        from native_batch_v1 import validate_admission, policy_qualification
+        admission = validate_admission(batch_admission_ref, root=pipeline_root, context=authorization_context)
+        policy_qualification(pipeline_root)
+        if (admission['native_request_id'] != request_id or admission['business_id'] != business_id
+                or len(admission['ordered_slots']) != confirmed_quantity
+                or (admission['style_ref'] or {}).get('style_id') != creative_style_id):
+            raise GenerationRequestError('CREATION_BATCH_IDENTITY_INVALID', 'Native input differs from exact batch admission')
+        expected_profile = 'mix' if admission['style_ref'] else 'news'
+        expected_speaker = next((r['id'] for r in admission['source_refs'] if r['owner'] == 'native-speaker'), None)
+        opportunity = next((r['id'] for r in admission['source_refs'] if r['owner'] == 'native-novel-opportunity'), None)
+        if profile != expected_profile or speaker_id != expected_speaker or selected_opportunity_id != opportunity:
+            raise GenerationRequestError('CREATION_BATCH_IDENTITY_INVALID', 'Profile, Speaker or Novel opportunity differs')
+        from delivery_receipt_recovery_v1 import actor_phone
+        if created_by_user_id != authorization_context['actor']['user_id'] or str(created_by_phone) != actor_phone(authorization_context):
+            raise GenerationRequestError('CREATION_BATCH_ACTOR_CONFLICT', 'Original authenticated batch actor required')
+
     # Idempotent retry must recover before
     # recalculating capacity. Same business +
     # same idempotency key always returns the
@@ -800,9 +872,13 @@ def create_generation_request_handoff(
             confirmed_quantity=(confirmed_quantity),
             idempotency_key=(idempotency_key),
             selected_opportunity_id=selected_opportunity_id,
+            creative_style_id=creative_style_id,
+            configuration=configuration,
+            authorization_context=authorization_context,
+            batch_admission_ref=batch_admission_ref,
         )
 
-    equivalent = _find_equivalent_active_request(
+    equivalent = None if batch_admission_ref is not None else _find_equivalent_active_request(
         pipeline_root,
         business_id,
         speaker_id,
@@ -810,6 +886,7 @@ def create_generation_request_handoff(
         requested_quantity,
         confirmed_quantity,
         selected_opportunity_id,
+        creative_style_id,
     )
 
     if equivalent is not None:
@@ -833,13 +910,25 @@ def create_generation_request_handoff(
             idempotency_key=(idempotency_key),
             require_idempotency_match=False,
             selected_opportunity_id=selected_opportunity_id,
+            creative_style_id=creative_style_id,
+            configuration=configuration,
+            authorization_context=authorization_context,
+            batch_admission_ref=batch_admission_ref,
         )
 
+    from native_batch_v1 import assert_no_unpublished_admissions
+    if admission:
+        from native_batch_v1 import running
+        from creative_style_v1 import pinned
+        if not running(pipeline_root, pinned(admission['batch_intent_ref'])['batch_id']):
+            raise GenerationRequestError('CREATION_BATCH_PAUSED', 'No fresh Native Request after pause/end; original published recovery remains available')
+    assert_no_unpublished_admissions(pipeline_root, business_id, profile, request_id)
     if _active_in_flight_request_exists(
         pipeline_root,
         business_id,
         profile,
         exclude_request_id=request_id,
+        batch_admission_ref=batch_admission_ref,
     ):
         raise GenerationRequestError(
             "CONTENT_GENERATION_IN_FLIGHT",
@@ -865,7 +954,8 @@ def create_generation_request_handoff(
         from novel_news_opportunity_v1 import project_novel_news_opportunities
 
         opportunities = project_novel_news_opportunities(
-            pipeline_root=pipeline_root, business_id=business_id, speaker_id=speaker_id
+            pipeline_root=pipeline_root, business_id=business_id, speaker_id=speaker_id,
+            **({'reservation_request_id':request_id} if admission else {}),
         )
         matching = [
             item for item in opportunities["opportunities"]
@@ -917,6 +1007,10 @@ def create_generation_request_handoff(
         except ContentCreationEntryError as exc:
             raise GenerationRequestError(exc.code, str(exc)) from exc
 
+    if creative_style_id and style_preflight_sha256 is not None:
+        checked=creative_style.admission_preflight(pipeline_root,business_id,speaker_id,creative_style_id,configuration,preview)
+        if checked['source_configuration_sha256']!=style_preflight_sha256:
+            raise GenerationRequestError('CREATIVE_STYLE_PREFLIGHT_STALE','Configuration or source changed; run the Native check again')
     recommendation = preview.get("recommendation") or {}
 
     if recommendation.get("can_continue") is not True:
@@ -1006,9 +1100,25 @@ def create_generation_request_handoff(
     )
 
     timestamp = created_at or now_iso()
+    if admission:
+        for owner, current_persona in [('native-business', business), ('native-speaker', speaker)]:
+            original = next((r for r in admission['source_refs'] if r['owner'] == owner), None)
+            if (original is None or original['path'] != str(Path(current_persona['path']).resolve())
+                    or original['sha256'] != sha256_file(current_persona['path'])):
+                raise GenerationRequestError('CREATION_BATCH_SOURCE_CHANGED', 'Current Business/Speaker differs from the confirmed batch')
+    style_intent_ref = configuration_payload = None
+    if creative_style_id:
+        try:
+            style_identity, style_intent_ref, configuration_payload = creative_style.prepare_intents(
+                pipeline_root, request_id, creative_style_id, business, speaker, authorization_context, idempotency_key, configuration,
+                ordered_slots=admission['ordered_slots'] if admission else None)
+        except creative_style.CreativeStyleError as exc:
+            raise GenerationRequestError(exc.code, str(exc)) from exc
 
     request = {
-        "schema_version": (REQUEST_SCHEMA_VERSION),
+        "schema_version": 'generation-request-v1.2' if admission else creative_style.STYLE_REQUEST if style_identity else REQUEST_SCHEMA_VERSION,
+        **({'batch_admission_ref': batch_admission_ref} if admission else {}),
+        **({"creative_style": style_identity, "style_intent_ref": style_intent_ref} if style_identity else {}),
         "operation_version": (OPERATION_VERSION),
         "request_id": request_id,
         "created_at": timestamp,
@@ -1023,7 +1133,7 @@ def create_generation_request_handoff(
         "content_intent": ("mixed"),
         "quantity": (confirmed_quantity),
         "platform": "douyin",
-        "cta_intent": "none",
+        "cta_intent": creative_style.cta_intent_for_rule(creative_style.definition(creative_style_id)) if style_identity else "none",
         "constraints": {
             "no_padding": True,
             "case_facts_must_not_transfer": (True),
@@ -1033,6 +1143,7 @@ def create_generation_request_handoff(
             "script_generation_does_not_establish_media_rights": (True),
         },
         "confirmation": {
+            **({"configuration_payload": configuration_payload} if style_identity else {}),
             "operator_requested_quantity": (requested_quantity),
             "confirmed_quantity": (confirmed_quantity),
             "capacity_snapshot": (snapshot),
@@ -1080,6 +1191,10 @@ def create_generation_request_handoff(
     if created_by_user_id is not None:
         request["created_by_user_id"] = created_by_user_id
         request["created_by_phone"] = created_by_phone
+    try:
+        creative_style.validate_facts(request, read_json(business["path"]), read_json(speaker["path"]))
+    except creative_style.CreativeStyleError as exc:
+        raise GenerationRequestError(exc.code, str(exc)) from exc
 
     from news_runtime_v1_2 import configured,current
     if configured(pipeline_root) and profile=='news':
@@ -1104,6 +1219,10 @@ def create_generation_request_handoff(
             confirmed_quantity=(confirmed_quantity),
             idempotency_key=(idempotency_key),
             selected_opportunity_id=selected_opportunity_id,
+            creative_style_id=creative_style_id,
+            configuration=configuration,
+            authorization_context=authorization_context,
+            batch_admission_ref=batch_admission_ref,
         )
 
     handoff = build_source_handoff(
@@ -1189,6 +1308,11 @@ def main() -> None:
     parser.add_argument("--created-by-user-id", type=int)
     parser.add_argument("--created-by-phone")
     parser.add_argument("--selected-opportunity-id")
+    parser.add_argument("--creative-style-id")
+    parser.add_argument("--configuration-file")
+    parser.add_argument("--authorization-file")
+    parser.add_argument('--style-preflight-sha256')
+    parser.add_argument('--batch-admission-file')
 
     args = parser.parse_args()
 
@@ -1204,16 +1328,23 @@ def main() -> None:
             created_by_user_id=args.created_by_user_id,
             created_by_phone=args.created_by_phone,
             selected_opportunity_id=args.selected_opportunity_id,
+            creative_style_id=args.creative_style_id,
+            configuration=read_json(Path(args.configuration_file)) if args.configuration_file else None,
+            authorization_context=read_json(Path(args.authorization_file)) if args.authorization_file else None,
+            style_preflight_sha256=args.style_preflight_sha256,
+            batch_admission_ref=read_json(Path(args.batch_admission_file)) if args.batch_admission_file else None,
         )
 
-    except GenerationRequestError as exc:
+    except (GenerationRequestError, creative_style.CreativeStyleError,
+            __import__('creation_batch_contract_v1').BatchError,
+            __import__('delivery_receipt_recovery_v1').ReceiptRecoveryError) as exc:
         print(
             json.dumps(
                 {
                     "ok": False,
                     "code": exc.code,
                     "message": str(exc),
-                    "preflight": exc.preflight,
+                    "preflight": getattr(exc, "preflight", None),
                 },
                 ensure_ascii=False,
             )

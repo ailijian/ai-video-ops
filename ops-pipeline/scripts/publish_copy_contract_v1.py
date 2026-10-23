@@ -40,6 +40,16 @@ SCHEMAS = {
     'human_gate': {'const': True}, 'confirmed_at': TEXT}),
 }
 
+# Automatic Batch dispatch carries an additional, immutable Native C03 binding.
+# Existing manual v1.0 intents and receipts retain their original schema.
+import copy
+_automatic_intent = copy.deepcopy(SCHEMAS['publish-copy-generation-intent-v1.0'])
+_automatic_intent['properties']['schema_version'] = {'const': 'publish-copy-generation-intent-v1.1'}
+_automatic_intent['properties']['batch_intent_ref'] = obj({'owner': TEXT, 'id': TEXT, 'version': TEXT,
+                                                        'path': TEXT, 'sha256': HASH})
+_automatic_intent['required'].append('batch_intent_ref')
+SCHEMAS['publish-copy-generation-intent-v1.1'] = _automatic_intent
+
 class PublishCopyError(RuntimeError):
     def __init__(self, code, message='发布信息需要重新核对，原制作稿会保留。'):
         self.code = 'PUBLISH_COPY_' + code

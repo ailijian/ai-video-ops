@@ -1,0 +1,14 @@
+{
+  "schema_version": "native-batch-admission-policy-v1.0",
+  "policy_version": "2",
+  "maximum_logical_slots": 40,
+  "maximum_pending_native_requests": 40,
+  "dispatch_per_business": 1,
+  "mix_style_quantities": [1, 2],
+  "allowed_profiles": ["mix", "news"],
+  "maximum_explicit_cycles": 5,
+  "approval_scope_sha256": "bf427221b72c8c88d18ffd106d96b47395273167bdd0d9e5f66ddd75b3c40caf",
+  "production_qualification_granted": false,
+  "unknown_retry": "explicit-native-only",
+  "legacy_active_exception": false
+}

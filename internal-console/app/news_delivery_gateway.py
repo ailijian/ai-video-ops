@@ -268,7 +268,7 @@ def _completed_news_deliveries(
             request.get(
                 "schema_version"
             )
-            not in {NEWS_REQUEST_SCHEMA, "news-delivery-request-v1.1"}
+            not in {NEWS_REQUEST_SCHEMA, "news-delivery-request-v1.1", "news-delivery-request-v1.2"}
             or request.get(
                 "business_id"
             )
@@ -439,7 +439,7 @@ def create_news_request(
 
     if (
         request.get("schema_version")
-        not in {NEWS_REQUEST_SCHEMA, "news-delivery-request-v1.1"}
+        not in {NEWS_REQUEST_SCHEMA, "news-delivery-request-v1.1", "news-delivery-request-v1.2"}
         or request.get("business_id")
         != business_id
         or request.get("speaker_id")
@@ -511,7 +511,7 @@ def get_active_news_request(
             request.get(
                 "schema_version"
             )
-            not in {NEWS_REQUEST_SCHEMA, "news-delivery-request-v1.1"}
+            not in {NEWS_REQUEST_SCHEMA, "news-delivery-request-v1.1", "news-delivery-request-v1.2"}
         ):
             continue
         if str(
@@ -1006,7 +1006,7 @@ def get_news_delivery_state(
         request.get(
             "schema_version"
         )
-        not in {NEWS_REQUEST_SCHEMA, "news-delivery-request-v1.1"}
+        not in {NEWS_REQUEST_SCHEMA, "news-delivery-request-v1.1", "news-delivery-request-v1.2"}
         or request.get(
             "request_id"
         )
@@ -1033,7 +1033,9 @@ def get_news_delivery_state(
     export["completed"] = native.get("stop_point_reached") is True
     export["presentation_history_closed"] = native.get("presentation_history_closed") is True
 
-    if native.get("export_recovery_state") == "legacy_unbound_orphan":
+    if native.get('cancelled'):
+        next_action='NEWS_REQUEST_CANCELLED'
+    elif native.get("export_recovery_state") == "legacy_unbound_orphan":
         next_action = "RECHECK_EXPORT"
     elif (
         export["completed"]
@@ -1065,6 +1067,7 @@ def get_news_delivery_state(
     )
 
     return {
+        "cancelled": bool(native.get('cancelled')),
         "created_by": request_actor(request),
         "export_recovery_state": native.get("export_recovery_state", "xlsx_not_generated"),
         "reviewed_by": {"phone": str(review["reviewer"])} if review.get("reviewer") else None,

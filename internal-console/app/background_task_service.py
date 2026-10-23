@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import os
+import logging
 import threading
-import time
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from typing import Any, Callable
 from contextlib import contextmanager
 
@@ -45,6 +45,7 @@ BACKGROUND_OPERATIONS: dict[str, tuple[str, str]] = {
     "novel_news_export": ("excel_export", "导出新闻体新内容"),
     "publish_copy_generate": ("content_generation", "生成发布信息"),
     "publish_copy_export": ("excel_export", "导出完整交付"),
+    "creation_batch_export": ("excel_export", "汇总本批已确认交付"),
 }
 
 
@@ -93,6 +94,10 @@ def create_background_task(
         raise CanonicalOperationError('EXPORT_ALREADY_CLOSED', '这次导出已有闭合记录。', '请读取原文件和记录；本次不会建立新任务。')
     if operation in {"novel_news_generate", "novel_news_export"}:
         require_novel_news_task(settings, created_by_user_id)
+    if operation=='news_plan':
+        from news_delivery_v1 import request_cancelled
+        if request_cancelled(settings.pipeline_root,request_id):
+            raise CanonicalOperationError('CREATION_BATCH_ENDED','本批已结束，此项未继续生成。','请选择新的有限批次；原始取消记录会保留。')
     if operation == "content_plan":
         state = get_content_delivery_state(settings, request_id)
         if state.get("source_coverage_supported") is not True:
@@ -158,6 +163,7 @@ class BackgroundTaskRunner:
     ) -> None:
         self.settings = settings
         from .publish_copy_gateway import generate as publish_generate, export as publish_export
+        from .creation_batch_delivery_gateway import export as batch_export
         self.handlers = handlers or {
             "content_plan": resolve_content_plan,
             "script_generation": generate_scripts,
@@ -168,6 +174,7 @@ class BackgroundTaskRunner:
             "novel_news_export": export_novel_news,
             "publish_copy_generate": publish_generate,
             "publish_copy_export": publish_export,
+            "creation_batch_export": batch_export,
         }
         self.executor = ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="standard-background"
@@ -176,6 +183,11 @@ class BackgroundTaskRunner:
             max_workers=1, thread_name_prefix="standard-operation"
         )
         self._scheduled: set[str] = set()
+        self._batch_wakes: dict[str, int] = {}
+        # Negative scheduling hints only. HTTP reads and every mutation still
+        # execute the original Native gates; no business projection is cached.
+        self._quiet_batches: set[str] = set()
+        self._batch_activity_epoch = 0
         self._lock = threading.Lock()
         self.worker_id = f"background-{os.getpid()}-{id(self):x}"
         self.maintenance = LeaseRecoveryMaintenance(
@@ -192,6 +204,10 @@ class BackgroundTaskRunner:
         operation = str(payload.get("operation") or "")
         request_id = str(payload.get("request_id") or task.get("subject_ref") or "")
         try:
+            if operation == 'creation_batch_export':
+                from .creation_batch_delivery_gateway import task_completion
+                result=task_completion(self.settings,request_id,payload['creation_batch_delivery'])
+                return 'completed' if result else None
             if operation in {'publish_copy_generate', 'publish_copy_export'}:
                 from .publish_copy_gateway import native
                 state = native(self.settings, request_id, 'state')
@@ -216,7 +232,11 @@ class BackgroundTaskRunner:
                 state = get_content_delivery_state(self.settings, request_id)
                 done = {
                     "content_plan": bool((state.get("content_plan") or {}).get("ready")),
-                    "script_generation": bool((state.get("generation") or {}).get('generation_completed', (state.get("generation") or {}).get("ready"))),
+                    # Execution can finish with a reviewable accepted subset;
+                    # quantity completion remains the Native projection's false
+                    # flag and never becomes approval/delivery completion.
+                    "script_generation": bool((state.get("generation") or {}).get('execution_completed',
+                        (state.get("generation") or {}).get('generation_completed', (state.get("generation") or {}).get("ready")))),
                     "mix_export": bool(state.get("stop_point_reached")),
                 }[operation]
                 if operation == 'script_generation' and payload.get('generation_recovery'):
@@ -227,7 +247,9 @@ class BackgroundTaskRunner:
                         return 'failed'
                     result = directory / 'result.json'
                     if result.is_file():
-                        return 'completed' if read(result)['outcome'] == 'review_required' and done else 'failed'
+                        record = read(result)
+                        return 'completed' if (record['outcome'] == 'review_required' and done
+                            and record['batch_ref'] == (state.get('generation') or {}).get('batch_ref')) else 'failed'
                     return None
             elif operation in {"news_plan", "news_export"}:
                 state = get_news_delivery_state(self.settings, request_id)
@@ -290,6 +312,10 @@ class BackgroundTaskRunner:
             task_types=("content_generation", "excel_export"),
             reconciler=self._reconcile_business_state,
         )
+        from .creation_batch_gateway import advance_batches
+        with self._lock:
+            quiet=frozenset(self._quiet_batches)
+        advance_batches(self.settings,skip_batches=quiet)
         self.schedule_pending()
 
     def close(self) -> None:
@@ -298,7 +324,58 @@ class BackgroundTaskRunner:
         self.operation_executor.shutdown(wait=False, cancel_futures=False)
 
     def schedule(self, task_id: str | None = None) -> None:
+        with self._lock:
+            self._batch_activity_epoch += 1
+            self._quiet_batches.clear()
         self.schedule_pending()
+
+    def batch_read_epoch(self) -> int:
+        with self._lock:
+            return self._batch_activity_epoch
+
+    def note_batch_read(self, batch_id: str, epoch: int, *, complete: bool) -> None:
+        """Stop idle maintenance only after a fresh Native complete-set read."""
+        with self._lock:
+            if epoch != self._batch_activity_epoch:
+                return  # A newer explicit action must not lose its wake.
+            if complete:self._quiet_batches.add(batch_id)
+            else:self._quiet_batches.discard(batch_id)
+
+    def request_batch_advance(self, batch_id: str) -> None:
+        """A Human result wakes the existing serial worker, without HTTP scans.
+
+        A wake is no Task or approval. Original advance re-reads permissions,
+        controls and Native sources before admitting any real operation.
+        """
+        if not self.settings.background_worker_enabled:
+            return
+        with self._lock:
+            self._batch_activity_epoch += 1
+            self._quiet_batches.clear()
+            previous = self._batch_wakes.get(batch_id, 0)
+            self._batch_wakes[batch_id] = previous + 1
+            if previous:
+                return
+            self.executor.submit(self._advance_after_human, batch_id)
+
+    def _advance_after_human(self, batch_id: str) -> None:
+        try:
+            while True:
+                with self._lock:
+                    observed = self._batch_wakes[batch_id]
+                from .creation_batch_gateway import advance
+                advance(self.settings, batch_id)
+                self.schedule_pending()
+                with self._lock:
+                    if self._batch_wakes[batch_id] == observed:
+                        del self._batch_wakes[batch_id]
+                        return
+        except Exception:
+            # The existing maintenance loop retries original state. A failed
+            # wake must not turn a successful Human receipt into HTTP failure.
+            logging.getLogger(__name__).exception('Batch advancement needs maintenance recovery: %s', batch_id)
+            with self._lock:
+                self._batch_wakes.pop(batch_id, None)
 
     def schedule_pending(self) -> None:
         if not self.settings.background_worker_enabled:
@@ -343,6 +420,10 @@ class BackgroundTaskRunner:
                 return
 
             def execute() -> dict[str, Any]:
+                if operation == 'creation_batch_export':
+                    # Original Delivery child owns backup, Business and history
+                    # fences. No parent re-entry of Windows byte locks.
+                    return self.handlers[operation](self.settings,request_id,**payload['creation_batch_delivery'])
                 if operation in {'publish_copy_generate', 'publish_copy_export'}:
                     # Native short fences and executor ownership do not hold a
                     # Console process lock across external model latency.
@@ -357,6 +438,18 @@ class BackgroundTaskRunner:
                     # The Native owner holds the existing backup/Authority gates
                     # for each mutation, never across external model latency.
                     return self.handlers[operation](self.settings, request_id, task_id=task_id, **payload['novel_generation'])
+                if operation in {'content_plan', 'script_generation','news_plan'}:
+                    from human_review_operations_v1 import read, io_path
+                    from native_batch_v1 import request_path
+                    path = request_path(self.settings.pipeline_root, request_id)
+                    if io_path(path).is_file() and read(path).get('batch_admission_ref'):
+                        # Each Native child owns short backup/Business fences.
+                        # Windows parent and child cannot reacquire one shared
+                        # backup byte lock. Keep only the existing Request lock
+                        # while the external operation runs.
+                        from operation_lock_v1 import operation_lock, scoped_lock_key
+                        with operation_lock(self.settings.pipeline_root, scoped_lock_key('request', request_id), timeout_seconds=0.0):
+                            return self.handlers[operation](self.settings, request_id, **payload.get('generation_recovery', {}))
                 lock_scope = "request"
                 lock_identity = request_id
                 if operation == "mix_export":
@@ -394,7 +487,9 @@ class BackgroundTaskRunner:
                     lease_seconds=self.settings.task_lease_seconds,
                     heartbeat_interval_seconds=self.settings.task_heartbeat_seconds,
                 )
-                time.sleep(min(1.0, self.settings.task_heartbeat_seconds / 2))
+                # Wake as soon as the operation finishes; lease heartbeats keep
+                # their original cadence while a slow operation is still active.
+                wait((future,), timeout=min(1.0, self.settings.task_heartbeat_seconds / 2))
             future.result()
 
             # Completion only records execution. Callers must re-read the
@@ -427,3 +522,5 @@ class BackgroundTaskRunner:
         finally:
             with self._lock:
                 self._scheduled.discard(task_id)
+            if self.settings.background_worker_enabled:
+                self._recover_and_schedule()

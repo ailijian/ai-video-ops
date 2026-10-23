@@ -18,13 +18,14 @@ from .subprocess_env import pipeline_subprocess_env
 def _run(
     settings: Settings, script: str, args: list[str], *,
     payload: dict[str, Any] | None = None, remote: bool = False,
+    local_timeout_seconds: int = 60,
 ) -> dict[str, Any]:
     executable = settings.pipeline_python_executable or settings.python_executable
     command = [executable, str(settings.pipeline_root / "scripts" / script), *args]
     try:
         result = subprocess.run(
             command, cwd=settings.repo_root, capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=180 if remote else 60,
+            encoding="utf-8", errors="replace", timeout=180 if remote else local_timeout_seconds,
             input=json.dumps(payload, ensure_ascii=False) if payload is not None else None,
             env=pipeline_subprocess_env(needs_deepseek=remote), check=False,
         )

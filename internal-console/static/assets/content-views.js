@@ -1,6 +1,6 @@
 import { escapeHtml } from "./case-components.js?v=flow-closure-2";
 import { createPreparationOperation, pinNewsRequestLocation } from "./creation-entry-flow.js?v=entry-auto-2";
-import { createContentDeliveryViews } from "./content-delivery-views.js?v=news-review-ui-2";
+import { createContentDeliveryViews } from "./content-delivery-views.js?v=cbux1-b234-3";
 import { createNewsDeliveryViews } from "./news-delivery-views.js?v=news-review-ui-2";
 import { createNovelNewsViews } from "./novel-news-views.js?v=news-review-ui-2";
 import {

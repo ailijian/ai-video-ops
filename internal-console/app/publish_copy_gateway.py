@@ -68,6 +68,8 @@ def submit(settings, rid, operation, user_id, context, **arguments):
                 return {'accepted': False, 'canonical_result': completed, 'task': existing_task(settings, key)}
         identity = 'publish-delivery:' + rid + ':' + state['draft']['ref']['sha256']
         execution = {'authorization_context': context, 'expected_draft_ref': state['draft']['ref']}
+        if arguments.get('automatic_batch_ref') is not None:
+            execution['automatic_batch_ref'] = arguments['automatic_batch_ref']
     with connect(settings.database_path) as db:
         row = db.execute('SELECT task_id FROM tasks WHERE operation_identity=? ORDER BY rowid DESC LIMIT 1', (identity,)).fetchone()
     if row:

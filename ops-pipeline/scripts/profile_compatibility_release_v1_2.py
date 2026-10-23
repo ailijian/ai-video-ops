@@ -36,7 +36,9 @@ def validate_machine_sources(repo,commit):
         for directory in ('ops-pipeline/scripts','internal-console/app','internal-console/scripts',
                           'internal-console/migrations','deploy/creative-authority')
         for p in (actual_root/directory).rglob('*')
-        if p.is_file() and p.suffix in {'.py','.sql'} and 'tests' not in p.parts}
+        if p.is_file() and (p.suffix in {'.py','.sql'} or p.name in {
+            'creative_style_rules_v1.json','creative_style_contracts_v1.json',
+            'creation_batch_contracts_v1.json','creation_batch_policy_v1.json','creation_batch_policy_v2.json'}) and 'tests' not in p.parts}
     if set(blobs)!=actual_paths:
         raise CompatibilityError('News release commit is not the complete executing machine source set')
     for path in actual_paths:

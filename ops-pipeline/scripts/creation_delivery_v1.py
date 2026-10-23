@@ -132,7 +132,24 @@ def validate_completed(root, src, delivery_id):
             'receipt_ref': ref(root, base / 'receipt.json'), 'completion_ref': ref(root, base / 'completion.json')}
 
 def export(root, rid, context, *, native_owner, ensure_core, expected_draft_ref=None):
+    from publish_copy_v1 import delivery_fence
+    with delivery_fence(root, rid):
+        return _export_fenced(root, rid, context, native_owner=native_owner,
+            ensure_core=ensure_core, expected_draft_ref=expected_draft_ref)
+
+
+def _export_fenced(root, rid, context, *, native_owner, ensure_core, expected_draft_ref):
     root = Path(root).resolve(); src = source(root, rid); proof = identity(context)
+    # Reject an unconfirmed/stale or differently authorized Publish version
+    # before the delegated core writer can create Receipt/Closure/Ledger state.
+    current=draft(root,rid)
+    if (not current or current[1]['source_sha256']!=src['source_sha256']
+            or expected_draft_ref is not None and ref(root,current[0])!=expected_draft_ref):
+        raise PublishCopyError('CONFIRMED_DRAFT_REQUIRED')
+    validate_payload(current[1]['payload'],src);verify_draft(root,src,current[1])
+    confirmed=confirmation(root,rid,current[1])
+    if not confirmed:raise PublishCopyError('CONFIRMED_DRAFT_REQUIRED')
+    validate_identity(context,confirmed[1])
     # Original writers retain sole ownership of the core Export/Closure/Ledger.
     original_receipt, original_closure = ensure_core(src)
     src = source(root, rid)
@@ -268,3 +285,337 @@ def read_version(root,rid,delivery_id):
     result=validate_completed(root,src,delivery_id)
     result['is_current']=bool(head and head[1]['delivery_id']==delivery_id)
     return result
+
+
+def _composite_home(root, batch_id):
+    from native_batch_v1 import directory as batch_directory
+    return batch_directory(root, batch_id) / 'deliveries'
+
+
+def _composite_qualification(root):
+    from native_batch_v1 import policy_qualification
+    active = policy_qualification(root)
+    declared = {v['path']: v['checkout_sha256'] for v in active['manifest']['source_files']}
+    for name in ('creation_delivery_v1.py', 'publish_copy_excel_v1.py', 'publish_copy_sources_v1.py'):
+        if declared.get('ops-pipeline/scripts/' + name) != file_sha(Path(__file__).with_name(name)):
+            raise PublishCopyError('COMPOSITE_QUALIFICATION_REQUIRED')
+    return active
+
+
+def _composite_material(root, batch_id, scope, slot_ids, *, parent_refs=None):
+    """Original Delivery owner validates parents and rebuilds rows, never XLSX copies."""
+    import native_batch_v1 as batch_owner
+    from creative_style_v1 import artifact
+    _, batch = batch_owner.intent(root, batch_id)
+    if (scope not in ('complete_target', 'explicit_legal_subset') or not isinstance(slot_ids, list)
+            or not slot_ids or len(set(slot_ids)) != len(slot_ids)):
+        raise PublishCopyError('COMPOSITE_SCOPE_INVALID')
+    slots = {s['slot_id']: s for s in batch['slots']}
+    if set(slot_ids) - slots.keys() or scope == 'complete_target' and set(slot_ids) != slots.keys():
+        raise PublishCopyError('COMPOSITE_SCOPE_INVALID')
+    ordered = [s['slot_id'] for s in batch['slots'] if s['slot_id'] in slot_ids]
+    if slot_ids != ordered: raise PublishCopyError('COMPOSITE_SCOPE_INVALID')
+    rows, data, parents, sources = {}, {}, [], []
+    def converted(value, owner, item_id):
+        path = resolve_ref(root, value)
+        return artifact(path, owner, item_id, read(path)['schema_version'])
+    for group in batch_owner.groups(root, batch_id):
+        selected = {s['slot_id'] for s in group['slots']} & set(slot_ids)
+        if not selected: continue
+        rid = group['request_id']; src = source(root, rid)
+        if src['business_id'] != batch['business_id']: raise PublishCopyError('COMPOSITE_BUSINESS_CONFLICT')
+        if parent_refs is None:
+            parent = _effective(root, src)
+        else:
+            candidates = [r for r in parent_refs if Path(r['path']).name == 'receipt.json'
+                and Path(r['path']).parent.parent == directory(src)]
+            if len(candidates) != 1: raise PublishCopyError('COMPOSITE_PARENT_REQUIRED')
+            parent = validate_completed(root, src, Path(candidates[0]['path']).parent.name)
+        if parent is None: raise PublishCopyError('COMPOSITE_PARENT_REQUIRED')
+        parent_intent = read(directory(src) / parent['delivery_id'] / 'intent.json')
+        if parent_refs is None:
+            current = draft(root, rid)
+            confirmed = confirmation(root, rid, current[1]) if current else None
+            if (not current or not confirmed or ref(root, current[0]) != parent_intent['draft_ref']
+                    or ref(root, confirmed[0]) != parent_intent['confirmation_ref']):
+                raise PublishCopyError('COMPOSITE_PARENT_VERSION_CHANGED')
+        else:
+            current = (resolve_ref(root, parent_intent['draft_ref']), read(resolve_ref(root, parent_intent['draft_ref'])))
+        approved = read(resolve_ref(root, src['snapshot']['approved_ref']))
+        by_content = {c['content_id']: c for c in approved.get('contents', [])}
+        parent_rows = excel.rows(src, current[1]['payload'])
+        parent_ref = converted(parent['receipt_ref'], 'native-supplemental-delivery', parent['delivery_id'])
+        completion_ref = converted(parent['completion_ref'], 'native-supplemental-delivery', parent['delivery_id'])
+        parents.extend([parent_ref, completion_ref]); sources.append(src)
+        for item, values in zip(src['items'], parent_rows):
+            if group['profile'] == 'mix':
+                content = by_content.get(item['target_id']) or {}
+                sid = content.get('logical_slot_id')
+                if content.get('creative_style') != group['creative_style']:
+                    raise PublishCopyError('COMPOSITE_STYLE_IDENTITY_INVALID')
+            else:
+                if len(group['slots']) != 1: raise PublishCopyError('COMPOSITE_SLOT_INVALID')
+                sid = group['slots'][0]['slot_id']
+                suffix = '-N001' if group['source_kind'] == 'novel_content' else '-P001'
+                if item['target_id'] != rid + suffix: raise PublishCopyError('COMPOSITE_SLOT_INVALID')
+            if sid not in selected: continue
+            if sid in rows: raise PublishCopyError('COMPOSITE_SLOT_INVALID')
+            slot = slots[sid]
+            row = {'row_number': 5, 'slot_id': sid, 'style': slot['creative_style'],
+                'source_kind': slot['source_kind'], 'business_type_id': slot['business_type_id'],
+                'native_content_ref': converted(src['snapshot']['approved_ref'], 'native-approved-content', item['target_id']),
+                'native_approved_ref': converted(src['snapshot']['approved_ref'], 'native-human-review', rid),
+                'publish_draft_ref': converted(parent_intent['draft_ref'], 'native-publish-copy', rid),
+                'publish_confirmation_ref': converted(parent_intent['confirmation_ref'], 'native-publish-confirmation', rid),
+                'parent_receipt_ref': parent_ref, 'parent_completion_ref': completion_ref,
+                'closure_ref': converted(parent_intent['original_closure_ref'], 'native-export-closure', rid)}
+            if parent_intent['original_anchor_ref']:
+                row['history_anchor_ref'] = converted(parent_intent['original_anchor_ref'], 'native-ledger-anchor', rid)
+            rows[sid], data[sid] = row, values
+    if set(rows) != set(slot_ids): raise PublishCopyError('COMPOSITE_APPROVED_SLOT_REQUIRED')
+    if parent_refs is not None and parent_refs != parents: raise PublishCopyError('COMPOSITE_PARENT_VERSION_CHANGED')
+    files, rendered = [], {}
+    for profile in ('news', 'mix'):
+        selected = [s for s in batch['slots'] if s['production_profile'] == profile and s['slot_id'] in rows]
+        if not selected: continue
+        records = [{**rows[s['slot_id']], 'row_number': i} for i, s in enumerate(selected, 5)]
+        template_path = excel.template(profile, root)
+        files.append({'production_profile': profile,
+            'template_ref': artifact(template_path, 'native-delivery-template', profile, 'publish-v1'), 'ordered_rows': records})
+        rendered[profile] = [data[s['slot_id']] for s in selected]
+    return batch, {'business_id': batch['business_id'], 'batch_intent_ref': batch_owner.batch_ref(root, batch_id),
+        'scope': scope, 'ordered_parent_refs': parents, 'files': files}, rendered, sources
+
+
+def composite_preview(root, batch_id, context, *, scope, slot_ids):
+    import native_batch_v1 as batch_owner
+    batch_owner.assert_principal(root, batch_id, context)
+    _composite_qualification(root)
+    batch, material, _, _ = _composite_material(root, batch_id, scope, slot_ids)
+    return {'source_sha256': digest(material), 'scope': scope, 'slot_ids': slot_ids,
+        'target': batch['actual_target'], 'delivered': len(slot_ids), 'shortfall': batch['actual_target'] - len(slot_ids),
+        'files': [{'profile': f['production_profile'], 'rows': len(f['ordered_rows']),
+            'template_sha256': f['template_ref']['sha256']} for f in material['files']]}
+
+
+def _composite_result(root, batch_id, base, expected=None):
+    """Strict complete-set reader; any missing/corrupt file fails the entire set."""
+    root = Path(root).resolve()
+    from creation_batch_contract_v1 import check as batch_check
+    from creative_style_v1 import artifact, pinned
+    intent_path = base / 'intent.json'; value = batch_check(read(intent_path), 'C08')
+    complete_path = base / 'completion.json'; complete = batch_check(read(complete_path), 'C08')
+    declared = {r['slot_id'] for f in value['files'] for r in f['ordered_rows']}
+    batch = __import__('native_batch_v1').intent(root, batch_id)[1]
+    slot_ids = [s['slot_id'] for s in batch['slots'] if s['slot_id'] in declared]
+    batch, material, rendered, sources = _composite_material(root, batch_id, value['scope'], slot_ids,
+        parent_refs=value['ordered_parent_refs'])
+    if expected is not None and material != expected: raise PublishCopyError('COMPOSITE_SOURCE_CHANGED')
+    if ({k: v for k, v in value.items() if k not in ('schema_version', 'actor_intent')} != material
+            or value['actor_intent']['payload_sha256'] != digest(material)
+            or base.name != digest({'material': material, 'actor': value['actor_intent']})[:32]):
+        raise PublishCopyError('COMPOSITE_IDENTITY_INVALID')
+    permission = pinned(value['actor_intent']['permission_snapshot'])
+    original = pinned(batch['actor_intent']['permission_snapshot'])
+    __import__('native_batch_v1').identifier(value['actor_intent']['operation_id'])
+    op = _composite_home(root, batch_id) / 'operations' / digest({'actor': permission['actor'],
+        'operation_id': value['actor_intent']['operation_id']})
+    binding = read(op / 'binding.json')
+    if (value['actor_intent']['permission_snapshot'] != artifact(op / 'permission.json', 'console-authorization',
+            permission['actor']['user_id'], '1') or binding != {'schema_version': 'creation-composite-operation-v1.0',
+            'batch_id': batch_id, 'operation_id': value['actor_intent']['operation_id'], 'intent': value, 'delivery_id': base.name}):
+        raise PublishCopyError('COMPOSITE_IDENTITY_INVALID')
+    if (value['actor_intent']['actor_id'] != str(permission['actor']['user_id'])
+            or permission['actor'] != original['actor'] or any(permission['authorization'][k] != original['authorization'][k]
+            for k in ('database_path', 'user_state_sha256'))): raise PublishCopyError('COMPOSITE_ACTOR_INVALID')
+    iref = artifact(intent_path, 'native-composite-delivery', base.name, value['schema_version'])
+    receipts, outputs = [], []
+    for f in material['files']:
+        profile = f['production_profile']; path = base / (profile + '.receipt.json')
+        receipt = batch_check(read(path), 'C08'); prepared_path = base / (profile + '.prepared.json')
+        prepared = batch_check(read(prepared_path), 'C08')
+        manifest_path = base / (profile + '.rows.json'); manifest = read(manifest_path)
+        expected_manifest = {'schema_version': 'creation-composite-row-manifest-v1.0', 'intent_ref': iref,
+            'production_profile': profile, 'ordered_rows': f['ordered_rows'], 'data_rows_sha256': digest(rendered[profile])}
+        if manifest != expected_manifest: raise PublishCopyError('COMPOSITE_ROWS_INVALID')
+        mref = artifact(manifest_path, 'native-composite-rows', profile, manifest['schema_version'])
+        output = Path(root) / 'output/deliveries' / batch_id / base.name / (profile + '.xlsx')
+        staged = base / (profile + '.xlsx')
+        if (receipt['intent_ref'] != iref or prepared['intent_ref'] != iref
+                or receipt['business_id'] != batch['business_id'] or prepared['business_id'] != batch['business_id']
+                or receipt['production_profile'] != profile or prepared['production_profile'] != profile
+                or receipt['actor_intent'] != value['actor_intent'] or prepared['actor_intent'] != value['actor_intent']
+                or receipt['prepared_ref'] != artifact(prepared_path, 'native-composite-prepared', profile, prepared['schema_version'])
+                or receipt['row_manifest_ref'] != mref or prepared['row_manifest_ref'] != mref
+                or receipt['published_file_path'] != str(output) or prepared['prepared_file_path'] != str(staged)
+                or prepared['template_ref'] != f['template_ref'] or prepared['output_bytes'] != staged.stat().st_size
+                or file_sha(staged) != prepared['output_sha256'] or file_sha(output) != receipt['output_sha256']
+                or receipt['output_sha256'] != prepared['output_sha256']): raise PublishCopyError('COMPOSITE_RECEIPT_INVALID')
+        excel.validate_workbook(output, Path(f['template_ref']['path']), rendered[profile])
+        excel.validate_workbook(staged, Path(f['template_ref']['path']), rendered[profile])
+        receipts.append(artifact(path, 'native-composite-receipt', profile, receipt['schema_version']))
+        outputs.append({'profile': profile, 'rows': len(f['ordered_rows']), 'path': str(output),
+            'sha256': receipt['output_sha256'], 'receipt_ref': receipts[-1]})
+    if complete != {'schema_version': 'creation-composite-delivery-completion-v1.0', 'business_id': batch['business_id'],
+            'intent_ref': iref, 'ordered_file_receipt_refs': receipts, 'scope': value['scope'], 'delivered_slot_ids': slot_ids,
+            'semantic_delta': 0, 'exposure_delta': 0, 'presentation_delta': 0, 'actor_intent': value['actor_intent']}:
+        raise PublishCopyError('COMPOSITE_COMPLETION_INVALID')
+    current_version = True
+    for src in sources:
+        head = _effective(root, src); current = draft(root, src['request_id'])
+        parent_refs = [r for r in material['ordered_parent_refs'] if Path(r['path']).name == 'receipt.json'
+            and Path(r['path']).parent.parent == directory(src)]
+        if len(parent_refs) != 1 or head is None or current is None:
+            current_version = False; continue
+        parent = read(resolve_ref(root, head['receipt_ref']))
+        parent_intent = read(directory(src) / head['delivery_id'] / 'intent.json')
+        confirmed = confirmation(root, src['request_id'], current[1])
+        if (str(resolve_ref(root, head['receipt_ref'])) != parent_refs[0]['path']
+                or head['receipt_ref']['sha256'] != parent_refs[0]['sha256']
+                or parent_intent['draft_ref'] != ref(root, current[0]) or confirmed is None
+                or confirmed is not None and parent['confirmation_ref'] != ref(root, confirmed[0])):
+            current_version = False
+    return {'delivery_id': base.name, 'batch_id': batch_id, 'scope': value['scope'], 'slot_ids': slot_ids,
+        'target': batch['actual_target'], 'delivered': len(slot_ids), 'shortfall': batch['actual_target'] - len(slot_ids),
+        'source_sha256': digest(material), 'is_current': current_version, 'files': outputs,
+        'completion_ref': artifact(complete_path, 'native-composite-completion', base.name, complete['schema_version'])}
+
+
+def composite_export(root, batch_id, context, *, scope, slot_ids, operation_id, source_sha256):
+    """A04 delegation: original multi-parent supplemental writer, zero ledger delta."""
+    from contextlib import ExitStack
+    import native_batch_v1 as batch_owner
+    from creation_batch_contract_v1 import check as batch_check
+    from creative_style_v1 import artifact
+    root = Path(root).resolve(); batch_owner.identifier(operation_id)
+    batch_owner.assert_principal(root, batch_id, context); _composite_qualification(root)
+    home = _composite_home(root, batch_id)
+    op = home / 'operations' / digest({'actor': context['actor'], 'operation_id': operation_id})
+    if (op / 'binding.json').is_file():
+        original = read(op / 'binding.json'); previous = original['intent']
+        if (home / original['delivery_id'] / 'completion.json').is_file():
+            old_material = {k: v for k, v in previous.items() if k not in ('schema_version', 'actor_intent')}
+            result = _composite_result(root, batch_id, home / original['delivery_id'])
+            if scope != previous['scope'] or slot_ids != result['slot_ids'] or source_sha256 != digest(old_material):
+                raise PublishCopyError('COMPOSITE_IDENTITY_INVALID')
+            return result
+    batch, material, rendered, sources = _composite_material(root, batch_id, scope, slot_ids)
+    if digest(material) != source_sha256: raise PublishCopyError('COMPOSITE_PREFLIGHT_STALE')
+    from news_qualification_v1_2 import prohibit_write
+    prohibit_write(root)
+    from ledger_history_v1 import history_lock
+    with mutation_fence(root), ExitStack() as stack:
+        for src in sources: stack.enter_context(current_authority(root, src))
+        stack.enter_context(operation_lock(root, 'business:' + batch['business_id']))
+        stack.enter_context(history_lock(root, batch['business_id']))
+        current_batch, current, rendered, _ = _composite_material(root, batch_id, scope, slot_ids)
+        if current != material: raise PublishCopyError('COMPOSITE_SOURCE_CHANGED')
+        saved_path = op / 'permission.json'
+        if saved_path.is_file():
+            saved = read(saved_path)
+            identity(context)
+            if (saved['actor'] != context['actor'] or any(saved['authorization'][k] != context['authorization'][k]
+                    for k in ('database_path', 'user_state_sha256'))): raise PublishCopyError('COMPOSITE_ACTOR_INVALID')
+        else: write_once(saved_path, context)
+        actor = {'actor_id': str(context['actor']['user_id']), 'operation_id': operation_id,
+            'permission_snapshot': artifact(saved_path, 'console-authorization', context['actor']['user_id'], '1'),
+            'payload_sha256': digest(material)}
+        value = batch_check({'schema_version': 'creation-composite-delivery-intent-v1.0', **material, 'actor_intent': actor}, 'C08')
+        did = digest({'material': material, 'actor': actor})[:32]; base = home / did
+        binding = {'schema_version': 'creation-composite-operation-v1.0', 'batch_id': batch_id,
+            'operation_id': operation_id, 'intent': value, 'delivery_id': did}
+        write_once(op / 'binding.json', binding)
+        write_once(base / 'intent.json', value)
+        if (base / 'completion.json').is_file(): return _composite_result(root, batch_id, base, material)
+        iref = artifact(base / 'intent.json', 'native-composite-delivery', did, value['schema_version'])
+        receipts = []
+        for f in material['files']:
+            profile = f['production_profile']; staged = base / (profile + '.xlsx')
+            prepared_path = base / (profile + '.prepared.json'); receipt_path = base / (profile + '.receipt.json')
+            output = root / 'output/deliveries' / batch_id / did / (profile + '.xlsx')
+            if output.exists() and not prepared_path.is_file(): raise PublishCopyError('COMPOSITE_UNBOUND_ORPHAN')
+            manifest = {'schema_version': 'creation-composite-row-manifest-v1.0', 'intent_ref': iref,
+                'production_profile': profile, 'ordered_rows': f['ordered_rows'], 'data_rows_sha256': digest(rendered[profile])}
+            manifest_path = base / (profile + '.rows.json'); write_once(manifest_path, manifest)
+            if not staged.is_file(): excel.render(staged, Path(f['template_ref']['path']), rendered[profile])
+            excel.validate_workbook(staged, Path(f['template_ref']['path']), rendered[profile])
+            prepared = {'schema_version': 'creation-composite-delivery-prepared-v1.0', 'business_id': batch['business_id'],
+                'intent_ref': iref, 'production_profile': profile, 'template_ref': f['template_ref'],
+                'row_manifest_ref': artifact(manifest_path, 'native-composite-rows', profile, manifest['schema_version']),
+                'output_sha256': file_sha(staged), 'output_bytes': staged.stat().st_size,
+                'prepared_file_path': str(staged), 'actor_intent': actor}
+            write_once(prepared_path, batch_check(prepared, 'C08'))
+            output.parent.mkdir(parents=True, exist_ok=True)
+            if not output.exists():
+                try: os.link(staged, output)
+                except FileExistsError: pass
+            if file_sha(output) != prepared['output_sha256']: raise PublishCopyError('COMPOSITE_PUBLICATION_CONFLICT')
+            excel.validate_workbook(output, Path(f['template_ref']['path']), rendered[profile])
+            receipt = {'schema_version': 'creation-composite-delivery-receipt-v1.0', 'business_id': batch['business_id'],
+                'intent_ref': iref, 'prepared_ref': artifact(prepared_path, 'native-composite-prepared', profile, prepared['schema_version']),
+                'production_profile': profile, 'published_file_path': str(output), 'output_sha256': prepared['output_sha256'],
+                'row_manifest_ref': prepared['row_manifest_ref'], 'actor_intent': actor}
+            write_once(receipt_path, batch_check(receipt, 'C08'))
+            receipts.append(artifact(receipt_path, 'native-composite-receipt', profile, receipt['schema_version']))
+        complete = {'schema_version': 'creation-composite-delivery-completion-v1.0', 'business_id': batch['business_id'],
+            'intent_ref': iref, 'ordered_file_receipt_refs': receipts, 'scope': scope, 'delivered_slot_ids': slot_ids,
+            'semantic_delta': 0, 'exposure_delta': 0, 'presentation_delta': 0, 'actor_intent': actor}
+        write_once(base / 'completion.json', batch_check(complete, 'C08'))
+        return _composite_result(root, batch_id, base, material)
+
+
+def composite_version(root, batch_id, delivery_id, context):
+    import native_batch_v1 as batch_owner
+    batch_owner.assert_principal(root, batch_id, context)
+    identifier(delivery_id, r'[a-f0-9]{32}')
+    return _composite_result(Path(root), batch_id, _composite_home(root, batch_id) / delivery_id)
+
+
+def composite_operation(root, batch_id, *, operation_id, expected_actor):
+    """Original Task owner's read-only completion proof, including expired Sessions."""
+    import native_batch_v1 as batch_owner
+    from creative_style_v1 import pinned
+    batch_owner.identifier(operation_id)
+    batch = batch_owner.intent(root, batch_id)[1]
+    if pinned(batch['actor_intent']['permission_snapshot'])['actor'] != expected_actor:
+        raise PublishCopyError('COMPOSITE_ACTOR_INVALID')
+    home = _composite_home(root, batch_id)
+    op = home / 'operations' / digest({'actor': expected_actor, 'operation_id': operation_id})
+    if not (op / 'binding.json').is_file(): return None
+    binding = read(op / 'binding.json')
+    if (binding.get('schema_version')!='creation-composite-operation-v1.0' or binding.get('batch_id')!=batch_id
+            or binding.get('operation_id')!=operation_id or binding['intent']['actor_intent']['operation_id']!=operation_id
+            or pinned(binding['intent']['actor_intent']['permission_snapshot'])['actor']!=expected_actor):
+        raise PublishCopyError('COMPOSITE_IDENTITY_INVALID')
+    base = home / identifier(binding['delivery_id'], r'[a-f0-9]{32}')
+    if not (base / 'completion.json').is_file(): return None
+    return _composite_result(Path(root), batch_id, base)
+
+
+def composite_list(root, batch_id, context):
+    import native_batch_v1 as batch_owner
+    batch_owner.assert_principal(root, batch_id, context)
+    completed, blocked = [], []
+    for path in sorted(_composite_home(root, batch_id).glob('*/completion.json')):
+        try: completed.append(_composite_result(Path(root), batch_id, path.parent))
+        except (RuntimeError, OSError, ValueError, KeyError, TypeError) as exc:
+            blocked.append({'delivery_id': path.parent.name, 'code': getattr(exc, 'code', 'COMPOSITE_RECEIPT_INVALID')})
+    return {'completed': completed, 'blocked': blocked}
+
+
+if __name__ == '__main__':
+    import argparse, json, sys
+    parser = argparse.ArgumentParser()
+    parser.add_argument('command', choices=('composite-preview', 'composite-export', 'composite-version', 'composite-operation', 'composite-list'))
+    parser.add_argument('--pipeline-root', type=Path, required=True)
+    parser.add_argument('--batch-id', required=True)
+    args = parser.parse_args()
+    try:
+        payload = json.load(sys.stdin); context = payload.pop('authorization_context', None)
+        action = {'composite-preview': composite_preview, 'composite-export': composite_export,
+                  'composite-version': composite_version, 'composite-operation': composite_operation, 'composite-list': composite_list}[args.command]
+        result = action(args.pipeline_root, args.batch_id, **({'context': context} if args.command != 'composite-operation' else {}), **payload)
+        print(json.dumps({'ok': True, 'result': result}, ensure_ascii=False))
+    except (RuntimeError, OSError, ValueError, KeyError, TypeError) as exc:
+        print(json.dumps({'ok': False, 'code': getattr(exc, 'code', 'COMPOSITE_DELIVERY_INVALID')}, ensure_ascii=False))
+        sys.exit(1)

@@ -55,14 +55,14 @@ def allowed_artifact(relative):
 
 
 @contextmanager
-def control_read(control):
+def control_read(control, *, timeout_seconds=15.0):
     """Share an already held fence only within the same synchronous OS thread."""
     key = str(Path(control).resolve())
     held = getattr(_read_scope, 'held', frozenset())
     if key in held:
         yield
         return
-    with operation_lock(control, CONTROL_LOCK, shared=True):
+    with operation_lock(control, CONTROL_LOCK, shared=True, timeout_seconds=timeout_seconds):
         _read_scope.held = held | {key}
         try:
             yield
@@ -261,7 +261,12 @@ def source_blobs(repo_root, commit):
     """Read only committed machine sources; no runtime artifacts enter this map."""
     names = subprocess.check_output(['git', '-C', str(repo_root), 'ls-tree', '-r', '--name-only', commit, '--',
         'ops-pipeline/scripts', 'internal-console/app', 'internal-console/scripts', 'internal-console/migrations', 'deploy/creative-authority'], text=True).splitlines()
-    names = sorted(n for n in names if n.endswith(('.py', '.sql')) and '/tests/' not in n)
+    names = sorted(n for n in names if (n.endswith(('.py', '.sql')) or n in {
+        'ops-pipeline/scripts/creative_style_rules_v1.json',
+        'ops-pipeline/scripts/creative_style_contracts_v1.json',
+        'ops-pipeline/scripts/creation_batch_contracts_v1.json',
+        'ops-pipeline/scripts/creation_batch_policy_v1.json',
+        'ops-pipeline/scripts/creation_batch_policy_v2.json'}) and '/tests/' not in n)
     if not names:
         raise CompatibilityError('Release source machine owners are unavailable')
     archive = subprocess.check_output(['git', '-C', str(repo_root), 'archive', '--format=tar', commit, '--', *names])

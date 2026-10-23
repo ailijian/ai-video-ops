@@ -13,12 +13,12 @@ from app.background_task_service import BackgroundTaskRunner
 from app.task_service import get_task
 
 
-def native_news_runtime(node,*,mixed=False):
+def native_news_runtime(node,*,mixed=False,pricing_facts=None):
     if mixed:
         from compatibility_golden_support import prepare_native_golden
         prepare_native_golden(node)
     news=prepare_news_compatibility(node)
-    business=prepare_news_business(node)
+    business=prepare_news_business(node,pricing_facts=pricing_facts)
     settings,accounts,storage=node;root=settings.pipeline_root
     project=Path(__file__).resolve().parents[2]
     repo,owner=committed_source_snapshot(project,storage/'s',complete=True)

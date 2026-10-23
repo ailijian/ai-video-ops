@@ -1,4 +1,5 @@
 import {enhanceReviewDisclosures,bindReviewReturnLinks} from './customer-review-presentation.mjs?v=customer-speaker-scope-1';
+import { batchHistoryMarkup } from './creation-batch-view.mjs?v=cbux1-b234-3';
 import { bindFinalCustomerConfirmation } from "./customer-final-confirmation.mjs?v=customer-speaker-scope-1";
 import {bindCustomerSpeakerConfirmation} from './customer-speaker-confirmation.mjs?v=customer-speaker-scope-1';
 import { amendmentPanel, bindAmendment, bindingReviewPanel, mountRecovery } from "./review-workflow-ui.mjs?v=profile-correction-ui-1";
@@ -10,7 +11,7 @@ import {
   customerStatusPill,
   editableFactValue,
   parseEditedFactValue,
-} from "./customer-components.js?v=customer-card-navigation-1";
+} from "./customer-components.js?v=cbux1-b234-3";
 import {
   speakerCard,
 } from "./speaker-components.js?v=flow-closure-2";
@@ -29,7 +30,7 @@ import {
 } from "./profile-components.js?v=productized-stage2-3";
 import { startTaskPolling } from "./task-progress.js";
 import {watchCustomerSpeakerTasks} from './customer-speaker-status.mjs?v=speaker-status-sync-1';
-import { ContentOperationsPanel } from "./content-operations-views.js?v=productized-stage3-3";
+import { ContentOperationsPanel } from "./content-operations-views.js?v=cbux1-b234-3";
 
 const CUSTOMER_PROFILE_GROUPS = [
   {
@@ -1329,9 +1330,12 @@ export function createCustomerViews({
     const host = document.querySelector("[data-customer-content-operations]");
     if (!host) return;
     try {
-      const data = await api(`/api/customers/${encodeURIComponent(businessId)}/content-operations`);
+      const [data, batches] = await Promise.all([
+        api(`/api/customers/${encodeURIComponent(businessId)}/content-operations`).catch(() => null),
+        api(`/api/create/batches?business_id=${encodeURIComponent(businessId)}`).catch(() => null),
+      ]);
       if (!host.isConnected) return;
-      host.innerHTML = ContentOperationsPanel(data);
+      host.innerHTML = batchHistoryMarkup(batches) + (data ? ContentOperationsPanel(data) : '<p class="field-hint">内容概览暂时无法可靠读取；已有批次仍可查看。</p>');
       bindCommonActions(host);
     } catch {
       if (!host.isConnected) return;
@@ -1375,7 +1379,7 @@ export function createCustomerViews({
     const primaryAction = constraintBlocked
       ? `<a class="btn btn-primary" href="#constraints" data-profile-tab="constraints">查看待核实事项</a>`
       : detail.creation_entry_ready
-      ? `<a class="btn btn-primary" href="/create?business_id=${encodeURIComponent(detail.business_id)}" data-route>${detail.creation_constraints?.legacy_scope_available ? "检查创作条件" : "去创作"}</a>`
+      ? `<a class="btn btn-primary" href="/create/config?business_id=${encodeURIComponent(detail.business_id)}" data-route>${detail.creation_constraints?.legacy_scope_available ? "检查创作条件" : "开始创作"}</a>`
       : !speakers.length
         ? `<a class="btn btn-primary" href="/customers/${encodeURIComponent(detail.business_id)}/speakers/new" data-route>添加出镜人</a>`
         : analyzingSpeakers.length === 1

@@ -38,7 +38,9 @@ def committed_source_snapshot(source_root, repo, *, complete=False):
             for directory in ('ops-pipeline/scripts','internal-console/app','internal-console/scripts',
                               'internal-console/migrations','deploy/creative-authority')
             for p in (source_root/directory).rglob('*')
-            if p.is_file() and p.suffix in {'.py','.sql'} and 'tests' not in p.parts)
+            if p.is_file() and (p.suffix in {'.py','.sql'} or p.name in {
+                'creative_style_rules_v1.json','creative_style_contracts_v1.json',
+                'creation_batch_contracts_v1.json','creation_batch_policy_v1.json','creation_batch_policy_v2.json'}) and 'tests' not in p.parts)
     for relative in paths:
         path = repo / relative
         path.parent.mkdir(parents=True, exist_ok=True)

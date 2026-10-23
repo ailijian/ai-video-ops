@@ -1,0 +1,137 @@
+{
+  "schema_version": "creative-style-rule-definitions-v1.0",
+  "rule_set_version": "3",
+  "enabled_styles": [
+    "persona",
+    "story",
+    "conversion"
+  ],
+  "product_rule_baseline_sha256": "13844cf74cd3eaf3a80e104fad26fbf56aa4548204c26597ab2e9623625fd0c3",
+  "styles": {
+    "persona": {
+      "production_profile": "mix",
+      "allowed_quantities": [
+        1,
+        2
+      ],
+      "required_speaker_facts": [
+        "speaker_role_facts",
+        "first_person_allowed_topics"
+      ],
+      "structure": [
+        "本人观点或职责",
+        "已批准本人依据",
+        "有边界的经营表达"
+      ],
+      "cta_intent": "none",
+      "style_id": "persona",
+      "style_version": "1",
+      "definition": "Express the approved Speaker's own viewpoint or practice in first person. Cite known Speaker facts. Do not invent experience, seniority or business authority.",
+      "required_fact_roles": [
+        "founder_or_operator_story",
+        "process_facts",
+        "values"
+      ],
+      "required_speaker_roles": [
+        "speaker_role_facts",
+        "first_person_allowed_topics"
+      ],
+      "forbidden_claims": [
+        "不得制造客户或人物事实",
+        "不得转移Case中的客户经历",
+        "不得越过当前人物/来源/兼容性和人工批准权限"
+      ],
+      "acceptance_samples": [
+        "本人职责或观点作为中心，并解释已批准的具体依据；普通流程加第一人称尾句不合格"
+      ],
+      "cta_policy": "none",
+      "target_duration_advisory": true
+    },
+    "story": {
+      "production_profile": "mix",
+      "allowed_quantities": [
+        1,
+        2
+      ],
+      "event_fact_fields": [
+        "founder_or_operator_story",
+        "brand_story"
+      ],
+      "structure": [
+        "有来源的真实事件",
+        "有依据的经过与选择",
+        "来源支持的结果或体会"
+      ],
+      "cta_intent": "none",
+      "style_id": "story",
+      "style_version": "1",
+      "definition": "Narrate only one approved actual event. Use an exact known event fact as the center; do not turn a general role/process into an invented incident or copy a Case customer's story. Use the exact approved event as the Concept center and in narration. Third-person narration is required unless this exact event is also a Known personal Speaker fact.",
+      "required_fact_roles": [
+        "founder_or_operator_story",
+        "brand_story"
+      ],
+      "required_speaker_roles": [
+        "speaker_role_facts"
+      ],
+      "forbidden_claims": [
+        "不得制造客户或人物事实",
+        "不得转移Case中的客户经历",
+        "不得越过当前人物/来源/兼容性和人工批准权限"
+      ],
+      "acceptance_samples": [
+        "明确来源的实际事件，经过和结果均不超过已批准事实"
+      ],
+      "cta_policy": "none",
+      "target_duration_advisory": true
+    },
+    "conversion": {
+      "production_profile": "mix",
+      "allowed_quantities": [
+        1,
+        2
+      ],
+      "service_fact_fields": [
+        "primary_products_or_services",
+        "product_or_service_facts",
+        "included_service_facts"
+      ],
+      "need_fact_fields": [
+        "core_audience",
+        "customer_pains",
+        "customer_use_cases"
+      ],
+      "structure": [
+        "已批准的适用需求",
+        "真实服务价值和条件",
+        "合法咨询引导"
+      ],
+      "cta_intent": "service_inquiry",
+      "permitted_cta": "如需了解服务细节，可以先咨询适用条件。",
+      "style_id": "conversion",
+      "style_version": "1",
+      "definition": "Connect an approved customer need to the approved service value and its conditions. Use only the permitted neutral inquiry CTA; never invent offers, scarcity, outcomes or guarantees. Cite an approved value and an approved need separately; preserve all stated service conditions. Use exactly the neutral inquiry sentence in the versioned CTA policy.",
+      "required_fact_roles": [
+        "primary_products_or_services",
+        "product_or_service_facts",
+        "included_service_facts",
+        "pricing_facts",
+        "core_audience",
+        "customer_pains",
+        "customer_use_cases"
+      ],
+      "required_speaker_roles": [
+        "speaker_role_facts"
+      ],
+      "forbidden_claims": [
+        "不得制造客户或人物事实",
+        "不得转移Case中的客户经历",
+        "不得越过当前人物/来源/兼容性和人工批准权限"
+      ],
+      "acceptance_samples": [
+        "已批准服务价值与适用需求、条件及中性咨询引导"
+      ],
+      "cta_policy": "neutral-service-inquiry-v1:如需了解服务细节，可以先咨询适用条件。",
+      "target_duration_advisory": true
+    }
+  }
+}

@@ -758,6 +758,8 @@ def main() -> None:
         default=str(Path(__file__).resolve().parents[1]),
     )
 
+    parser.add_argument('--creative-style-id')
+    parser.add_argument('--configuration-file')
     args = parser.parse_args()
 
     try:
@@ -769,7 +771,14 @@ def main() -> None:
             requested_quantity=(args.quantity),
         )
 
-    except ContentCreationEntryError as exc:
+        if args.creative_style_id is not None:
+            import creative_style_v1 as style
+            if args.profile!='mix' or args.quantity!=1:
+                raise style.CreativeStyleError('CREATIVE_STYLE_SINGLE_ONLY','B1 supports one Mix Style video only')
+            config=read_json(Path(args.configuration_file)) if args.configuration_file else None
+            entry['creative_style_preflight']=style.admission_preflight(Path(args.pipeline_root),args.business_id,
+                args.speaker_id,args.creative_style_id,config,entry)
+    except (ContentCreationEntryError,__import__('creative_style_v1').CreativeStyleError,AuthorityResolutionError) as exc:
         print(
             json.dumps(
                 {

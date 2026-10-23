@@ -312,7 +312,7 @@ def _validate_recovered_closure(
         )
 
 
-def historical_ledger_material(root, request_id, kind, exported_at):
+def historical_ledger_material(root, request_id, kind, exported_at, *, _sealed_export_receipt=False):
     """Frozen Native sources for full semantic replay, without a current gate."""
     from profile_compatibility_decisions_v1_1 import ref, resolve_ref
     from delivery_receipt_recovery_v1 import human_state, validate_export_receipt
@@ -330,7 +330,12 @@ def historical_ledger_material(root, request_id, kind, exported_at):
     output=Path(root)/intent['output_path'];receipt_path=output.with_suffix('.export_receipt.json')
     receipt=read_json(receipt_path);validate_export_receipt(root,receipt,output,request_id=request_id)
     template=resolve_ref(root,intent['template_ref'])
-    validate_workbook(output,template,approved['contents'])
+    if not _sealed_export_receipt:
+        validate_workbook(output,template,approved['contents'])
+    # The Ledger owner's sealed read path already checks the immutable Native
+    # seal, publication/receipt and every source/output SHA. Only that reader
+    # reuses the original workbook verdict; all write/replay defaults still
+    # perform the complete workbook validation above.
     persona=_resolve_lineage_file(request['lineage']['business_persona_ref'],'Business Persona')
     speaker=_resolve_lineage_file(request['lineage']['speaker_persona_ref'],'Speaker Persona')
     sources={k:ref(root,p) for k,p in {'request':request_path,'approved':approved_path,'human':human,

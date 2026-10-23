@@ -88,7 +88,7 @@ def prepare_news_compatibility(node):
     return result
 
 
-def prepare_news_business(node, *, customer_name='明禾餐食（全虚构 Golden）'):
+def prepare_news_business(node, *, customer_name='明禾餐食（全虚构 Golden）', pricing_facts=None):
     """Explicit fictional source correction through the existing Human Owner."""
     from compatibility_golden_support import prepare_native_business
     from test_customer_speaker_revision_v1 import review_current
@@ -97,8 +97,9 @@ def prepare_news_business(node, *, customer_name='明禾餐食（全虚构 Golde
     result=prepare_native_business(node, customer_name=customer_name)
     client=result['client'];headers=result['headers'];csrf=headers['X-CSRF-Token']
     bid=result['business_id'];sid=result['speaker_id'];url='/api/customers/'+bid
-    changes=[{'field':'pricing_facts','value':['午餐套餐29元，仅限到店自取，不含配送'],
-        'evidence':'全虚构客户明确提供：午餐套餐29元，仅限到店自取，不含配送。'},
+    prices=pricing_facts if pricing_facts is not None else ['午餐套餐29元，仅限到店自取，不含配送']
+    changes=[{'field':'pricing_facts','value':prices,
+        'evidence':'全虚构客户明确提供：'+'。'.join(prices)+'。'},
         {'field':'included_service_facts','value':['套餐含一份主食与两份蔬菜','门店提供密封餐盒'],
         'evidence':'全虚构客户明确提供：套餐含一份主食与两份蔬菜，门店提供密封餐盒。'}]
     detail=client.get(url).json()

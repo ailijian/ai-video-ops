@@ -72,7 +72,7 @@ export function createContentDeliveryViews({ api, showToast, escapeHtml }) {
     return `
       <section class="work-surface creation-workflow-header">
         ${CreationHeader({
-          eyebrow: "素材混剪",
+          eyebrow: ({persona:"人设型",story:"故事型",conversion:"高转化型"}[state.creative_style?.style_id] || "素材混剪"),
           title: labels[state.next_action] || "继续创作",
           description: "按选题、文案、审核和导出完成本次创作。",
         })}
@@ -200,7 +200,7 @@ export function createContentDeliveryViews({ api, showToast, escapeHtml }) {
         content: ExportSummary([
           { label: "客户", value: state.business_display_name || state.business_id || "" },
           { label: "出镜人", value: state.speaker_display_name || state.speaker_id || "" },
-          { label: "内容类型", value: "素材混剪" },
+          { label: "内容类型", value: ({persona:"人设型",story:"故事型",conversion:"高转化型"}[state.creative_style?.style_id] || "素材混剪") },
           { label: "通过数量", value: `${approved} 条` },
           ...(state.export?.output_name ? [{ label: "文件名", value: state.export.output_name, wide: true }] : []),
         ]),

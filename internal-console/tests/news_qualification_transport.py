@@ -5,10 +5,10 @@ import json
 def novel_transport(prompt):
     value=json.loads(prompt)
     atoms=value['allowed_fact_atoms']
-    price=next(a for a in atoms if a['field']=='pricing_facts')
+    price=next(a for a in atoms if a['field']=='pricing_facts' and a['fact'] in value['selected_opportunity']['central_claim'])
     support=[]
     for atom in atoms:
-        if atom!=price and atom['fact'] not in {a['fact'] for a in support}:
+        if atom['field']!='pricing_facts' and atom['fact'] not in {a['fact'] for a in support}:
             support.append(atom)
     assert len(support)>=3
     return {'payload':{'beats':[{

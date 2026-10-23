@@ -15,5 +15,5 @@ assert.match(html,/解析失败/);
 html=customerCard({business_id:"fictional",display_name:"很长的虚构客户名称",detail_url:"/customers/fictional",industry:"餐饮",
   approved_speaker_count:0,creation_record_count:0,pending_count:0,operation:{kind:"ready",status:"可创作",primary:{url:"/create?business_id=fictional",label:"开始创作"}}});
 assert.doesNotMatch(html,/customer-operation-metrics|<dd>|>0</);
-assert.match(html,/暂无创作记录/);assert.match(html,/\/create\?business_id=fictional/);
+assert.match(html,/暂无创作记录/);assert.match(html,/\/create\/config\?business_id=fictional/);
 console.log("BRAND_LIST_RENDERING_CONTRACT_PASS");

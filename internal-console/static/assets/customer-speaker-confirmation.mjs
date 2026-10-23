@@ -1,7 +1,7 @@
 import {enhanceReviewDisclosures} from './customer-review-presentation.mjs?v=customer-speaker-scope-1';
 import {bindFinalCustomerConfirmation} from './customer-final-confirmation.mjs?v=customer-speaker-scope-1';
 import {escapeHtml} from './case-components.js?v=flow-closure-2';
-import {customerFieldLabel,parseEditedFactValue,editableFactValue} from './customer-components.js?v=flow-closure-2';
+import {customerFieldLabel,parseEditedFactValue,editableFactValue} from './customer-components.js?v=cbux1-b234-3';
 
 const LABELS={speaker_role_facts:'本人职责与经历',first_person_allowed_topics:'可以由本人讲述的内容',
   first_person_scope:'表达范围',role_scope_constraints:'表达与职责边界',first_person_forbidden_claims:'不可使用的第一人称表达',public_display_name:'姓名',public_role:'公开身份'};

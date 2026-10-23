@@ -64,7 +64,9 @@ def test_customer_list_and_detail_are_product_management_surfaces():
     assert "customerProfileSections(facts)" in customer
     assert "return formatProfileValue(value" in customer_components
     assert 'class="fact-json"' not in customer_components
-    assert "去创作" in customer
+    # CREATION_BATCH_UX_1 routes fresh creation through the approved configuration entry.
+    assert "开始创作" in customer
+    assert "/create/config?business_id=" in customer
     assert "仍需检查内容机会与可行性" in customer
     assert "添加出镜人" in customer
 

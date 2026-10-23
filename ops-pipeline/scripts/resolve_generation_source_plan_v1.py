@@ -127,7 +127,8 @@ def load_request_and_handoff(
     request = read_json(request_path)
     handoff = read_json(handoff_path)
 
-    if request.get("schema_version") != REQUEST_SCHEMA_VERSION:
+    from creative_style_v1 import request_schema_supported
+    if not request_schema_supported(request):
         raise SourcePlanError(
             "GENERATION_REQUEST_INVALID",
             "Generation Request schema_version is invalid.",

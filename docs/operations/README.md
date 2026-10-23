@@ -53,6 +53,7 @@ Runtime artifact paths in the Authority Map and Artifact Lifecycle are relative 
 | Mix zero-output transport failure recovery, effective Batch and completed-operation replay | [Native Generation](../../ops-pipeline/scripts/resolve_generation_batch_v1.py), [recovery machine schemas](../../ops-pipeline/scripts/generation_recovery_v1.py), [Console protocol](../../internal-console/README.md#mix-generation-recovery) |
 | Novel News opportunities, review, export and semantic closure | [Opportunity projection](../../ops-pipeline/scripts/novel_news_opportunity_v1.py), [Novel News](../../ops-pipeline/scripts/novel_news_v1.py); shared novelty rules remain in [Content Quality](../../ops-pipeline/scripts/content_quality_v1.py) |
 | Native Novel/Repurpose export safety and interrupted publication | [News export recovery](NEWS_NATIVE_EXPORT_RECOVERY_V1.md), [executable schemas](../../ops-pipeline/scripts/news_export_recovery_v1.py); original Native News writers retain Receipt, Closure and Ledger ownership; this protocol grants no News qualification |
+| Finite customer batch configuration, Native admission/reservations and concentrated Human commands | [Console protocol](../../internal-console/README.md#creation-entry-preparation), [original Request coordination](../../ops-pipeline/scripts/native_batch_v1.py), [C07 delegation](../../ops-pipeline/scripts/creation_batch_review_v1.py); isolated engineering scope and test evidence do not grant production eligibility or a second approval/ledger authority |
 | Novel News model dispatch uncertainty and explicit retries | [Native generation recovery](NEWS_NATIVE_GENERATION_RECOVERY_V1.md), [attempt schemas and immutable evidence](../../ops-pipeline/scripts/novel_news_generation_recovery_v1.py); [original Native owner](../../ops-pipeline/scripts/novel_news_v1.py) retains Plan validation/publication; generic Task recovery and Human/export gates remain independent |
 | News v1.2 independent approval, isolated qualification and exact consumers | [Executable contracts](../../ops-pipeline/scripts/profile_compatibility_contract_v1_2.py), [Pattern delegation](../../ops-pipeline/scripts/news_pattern_authority_v1_1.py), [release adapter](../../ops-pipeline/scripts/profile_compatibility_release_v1_2.py), [Native evidence](../../ops-pipeline/scripts/news_qualification_v1_2.py), [runtime binding](../../ops-pipeline/scripts/news_runtime_v1_2.py); no automatic production eligibility |
 | Privacy projection and remote-model boundary | [Privacy Projection](../../ops-pipeline/scripts/privacy_projection_v1.py) |
@@ -77,12 +78,19 @@ The Founder selected D-P01/02/03 and requested target freeze; the earlier
 [BR-01 decision](../deliveries/creation-batch-ux-1/BASELINE_REVIEW_RECORD.md) remains
 the historical limited Current Truth review. The attributable target approval
 chain is retained in [BR-02](../deliveries/creation-batch-ux-1/BASELINE_APPROVAL_RECORD.md).
-[Plan Revision 5](../deliveries/creation-batch-ux-1/PLAN.md) remains a conditional
-draft for renewed independent review. The user explicitly resolved DR-01/02;
+[Plan Revision 5](../deliveries/creation-batch-ux-1/PLAN.md) retains its exact reviewed
+bytes; the Founder has now frozen that R5 and approved restricted C01–C03/B1 scope
+after G0. See the attributable [B1 execution record](../deliveries/creation-batch-ux-1/B1_EXECUTION_RECORD.md).
+The user explicitly resolved DR-01/02;
 Design Readiness is PASS for planning scope. Planning Preflight on actual R4 inputs is PASS; contract candidates, UI details,
 responsibilities and isolated development environment checks are prepared. Old
-reviews remain historical. Native qualifications and A03/A04 engineering scope decisions,
-Plan freeze and execution remain unauthorized. These delivery documents do not supersede
+reviews remain historical. Native qualifications remain source-specific.
+B2–B4 implementation has now been requested with real Human acceptance deferred to the end;
+the exact restricted A03/A04 engineering scope has now been explicitly approved.
+The additional isolated 20/40 admission scope has also been explicitly approved;
+capacity remains subject to staged Native validation. See the
+[continuation record](../deliveries/creation-batch-ux-1/B2_B4_EXECUTION_RECORD.md).
+B1 has not been independently accepted. These delivery documents do not supersede
 machine Authority or authorize deployment or production use.
 
 ## Current boundaries

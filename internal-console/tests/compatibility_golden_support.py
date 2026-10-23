@@ -98,7 +98,7 @@ def prepare_native_golden(node):
             'targets': targets, 'compatibility': response.json(), 'actor': actor}
 
 
-def prepare_native_business(node, *, customer_name='明禾餐食（全虚构 Golden）'):
+def prepare_native_business(node, *, customer_name='明禾餐食（全虚构 Golden）', story_event=None, story_events=None, speaker_type='frontline_expert', personal_practices=None):
     """Independent owner-provided facts; no Case fact/claim feeds the Persona."""
     from test_customer_speaker_smart_intake_v1 import review_payload
     from test_customer_speaker_joint_confirmation import preview, submit
@@ -116,6 +116,20 @@ def prepare_native_business(node, *, customer_name='明禾餐食（全虚构 Gol
         ('service_process', ['先核对忌口，再按单配菜，制作后标记餐盒'], '先核对忌口，再按单配菜，制作后标记餐盒'),
         ('founder_story', ['负责人小周亲自负责核对订单'], '负责人小周亲自负责核对订单并愿意出镜'),
     ]
+    public_role='订单核对负责人'
+    if speaker_type=='owner_founder':
+        public_role='店主'
+        facts[-1]=('founder_story',['店主小周亲自负责核对订单'],'店主小周亲自负责核对订单并愿意出镜')
+    if story_event:
+        topic,value,quote=facts[-1]
+        facts[-1]=(topic,[*value,story_event],quote+'。'+story_event)
+    if story_events:
+        topic,value,quote=facts[-1]
+        facts[-1]=(topic,[*value,*story_events],quote+'。'+'。'.join(story_events))
+    if personal_practices:
+        topic, values, quote = facts[-1]
+        facts[-1] = (topic, [*values, *personal_practices], quote+'。'+'。'.join(personal_practices))
+        facts[5] = ('service_process', personal_practices, '。'.join(personal_practices))
     material = '。'.join(quote for _, _, quote in facts) + '。本资料和客户完全虚构，仅用于隔离验收。'
     response = client.post('/api/customers/analyze', headers=headers, json={
         'customer_name': customer_name, 'industry': '餐饮', 'materials': material})
@@ -128,15 +142,15 @@ def prepare_native_business(node, *, customer_name='明禾餐食（全虚构 Gol
     analyze_customer_onboarding(request=json.loads(request_path.read_text('utf-8')), pipeline_root=settings.pipeline_root,
         extractor=lambda _: {'facts': [{'topic': t, 'value': v, 'evidence_quote': q} for t, v, q in facts], 'model': 'synthetic-external-boundary'},
         speaker_discovery_extractor=lambda _: {'model': 'synthetic-external-boundary', 'speaker_candidates': [
-            {'name': '小周', 'public_role': '订单核对负责人', 'speaker_type_hint': 'frontline_expert',
+            {'name': '小周', 'public_role': public_role, 'speaker_type_hint': speaker_type,
              'candidate_status': 'explicit_speaker',
-             'evidence_quotes': ['负责人小周亲自负责核对订单并愿意出镜'],
-             'personal_material_quotes': ['负责人小周亲自负责核对订单并愿意出镜'], 'explicit_forbidden_claims': []}]})
+             'evidence_quotes': [facts[-1][2]],
+             'personal_material_quotes': [facts[-1][2]], 'explicit_forbidden_claims': []}]})
     update_task(settings.database_path, body['task']['task_id'], status='awaiting_review', progress=99)
     bid = body['business_id']
     detail = client.get(f'/api/customers/{bid}').json()
     decision = review_payload(detail)
-    decision['speaker_confirmations'][0].update(speaker_name='小周', public_role='订单核对负责人')
+    decision['speaker_confirmations'][0].update(speaker_name='小周', public_role=public_role, speaker_type=speaker_type)
     csrf = headers['X-CSRF-Token']
     decision['joint_speaker_review'] = True
     preparation = client.post(f'/api/customers/{bid}/review-preparation', headers=headers, json=decision)
@@ -144,7 +158,15 @@ def prepare_native_business(node, *, customer_name='明禾餐食（全虚构 Gol
     task = get_task(settings.database_path, preparation.json()['task']['task_id'])
     prepared = Path(task['payload']['speaker_preparation_request'])
     def person_extract(privacy):
-        quote = privacy['projection']['materials_safe_semantic']
+        # Quote the actual role/practice sentence, not an arbitrarily long
+        # event collection that the original extractor correctly rejects.
+        quote = privacy['projection']['materials_safe_semantic'].split('。', 1)[0]
+        if personal_practices:
+            return {'facts': [
+                {'topic':'speaker_practice','value':personal_practices,
+                 'evidence_quote':'。'.join(personal_practices)},
+                {'topic':'speaker_allowed_topics','value':['本人已提供的经营实践'],
+                 'evidence_quote':personal_practices[0]}]}
         return {'facts': [
             {'topic': 'speaker_practice', 'value': ['本人亲自负责核对订单'], 'evidence_quote': quote},
             {'topic': 'speaker_allowed_topics', 'value': ['本人核对订单的职责'], 'evidence_quote': quote}]}
@@ -155,6 +177,7 @@ def prepare_native_business(node, *, customer_name='明禾餐食（全虚构 Gol
     decision['speaker_fact_decisions'] = [{'candidate_id': p['candidate_id'], 'decisions': [
         {'candidate_id': f['candidate_id'], 'decision': 'approve'} for f in p['facts']]} for p in status['people']]
     bundle = preview(client, bid, csrf, decision)
+    assert bundle['can_submit'], json.dumps(bundle.get('blockers'), ensure_ascii=False)
     result = submit(client, bid, csrf, bundle)
     assert result.status_code == 200, result.text
     sid = status['people'][0]['speaker_id']

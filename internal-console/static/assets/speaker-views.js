@@ -5,7 +5,7 @@ import {
   editableFactValue,
   customerFieldLabel,
   parseEditedFactValue,
-} from "./customer-components.js?v=flow-closure-2";
+} from "./customer-components.js?v=cbux1-b234-3";
 
 import {
   speakerFieldLabel,

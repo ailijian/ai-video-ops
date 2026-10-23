@@ -1,5 +1,6 @@
 import { escapeHtml } from "./case-components.js?v=flow-closure-2";
 import { formatProfileValue } from "./profile-components.js?v=productized-stage2-3";
+import { creationConfigurationUrl } from "./creation-config-model.mjs?v=cbux1-b234-3";
 
 export const CUSTOMER_PROGRESS_STAGES = [
   ["保存客户原始资料", 20],
@@ -230,6 +231,9 @@ export function customerConstraintPanel(detail) {
 
 export function customerCard(customer) {
   const operation = customer.operation || {};
+  const primaryUrl = operation.kind === "ready"
+    ? creationConfigurationUrl(operation.primary?.url, customer.business_id)
+    : operation.primary?.url;
   const speaker = customer.speaker;
   const records = customer.creation_record_count === null || customer.creation_record_count === undefined ? "创作记录暂不可读"
     : customer.creation_record_count ? `${customer.creation_record_count} 个创作记录` : "暂无创作记录";
@@ -249,7 +253,7 @@ export function customerCard(customer) {
       </div>
       <div class="customer-operation-progress"><span class="customer-operation-stats">${escapeHtml(records)}${pending ? ` · ${escapeHtml(pending)}` : ""}</span>${operation.note && operation.note !== operation.status && operation.note !== operation.primary?.label ? `<p class="customer-operation-note">${escapeHtml(operation.note)}</p>` : ""}</div>
       <div class="customer-operation-actions">
-        <a class="btn btn-primary btn-compact" href="${escapeHtml(operation.primary?.url || customer.detail_url)}" data-route>${escapeHtml(operation.primary?.label || "查看客户")}</a>
+        <a class="btn btn-primary btn-compact" href="${escapeHtml(primaryUrl || customer.detail_url)}" data-route>${escapeHtml(operation.primary?.label || "查看客户")}</a>
         <a class="section-link" href="${escapeHtml(operation.secondary?.url || `${customer.detail_url}/content`)}" data-route>查看作品记录</a>
       </div>
     </article>`;

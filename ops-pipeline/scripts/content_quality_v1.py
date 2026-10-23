@@ -3358,6 +3358,7 @@ def build_content_plan_v1_1_1(
     request: dict[str, Any],
     source_artifact_hashes: dict[str, str],
     created_at: str | None = None,
+    pending_concepts: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     minimum_score = float(
         (request.get("content_quality_v1") or {}).get(
@@ -3397,6 +3398,18 @@ def build_content_plan_v1_1_1(
             decision = "editorial_quality_rejected"
         else:
             decision = "high_quality_novel"
+        if decision == 'high_quality_novel' and pending_concepts:
+            # Pending selections are not communicated/Strong Ledger memory.
+            # Use the same Native semantic rule plus the material atom fence
+            # as the reservation owner before choosing the next K contents.
+            scoped = dict(candidate)
+            scoped['primary_fact_atom_refs'] = list(material.get('primary_fact_atom_refs') or [])
+            novelty = novelty_evaluation(scoped, [], pending_concepts)
+            atoms = set(scoped['primary_fact_atom_refs'])
+            collision = any(atoms & set(v.get('primary_fact_atom_refs') or v.get('source_fact_atom_refs') or [])
+                for v in pending_concepts)
+            if novelty.get('hard_duplicate') or collision:
+                decision = 'pending_intent_reserved'
         candidate["v1_1_1_gate_decision"] = decision
         evaluated.append(candidate)
 

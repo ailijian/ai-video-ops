@@ -572,6 +572,11 @@ def review_generation_batch_v2(
     batch = read_json(
         batch_path
     )
+    from creative_style_v1 import validate_batch
+    validate_batch(batch)
+    from generation_recovery_v1 import ready_for_review
+    accepted_subset_ready = bool(batch.get('accepted_subset') is not None and
+        ready_for_review(batch, batch.get('script_generation_contract', {}).get('selected_concept_ids') or []))
     review_input = read_json(
         review_input_path
     )
@@ -581,7 +586,7 @@ def review_generation_batch_v2(
             "schema_version"
         )
         != GENERATION_BATCH_SCHEMA
-        or batch.get(
+        or (not accepted_subset_ready and (batch.get(
             "status"
         )
         != "review_required"
@@ -593,7 +598,7 @@ def review_generation_batch_v2(
         ).get(
             "passed"
         )
-        is not True
+        is not True))
     ):
         raise GenerationReviewV2Error(
             "GENERATION_BATCH_NOT_REVIEWABLE",
@@ -646,6 +651,17 @@ def review_generation_batch_v2(
             source_ids,
         )
     )
+    # Reject invalid Style revisions before admitting or publishing Human truth.
+    style_sources = {item["content_id"]: item for item in source_contents}
+    style_reviewed = []
+    for decision in normalized_input["items"]:
+        if decision["decision"] == "rejected":
+            continue
+        candidate = dict(style_sources[decision["content_id"]])
+        if decision["decision"] == "revised":
+            candidate.update(title=decision.get("revised_title"), narration=decision.get("revised_narration"))
+        style_reviewed.append(candidate)
+    validate_batch(batch, style_reviewed)
 
     # Re-read current Business controls before recording any Human approval or
     # editorial revision. A machine-passed historical batch is not a waiver.
@@ -1120,6 +1136,7 @@ def review_generation_batch_v2(
         ),
     }
 
+    validate_batch(batch, approved_contents)
     base = json.loads(
         json.dumps(
             batch,
@@ -1544,7 +1561,8 @@ def main() -> None:
                 authorization_context=read_json(Path(args.authorization_file)) if args.authorization_file else None,
             )
         )
-    except (GenerationReviewV2Error, __import__('delivery_receipt_recovery_v1').ReceiptRecoveryError) as exc:
+    except (GenerationReviewV2Error, __import__('delivery_receipt_recovery_v1').ReceiptRecoveryError,
+            __import__('creative_style_v1').CreativeStyleError) as exc:
         print(
             json.dumps(
                 {

@@ -1,0 +1,2187 @@
+{
+  "C01": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "schema_version": {
+        "const": "creative-style-catalog-v1.0"
+      },
+      "catalog_id": {
+        "type": "string",
+        "minLength": 1
+      },
+      "catalog_version": {
+        "type": "string",
+        "minLength": 1
+      },
+      "styles": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/StyleRule"
+        },
+        "minItems": 1
+      }
+    },
+    "required": [
+      "schema_version",
+      "catalog_id",
+      "catalog_version",
+      "styles"
+    ],
+    "$defs": {
+      "ArtifactRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "owner": {
+            "type": "string",
+            "minLength": 1
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "owner",
+          "id",
+          "version",
+          "path",
+          "sha256"
+        ]
+      },
+      "ActorIntent": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "actor_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "permission_snapshot": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "operation_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "payload_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "actor_id",
+          "permission_snapshot",
+          "operation_id",
+          "payload_sha256"
+        ]
+      },
+      "StyleRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "style_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "style_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "catalog_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "definition_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "style_id",
+          "style_version",
+          "catalog_ref",
+          "definition_sha256"
+        ]
+      },
+      "Slot": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "slot_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "production_profile": {
+            "type": "string",
+            "minLength": 1
+          },
+          "creative_style": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/StyleRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_kind": {
+            "enum": [
+              "novel_content",
+              "cross_profile_repurpose"
+            ]
+          },
+          "source_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ArtifactRef"
+            },
+            "minItems": 0
+          },
+          "business_type_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "slot_id",
+          "production_profile",
+          "creative_style",
+          "source_kind",
+          "source_refs",
+          "business_type_id"
+        ]
+      },
+      "NativeBinding": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "slot_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "native_request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "native_request_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "final_concept_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "content_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "effective_source_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "parent_binding_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          }
+        },
+        "required": [
+          "slot_id",
+          "native_request_id",
+          "native_request_ref",
+          "final_concept_id",
+          "content_id",
+          "effective_source_ref"
+        ]
+      },
+      "StyleRule": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "style_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "style_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "production_profile": {
+            "type": "string",
+            "minLength": 1
+          },
+          "definition": {
+            "type": "string",
+            "minLength": 1
+          },
+          "approved_product_rule_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "required_fact_roles": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "required_speaker_roles": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 0
+          },
+          "forbidden_claims": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "structure": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "acceptance_samples": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "pattern_scope_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ArtifactRef"
+            },
+            "minItems": 0
+          },
+          "compatibility_scope_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ArtifactRef"
+            },
+            "minItems": 0
+          },
+          "release_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "allowed_quantities": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "minItems": 1
+          },
+          "cta_policy": {
+            "type": "string",
+            "minLength": 1
+          },
+          "target_duration_advisory": {
+            "const": true
+          }
+        },
+        "required": [
+          "style_id",
+          "style_version",
+          "production_profile",
+          "definition",
+          "approved_product_rule_ref",
+          "required_fact_roles",
+          "required_speaker_roles",
+          "forbidden_claims",
+          "structure",
+          "acceptance_samples",
+          "pattern_scope_refs",
+          "compatibility_scope_refs",
+          "release_ref",
+          "allowed_quantities",
+          "cta_policy",
+          "target_duration_advisory"
+        ]
+      },
+      "DeliveryRow": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "row_number": {
+            "type": "integer",
+            "minimum": 5
+          },
+          "slot_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "style": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/StyleRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_kind": {
+            "enum": [
+              "novel_content",
+              "cross_profile_repurpose"
+            ]
+          },
+          "native_content_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "native_approved_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "publish_draft_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "publish_confirmation_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "parent_receipt_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "parent_completion_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "closure_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "history_anchor_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "business_type_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "row_number",
+          "slot_id",
+          "style",
+          "source_kind",
+          "native_content_ref",
+          "native_approved_ref",
+          "publish_draft_ref",
+          "publish_confirmation_ref",
+          "parent_receipt_ref",
+          "parent_completion_ref",
+          "closure_ref",
+          "business_type_id"
+        ]
+      },
+      "NativeReviewItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "slot_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "native_kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "native_source_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "expected_head_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "decision": {
+            "enum": [
+              "approve",
+              "reject",
+              "revise"
+            ]
+          },
+          "revision_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          }
+        },
+        "required": [
+          "slot_id",
+          "native_kind",
+          "native_source_ref",
+          "expected_head_ref",
+          "decision"
+        ]
+      },
+      "PublishConfirmItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "slot_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "native_kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "native_approved_source_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "draft_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "expected_head_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "action": {
+            "const": "confirm"
+          }
+        },
+        "required": [
+          "slot_id",
+          "native_kind",
+          "native_approved_source_ref",
+          "draft_ref",
+          "expected_head_ref",
+          "action"
+        ]
+      },
+      "CompositeIntent": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "const": "creation-composite-delivery-intent-v1.0"
+          },
+          "business_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "batch_intent_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "scope": {
+            "enum": [
+              "complete_target",
+              "explicit_legal_subset"
+            ]
+          },
+          "ordered_parent_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ArtifactRef"
+            },
+            "minItems": 1
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "production_profile": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "template_ref": {
+                  "$ref": "#/$defs/ArtifactRef"
+                },
+                "ordered_rows": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/DeliveryRow"
+                  },
+                  "minItems": 1
+                }
+              },
+              "required": [
+                "production_profile",
+                "template_ref",
+                "ordered_rows"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "actor_intent": {
+            "$ref": "#/$defs/ActorIntent"
+          }
+        },
+        "required": [
+          "schema_version",
+          "business_id",
+          "batch_intent_ref",
+          "scope",
+          "ordered_parent_refs",
+          "files",
+          "actor_intent"
+        ]
+      },
+      "CompositePrepared": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "const": "creation-composite-delivery-prepared-v1.0"
+          },
+          "business_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "intent_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "production_profile": {
+            "type": "string",
+            "minLength": 1
+          },
+          "template_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "row_manifest_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "output_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "output_bytes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "prepared_file_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "actor_intent": {
+            "$ref": "#/$defs/ActorIntent"
+          }
+        },
+        "required": [
+          "schema_version",
+          "business_id",
+          "intent_ref",
+          "production_profile",
+          "template_ref",
+          "row_manifest_ref",
+          "output_sha256",
+          "output_bytes",
+          "prepared_file_path",
+          "actor_intent"
+        ]
+      },
+      "CompositeReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "const": "creation-composite-delivery-receipt-v1.0"
+          },
+          "business_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "intent_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "prepared_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "production_profile": {
+            "type": "string",
+            "minLength": 1
+          },
+          "published_file_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "output_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "row_manifest_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "actor_intent": {
+            "$ref": "#/$defs/ActorIntent"
+          }
+        },
+        "required": [
+          "schema_version",
+          "business_id",
+          "intent_ref",
+          "prepared_ref",
+          "production_profile",
+          "published_file_path",
+          "output_sha256",
+          "row_manifest_ref",
+          "actor_intent"
+        ]
+      },
+      "CompositeCompletion": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "const": "creation-composite-delivery-completion-v1.0"
+          },
+          "business_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "intent_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "ordered_file_receipt_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ArtifactRef"
+            },
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "scope": {
+            "enum": [
+              "complete_target",
+              "explicit_legal_subset"
+            ]
+          },
+          "delivered_slot_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "semantic_delta": {
+            "const": 0
+          },
+          "exposure_delta": {
+            "const": 0
+          },
+          "presentation_delta": {
+            "const": 0
+          },
+          "actor_intent": {
+            "$ref": "#/$defs/ActorIntent"
+          }
+        },
+        "required": [
+          "schema_version",
+          "business_id",
+          "intent_ref",
+          "ordered_file_receipt_refs",
+          "scope",
+          "delivered_slot_ids",
+          "semantic_delta",
+          "exposure_delta",
+          "presentation_delta",
+          "actor_intent"
+        ]
+      }
+    }
+  },
+  "C02": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "schema_version": {
+        "const": "mix-style-intent-v1.0"
+      },
+      "business_id": {
+        "type": "string",
+        "minLength": 1
+      },
+      "batch_intent_ref": {
+        "$ref": "#/$defs/ArtifactRef"
+      },
+      "native_request_id": {
+        "type": "string",
+        "minLength": 1
+      },
+      "creative_style": {
+        "$ref": "#/$defs/StyleRef"
+      },
+      "business_ref": {
+        "$ref": "#/$defs/ArtifactRef"
+      },
+      "speaker_ref": {
+        "$ref": "#/$defs/ArtifactRef"
+      },
+      "ordered_slots": {
+        "type": "array",
+        "items": {
+          "type": "string",
+          "minLength": 1
+        },
+        "minItems": 1
+      },
+      "target_quantity": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "source_refs": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "minItems": 1
+      },
+      "actor_intent": {
+        "$ref": "#/$defs/ActorIntent"
+      }
+    },
+    "required": [
+      "schema_version",
+      "business_id",
+      "batch_intent_ref",
+      "native_request_id",
+      "creative_style",
+      "business_ref",
+      "speaker_ref",
+      "ordered_slots",
+      "target_quantity",
+      "source_refs",
+      "actor_intent"
+    ],
+    "$defs": {
+      "ArtifactRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "owner": {
+            "type": "string",
+            "minLength": 1
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "owner",
+          "id",
+          "version",
+          "path",
+          "sha256"
+        ]
+      },
+      "ActorIntent": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "actor_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "permission_snapshot": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "operation_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "payload_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "actor_id",
+          "permission_snapshot",
+          "operation_id",
+          "payload_sha256"
+        ]
+      },
+      "StyleRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "style_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "style_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "catalog_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "definition_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "style_id",
+          "style_version",
+          "catalog_ref",
+          "definition_sha256"
+        ]
+      },
+      "Slot": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "slot_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "production_profile": {
+            "type": "string",
+            "minLength": 1
+          },
+          "creative_style": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/StyleRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_kind": {
+            "enum": [
+              "novel_content",
+              "cross_profile_repurpose"
+            ]
+          },
+          "source_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ArtifactRef"
+            },
+            "minItems": 0
+          },
+          "business_type_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "slot_id",
+          "production_profile",
+          "creative_style",
+          "source_kind",
+          "source_refs",
+          "business_type_id"
+        ]
+      },
+      "NativeBinding": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "slot_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "native_request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "native_request_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "final_concept_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "content_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "effective_source_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "parent_binding_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          }
+        },
+        "required": [
+          "slot_id",
+          "native_request_id",
+          "native_request_ref",
+          "final_concept_id",
+          "content_id",
+          "effective_source_ref"
+        ]
+      },
+      "StyleRule": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "style_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "style_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "production_profile": {
+            "type": "string",
+            "minLength": 1
+          },
+          "definition": {
+            "type": "string",
+            "minLength": 1
+          },
+          "approved_product_rule_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "required_fact_roles": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "required_speaker_roles": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 0
+          },
+          "forbidden_claims": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "structure": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "acceptance_samples": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "pattern_scope_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ArtifactRef"
+            },
+            "minItems": 0
+          },
+          "compatibility_scope_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ArtifactRef"
+            },
+            "minItems": 0
+          },
+          "release_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "allowed_quantities": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "minItems": 1
+          },
+          "cta_policy": {
+            "type": "string",
+            "minLength": 1
+          },
+          "target_duration_advisory": {
+            "const": true
+          }
+        },
+        "required": [
+          "style_id",
+          "style_version",
+          "production_profile",
+          "definition",
+          "approved_product_rule_ref",
+          "required_fact_roles",
+          "required_speaker_roles",
+          "forbidden_claims",
+          "structure",
+          "acceptance_samples",
+          "pattern_scope_refs",
+          "compatibility_scope_refs",
+          "release_ref",
+          "allowed_quantities",
+          "cta_policy",
+          "target_duration_advisory"
+        ]
+      },
+      "DeliveryRow": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "row_number": {
+            "type": "integer",
+            "minimum": 5
+          },
+          "slot_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "style": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/StyleRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_kind": {
+            "enum": [
+              "novel_content",
+              "cross_profile_repurpose"
+            ]
+          },
+          "native_content_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "native_approved_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "publish_draft_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "publish_confirmation_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "parent_receipt_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "parent_completion_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "closure_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "history_anchor_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "business_type_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "row_number",
+          "slot_id",
+          "style",
+          "source_kind",
+          "native_content_ref",
+          "native_approved_ref",
+          "publish_draft_ref",
+          "publish_confirmation_ref",
+          "parent_receipt_ref",
+          "parent_completion_ref",
+          "closure_ref",
+          "business_type_id"
+        ]
+      },
+      "NativeReviewItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "slot_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "native_kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "native_source_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "expected_head_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "decision": {
+            "enum": [
+              "approve",
+              "reject",
+              "revise"
+            ]
+          },
+          "revision_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          }
+        },
+        "required": [
+          "slot_id",
+          "native_kind",
+          "native_source_ref",
+          "expected_head_ref",
+          "decision"
+        ]
+      },
+      "PublishConfirmItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "slot_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "native_kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "native_approved_source_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "draft_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "expected_head_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "action": {
+            "const": "confirm"
+          }
+        },
+        "required": [
+          "slot_id",
+          "native_kind",
+          "native_approved_source_ref",
+          "draft_ref",
+          "expected_head_ref",
+          "action"
+        ]
+      },
+      "CompositeIntent": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "const": "creation-composite-delivery-intent-v1.0"
+          },
+          "business_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "batch_intent_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "scope": {
+            "enum": [
+              "complete_target",
+              "explicit_legal_subset"
+            ]
+          },
+          "ordered_parent_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ArtifactRef"
+            },
+            "minItems": 1
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "production_profile": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "template_ref": {
+                  "$ref": "#/$defs/ArtifactRef"
+                },
+                "ordered_rows": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/DeliveryRow"
+                  },
+                  "minItems": 1
+                }
+              },
+              "required": [
+                "production_profile",
+                "template_ref",
+                "ordered_rows"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "actor_intent": {
+            "$ref": "#/$defs/ActorIntent"
+          }
+        },
+        "required": [
+          "schema_version",
+          "business_id",
+          "batch_intent_ref",
+          "scope",
+          "ordered_parent_refs",
+          "files",
+          "actor_intent"
+        ]
+      },
+      "CompositePrepared": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "const": "creation-composite-delivery-prepared-v1.0"
+          },
+          "business_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "intent_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "production_profile": {
+            "type": "string",
+            "minLength": 1
+          },
+          "template_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "row_manifest_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "output_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "output_bytes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "prepared_file_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "actor_intent": {
+            "$ref": "#/$defs/ActorIntent"
+          }
+        },
+        "required": [
+          "schema_version",
+          "business_id",
+          "intent_ref",
+          "production_profile",
+          "template_ref",
+          "row_manifest_ref",
+          "output_sha256",
+          "output_bytes",
+          "prepared_file_path",
+          "actor_intent"
+        ]
+      },
+      "CompositeReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "const": "creation-composite-delivery-receipt-v1.0"
+          },
+          "business_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "intent_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "prepared_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "production_profile": {
+            "type": "string",
+            "minLength": 1
+          },
+          "published_file_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "output_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "row_manifest_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "actor_intent": {
+            "$ref": "#/$defs/ActorIntent"
+          }
+        },
+        "required": [
+          "schema_version",
+          "business_id",
+          "intent_ref",
+          "prepared_ref",
+          "production_profile",
+          "published_file_path",
+          "output_sha256",
+          "row_manifest_ref",
+          "actor_intent"
+        ]
+      },
+      "CompositeCompletion": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "const": "creation-composite-delivery-completion-v1.0"
+          },
+          "business_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "intent_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "ordered_file_receipt_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ArtifactRef"
+            },
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "scope": {
+            "enum": [
+              "complete_target",
+              "explicit_legal_subset"
+            ]
+          },
+          "delivered_slot_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "semantic_delta": {
+            "const": 0
+          },
+          "exposure_delta": {
+            "const": 0
+          },
+          "presentation_delta": {
+            "const": 0
+          },
+          "actor_intent": {
+            "$ref": "#/$defs/ActorIntent"
+          }
+        },
+        "required": [
+          "schema_version",
+          "business_id",
+          "intent_ref",
+          "ordered_file_receipt_refs",
+          "scope",
+          "delivered_slot_ids",
+          "semantic_delta",
+          "exposure_delta",
+          "presentation_delta",
+          "actor_intent"
+        ]
+      }
+    }
+  },
+  "C03": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "properties": {
+      "schema_version": {
+        "const": "creation-batch-intent-v1.0"
+      },
+      "batch_id": {
+        "type": "string",
+        "minLength": 1
+      },
+      "business_id": {
+        "type": "string",
+        "minLength": 1
+      },
+      "draft_revision": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "mode": {
+        "enum": [
+          "stage",
+          "free"
+        ]
+      },
+      "operating_stage": {
+        "type": [
+          "string",
+          "null"
+        ]
+      },
+      "explicit_cycles": {
+        "type": [
+          "integer",
+          "null"
+        ],
+        "minimum": 1
+      },
+      "slots": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/Slot"
+        },
+        "minItems": 1
+      },
+      "actual_target": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "context_refs": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "minItems": 1
+      },
+      "explicit_confirmation": {
+        "const": true
+      },
+      "actor_intent": {
+        "$ref": "#/$defs/ActorIntent"
+      }
+    },
+    "required": [
+      "schema_version",
+      "batch_id",
+      "business_id",
+      "draft_revision",
+      "mode",
+      "operating_stage",
+      "explicit_cycles",
+      "slots",
+      "actual_target",
+      "context_refs",
+      "explicit_confirmation",
+      "actor_intent"
+    ],
+    "$defs": {
+      "ArtifactRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "owner": {
+            "type": "string",
+            "minLength": 1
+          },
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "owner",
+          "id",
+          "version",
+          "path",
+          "sha256"
+        ]
+      },
+      "ActorIntent": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "actor_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "permission_snapshot": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "operation_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "payload_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "actor_id",
+          "permission_snapshot",
+          "operation_id",
+          "payload_sha256"
+        ]
+      },
+      "StyleRef": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "style_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "style_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "catalog_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "definition_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          }
+        },
+        "required": [
+          "style_id",
+          "style_version",
+          "catalog_ref",
+          "definition_sha256"
+        ]
+      },
+      "Slot": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "slot_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "production_profile": {
+            "type": "string",
+            "minLength": 1
+          },
+          "creative_style": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/StyleRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_kind": {
+            "enum": [
+              "novel_content",
+              "cross_profile_repurpose"
+            ]
+          },
+          "source_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ArtifactRef"
+            },
+            "minItems": 0
+          },
+          "business_type_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "slot_id",
+          "production_profile",
+          "creative_style",
+          "source_kind",
+          "source_refs",
+          "business_type_id"
+        ]
+      },
+      "NativeBinding": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "slot_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "native_request_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "native_request_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "final_concept_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "content_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "effective_source_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "parent_binding_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          }
+        },
+        "required": [
+          "slot_id",
+          "native_request_id",
+          "native_request_ref",
+          "final_concept_id",
+          "content_id",
+          "effective_source_ref"
+        ]
+      },
+      "StyleRule": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "style_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "style_version": {
+            "type": "string",
+            "minLength": 1
+          },
+          "production_profile": {
+            "type": "string",
+            "minLength": 1
+          },
+          "definition": {
+            "type": "string",
+            "minLength": 1
+          },
+          "approved_product_rule_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "required_fact_roles": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "required_speaker_roles": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 0
+          },
+          "forbidden_claims": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "structure": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "acceptance_samples": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "pattern_scope_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ArtifactRef"
+            },
+            "minItems": 0
+          },
+          "compatibility_scope_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ArtifactRef"
+            },
+            "minItems": 0
+          },
+          "release_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "allowed_quantities": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "minItems": 1
+          },
+          "cta_policy": {
+            "type": "string",
+            "minLength": 1
+          },
+          "target_duration_advisory": {
+            "const": true
+          }
+        },
+        "required": [
+          "style_id",
+          "style_version",
+          "production_profile",
+          "definition",
+          "approved_product_rule_ref",
+          "required_fact_roles",
+          "required_speaker_roles",
+          "forbidden_claims",
+          "structure",
+          "acceptance_samples",
+          "pattern_scope_refs",
+          "compatibility_scope_refs",
+          "release_ref",
+          "allowed_quantities",
+          "cta_policy",
+          "target_duration_advisory"
+        ]
+      },
+      "DeliveryRow": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "row_number": {
+            "type": "integer",
+            "minimum": 5
+          },
+          "slot_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "style": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/StyleRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "source_kind": {
+            "enum": [
+              "novel_content",
+              "cross_profile_repurpose"
+            ]
+          },
+          "native_content_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "native_approved_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "publish_draft_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "publish_confirmation_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "parent_receipt_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "parent_completion_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "closure_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "history_anchor_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "business_type_id": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "row_number",
+          "slot_id",
+          "style",
+          "source_kind",
+          "native_content_ref",
+          "native_approved_ref",
+          "publish_draft_ref",
+          "publish_confirmation_ref",
+          "parent_receipt_ref",
+          "parent_completion_ref",
+          "closure_ref",
+          "business_type_id"
+        ]
+      },
+      "NativeReviewItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "slot_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "native_kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "native_source_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "expected_head_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "decision": {
+            "enum": [
+              "approve",
+              "reject",
+              "revise"
+            ]
+          },
+          "revision_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          }
+        },
+        "required": [
+          "slot_id",
+          "native_kind",
+          "native_source_ref",
+          "expected_head_ref",
+          "decision"
+        ]
+      },
+      "PublishConfirmItem": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "slot_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "native_kind": {
+            "type": "string",
+            "minLength": 1
+          },
+          "native_approved_source_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "draft_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "expected_head_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "action": {
+            "const": "confirm"
+          }
+        },
+        "required": [
+          "slot_id",
+          "native_kind",
+          "native_approved_source_ref",
+          "draft_ref",
+          "expected_head_ref",
+          "action"
+        ]
+      },
+      "CompositeIntent": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "const": "creation-composite-delivery-intent-v1.0"
+          },
+          "business_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "batch_intent_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "scope": {
+            "enum": [
+              "complete_target",
+              "explicit_legal_subset"
+            ]
+          },
+          "ordered_parent_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ArtifactRef"
+            },
+            "minItems": 1
+          },
+          "files": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "production_profile": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "template_ref": {
+                  "$ref": "#/$defs/ArtifactRef"
+                },
+                "ordered_rows": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/$defs/DeliveryRow"
+                  },
+                  "minItems": 1
+                }
+              },
+              "required": [
+                "production_profile",
+                "template_ref",
+                "ordered_rows"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "actor_intent": {
+            "$ref": "#/$defs/ActorIntent"
+          }
+        },
+        "required": [
+          "schema_version",
+          "business_id",
+          "batch_intent_ref",
+          "scope",
+          "ordered_parent_refs",
+          "files",
+          "actor_intent"
+        ]
+      },
+      "CompositePrepared": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "const": "creation-composite-delivery-prepared-v1.0"
+          },
+          "business_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "intent_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "production_profile": {
+            "type": "string",
+            "minLength": 1
+          },
+          "template_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "row_manifest_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "output_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "output_bytes": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "prepared_file_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "actor_intent": {
+            "$ref": "#/$defs/ActorIntent"
+          }
+        },
+        "required": [
+          "schema_version",
+          "business_id",
+          "intent_ref",
+          "production_profile",
+          "template_ref",
+          "row_manifest_ref",
+          "output_sha256",
+          "output_bytes",
+          "prepared_file_path",
+          "actor_intent"
+        ]
+      },
+      "CompositeReceipt": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "const": "creation-composite-delivery-receipt-v1.0"
+          },
+          "business_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "intent_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "prepared_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "production_profile": {
+            "type": "string",
+            "minLength": 1
+          },
+          "published_file_path": {
+            "type": "string",
+            "minLength": 1
+          },
+          "output_sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{64}$"
+          },
+          "row_manifest_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "actor_intent": {
+            "$ref": "#/$defs/ActorIntent"
+          }
+        },
+        "required": [
+          "schema_version",
+          "business_id",
+          "intent_ref",
+          "prepared_ref",
+          "production_profile",
+          "published_file_path",
+          "output_sha256",
+          "row_manifest_ref",
+          "actor_intent"
+        ]
+      },
+      "CompositeCompletion": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "const": "creation-composite-delivery-completion-v1.0"
+          },
+          "business_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "intent_ref": {
+            "$ref": "#/$defs/ArtifactRef"
+          },
+          "ordered_file_receipt_refs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ArtifactRef"
+            },
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "scope": {
+            "enum": [
+              "complete_target",
+              "explicit_legal_subset"
+            ]
+          },
+          "delivered_slot_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "minItems": 1
+          },
+          "semantic_delta": {
+            "const": 0
+          },
+          "exposure_delta": {
+            "const": 0
+          },
+          "presentation_delta": {
+            "const": 0
+          },
+          "actor_intent": {
+            "$ref": "#/$defs/ActorIntent"
+          }
+        },
+        "required": [
+          "schema_version",
+          "business_id",
+          "intent_ref",
+          "ordered_file_receipt_refs",
+          "scope",
+          "delivered_slot_ids",
+          "semantic_delta",
+          "exposure_delta",
+          "presentation_delta",
+          "actor_intent"
+        ]
+      }
+    }
+  }
+}

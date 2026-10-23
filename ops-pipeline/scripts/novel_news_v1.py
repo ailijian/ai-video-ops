@@ -142,6 +142,9 @@ def _source_context(root: Path, request_id: str) -> dict[str, Any]:
     if source_plan.get('profile_compatibility_v1_2')!=request.get('profile_compatibility_v1_2'):
         raise NovelNewsError('NEWS_NOVEL_SOURCE_BINDING_INVALID','Request and native Source Plan use different News versions')
     selected = request.get("selected_content") or {}
+    from content_intent_reservations_v1 import assert_available
+    if selected:
+        assert_available(root, request.get('persona_id'), [selected], request_id)
     pattern_refs = source_plan.get("selected_patterns") or []
     case_refs = source_plan.get("eligible_case_pool") or []
     if (
@@ -196,6 +199,9 @@ def _source_context(root: Path, request_id: str) -> dict[str, Any]:
             "original_known_fact": str(project_value(item["original_known_fact"], "safe_verbatim")),
         } for item in atoms
         if item.get("field") in (safe_fields & allowed_fields)
+        and (not request.get('batch_admission_ref')
+             or item.get('field') not in set(selected.get('primary_fact_refs') or [])
+             or item['fact_atom_id'] in set(selected.get('primary_fact_atom_refs') or []))
     }
     primary_atoms = set(selected.get("primary_fact_atom_refs") or [])
     if pattern_id == PRICE_PATTERN and (not primary_atoms or not primary_atoms <= set(usable_atoms)):
@@ -476,10 +482,16 @@ def generate_novel_news_plan(*, pipeline_root: Path, request_id: str,
             raise GenerationError('OPERATION_CONFLICT')
         response = evidence(root, request_id, attempt, 'response')
         if response is None:
-            with mutation_fence(root), current_authority(root, context['request'].get('profile_compatibility_v1_2')), commit_lock(root, request_id):
+            from contextlib import nullcontext
+            provider_fence = (operation_lock(root, 'creation-batch-provider:' + context['request']['persona_id'])
+                              if context['request'].get('batch_admission_ref') else nullcontext())
+            with mutation_fence(root), current_authority(root, context['request'].get('profile_compatibility_v1_2')), commit_lock(root, request_id), provider_fence:
                 assert_current(root, request_id, attempt, snapshot(root, _source_context(root, request_id)), authorization_context)
                 if evidence(root, request_id, attempt, 'dispatch'):
                     raise GenerationError('OUTCOME_UNKNOWN', '本次模型执行结果无法确认，系统不会自动重复生成。')
+                from native_batch_v1 import novel_dispatch_allowed
+                if not novel_dispatch_allowed(root, context['request'], attempt, authorization_context):
+                    raise GenerationError('BATCH_PAUSED', '本批未派发工作已暂停或结束；已有结果及原生明确恢复仍保留。')
                 record(root, request_id, attempt, 'dispatch', dispatched_at=_now())
             if transport is None:
                 transport = default_transport(_generation_parameters()['model'])
@@ -863,8 +875,14 @@ def novel_news_status(*, pipeline_root: Path, request_id: str) -> dict[str, Any]
     if context:
         from novel_news_generation_recovery_v1 import GenerationError
         try:
+            human_completed = False
+            if paths['approved'].is_file():
+                from news_export_recovery_v1 import verify_native_human_bundle
+                verify_native_human_bundle(pipeline_root, request=paths['request'], plan=paths['plan'],
+                    review=paths['review'], approved=paths['approved'], kind='novel')
+                human_completed = True
             generation = novel_generation_state(pipeline_root.expanduser().resolve(), request_id,
-                context=context, completed=paths['closure'].is_file())
+                context=context, completed=paths['closure'].is_file() or human_completed)
         except (GenerationError, NovelNewsError) as exc:
             if exc.code == 'NEWS_GENERATION_LEGACY_UNBOUND_PLAN':
                 generation.update(artifact_present=True, recovery_state='dispatched_outcome_unknown',

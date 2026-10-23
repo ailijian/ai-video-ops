@@ -1,4 +1,5 @@
 import { escapeHtml } from "./case-components.js?v=flow-closure-2";
+import { batchHistoryMarkup } from './creation-batch-view.mjs?v=cbux1-b234-3';
 
 const INTERNAL_LANGUAGE = /(?:authority|canonical|artifact|request id|content ledger|semantic ledger|historical exposure|presentation history|projection|[A-Z][A-Z0-9_]{3,})/;
 
@@ -178,18 +179,21 @@ export function createContentOperationsViews({
   skeletonPage,
   renderLoadError,
 }) {
+  let generation = 0;
   async function renderContentOperations(businessId) {
-    const route = window.location.href;
+    const version = ++generation, route = window.location.href;
+    const current = () => version === generation && window.location.href === route;
     skeletonPage("内容管理");
     try {
       const page = Math.max(1, Number(new URLSearchParams(window.location.search).get("page")) || 1);
-      const [records, data] = await Promise.all([
+      const [records, data, batches] = await Promise.all([
         api(`/api/customers/${encodeURIComponent(businessId)}/creation-records?page=${page}`),
         api(`/api/customers/${encodeURIComponent(businessId)}/content-operations`).catch(() => null),
+        api(`/api/create/batches?business_id=${encodeURIComponent(businessId)}`).catch(() => null),
       ]);
-      if (window.location.href !== route) return;
+      if (!current()) return;
       const customer = records.customer || {};
-      const createAction = `<a class="btn btn-primary" href="/create?business_id=${encodeURIComponent(businessId)}" data-route>查看创作条件</a>`;
+      const createAction = `<a class="btn btn-primary" href="/create/config?business_id=${encodeURIComponent(businessId)}" data-route>开始创作</a>`;
       const description = [customer.display_name || businessId, customer.industry || ""]
         .filter(Boolean)
         .join(" · ");
@@ -201,14 +205,15 @@ export function createContentOperationsViews({
             <a class="back-link" href="/customers/${encodeURIComponent(businessId)}#content" data-route>← 返回客户</a>
           </div>
           ${pageHeading("", "内容管理", description, createAction)}
-          ${CreationRecordsPanel(records)}
+            ${batchHistoryMarkup(batches)}
+            ${CreationRecordsPanel(records)}
           <nav class="customer-list-pagination" aria-label="创作记录分页">${page > 1 ? `<a class="btn btn-secondary" href="/customers/${encodeURIComponent(businessId)}/content?page=${page-1}" data-route>上一页</a>` : ""}<span>第 ${page} 页</span>${page * records.page_size < records.total ? `<a class="btn btn-secondary" href="/customers/${encodeURIComponent(businessId)}/content?page=${page+1}" data-route>下一页</a>` : ""}</nav>
           ${data ? ContentOperationsPanel(data) : '<p class="field-hint">内容概览暂时无法可靠读取；已有创作记录仍可查看。</p>'}
         </main>`,
       );
       bindCommonActions();
     } catch (error) {
-      if (window.location.href !== route) return;
+      if (!current()) return;
       renderLoadError("内容管理暂时无法读取", error);
     }
   }

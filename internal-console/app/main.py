@@ -539,6 +539,8 @@ class ContentCapacityPreviewRequest(BaseModel):
         ge=1,
         le=20,
     )
+    creative_style_id: str | None = Field(default=None,min_length=1,max_length=32)
+    configuration: dict[str,Any] | None = None
 
 
 class ContentGenerationConfirmRequest(BaseModel):
@@ -574,6 +576,51 @@ class ContentGenerationConfirmRequest(BaseModel):
     )
 
     selected_opportunity_id: str | None = Field(default=None, min_length=8, max_length=128)
+    creative_style_id: str | None = Field(default=None, min_length=1, max_length=32)
+    configuration: dict[str, Any] | None = None
+    style_preflight_sha256: str | None = Field(default=None,pattern=r'^[0-9a-f]{64}$')
+
+
+class CreationConfigurationDraftRequest(BaseModel):
+    revision: int = Field(ge=0,strict=True)
+    payload: dict[str,Any]
+
+
+class CreationBatchPreviewRequest(BaseModel):
+    model_config = {'extra': 'forbid'}
+    business_id: str = Field(min_length=1, max_length=128, pattern=r'^[A-Za-z0-9][A-Za-z0-9_-]*$')
+    speaker_id: str = Field(min_length=1, max_length=128, pattern=r'^[A-Za-z0-9][A-Za-z0-9_-]*$')
+    configuration: dict[str, Any]
+    operation_id: str = Field(min_length=8, max_length=128, pattern=r'^[A-Za-z0-9][A-Za-z0-9_-]*$')
+
+
+class CreationBatchConfirmRequest(CreationBatchPreviewRequest):
+    preflight_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+
+
+class CreationBatchControlRequest(BaseModel):
+    model_config = {'extra': 'forbid'}
+    action: Literal['pause', 'resume', 'end']
+    operation_id: str = Field(min_length=8, max_length=128, pattern=r'^[A-Za-z0-9][A-Za-z0-9_-]*$')
+
+
+class CreationBatchHumanCommand(BaseModel):
+    model_config = {'extra': 'forbid'}
+    scope: Literal['native_content_review', 'publish_copy_confirmation']
+    items: list[dict[str, Any]] = Field(min_length=1, max_length=40)
+    operation_id: str = Field(min_length=8, max_length=128, pattern=r'^[A-Za-z0-9][A-Za-z0-9_-]*$')
+    source_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
+
+
+class CreationBatchDeliveryScope(BaseModel):
+    model_config = {'extra': 'forbid'}
+    scope: Literal['complete_target', 'explicit_legal_subset']
+    slot_ids: list[str] = Field(min_length=1, max_length=40)
+
+
+class CreationBatchDeliveryCommand(CreationBatchDeliveryScope):
+    operation_id: str = Field(min_length=8, max_length=128, pattern=r'^[A-Za-z0-9][A-Za-z0-9_-]*$')
+    source_sha256: str = Field(pattern=r'^[0-9a-f]{64}$')
 
 
 class ContentReviewItem(BaseModel):
@@ -945,6 +992,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             "GENERATION_RECOVERY_CONFLICT", "GENERATION_RECOVERY_GRAPH_INVALID", "GENERATION_RECOVERY_SOURCE_CHANGED",
             "GENERATION_RECOVERY_SCOPE_UNSUPPORTED", "GENERATION_RECOVERY_OUTCOME_UNKNOWN", "GENERATION_RECOVERY_PENDING",
             "GENERATION_BATCH_NOT_REVIEWABLE",
+            "GENERATION_IDEMPOTENCY_CONFLICT",
             "EXPORT_ALREADY_CLOSED",
             "SPEAKER_BUSINESS_LINEAGE_MISMATCH",
             "LEGACY_SCOPE_REVIEW_BLOCKED", "PERSONA_APPROVAL_BLOCKED", "PERSONA_AMENDMENT_BLOCKED", "SCALAR_FACT_CONFLICT",
@@ -986,6 +1034,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             status_code = 503 if exc.code=='CASE_SHARE_PUBLICATION_PENDING' else 409
         if exc.code.startswith(('PUBLISH_COPY_', 'LEDGER_HISTORY_')):
             status_code = 503 if exc.code in {'PUBLISH_COPY_DISABLED','PUBLISH_COPY_OPERATION_UNAVAILABLE'} else 409
+        if exc.code.startswith('CREATIVE_STYLE_'):
+            status_code = 409
+        if exc.code.startswith(('CREATION_BATCH_', 'CONTENT_INTENT_', 'CONTENT_RESERVATION_')):
+            status_code = 409
         detail = error_detail(exc.code, exc.message, exc.next_action)
         detail.update(exc.details)
         return JSONResponse(
@@ -1914,6 +1966,142 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         )
 
+    def require_batch_news(configuration, session):
+        quantities = configuration.get('quantities')
+        if isinstance(quantities, dict) and quantities.get('novel'):
+            require_novel_news(settings, str(session.user['phone']))
+
+    @app.post('/api/create/batches/preview')
+    def preview_creation_batch(payload: CreationBatchPreviewRequest,
+            x_csrf_token: str | None = Header(default=None, alias='X-CSRF-Token'),
+            session: SessionContext = Depends(require_console_access)):
+        require_csrf(session, x_csrf_token)
+        require_batch_news(payload.configuration, session)
+        from .creation_batch_gateway import preview
+        return {'preview': preview(settings, payload.business_id, payload.speaker_id, payload.configuration,
+                                   delivery_authorization(settings, session), payload.operation_id)}
+
+    @app.post('/api/create/batches/confirm')
+    def confirm_creation_batch(payload: CreationBatchConfirmRequest,
+            x_csrf_token: str | None = Header(default=None, alias='X-CSRF-Token'),
+            session: SessionContext = Depends(require_console_access)):
+        require_csrf(session, x_csrf_token)
+        require_batch_news(payload.configuration, session)
+        from .creation_batch_gateway import confirm
+        with authority_mutation_barrier(settings, timeout_seconds=0.0):
+            result = confirm(settings, payload.business_id, payload.speaker_id, payload.configuration,
+                             delivery_authorization(settings, session), payload.operation_id, payload.preflight_sha256)
+        if settings.background_worker_enabled:
+            # The confirmed canonical intent survives a crash before this kick;
+            # existing maintenance discovers it without another user confirm.
+            from .creation_batch_gateway import advance_batches
+            advance_batches(settings)
+            background_task_runner.schedule()
+        return {'result': result}
+
+    @app.get('/api/create/batches')
+    def creation_batch_history(business_id:str,session:SessionContext=Depends(require_console_access)):
+        from .creation_batch_gateway import history
+        return history(settings,business_id,delivery_authorization(settings,session))
+
+    @app.get('/api/create/batches/{batch_id}')
+    def creation_batch_state(batch_id: str, session: SessionContext = Depends(require_console_access)):
+        from .creation_batch_gateway import state
+        epoch=background_task_runner.batch_read_epoch()
+        result=state(settings,batch_id,delivery_authorization(settings,session))
+        if settings.background_worker_enabled:
+            background_task_runner.note_batch_read(batch_id,epoch,complete=result['completion_proven'])
+        return {'state': result}
+
+    @app.post('/api/create/batches/{batch_id}/control')
+    def control_creation_batch(batch_id: str, payload: CreationBatchControlRequest,
+            x_csrf_token: str | None = Header(default=None, alias='X-CSRF-Token'),
+            session: SessionContext = Depends(require_console_access)):
+        require_csrf(session, x_csrf_token)
+        from .creation_batch_gateway import control
+        result = control(settings, batch_id, payload.action, delivery_authorization(settings, session), payload.operation_id)
+        if payload.action == 'resume' and settings.background_worker_enabled:
+            from .creation_batch_gateway import advance_batches
+            advance_batches(settings)
+            background_task_runner.schedule()
+        return {'result': result}
+
+    @app.get('/api/create/batches/{batch_id}/human-options')
+    def creation_batch_human_options(batch_id: str,
+            scope: Literal['native_content_review', 'publish_copy_confirmation'] = 'native_content_review',
+            session: SessionContext = Depends(require_console_access)):
+        from .creation_batch_delivery_gateway import owner
+        return {'preview': owner(settings, batch_id, 'options', delivery_authorization(settings, session), scope=scope)}
+
+    @app.get('/api/create/batches/{batch_id}/human-commands')
+    def creation_batch_human_commands(batch_id: str, session: SessionContext = Depends(require_console_access)):
+        from .creation_batch_delivery_gateway import owner
+        return {'history': owner(settings, batch_id, 'commands', delivery_authorization(settings, session))}
+
+    @app.post('/api/create/batches/{batch_id}/human-command')
+    def creation_batch_human_command(batch_id: str, payload: CreationBatchHumanCommand,
+            x_csrf_token: str | None = Header(default=None, alias='X-CSRF-Token'),
+            session: SessionContext = Depends(require_console_access)):
+        require_csrf(session, x_csrf_token)
+        from .creation_batch_delivery_gateway import owner
+        result = owner(settings, batch_id, 'execute', delivery_authorization(settings, session), **payload.model_dump())
+        if settings.background_worker_enabled:
+            background_task_runner.request_batch_advance(batch_id)
+        return {'result': result}
+
+    @app.post('/api/create/batches/{batch_id}/delivery-preview')
+    def creation_batch_delivery_preview(batch_id: str, payload: CreationBatchDeliveryScope,
+            x_csrf_token: str | None = Header(default=None, alias='X-CSRF-Token'),
+            session: SessionContext = Depends(require_console_access)):
+        require_csrf(session, x_csrf_token)
+        from .creation_batch_delivery_gateway import owner
+        return {'preview': owner(settings, batch_id, 'composite-preview', delivery_authorization(settings, session), **payload.model_dump())}
+
+    @app.post('/api/create/batches/{batch_id}/delivery-export')
+    def creation_batch_delivery_export(batch_id: str, payload: CreationBatchDeliveryCommand,
+            x_csrf_token: str | None = Header(default=None, alias='X-CSRF-Token'),
+            session: SessionContext = Depends(require_console_access)):
+        require_csrf(session, x_csrf_token)
+        from .creation_batch_delivery_gateway import submit_export
+        result = submit_export(settings, batch_id, delivery_authorization(settings, session), **payload.model_dump())
+        if result['accepted']: background_task_runner.schedule(result['task']['task_id'])
+        return result
+
+    @app.get('/api/create/batches/{batch_id}/deliveries/{delivery_id}/{profile}')
+    def creation_batch_delivery_download(batch_id: str, delivery_id: str, profile: Literal['news', 'mix'],
+            session: SessionContext = Depends(require_console_access)):
+        from .creation_batch_delivery_gateway import owner
+        result = owner(settings, batch_id, 'composite-version', delivery_authorization(settings, session), delivery_id=delivery_id)
+        file = next((f for f in result['files'] if f['profile'] == profile), None)
+        if file is None: raise HTTPException(404, detail={'code': 'CREATION_BATCH_PROFILE_NOT_DELIVERED', 'message': '本版本没有该类型交付文件。'})
+        return FileResponse(file['path'], filename=('新闻体' if profile == 'news' else 'Mix') + '_本批创作.xlsx',
+            media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+
+    @app.get('/api/create/configuration/{business_id}')
+    def read_creation_configuration(business_id:str,session:SessionContext=Depends(require_console_access)):
+        from .creation_configuration import draft
+        result=draft(settings,int(session.user['id']),business_id)
+        if result.get('operation_id') and result.get('draft'):
+            from .creation_batch_gateway import confirmed_configuration
+            try:
+                confirmed=confirmed_configuration(settings,business_id,delivery_authorization(settings,session),
+                    result['operation_id'],result['draft'])
+                if confirmed is not None:
+                    result['confirmed_batch']=confirmed
+            except CanonicalOperationError as exc:
+                # An old confirmation cannot grant current authority. Its
+                # failure must not make the operator's editable draft unusable.
+                result['confirmed_batch']=None
+                result['confirmation_blocked']={'code':exc.code}
+        return result
+
+    @app.put('/api/create/configuration/{business_id}')
+    def save_creation_configuration(business_id:str,payload:CreationConfigurationDraftRequest,
+            x_csrf_token:str|None=Header(default=None,alias='X-CSRF-Token'),session:SessionContext=Depends(require_console_access)):
+        require_csrf(session,x_csrf_token)
+        from .creation_configuration import draft
+        return draft(settings,int(session.user['id']),business_id,payload=payload.payload,expected_revision=payload.revision)
+
     @app.post("/api/create/capacity-preview")
     def content_capacity_preview(
         payload: ContentCapacityPreviewRequest,
@@ -1930,12 +2118,16 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         if payload.profile == "news":
             require_novel_news(settings, str(session.user["phone"]))
 
+        style_arguments={}
+        if payload.creative_style_id is not None:
+            style_arguments={'creative_style_id':payload.creative_style_id,'configuration':payload.configuration}
         preview = preview_content_creation(
             settings,
             business_id=(payload.business_id),
             speaker_id=(payload.speaker_id),
             profile=(payload.profile),
             quantity=(payload.quantity),
+            **style_arguments,
         )
 
         return {
@@ -1965,6 +2157,11 @@ def build_app(settings: Settings | None = None) -> FastAPI:
                 {"selected_opportunity_id": payload.selected_opportunity_id}
                 if payload.selected_opportunity_id is not None else {}
             )
+            if payload.creative_style_id is not None:
+                novel_selection["creative_style_id"] = payload.creative_style_id
+                novel_selection["configuration"] = payload.configuration
+                novel_selection["authorization_context"] = delivery_authorization(settings, session)
+                novel_selection['style_preflight_sha256'] = payload.style_preflight_sha256
             result = confirm_content_creation(
                 settings,
                 business_id=(payload.business_id),

@@ -26,7 +26,7 @@ Shared controls have visible keyboard focus and mobile text/touch sizing;
 the shell keeps four primary destinations and customer-scoped creation.
 
 Mobile-first internal operations surface over the existing canonical pipeline.
-The console stores only account, session, and asynchronous task projection data
+The console stores account, session, editable per-operator configuration drafts, and asynchronous task projection data
 in SQLite. Customer Truth, Cases, Persona, Content Ledger, Capacity, Batch,
 Rights, Footage, and Operational Hold remain owned by `ops-pipeline` artifacts
 and resolvers.
@@ -37,6 +37,57 @@ interaction boundaries have distinct scopes; design freezes do not establish
 implementation or production availability.
 
 ## Creation entry preparation
+
+Customer list/detail links open `/create/config`. The stage/free editor keeps
+Persona/Story allocation explicit, finite cycles confirmed, and Novel/Repurpose
+counts separate. `GET/PUT /api/create/configuration/{business_id}` stores one
+operator-scoped draft with optimistic revision and a server operation key; this
+SQLite row grants no eligibility or content approval. Reload restores the draft,
+not a past eligibility result. `/api/create/batches/preview` and `/confirm`
+delegate finite batch admission to the original Native Request owner. Confirmed
+intent is canonical; the SQLite draft and Task progress cannot approve content.
+
+The existing capacity-preview gateway accepts optional `creative_style_id` and
+`configuration`. Its read-only Native check binds current Business/Speaker,
+Ledger, exact activated source Catalog and normalized configuration. Editing
+invalidates the check; explicit confirm rechecks current gates and the supplied
+`style_preflight_sha256` under the original Native locks. Same payload/key retries
+recover the original Request. The resulting `generation-request-v1.1` is consumed
+by original planning/generation/Human/Publish/Export owners; legacy v1.0 remains
+separate. See the [machine contracts](../ops-pipeline/scripts/creative_style_contracts_v1.json),
+[versioned Style rules](../ops-pipeline/scripts/creative_style_rules_v1.json) and
+[B1 evidence/status](../docs/deliveries/creation-batch-ux-1/B1_EXECUTION_RECORD.md).
+The B1 single-Style entry remains available independently. The subsequent
+isolated batch candidate uses [C03–C06 owners](../ops-pipeline/scripts/native_batch_v1.py)
+and the exact [admission policy](../ops-pipeline/scripts/creation_batch_policy_v2.json):
+Mix groups retain their versioned Style and stable Slots, while Novel and
+Repurpose each map one video to one original Request. Repurpose's 4–8 beats are
+not multiple videos; explicit `repurposeSourceIds` must match its quantity.
+Pending presentation holds grant no new semantic exposure. Existing qualification,
+facts, Speaker, Pattern, Compatibility and Release gates apply independently.
+
+The original worker dispatches one operation per Business at a time. Pause/end
+stop unissued work; issued unknown results retain their original recovery and
+are never automatically sent again. Content review and Publish confirmation
+remain separate explicit gates. [C07](../ops-pipeline/scripts/creation_batch_review_v1.py)
+continues the same immutable Human command in bounded segments, verifies original
+receipts on replay, and permits whole-item rejection only where the Native owner
+supports it (Mix). News beat revision stays in its original editor; no empty
+approved News bundle is invented. Relogin can retrieve saved commands as intents,
+not approval proof. A later explicit control keeps precedence over a concurrently
+finishing review's refreshed execution context.
+
+The original three writers delegate supplemental delivery to
+[creation_delivery_v1](../ops-pipeline/scripts/creation_delivery_v1.py). Publish
+edits and delegated core admission share a per-Request fence; core and supplemental
+Receipt/Closure/Ledger remain with their original owners. C08 validates every
+parent and row, renders at most one News and one Mix workbook, omits zero-type
+files, and preserves historical versions and zero-write completed replay.
+Only an explicit partial scope can deliver fewer than the confirmed target.
+Current limits and tested capacity are distinct; actual evidence and remaining
+UAT obligations belong to the [B2–B4 execution record](../docs/deliveries/creation-batch-ux-1/B2_B4_EXECUTION_RECORD.md).
+This remains an isolated implementation candidate, not production qualification,
+real-provider approval or rollout authorization.
 
 The customer-scoped entry automatically previews the selected type and quantity;
 stale responses cannot replace a newer selection. One explicit Mix confirmation

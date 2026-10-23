@@ -95,11 +95,13 @@ def graph(root, business):
     if len(visited)!=len(records):raise LedgerHistoryError('FORK_OR_ROLLBACK')
     return list(reversed(result))
 
-def material(root, kind, rid, exported_at):
+def material(root, kind, rid, exported_at, *, _sealed_export_receipt=False):
     if kind == 'mix_semantic':
         from close_generation_export_v1 import historical_ledger_material
     else:
         from news_delivery_v1 import historical_ledger_material
+    if kind=='mix_semantic' and _sealed_export_receipt:
+        return historical_ledger_material(Path(root),rid,kind,exported_at,_sealed_export_receipt=True)
     return historical_ledger_material(Path(root),rid,kind,exported_at)
 
 def replay(before, recipe):
@@ -116,12 +118,17 @@ def replay(before, recipe):
     if recovered:raise LedgerHistoryError('DUPLICATE_EVENT')
     return result
 
-def validate_transition(root, path, event, *, require_seal=True):
+def validate_transition(root, path, event, *, require_seal=True, _sealed_export_receipt=False):
+    if _sealed_export_receipt:
+        if not require_seal:raise LedgerHistoryError('RECEIPT_CONFLICT')
+        sealed=check(read(path.with_name('receipt.json')),SEAL)
+        if sealed['event_ref']!=ref(root,path):raise LedgerHistoryError('RECEIPT_CONFLICT')
     before=read(resolve_ref(root,event['before_ref']));after=read(resolve_ref(root,event['after_ref']))
     if (before.get('business_id')!=event['business_id'] or after.get('business_id')!=event['business_id']
         or digest(before)!=event['before_canonical_sha256'] or digest(after)!=event['after_canonical_sha256']):
         raise LedgerHistoryError('SNAPSHOT_INVALID')
-    recipe=material(root,event['kind'],event['request_id'],event['exported_at'])
+    recipe=(material(root,event['kind'],event['request_id'],event['exported_at'],_sealed_export_receipt=True)
+            if _sealed_export_receipt else material(root,event['kind'],event['request_id'],event['exported_at']))
     if recipe['source_refs']!=event['source_refs'] or replay(before,recipe)!=after:
         raise LedgerHistoryError('UNAUTHORIZED_STATE_CHANGE')
     if require_seal:
@@ -133,6 +140,17 @@ def validate_transition(root, path, event, *, require_seal=True):
         closure=read(resolve_ref(root,seal['native_closure_ref']))
         validate_native_terminal(root,event,after,receipt,closure,recipe)
     return before,after
+
+
+def validate_sealed_transition(root,path,event):
+    """Read an already sealed Native transition without an Excel dependency.
+
+    Semantic/presentation replay, Native receipt/publication, immutable source
+    and workbook SHA, Closure and seal are still checked by their original
+    owners. This grants no write/repair or new export approval. Mutating owners
+    continue to call the complete default validator.
+    """
+    return validate_transition(root,path,event,_sealed_export_receipt=True)
 
 def validate_native_terminal(root,event,after,receipt,closure,recipe):
     rid=event['request_id'];kind=event['kind']

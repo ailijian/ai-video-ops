@@ -39,7 +39,7 @@ def request_navigation_context(settings, request_id, mode, expected_business_id=
         if not path.is_file():
             raise CanonicalOperationError("NEWS_REQUEST_NOT_FOUND", "没有找到原创作请求。", "请从任务或作品记录重新进入。")
         request = _read(path)
-        if request.get("schema_version") not in {NEWS_REQUEST_SCHEMA, "news-delivery-request-v1.1"} or request.get("request_id") != request_id:
+        if request.get("schema_version") not in {NEWS_REQUEST_SCHEMA, "news-delivery-request-v1.1", "news-delivery-request-v1.2"} or request.get("request_id") != request_id:
             raise CanonicalOperationError("REQUEST_LINEAGE_INVALID", "创作请求身份不一致。", "请恢复原请求后重试。")
         owner = str(request.get("business_id") or "")
         status = (request.get("lifecycle") or {}).get("status")

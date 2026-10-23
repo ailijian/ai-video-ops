@@ -1,6 +1,6 @@
 import {escapeHtml} from './case-components.js?v=flow-closure-2';
 import {formatProfileValue,EvidenceDisclosure} from './profile-components.js?v=productized-stage2-3';
-import {editableFactValue,parseEditedFactValue} from './customer-components.js?v=flow-closure-2';
+import {editableFactValue,parseEditedFactValue} from './customer-components.js?v=cbux1-b234-3';
 import {speakerFieldLabel} from './speaker-components.js?v=flow-closure-2';
 import {enhanceReviewDisclosures,bindReviewReturnLinks} from './customer-review-presentation.mjs?v=customer-review-summary-1';
 

@@ -15,6 +15,7 @@ from .path_safety import resolve_within, validate_identifier
 from .operator_projection import completed_operation_actor, request_actor
 from .subprocess_env import pipeline_subprocess_env
 from generation_recovery_v1 import RecoveryError
+from creative_style_v1 import request_schema_supported
 from resolve_generation_batch_v1 import generation_snapshot
 
 
@@ -498,7 +499,7 @@ def _load_request(settings: Settings, request_id: str) -> tuple[Path, dict[str, 
         )
     request = _read_json(path)
     if (
-        request.get("schema_version") != REQUEST_SCHEMA
+        not request_schema_supported(request)
         or str(request.get("request_id") or "") != request_id
     ):
         raise CanonicalOperationError(
@@ -556,6 +557,7 @@ def _project_generation_batch(path: Path, *, pipeline_root: Path | None = None, 
     if not path.is_file():
         return {
             "ready": False,
+            "execution_completed": False,
             "artifact_present": False, "ready_for_human_review": False,
             "recovery_state": "not_generated", "batch_ref": None, "review_pack_ref": None,
             "status": None,
@@ -969,6 +971,8 @@ def get_content_delivery_state(
         "approved_by": approval_actor if review["approved"] else None,
         "exported_by": completed_operation_actor(settings.database_path, request_id, "mix_export") if include_actors and export["completed"] else None,
         "request_id": request_id,
+        "creative_style": ({key:request['creative_style'][key] for key in ['style_id','style_version','definition_sha256']}
+            if request.get('creative_style') else None),
         "business_id": (
             request.get("persona_id")
         ),
@@ -1204,16 +1208,19 @@ def submit_generation_review(
     batch = _read_json(
         batch_path
     )
+    from generation_recovery_v1 import ready_for_review
+    accepted_subset_ready = bool(batch.get('accepted_subset') is not None and
+        ready_for_review(batch, batch.get('script_generation_contract', {}).get('selected_concept_ids') or []))
     if (
         batch.get("schema_version")
         != GENERATION_BATCH_SCHEMA
-        or batch.get("status")
+        or (not accepted_subset_ready and (batch.get("status")
         != "review_required"
         or (
             batch.get("validation")
             or {}
         ).get("passed")
-        is not True
+        is not True))
     ):
         raise CanonicalOperationError(
             "GENERATION_BATCH_NOT_REVIEWABLE",

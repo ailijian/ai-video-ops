@@ -2,22 +2,24 @@ import { dashboardMarkup, dashboardSkeleton } from "./dashboard-view.mjs?v=dash-
 import { taskListRows, taskSourceResults, taskReadFailure, taskActivityRows } from "./task-list-view.mjs?v=ui-1";
 import { createApiClient } from "./api-client.js?v=customer-speaker-v1";
 import { createCaseViews } from "./case-views.js?v=case-recovery-ui1";
-import { createCustomerViews } from "./customer-views.js?v=speaker-status-sync-1";
+import { createCustomerViews } from "./customer-views.js?v=cbux1-b234-3";
 import { progressPanel } from "./case-components.js?v=case-share-ui1";
 import { startTaskPolling } from "./task-progress.js?v=mobile-reliability-1";
 import { CUSTOM_INDUSTRY, industryOptions, industryValue as readIndustryValue, setIndustryValue, syncCustomIndustry } from "./case-industry.mjs?v=industry-2";
 import { matchWorkflowRoute } from "./routes.js";
+import { createCreationConfigViews } from "./creation-config-view.mjs?v=qualification-alert-1";
+import { createCreationBatchViews } from "./creation-batch-view.mjs?v=batch-state-read-2";
 import {
   createSpeakerViews,
 } from "./speaker-views.js?v=speaker-revalidation-ui-1";
 
 import {
   createContentViews,
-} from "./content-views.js?v=news-review-ui-2";
+} from "./content-views.js?v=cbux1-b234-3";
 
 import {
   createContentOperationsViews,
-} from "./content-operations-views.js?v=productized-stage3-3";
+} from "./content-operations-views.js?v=cbux1-b234-3";
 
 const app = document.querySelector("#app");
 const toastRegion = document.querySelector("#toast-region");
@@ -560,6 +562,11 @@ const contentViews = createContentViews({
   renderLoadError,
 });
 
+const creationConfigViews = createCreationConfigViews({ app, api, shell, bindCommonActions,
+  skeletonPage, renderLoadError, navigate });
+const creationBatchViews = createCreationBatchViews({ app, api, shell, bindCommonActions,
+  skeletonPage, renderLoadError });
+
 const contentOperationsViews =
   createContentOperationsViews({
     app,
@@ -608,7 +615,7 @@ async function renderTaskDetail(taskId) {
             "后台任务",
             humanTaskType(task.task_type),
             "任务完成后，页面会重新读取业务结果确认最终状态。",
-          )}<div data-live-progress>${progressPanel(task)}</div>${task.payload?.request_id ? `<a class="btn btn-primary" href="/create?request_id=${encodeURIComponent(task.payload.request_id)}${String(task.payload.operation || "").startsWith("novel_news") ? "&profile=news&news_mode=novel_content" : String(task.payload.operation || "").startsWith("news_") ? "&profile=news&news_mode=cross_profile_repurpose" : ""}" data-route>查看原创作与审核</a>` : ""}<a class="btn btn-secondary btn-wide" href="/tasks" data-route>返回任务记录</a></main>`,
+          )}<div data-live-progress>${progressPanel(task)}</div>${task.payload?.request_id ? `<a class="btn btn-primary" href="${task.payload.operation === 'creation_batch_export' ? '/create/batch?batch_id=' : '/create?request_id='}${encodeURIComponent(task.payload.request_id)}${String(task.payload.operation || "").startsWith("novel_news") ? "&profile=news&news_mode=novel_content" : String(task.payload.operation || "").startsWith("news_") ? "&profile=news&news_mode=cross_profile_repurpose" : ""}" data-route>查看创作、审核与交付</a>` : ""}<a class="btn btn-secondary btn-wide" href="/tasks" data-route>返回任务记录</a></main>`,
         );
         bindCommonActions();
       };
@@ -655,6 +662,8 @@ async function renderRoute() {
   if (path === "/tasks") return renderTasks();
   if (path === "/customers") return customerViews.renderCustomers();
 if (path === "/customers/new") return customerViews.renderCustomerNew();
+  if (path === "/create/config") return creationConfigViews.renderConfiguration();
+  if (path === "/create/batch") return creationBatchViews.renderBatch();
   if (path === "/create") return contentViews.renderCreate();
   const workflowRoute = matchWorkflowRoute(path);
   if (workflowRoute?.name === "case-intake") return caseViews.renderIntakeGroup(workflowRoute.value);

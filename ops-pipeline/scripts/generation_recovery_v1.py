@@ -22,8 +22,14 @@ INTENT = 'generation-recovery-intent-v1.0'
 RESULT = 'generation-recovery-result-v1.0'
 DISPATCH = 'generation-recovery-dispatch-v1.0'
 READER = 'generation-recovery-reader-v1.0'
+ACCEPTED_SUBSET = 'native-mix-accepted-subset-v1.0'
 MARKER_SCHEMA = obj({'reader_version': {'const': READER}, 'intent_ref': REF})
 SCHEMAS = {
+    ACCEPTED_SUBSET: obj({'schema_version': {'const': ACCEPTED_SUBSET},
+        'request_ref': REF, 'final_plan_ref': REF,
+        'selected_concept_ids': array(TEXT, 1), 'accepted_concept_ids': array(TEXT, 1),
+        'missing_concept_ids': array(TEXT, 1), 'content_ids': array(TEXT, 1),
+        'logical_slot_ids': array(TEXT, 1), 'accepted_contents_sha256': HASH}),
     INTENT: obj({'schema_version': {'const': INTENT}, 'request_id': ID,
         'operation_id': OPERATION, 'parent_ref': REF, 'anchor_ref': REF,
         'bindings': obj({'request_ref': REF, 'source_plan_ref': REF, 'final_plan_ref': REF,
@@ -173,11 +179,66 @@ def transport_failure(batch):
 
 def ready_for_review(batch, selected_ids):
     ids = [str(x.get('concept_ref') or '') for x in batch.get('contents') or []]
-    return bool(selected_ids and batch.get('status') == 'review_required'
+    full = bool(selected_ids and batch.get('status') == 'review_required'
         and ids == selected_ids and len(ids) == len(set(ids))
         and batch.get('validation', {}).get('passed') is True
         and batch.get('validation', {}).get('material_centers_preserved') is True
         and batch.get('script_generation_contract', {}).get('material_center_validation', {}).get('passed') is True)
+    if full:
+        return True
+    if batch.get('accepted_subset') is None:
+        return False
+    expected = accepted_subset(batch, selected_ids)
+    check(batch['accepted_subset'], ACCEPTED_SUBSET)
+    if expected is None or batch['accepted_subset'] != expected:
+        raise RecoveryError('GENERATION_BATCH_NOT_REVIEWABLE', 'Accepted subset differs from Native content/selection/Slot identity')
+    return True
+
+
+def accepted_subset(batch, selected_ids):
+    """Original Mix owner: reviewable accepted items, never quantity completion.
+
+    Only the versioned Batch Request may review a machine-passed subset. Legacy
+    full-count validation and its overall failed quantity result stay intact.
+    """
+    contents = batch.get('contents') or []
+    ids = [str(x.get('concept_ref') or '') for x in contents]
+    if not (0 < len(ids) < len(selected_ids)):
+        return None
+    source = batch.get('lineage', {}).get('request') or {}
+    path = Path(source.get('path') or '').resolve()
+    if not path.is_file() or file_sha(path) != source.get('sha256'):
+        raise RecoveryError('GENERATION_BATCH_NOT_REVIEWABLE', 'Subset Request source changed')
+    request = read(path)
+    if request.get('schema_version') != 'generation-request-v1.2' or not request.get('batch_admission_ref'):
+        return None
+    from creative_style_v1 import validate_batch, pinned
+    validate_batch(batch)
+    final_ref = batch.get('script_generation_contract', {}).get('final_content_plan_ref') or {}
+    final = pinned(final_ref)
+    actual = [x['concept_id'] for x in final.get('selected_concepts') or []]
+    flags = batch.get('validation') or {}
+    content_ids = [str(x.get('content_id') or '') for x in contents]
+    slots = [str(x.get('logical_slot_id') or '') for x in contents]
+    if (actual != selected_ids or len(set(actual)) != len(actual)
+            or ids != [c for c in actual if c in ids] or len(set(ids)) != len(ids)
+            or not all(content_ids) or len(set(content_ids)) != len(content_ids)
+            or not all(slots) or len(set(slots)) != len(slots)
+            or batch.get('status') != 'generation_incomplete' or flags.get('passed') is not False
+            or batch.get('generated_count') != len(ids) or batch.get('machine_pass_count') != len(ids)
+            or batch.get('requested_quantity') != request['quantity']
+            or flags.get('material_centers_preserved') is not True
+            or flags.get('contract_valid') is not True or flags.get('batch_similarity_passed') is not True
+            or batch.get('script_generation_contract', {}).get('material_center_validation', {}).get('passed') is not True
+            or any(c.get('validation', {}).get('passed') is not True for c in contents)):
+        raise RecoveryError('GENERATION_BATCH_NOT_REVIEWABLE', 'Subset is not an exact machine-passed Native selection')
+    return check({'schema_version': ACCEPTED_SUBSET,
+        'request_ref': {'path': str(path), 'sha256': file_sha(path)},
+        'final_plan_ref': {'path': final_ref['path'], 'sha256': final_ref['sha256']},
+        'selected_concept_ids': actual, 'accepted_concept_ids': ids,
+        'missing_concept_ids': [c for c in actual if c not in ids],
+        'content_ids': content_ids, 'logical_slot_ids': slots,
+        'accepted_contents_sha256': digest(contents)}, ACCEPTED_SUBSET)
 
 
 def require_unreviewed(root, request_id):
@@ -194,6 +255,8 @@ def require_unreviewed(root, request_id):
 
 
 def validate_approved_source(root, request_id, approved, receipt):
+    from creative_style_v1 import validate_batch
+    validate_batch(approved)
     if not (request_root(root, request_id) / 'recovery').exists():
         return  # Original legacy interpretation.
     state = graph(root, request_id)

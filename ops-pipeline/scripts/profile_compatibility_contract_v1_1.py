@@ -119,6 +119,8 @@ def validate(value, schema, label='$'):
     if kind == 'array':
         if len(value) < schema.get('minItems', 0):
             raise CompatibilityError(f'{label}: empty collection')
+        if len(value) > schema.get('maxItems', len(value)):
+            raise CompatibilityError(f'{label}: collection exceeds its bounded scope')
         for index, item in enumerate(value):
             validate(item, schema['items'], f'{label}[{index}]')
     if kind == 'string':

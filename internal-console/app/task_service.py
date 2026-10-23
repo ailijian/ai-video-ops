@@ -329,6 +329,52 @@ def resume_generation_recovery_task(database_path: Path, task_id: str, *, queue_
     return get_task(database_path, task_id)
 
 
+def resume_creation_batch_task(database_path: Path, task_id: str, authorization_context: dict,
+                               resume_operation_id: str, *, queue_max: int) -> dict[str, Any]:
+    """One continuation per explicit canonical Batch resume; no new Task.
+
+    Caller has verified the exact C04, current Session/source, non-unknown
+    provider evidence and absence of a terminal Native rejection.
+    """
+    with transaction(database_path, immediate=True) as db:
+        row = db.execute('SELECT * FROM tasks WHERE task_id=?', (task_id,)).fetchone()
+        payload = json.loads(row['payload_json']) if row else {}
+        if (not row or row['task_type'] != 'content_generation'
+                or payload.get('operation') not in {'content_plan', 'script_generation','news_plan'}
+                or payload.get('generation_recovery')
+                or payload.get('request_id') != row['subject_ref']
+                or row['created_by_user_id'] != authorization_context['actor']['user_id']):
+            raise TaskSubmissionError('CREATION_BATCH_TASK_INVALID', 'Original batch Native Task required')
+        if row['status'] == 'failed' and payload.get('batch_resume_operation') != resume_operation_id:
+            ensure_task_capacity(db, queue_max=queue_max, gpu_pending_per_user_max=1,
+                execution_lane=STANDARD_BACKGROUND, created_by_user_id=row['created_by_user_id'])
+            payload['batch_resume_operation'] = resume_operation_id
+            db.execute("UPDATE tasks SET status='queued',stage='恢复原批次本地执行',payload_json=?,worker_id=NULL,"
+                       "heartbeat_at=NULL,lease_expires_at=NULL,updated_at=? WHERE task_id=? AND status='failed'",
+                       (json.dumps(payload, ensure_ascii=False), iso_utc(), task_id))
+    return get_task(database_path, task_id)
+
+
+def end_unissued_batch_tasks(database_path: Path, request_ids, *, user_id: int):
+    """Project original safe cancellation onto queued Tasks, never in-flight RPC.
+
+    Caller supplies only C05 Native-safe-released Request identities. Existing
+    completed/failed/running history and immutable operation payloads stay put.
+    """
+    ended=[]
+    with transaction(database_path,immediate=True) as db:
+        for rid in request_ids:
+            rows=db.execute("SELECT task_id FROM tasks WHERE subject_ref=? AND created_by_user_id=? "
+                "AND task_type='content_generation' AND status='queued' AND json_extract(payload_json,'$.operation') "
+                "IN ('content_plan','script_generation','novel_news_generate','news_plan')",(rid,user_id)).fetchall()
+            for row in rows:
+                db.execute("UPDATE tasks SET status='failed',stage='本批已结束，未继续生成',error_code='CREATION_BATCH_ENDED',"
+                    "error_message='已停止未派发工作，原始记录保留。',updated_at=? WHERE task_id=? AND status='queued'",
+                    (iso_utc(),row['task_id']))
+                ended.append(row['task_id'])
+    return ended
+
+
 def resume_novel_generation_task(database_path: Path, task_id: str, authorization_context: dict, *, queue_max: int) -> dict[str, Any]:
     """Only after Native non-dispatch/prepared admission; never generic retry."""
     with transaction(database_path, immediate=True) as db:
@@ -379,6 +425,25 @@ def resume_news_export_task(database_path: Path, task_id: str, authorization_con
                 "heartbeat_at=NULL,lease_expires_at=NULL,error_code=NULL,error_message=NULL,updated_at=? WHERE task_id=? AND status='failed'",
                 (json.dumps(payload, ensure_ascii=False), iso_utc(), task_id))
     return get_task(database_path, task_id)
+
+
+def resume_creation_batch_delivery_task(database_path: Path, task_id: str, authorization_context: dict, *, queue_max: int) -> dict[str, Any]:
+    """Same C08 local delivery Task; refresh Session without changing its source/scope."""
+    with transaction(database_path,immediate=True) as db:
+        row=db.execute('SELECT * FROM tasks WHERE task_id=?',(task_id,)).fetchone()
+        payload=json.loads(row['payload_json']) if row else {}
+        execution=payload.get('creation_batch_delivery') or {};old=execution.get('authorization_context') or {}
+        if (not row or row['task_type']!='excel_export' or row['execution_lane']!=STANDARD_BACKGROUND
+                or payload.get('operation')!='creation_batch_export' or payload.get('request_id')!=row['subject_ref']
+                or row['created_by_user_id']!=authorization_context['actor']['user_id'] or old.get('actor')!=authorization_context['actor']
+                or any((old.get('authorization') or {}).get(k)!=authorization_context['authorization'][k] for k in ('database_path','user_state_sha256'))):
+            raise TaskSubmissionError('CREATION_BATCH_DELIVERY_CONFLICT','Original admitted delivery Task/principal required')
+        if row['status']=='failed':
+            ensure_task_capacity(db,queue_max=queue_max,gpu_pending_per_user_max=1,execution_lane=STANDARD_BACKGROUND,created_by_user_id=row['created_by_user_id'])
+            execution['authorization_context']=authorization_context
+            db.execute("UPDATE tasks SET status='queued',stage='继续原批次交付',payload_json=?,worker_id=NULL,heartbeat_at=NULL,lease_expires_at=NULL,"
+                "error_code=NULL,error_message=NULL,updated_at=? WHERE task_id=? AND status='failed'",(json.dumps(payload,ensure_ascii=False),iso_utc(),task_id))
+    return get_task(database_path,task_id)
 
 
 def resume_mix_export_task(database_path: Path, task_id: str, export_context: dict, *, queue_max: int) -> dict[str, Any]:
@@ -433,6 +498,20 @@ def submit_task(
                 if json.loads(row['payload_json']) != payload:
                     raise TaskSubmissionError('GENERATION_RECOVERY_CONFLICT', 'Generation operation payload conflicts')
                 return get_task(database_path, row['task_id'])
+        if payload.get('operation')=='creation_batch_export':
+            execution=payload.get('creation_batch_delivery') or {}
+            rows=connection.execute("SELECT * FROM tasks WHERE operation_identity=? OR (subject_ref=? AND created_by_user_id=? "
+                "AND json_extract(payload_json,'$.operation')='creation_batch_export' AND json_extract(payload_json,'$.creation_batch_delivery.operation_id')=?) "
+                "ORDER BY rowid DESC",(operation_identity,subject_ref,created_by_user_id,execution.get('operation_id'))).fetchall()
+            for row in rows:
+                old=json.loads(row['payload_json']);before=old.get('creation_batch_delivery') or {}
+                after=payload.get('creation_batch_delivery') or {}
+                stable=lambda value:{k:v for k,v in value.items() if k not in {'authorization_context','operation_id'}}
+                if (old.get('operation')!='creation_batch_export' or row['subject_ref']!=subject_ref or row['task_type']!=task_type
+                        or row['created_by_user_id']!=created_by_user_id or stable(before)!=stable(after)
+                        or (before.get('authorization_context') or {}).get('actor')!=(after.get('authorization_context') or {}).get('actor')):
+                    raise TaskSubmissionError('CREATION_BATCH_DELIVERY_CONFLICT','Original delivery Task scope differs')
+            if rows:return get_task(database_path,rows[0]['task_id'])
         existing = connection.execute(
             f"""
             SELECT task_id FROM tasks

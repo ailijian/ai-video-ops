@@ -705,10 +705,8 @@ def classify_request(
         request_path
     )
 
-    if (
-        request.get("schema_version")
-        != REQUEST_SCHEMA_VERSION
-    ):
+    from creative_style_v1 import request_schema_supported
+    if not request_schema_supported(request):
         raise EffectiveLifecycleError(
             "GENERATION_REQUEST_SCHEMA_INVALID",
             (

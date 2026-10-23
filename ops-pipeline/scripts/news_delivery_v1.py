@@ -27,6 +27,7 @@ from news_slot_recommendation_v1 import (
 REQUEST_SCHEMA = "news-delivery-request-v1.0"
 PLAN_SCHEMA = "news-delivery-plan-v1.0"
 REQUEST_SCHEMA_V1_1 = "news-delivery-request-v1.1"
+REQUEST_SCHEMA_V1_2 = "news-delivery-request-v1.2"
 PLAN_SCHEMA_V1_1 = "news-delivery-plan-v1.1"
 REVIEW_SCHEMA = "news-delivery-human-review-v1.0"
 REVIEW_SCHEMA_V1_1 = "news-delivery-human-review-v1.1"
@@ -981,6 +982,7 @@ def preview_news_delivery(
     pipeline_root: Path,
     business_id: str,
     speaker_id: str,
+    reservation_request_id: str | None = None,
 ) -> dict[str, Any]:
     pipeline_root = (
         pipeline_root
@@ -1033,6 +1035,7 @@ def preview_news_delivery(
         dict[str, Any]
     ] = []
 
+    pending_sources = pending_source_ids(pipeline_root, business_id, exclude_request_id=reservation_request_id)
     for entry in (
         ledger.get("entries") or []
     ):
@@ -1041,6 +1044,8 @@ def preview_news_delivery(
             or ""
         )
         if not content_id:
+            continue
+        if content_id in pending_sources:
             continue
 
         previous_presentations = (
@@ -1193,6 +1198,7 @@ def preview_news_delivery(
             candidates
         ),
         "eligible_sources": candidates,
+        "pending_source_count": len(pending_sources),
         "already_presented_source_count": len(
             already_presented
         ),
@@ -1255,6 +1261,102 @@ def preview_news_delivery(
     }
 
 
+def request_id_for(business_id, speaker_id, source_content_id, idempotency_key):
+    return 'news_' + sha256_text('|'.join((business_id, speaker_id, source_content_id, idempotency_key.strip())))[:20]
+
+
+def batch_source_snapshot(root, business_id, source_content_id, *, publish=False):
+    """Immutable evidence for an explicitly selected historical source, not Truth."""
+    from human_review_operations_v1 import write_once
+    from creative_style_v1 import digest
+    import hashlib
+    _, ledger = _ledger(Path(root), business_id)
+    source = _source_entry(ledger, source_content_id)
+    value = {'schema_version': 'news-repurpose-batch-source-v1.0', 'business_id': business_id,
+             'source_content_id': source_content_id, 'source_entry': source}
+    path = Path(root) / 'data/news_repurpose_source_snapshots' / business_id / (digest(value) + '.json')
+    raw = json.dumps(value, ensure_ascii=False, indent=2).encode('utf-8')
+    if publish: write_once(path, value)
+    return {'owner': 'native-repurpose-source', 'id': source_content_id, 'version': '1',
+            'path': str(path.resolve()), 'sha256': hashlib.sha256(raw).hexdigest()}
+
+
+def pending_source_ids(root, business_id, *, exclude_request_id=None):
+    """Presentation holds never enter semantic novelty or communicated memory."""
+    from content_intent_reservations_v1 import directory, events
+    from creative_style_v1 import pinned
+    root = Path(root); result = set()
+    home = directory(root, business_id, 'unused').parent
+    for entry in home.iterdir() if home.is_dir() else []:
+        if not entry.is_dir() or not entry.name.startswith('news_') or entry.name == exclude_request_id: continue
+        chain = events(root, business_id, entry.name)
+        if not chain or chain[-1][1]['event'] in ('safely_released','consumed_by_native_closure'): continue
+        for reference in chain[0][1]['source_refs']:
+            if reference['owner'] != 'native-repurpose-source': continue
+            value = pinned(reference)
+            if value['business_id'] != business_id or value['source_content_id'] != reference['id']:
+                raise NewsDeliveryError('NEWS_DELIVERY_SOURCE_LINEAGE_INVALID','Pending presentation belongs to another business/source')
+            result.add(reference['id'])
+    for path in (root/'data/news_deliveries').glob('*/news_delivery_request_v1.json'):
+        value = read_json(path); rid = value.get('request_id')
+        if value.get('business_id') != business_id or rid == exclude_request_id or value.get('batch_admission_ref'): continue
+        if rid != path.parent.name: raise NewsDeliveryError('NEWS_DELIVERY_SOURCE_LINEAGE_INVALID','Pending request directory differs')
+        if path.with_name('news_delivery_export_closure_v1.json').is_file():
+            validate_news_delivery_export(pipeline_root=root, request_id=rid)
+            continue
+        if request_cancelled(root,rid): continue
+        result.add(value['source_content_id'])
+    return result
+
+
+def request_cancelled(root, request_id):
+    """Historical negative proof; no current opportunity or C05-head recursion."""
+    from creative_style_v1 import artifact,pinned
+    import native_batch_v1 as owner
+    from content_intent_reservations_v1 import _end_context
+    root=Path(root); path=_request_path(root,request_id)
+    target=path.with_name('news_delivery_cancellation_v1.json')
+    if not target.is_file(): return False
+    request=read_json(path);value=read_json(target)
+    if request.get('schema_version')!=REQUEST_SCHEMA_V1_2:
+        raise NewsDeliveryError('NEWS_DELIVERY_CANCELLATION_INVALID','Only the exact bounded Native request may carry this disposition')
+    admission=owner.admission_binding(request.get('batch_admission_ref'),root=root,request=request)
+    batch=pinned(admission['batch_intent_ref'])
+    _end_context(root,batch,value.get('end_ref'))
+    expected={'schema_version':'news-delivery-batch-cancellation-v1.0','disposition':'cancelled_unissued',
+        'request_ref':artifact(path,'native-request',request_id,request['schema_version']),
+        'batch_intent_ref':admission['batch_intent_ref'],'end_ref':value['end_ref']}
+    if value!=expected:
+        raise NewsDeliveryError('NEWS_DELIVERY_CANCELLATION_INVALID','Native cancellation identity changed')
+    if (any(path.with_name(name).is_file() for name in ('news_delivery_plan_v1.json','news_delivery_human_review_v1.json',
+            'approved_news_delivery_v1.json','news_dynamic_excel_export_receipt_v1.json','news_delivery_export_closure_v1.json'))
+            or any((path.parent/'publish_copy_v1').rglob('intent.json'))):
+        raise NewsDeliveryError('NEWS_DELIVERY_CANCELLATION_INVALID','Cancelled unissued work has unexpected Native execution evidence')
+    return value
+
+
+def cancel_unissued_batch_request(root, request_id, end_ref):
+    """Called only inside original C03/C05 short mutation/Business fences."""
+    from creative_style_v1 import artifact,pinned
+    from human_review_operations_v1 import write_once
+    from content_intent_reservations_v1 import _end_context
+    import native_batch_v1 as owner
+    root=Path(root);path=_request_path(root,request_id);request=read_json(path)
+    admission=owner.admission_binding(request.get('batch_admission_ref'),root=root,request=request)
+    batch=pinned(admission['batch_intent_ref']);_end_context(root,batch,end_ref)
+    if (request.get('schema_version')!=REQUEST_SCHEMA_V1_2
+            or any(path.with_name(name).is_file() for name in ('news_delivery_plan_v1.json','news_delivery_human_review_v1.json',
+                'approved_news_delivery_v1.json','news_dynamic_excel_export_receipt_v1.json','news_delivery_export_closure_v1.json'))
+            or any((path.parent/'publish_copy_v1').rglob('intent.json'))):
+        raise NewsDeliveryError('NEWS_DELIVERY_CANCELLATION_BLOCKED','Issued or generated Native work must retain its original recovery')
+    value={'schema_version':'news-delivery-batch-cancellation-v1.0','disposition':'cancelled_unissued',
+        'request_ref':artifact(path,'native-request',request_id,request['schema_version']),
+        'batch_intent_ref':admission['batch_intent_ref'],'end_ref':end_ref}
+    target=path.with_name('news_delivery_cancellation_v1.json');write_once(target,value)
+    request_cancelled(root,request_id)
+    return artifact(target,'native-news-request-resolution',request_id,value['schema_version'])
+
+
 def _request_root(
     pipeline_root: Path,
     request_id: str,
@@ -1282,6 +1384,19 @@ def _request_path(
 
 @compatibility_guarded
 def create_news_delivery_request(
+    *, pipeline_root: Path, business_id: str, speaker_id: str, source_content_id: str,
+    idempotency_key: str, created_by_user_id: int | None = None, created_by_phone: str | None = None,
+    batch_admission_ref: dict | None = None, authorization_context: dict | None = None,
+) -> tuple[dict[str, Any], bool]:
+    values = locals().copy()
+    if batch_admission_ref is not None:
+        from generation_request_handoff_v1 import _business_generation_lock
+        with _business_generation_lock(Path(pipeline_root), business_id):
+            return _create_news_delivery_request(**values)
+    return _create_news_delivery_request(**values)
+
+
+def _create_news_delivery_request(
     *,
     pipeline_root: Path,
     business_id: str,
@@ -1290,6 +1405,8 @@ def create_news_delivery_request(
     idempotency_key: str,
     created_by_user_id: int | None = None,
     created_by_phone: str | None = None,
+    batch_admission_ref: dict | None = None,
+    authorization_context: dict | None = None,
 ) -> tuple[dict[str, Any], bool]:
     pipeline_root = (
         pipeline_root
@@ -1310,10 +1427,42 @@ def create_news_delivery_request(
             "Creator user ID and phone snapshot must be provided together.",
         )
 
+    request_id = request_id_for(business_id, speaker_id, source_content_id, idempotency_key)
+    path = _request_path(pipeline_root, request_id)
+    if path.is_file():
+        _, existing = _load_request(pipeline_root, request_id)
+        if (existing.get('business_id') != business_id or existing.get('speaker_id') != speaker_id
+                or existing.get('source_content_id') != source_content_id
+                or existing.get('idempotency_key_sha256') != sha256_text(idempotency_key)
+                or existing.get('batch_admission_ref') != batch_admission_ref):
+            raise NewsDeliveryError('NEWS_DELIVERY_IDEMPOTENCY_CONFLICT','Original Native request identity differs')
+        from news_runtime_v1_2 import configured,current
+        if configured(pipeline_root):
+            current(pipeline_root,reuse_intent='cross_profile_repurpose',pinned=existing.get('profile_compatibility_v1_2'))
+            if existing.get('schema_version') not in (REQUEST_SCHEMA_V1_1, REQUEST_SCHEMA_V1_2):
+                raise NewsDeliveryError('NEWS_DELIVERY_BINDING_REQUIRED','原请求需要重新核对新闻体资格。')
+        if batch_admission_ref is not None:
+            import native_batch_v1 as batch_owner
+            batch_owner.validate_admission(batch_admission_ref, root=pipeline_root, context=authorization_context, request=existing)
+        return existing, True
+    if batch_admission_ref is not None:
+        import native_batch_v1 as batch_owner
+        from content_intent_reservations_v1 import assert_executable
+        from delivery_receipt_recovery_v1 import actor_phone
+        if (created_by_user_id!=authorization_context['actor']['user_id'] or created_by_phone!=actor_phone(authorization_context)):
+            raise NewsDeliveryError('NEWS_DELIVERY_BATCH_ACTOR_INVALID','Native batch creator differs from its authenticated principal')
+        batch_owner.validate_admission(batch_admission_ref, root=pipeline_root, context=authorization_context)
+        original=__import__('creative_style_v1').pinned(batch_admission_ref)
+        confirmed=__import__('creative_style_v1').pinned(original['batch_intent_ref'])
+        batch_owner.policy_qualification(pipeline_root)
+        if not batch_owner.running(pipeline_root, confirmed['batch_id']):
+            raise NewsDeliveryError('NEWS_DELIVERY_BATCH_PAUSED','No unissued request after batch pause/end')
+        assert_executable(pipeline_root,business_id,request_id)
     preview = preview_news_delivery(
         pipeline_root=pipeline_root,
         business_id=business_id,
         speaker_id=speaker_id,
+        reservation_request_id=request_id,
     )
     selected = next(
         (
@@ -1340,56 +1489,6 @@ def create_news_delivery_request(
                 "News Price / Offer slice."
             ),
         )
-
-    identity = "|".join(
-        (
-            business_id,
-            speaker_id,
-            source_content_id,
-            idempotency_key,
-        )
-    )
-    request_id = (
-        "news_"
-        + sha256_text(
-            identity
-        )[:20]
-    )
-    path = _request_path(
-        pipeline_root,
-        request_id,
-    )
-
-    if path.is_file():
-        existing = read_json(path)
-        expected = {
-            "business_id": business_id,
-            "speaker_id": speaker_id,
-            "source_content_id": source_content_id,
-            "idempotency_key_sha256": (
-                sha256_text(
-                    idempotency_key
-                )
-            ),
-        }
-        actual = {
-            key: existing.get(key)
-            for key in expected
-        }
-        if actual != expected:
-            raise NewsDeliveryError(
-                "NEWS_DELIVERY_IDEMPOTENCY_CONFLICT",
-                (
-                    "Existing News Delivery Request "
-                    "does not match this idempotency identity."
-                ),
-            )
-        from news_runtime_v1_2 import configured,current
-        if configured(pipeline_root):
-            current(pipeline_root,reuse_intent='cross_profile_repurpose',pinned=existing.get('profile_compatibility_v1_2'))
-            if existing.get('schema_version')!=REQUEST_SCHEMA_V1_1:
-                raise NewsDeliveryError('NEWS_DELIVERY_BINDING_REQUIRED','原请求需要重新核对新闻体资格。')
-        return existing, True
 
     ledger_path, ledger = (
         _ledger(
@@ -1510,6 +1609,10 @@ def create_news_delivery_request(
     if configured(pipeline_root):
         request['schema_version']=REQUEST_SCHEMA_V1_1
         request['profile_compatibility_v1_2']=current(pipeline_root,reuse_intent='cross_profile_repurpose')[1]
+    if batch_admission_ref is not None:
+        request['schema_version']=REQUEST_SCHEMA_V1_2
+        request['batch_admission_ref']=batch_admission_ref
+        batch_owner.validate_admission(batch_admission_ref, root=pipeline_root, context=authorization_context, request=request)
     write_new_json(
         path,
         request,
@@ -1535,7 +1638,7 @@ def _load_request(
         request.get(
             "schema_version"
         )
-        not in {REQUEST_SCHEMA,REQUEST_SCHEMA_V1_1}
+        not in {REQUEST_SCHEMA,REQUEST_SCHEMA_V1_1,REQUEST_SCHEMA_V1_2}
         or request.get(
             "request_id"
         )
@@ -1545,19 +1648,22 @@ def _load_request(
             "NEWS_DELIVERY_REQUEST_INVALID",
             "News Delivery Request schema or identity is invalid.",
         )
-    if request.get('schema_version')==REQUEST_SCHEMA_V1_1:
+    if request.get('schema_version') in (REQUEST_SCHEMA_V1_1, REQUEST_SCHEMA_V1_2):
         from profile_compatibility_contract_v1_2 import BINDING,validate_contract
         value=validate_contract(request.get('profile_compatibility_v1_2'),BINDING)
         if value['target_profile']!='news' or value['reuse_intent']!='cross_profile_repurpose':
             raise NewsDeliveryError('NEWS_DELIVERY_BINDING_INVALID','新闻体来源版本需要重新核对。')
         from news_runtime_v1_2 import validate_request_personas
         validate_request_personas(pipeline_root,request)
+    if request.get('schema_version') == REQUEST_SCHEMA_V1_2:
+        from native_batch_v1 import admission_binding
+        admission_binding(request.get('batch_admission_ref'), root=pipeline_root, request=request)
     return path, request
 
 
 def _validate_plan_binding(root,request_id,plan):
     request_path,request=_load_request(root,request_id)
-    if request.get('schema_version')==REQUEST_SCHEMA_V1_1:
+    if request.get('schema_version') in (REQUEST_SCHEMA_V1_1, REQUEST_SCHEMA_V1_2):
         if (plan.get('schema_version')!=PLAN_SCHEMA_V1_1
             or plan.get('profile_compatibility_v1_2')!=request['profile_compatibility_v1_2']
             or plan.get('request_sha256')!=sha256_file(request_path)):
@@ -1776,8 +1882,19 @@ def _validate_title_against_fact(
             )
 
 
-@compatibility_guarded
 def resolve_news_delivery_plan(
+    *, pipeline_root: Path, request_id: str,
+) -> tuple[dict[str, Any], bool]:
+    _,request=_load_request(pipeline_root,request_id)
+    if request.get('batch_admission_ref'):
+        from novel_news_generation_recovery_v1 import mutation_fence
+        with mutation_fence(pipeline_root):
+            return _resolve_news_delivery_plan(pipeline_root=pipeline_root,request_id=request_id)
+    return _resolve_news_delivery_plan(pipeline_root=pipeline_root,request_id=request_id)
+
+
+@compatibility_guarded
+def _resolve_news_delivery_plan(
     *,
     pipeline_root: Path,
     request_id: str,
@@ -1793,6 +1910,27 @@ def resolve_news_delivery_plan(
             request_id,
         )
     )
+    if request.get('batch_admission_ref'):
+        from generation_request_handoff_v1 import _business_generation_lock
+        from operation_lock_v1 import operation_lock
+        import native_batch_v1 as owner
+        with _business_generation_lock(pipeline_root,request['business_id']), \
+                operation_lock(pipeline_root,'creation-batch-provider:'+request['business_id']):
+            base=_request_root(pipeline_root,request_id)
+            if not (base/'news_delivery_plan_v1.json').is_file():
+                reference=request['batch_admission_ref'];admission=owner.validate_admission(reference,root=pipeline_root,request=request)
+                batch=__import__('creative_style_v1').pinned(admission['batch_intent_ref'])
+                owner.assert_principal(pipeline_root,batch['batch_id'],owner.current_context(pipeline_root,batch['batch_id']))
+                from content_intent_reservations_v1 import assert_executable
+                assert_executable(pipeline_root,request['business_id'],request_id)
+                if request_cancelled(pipeline_root,request_id) or not owner.running(pipeline_root,batch['batch_id']):
+                    raise NewsDeliveryError('NEWS_DELIVERY_BATCH_PAUSED','No unissued presentation work after batch pause/end')
+            return _resolve_news_delivery_plan_locked(pipeline_root=pipeline_root,request_id=request_id)
+    return _resolve_news_delivery_plan_locked(pipeline_root=pipeline_root,request_id=request_id)
+
+
+def _resolve_news_delivery_plan_locked(*, pipeline_root: Path, request_id: str):
+    request_path,request=_load_request(pipeline_root,request_id)
     root = _request_root(
         pipeline_root,
         request_id,
@@ -2088,7 +2226,7 @@ def resolve_news_delivery_plan(
             "remote_model_called": False,
         },
     }
-    if request.get('schema_version')==REQUEST_SCHEMA_V1_1:
+    if request.get('schema_version') in (REQUEST_SCHEMA_V1_1, REQUEST_SCHEMA_V1_2):
         plan['schema_version']=PLAN_SCHEMA_V1_1
         plan['profile_compatibility_v1_2']=request['profile_compatibility_v1_2']
     write_new_json(plan_path,plan)
@@ -3962,7 +4100,10 @@ def status_news_delivery(
     output = pipeline_root / "output" / _export_name(request=request, business=business, speaker=speaker)
     recovery_state = partial_state(pipeline_root, root, output=output, receipt=receipt_path, closure=closure_path)
     completed = False
-    if closure_path.is_file():
+    cancelled=bool(request_cancelled(pipeline_root,request_id))
+    if cancelled:
+        next_action,recovery_state,completed='NEWS_REQUEST_CANCELLED','cancelled_unissued',False
+    elif closure_path.is_file():
         validate_news_delivery_export(pipeline_root=pipeline_root, request_id=request_id)
         next_action, recovery_state, completed = "NEWS_EXCEL_EXPORTED", "completed", True
     elif recovery_state == "legacy_unbound_orphan":
@@ -3975,6 +4116,7 @@ def status_news_delivery(
         next_action = "RESOLVE_NEWS_PLAN"
 
     return {
+        "cancelled": cancelled,
         "request_id": (
             request_id
         ),

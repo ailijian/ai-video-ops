@@ -27,7 +27,8 @@ def transport(prompt):
     for original in data['items']:
         units = original['units']; title = units[0]['text'] if units else original['title']
         text = '\n'.join(u['text'] for u in units) if units else original['narration']
-        topics = [topic for topic in ['午餐套餐','到店自取','忌口','密封餐盒','主食','蔬菜']
+        topics = [topic for topic in ['午餐套餐','到店自取','忌口','密封餐盒','主食','蔬菜','香菜','顾客','店主','门店',
+                                    '餐盒','库存','营业时间','纸质菜单']
                   if topic in text or topic in title][:3]
         item = {'target_id': original['target_id'], 'source_version_sha256': data['source_version_sha256'],
                 'publish_title': title, 'publish_body': text, 'topics': topics}
@@ -45,6 +46,8 @@ def write(path, value, **kwargs):
     name = Path(path).name
     if mode == 'before_intent' and name == 'intent.json': os._exit(91)
     result = original_write(path, value, **kwargs)
+    if mode == 'selection_response_failure' and 'effective-version-event' in value.get('schema_version',''):
+        raise RuntimeError('Synthetic response failure after canonical publication')
     windows = {'after_intent': 'intent.json', 'dispatch_before_send': 'dispatch.json',
                'prepared_before_draft': 'response.json', 'draft_before_result': '.draft',
                'result_before_task': 'result.json', 'intent_before_stage': 'intent.json',

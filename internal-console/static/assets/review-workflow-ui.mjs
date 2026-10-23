@@ -1,4 +1,4 @@
-import { parseEditedFactValue } from "./customer-components.js?v=flow-closure-2";
+import { parseEditedFactValue } from "./customer-components.js?v=cbux1-b234-3";
 import { escapeHtml } from "./case-components.js?v=flow-closure-2";
 
 export function amendmentPanel(detail, kind, labelFor) {

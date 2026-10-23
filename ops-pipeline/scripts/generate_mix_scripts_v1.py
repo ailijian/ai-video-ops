@@ -14,6 +14,7 @@ import time
 import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
+from creation_batch_contract_v1 import BatchError
 from typing import Any, Callable
 from xml.etree import ElementTree
 
@@ -733,6 +734,7 @@ def validate_generation_inputs(
     pattern_path: Path,
     fingerprint_paths: list[Path],
     speaker_persona_path: Path | None = None,
+    *, allow_styled_request: bool = False,
 ) -> dict[str, Any]:
     resolved = {
         "persona": persona_path.expanduser().resolve(),
@@ -745,6 +747,11 @@ def validate_generation_inputs(
             raise FileNotFoundError(path)
     persona = read_json(resolved["persona"])
     request = read_json(resolved["request"])
+    from creative_style_v1 import request_style, validate_facts
+    style = request_style(request)
+    if style and not allow_styled_request:
+        from creative_style_v1 import CreativeStyleError
+        raise CreativeStyleError("CREATIVE_STYLE_ENTRY_UNSUPPORTED", "Use the Native Request resolver for styled generation; historical direct/revision entries are not enabled")
     source_plan = read_json(resolved["source_plan"])
     pattern = read_json(resolved["pattern"])
     lifecycle = persona.get("lifecycle", {})
@@ -878,6 +885,14 @@ def validate_generation_inputs(
         str(item.get("case_id")) for item in pool
     }:
         raise RuntimeError("Every eligible Case requires one Fingerprint input.")
+    validate_facts(request, persona, speaker_persona)
+    if style:
+        from creative_style_v1 import active_qualification, request_rule, CreativeStyleError
+        active = active_qualification(resolved["request"].parents[3])
+        rule = request_rule(request)
+        if (rule["release_ref"]["sha256"] != active["binding"]["release_ref"]["sha256"]
+                or sha256_file(resolved["pattern"]) not in {r["sha256"] for r in rule["pattern_scope_refs"]}):
+            raise CreativeStyleError("CREATIVE_STYLE_QUALIFICATION_REQUIRED", "Style selected outside its exact Pattern/Release scope")
     return {
         "paths": resolved,
         "persona": persona,
@@ -1035,7 +1050,10 @@ def render_content_plan_prompt(
         "Do not call generic praise such as convenient, professional, or good service an "
         "exclusive anchor. Reuse as supporting context is allowed; avoid making a recently "
         "overused fact the primary center.\n"
-        "central_claim_key must be a stable semantic identifier for the claim, independent "
+        + ("pending_content_intents, when supplied, are reserved selections in other current "
+        "Requests, not published history. Avoid their claims and primary facts; never "
+        "treat them as new authority or reset them by changing Style.\n" if 'pending_content_intents' in safe_input else '')
+        + "central_claim_key must be a stable semantic identifier for the claim, independent "
         "of surface wording. Two equivalent claims must use the same key. If the fixed fact "
         "space supports fewer worthwhile new concepts, return fewer concepts.\n\n"
         "OUTPUT SCHEMA:\n"
@@ -1112,6 +1130,13 @@ def prepare_content_plan_egress(
             ),
         },
     }
+    from creative_style_v1 import model_policy
+    if context.get('pending_content_selection') is not None:
+        safe_input['pending_content_intents'] = project_value([
+            {k: v.get(k) for k in ('central_claim', 'primary_fact_refs', 'primary_fact_atom_refs', 'exclusive_anchor')}
+            for v in context['pending_content_selection']], 'safe_semantic')
+    if model_policy(context["request"]):
+        safe_input["request"]["creative_style_policy"] = model_policy(context["request"])
     prompt = render_content_plan_prompt(safe_input, candidate_pool_size)
     runtime_projection_sha = canonical_sha256(
         {
@@ -1196,7 +1221,7 @@ def build_content_plan_from_candidates_v1(
         "approved_pattern_id": selected_pattern.get("pattern_id"),
         "eligible_case_ids": rotation,
     }
-    return build_quality_content_plan(
+    plan = build_quality_content_plan(
         request=context["request"],
         business_id=context["persona"]["persona_id"],
         speaker_id=(context.get("speaker_persona") or {}).get("persona_id"),
@@ -1217,6 +1242,10 @@ def build_content_plan_from_candidates_v1(
         prevalidated_invalid_candidates=prevalidated_invalid_candidates,
         received_size_override=received_size_override,
     )
+    from creative_style_v1 import validate_concept
+    for concept in plan.get("selected_concepts") or []:
+        validate_concept(context["request"], concept, context.get("speaker_persona"), context.get("persona"))
+    return plan
 
 
 def generate_content_plan_v1(
@@ -1239,6 +1268,8 @@ def generate_content_plan_v1(
     per_call = max(1, min(int(config.get("candidate_call_batch_size", 10)), target_size))
     batch_count = (target_size + per_call - 1) // per_call
     remote_transport = transport or default_transport(model)
+    from batch_provider_recovery_v1 import wrap
+    remote_transport = wrap(context, 'content_plan', remote_transport, model=model)
     candidates: list[dict[str, Any]] = []
     planning_calls: list[dict[str, Any]] = []
     safe_input: dict[str, Any] | None = None
@@ -1265,6 +1296,8 @@ def generate_content_plan_v1(
                 pre_call_audit=pre_audit,
                 transport=remote_transport,
             )
+        except BatchError:
+            raise
         except Exception as exc:
             failure = remote_failure_telemetry(exc)
             telemetry_path = persist_remote_failure_telemetry(
@@ -2083,6 +2116,9 @@ def prepare_generation_egress(
         "approved_pattern": pattern_projection,
         "case_structures": case_structures,
     }
+    from creative_style_v1 import model_policy
+    if model_policy(context["request"]):
+        safe_input["request"]["creative_style_policy"] = model_policy(context["request"])
     prompt = render_generation_prompt(safe_input, remaining_slots, avoid_titles)
     runtime_projection_sha = canonical_sha256(
         {"business_persona": persona_projection, "speaker_persona": speaker_projection}
@@ -3333,8 +3369,14 @@ def generate_batch(
     created_at: str | None = None,
     content_plan: dict[str, Any] | None = None,
     content_ledger: dict[str, Any] | None = None,
+    *, native_style_mode: bool = False,
 ) -> dict[str, Any]:
     request = context["request"]
+    if request.get('batch_admission_ref'):
+        max_attempts = 1  # No automatic refill/retry for the confirmed batch.
+    if request.get("creative_style") is not None and not native_style_mode:
+        from creative_style_v1 import CreativeStyleError
+        raise CreativeStyleError("CREATIVE_STYLE_ENTRY_UNSUPPORTED", "Styled output must pass the Native resolver's source validation and cache/publication boundary")
     source_plan = context["source_plan"]
     quality_mode = content_quality_enabled(context)
     if quality_mode:
@@ -3373,6 +3415,8 @@ def generate_batch(
     rejected: list[dict[str, Any]] = []
     attempts: list[dict[str, Any]] = []
     remote_transport = transport or default_transport(model)
+    from batch_provider_recovery_v1 import wrap
+    remote_transport = wrap(context, 'script_generation', remote_transport, model=model)
     allowed_fact_refs = {
         field for field in GENERATION_FACT_FIELDS if is_known(context["persona"], field)
     } - NEVER_EGRESS_FACT_FIELDS
@@ -3412,6 +3456,8 @@ def generate_batch(
                 pre_call_audit=pre_audit,
                 transport=remote_transport,
             )
+        except BatchError:
+            raise
         except Exception as exc:
             failure = remote_failure_telemetry(exc)
             telemetry_path = persist_remote_failure_telemetry(
@@ -3543,6 +3589,16 @@ def generate_batch(
                     }
                 )
                 continue
+            if request.get('batch_admission_ref') and request.get('creative_style'):
+                from creative_style_v1 import validate_item, CreativeStyleError
+                try:
+                    validate_item(normalized, request, context['persona'], context.get('speaker_persona'))
+                except CreativeStyleError as exc:
+                    rejected_this_attempt += 1
+                    rejected.append({'attempt': attempt_number, 'response_index': response_index,
+                        'slot_id': slot_id, 'scope': 'creative_style', 'reasons': [exc.code],
+                        'candidate_sha256': canonical_sha256(raw_item), 'candidate': raw_item})
+                    continue
             slot = slot_by_id[slot_id]
             if quality_mode:
                 drift_errors = validate_script_against_plan(
@@ -4062,6 +4118,9 @@ def generate_selective_revision_batch(
     created_at: str | None = None,
     carried_revision_path: Path | None = None,
 ) -> dict[str, Any]:
+    if context.get("request", {}).get("creative_style") is not None:
+        from creative_style_v1 import CreativeStyleError
+        raise CreativeStyleError("CREATIVE_STYLE_ENTRY_UNSUPPORTED", "Historical selective generation is not enabled for Style requests; use the original Human editorial review")
     source_batch_path = source_batch_path.expanduser().resolve()
     human_review_path = human_review_path.expanduser().resolve()
     if not source_batch_path.is_file():
