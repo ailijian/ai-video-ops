@@ -223,7 +223,7 @@ def _latest_intake_dir(
         return None
 
     values = sorted(
-        (path for path in root.iterdir() if path.is_dir()),
+        (path for path in root.iterdir() if path.is_dir() and re.fullmatch(r"intake_\d{4}", path.name)),
         reverse=True,
     )
 
@@ -331,6 +331,7 @@ def _speaker_projection(
 
     persona_path = None
     persona = None
+    revalidation_required = False
 
     if persona_entry:
         persona_path = persona_entry["path"]
@@ -354,10 +355,10 @@ def _speaker_projection(
                 "请先完成 Business Persona 审核。",
             )
         else:
-            validate_speaker_business_binding(
-                persona_entry,
-                business_authority,
-            )
+            if int(reference.get("revision") or 0) < int(business_authority["revision"]):
+                revalidation_required = True
+            else:
+                validate_speaker_business_binding(persona_entry, business_authority)
 
     speaker_name = (
         _known_fact(
@@ -401,7 +402,7 @@ def _speaker_projection(
         elif review_status == ("completed_" "persona_blocked"):
             status = "needs_more_info"
 
-    if persona:
+    if persona and status not in {"fact_review_required", "needs_more_info"}:
         lifecycle = persona.get("lifecycle") or {}
 
         if lifecycle.get("status") == "review_required":
@@ -419,13 +420,37 @@ def _speaker_projection(
             else "pending_customer_profile"
         )
 
+    binding_review_required = revalidation_required and (
+        persona_authority.review_candidate is not None or status == "fact_review_required")
+    if intake_dir and business_authority and status == "fact_review_required":
+        intake_path = intake_dir / "speaker_intake_v1.json"
+        intake = _read_json(intake_path) if intake_path.is_file() else {}
+        ref = intake.get("business_ref") or {}
+        binding_review_required = binding_review_required or (
+            ref.get("persona_id") == business_id and int(ref.get("revision") or 0) < business_authority["revision"])
+    current_ready = False
+    if persona_authority.current and business_authority:
+        try:
+            validate_speaker_business_binding(persona_authority.current, business_authority)
+            current_ready = True
+        except CanonicalOperationError:
+            pass
     return {
         "business_id": business_id,
         "speaker_id": speaker_id,
         "display_name": str(speaker_name),
         "public_role": str(public_role),
         "speaker_type": str(speaker_type),
-        "status": status,
+        "status": "binding_review_required" if binding_review_required else "revalidation_required" if revalidation_required else status,
+        "approved_for_current_business": current_ready,
+        "revalidation_required": revalidation_required,
+        "submitted_by": request.get("created_by"),
+        "revalidation_evidence": {
+            "business_revision": business_authority["revision"],
+            "business_sha256": business_authority["file_sha256"],
+            "speaker_sha256": persona_authority.current["file_sha256"],
+            "business_facts": business_authority["artifact"].get("facts"),
+        } if revalidation_required and persona_authority.current else None,
         "latest_intake_id": (request.get("intake_id")),
         "latest_intake_type": request.get("intake_type") or "initial_onboarding",
         "source_type": request.get("source_type")
@@ -664,6 +689,7 @@ def prepare_speaker_onboarding_request(
     source_type: str = "internal_console_speaker_materials",
     source_lineage: dict[str, Any] | None = None,
     human_confirmed_identity: dict[str, Any] | None = None,
+    created_by: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     business_entry = resolve_persona_authority(
         settings,
@@ -853,6 +879,7 @@ def prepare_speaker_onboarding_request(
         "source_type": source_type,
         "source_lineage": source_lineage,
         "human_confirmed_identity": human_confirmed_identity,
+        "created_by": created_by,
         "created_at": (now_iso()),
         "draft_status": (
             "ready_for_analysis"
@@ -1207,10 +1234,7 @@ def _run_json_command(
         raise CanonicalOperationError(
             str((parsed or {}).get("code") or ("SPEAKER_OPERATION_FAILED")),
             "出镜人操作没有完成。",
-            (
-                str((parsed or {}).get("message") or "")
-                or "请检查当前出镜人状态后重试。"
-            ),
+            "请检查当前出镜人状态后重试。",
         )
 
     if parsed is None:
@@ -1231,8 +1255,9 @@ def review_speaker_facts(
     decisions: list[dict[str, Any]],
     reviewer: str,
     note: str,
+    intake_id: str | None = None,
 ) -> dict[str, Any]:
-    intake_dir = _latest_intake_dir(
+    intake_dir = (settings.pipeline_root / "data/speaker_intakes" / business_id / speaker_id / intake_id) if intake_id else _latest_intake_dir(
         settings,
         business_id,
         speaker_id,
@@ -1288,6 +1313,23 @@ def review_speaker_facts(
 
     finally:
         if temporary and temporary.exists():
+            temporary.unlink(missing_ok=True)
+
+
+def revalidate_speaker_business(settings: Settings, *, business_id: str, speaker_id: str,
+    confirmed: bool, business_sha256: str, speaker_sha256: str, reviewer: str, note: str) -> dict[str, Any]:
+    request = dict(business_id=business_id, speaker_id=speaker_id, confirmed=confirmed,
+        business_sha256=business_sha256, speaker_sha256=speaker_sha256, reviewer=reviewer, note=note)
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", suffix=".json", delete=False) as handle:
+            json.dump(request, handle, ensure_ascii=False)
+            temporary = Path(handle.name)
+        return _run_json_command(settings, [_pipeline_python(settings),
+            str(settings.pipeline_root / "scripts/speaker_fact_review_v1.py"), "--revalidate", str(temporary),
+            "--pipeline-root", str(settings.pipeline_root)])
+    finally:
+        if temporary:
             temporary.unlink(missing_ok=True)
 
 

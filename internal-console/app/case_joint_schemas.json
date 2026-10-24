@@ -1,0 +1,917 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{1,127}$"
+    },
+    "JointCaseResult": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "case-review-share-result-v1.1"
+        },
+        "operation_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{32}$"
+        },
+        "case_id": {
+          "type": "string",
+          "pattern": "^[0-9]{10,24}$"
+        },
+        "attempt_id": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 128
+        },
+        "intent_ref": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "approved_case_ref": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "approval_receipt_ref": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "type_decision_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "publication_receipt_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "completion": {
+          "enum": [
+            "approved_shared",
+            "approved_only",
+            "approval_kept_type_reconfirmation_required",
+            "approval_kept_share_reconfirmation_required"
+          ]
+        },
+        "completed_at": {
+          "type": "string",
+          "minLength": 20
+        },
+        "blocker": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "code": {
+                  "type": "string"
+                },
+                "message": {
+                  "type": "string"
+                },
+                "next_action": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "code",
+                "message",
+                "next_action"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "operation_id",
+        "case_id",
+        "attempt_id",
+        "intent_ref",
+        "approved_case_ref",
+        "approval_receipt_ref",
+        "type_decision_ref",
+        "publication_receipt_ref",
+        "completion",
+        "completed_at",
+        "blocker"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "completion": {
+                "const": "approved_shared"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "type_decision_ref": {
+                "$ref": "#/$defs/SourceRef"
+              },
+              "publication_receipt_ref": {
+                "$ref": "#/$defs/SourceRef"
+              },
+              "blocker": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "completion": {
+                "const": "approved_only"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "type_decision_ref": {
+                "$ref": "#/$defs/SourceRef"
+              },
+              "publication_receipt_ref": {
+                "type": "null"
+              },
+              "blocker": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "completion": {
+                "const": "approval_kept_type_reconfirmation_required"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "type_decision_ref": {
+                "type": "null"
+              },
+              "publication_receipt_ref": {
+                "type": "null"
+              },
+              "blocker": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "completion": {
+                "const": "approval_kept_share_reconfirmation_required"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "type_decision_ref": {
+                "$ref": "#/$defs/SourceRef"
+              },
+              "publication_receipt_ref": {
+                "type": "null"
+              },
+              "blocker": {
+                "type": "object"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "JointTypeDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "case-content-type-decision-v1.1"
+        },
+        "operation_id": {
+          "type": "string",
+          "pattern": "^type_(?:withdraw_)?[a-f0-9]{32}$"
+        },
+        "human_operation_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "human_command": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "case_id": {
+          "type": "string",
+          "pattern": "^[0-9]{10,24}$"
+        },
+        "attempt_id": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 128
+        },
+        "case_source": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "case_approval": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "actor": {
+          "$ref": "#/$defs/ReviewerGrant"
+        },
+        "at": {
+          "type": "string",
+          "minLength": 20
+        },
+        "action": {
+          "enum": [
+            "confirm_type",
+            "defer_type",
+            "revoke_type"
+          ]
+        },
+        "confirmation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TypeConfirmation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_snapshot": {
+          "$ref": "#/$defs/TypeSource"
+        },
+        "catalog_snapshot": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "confirmed_type_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "other_note": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "profile_conflict_resolution": {
+          "enum": [
+            "no_conflict",
+            "preserve_dimensions_with_reason",
+            "correct_suggestion_with_reason",
+            "defer"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "parent_decision_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sha"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "operation_id",
+        "human_operation_id",
+        "human_command",
+        "case_id",
+        "attempt_id",
+        "case_source",
+        "case_approval",
+        "actor",
+        "at",
+        "action",
+        "confirmation",
+        "source_snapshot",
+        "catalog_snapshot",
+        "confirmed_type_id",
+        "other_note",
+        "profile_conflict_resolution",
+        "reason",
+        "parent_decision_sha256"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "enum": [
+                  "defer_type",
+                  "revoke_type"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "confirmed_type_id": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "confirm_type"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "confirmed_type_id": {
+                "type": "string",
+                "minLength": 2
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "confirmed_type_id": {
+                "const": "other"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "other_note": {
+                "minLength": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "ReviewerGrant": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "namespace": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{32}$"
+        },
+        "user_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "capability": {
+          "const": "case_library_reviewer"
+        },
+        "event_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "event_sha256": {
+          "$ref": "#/$defs/Sha"
+        }
+      },
+      "required": [
+        "namespace",
+        "user_id",
+        "capability",
+        "event_id",
+        "event_sha256"
+      ]
+    },
+    "Sha": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "SourceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^(?!.*(?:^|[\\\\/])\\.{1,2}(?:[\\\\/]|$))(?:data[\\\\/][A-Za-z0-9_.\\\\/-]+|app/case_video_type_catalog\\.json)$"
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "path",
+        "sha256"
+      ]
+    },
+    "StandaloneTypeInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "operation_id": {
+          "type": "string",
+          "pattern": "^type_(?:withdraw_)?[a-f0-9]{32}$"
+        },
+        "action": {
+          "enum": [
+            "confirm_type",
+            "defer_type",
+            "revoke_type"
+          ]
+        },
+        "confirmation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/TypeConfirmation"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "approved_case_sha256": {
+          "$ref": "#/$defs/Sha"
+        },
+        "approval_receipt_sha256": {
+          "$ref": "#/$defs/Sha"
+        },
+        "expected_parent_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sha"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "operation_id",
+        "action",
+        "confirmation",
+        "approved_case_sha256",
+        "approval_receipt_sha256",
+        "expected_parent_sha256"
+      ]
+    },
+    "TypeCatalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "case-content-type-catalog-v1.0"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "entries": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "type_id": {
+                "$ref": "#/$defs/Identifier"
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 80
+              },
+              "confirmable": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "type_id",
+              "label",
+              "confirmable"
+            ]
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "version",
+        "entries"
+      ]
+    },
+    "TypeConfirmation": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "case-joint-type-confirmation-v1.0"
+        },
+        "catalog": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "type_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "other_note": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "profile_conflict_resolution": {
+          "enum": [
+            "no_conflict",
+            "preserve_dimensions_with_reason",
+            "correct_suggestion_with_reason",
+            "defer"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "explicitly_confirmed": {
+          "const": true
+        }
+      },
+      "required": [
+        "schema_version",
+        "catalog",
+        "type_id",
+        "other_note",
+        "profile_conflict_resolution",
+        "reason",
+        "explicitly_confirmed"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type_id": {
+                "const": "other"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "other_note": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 500
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type_id": {
+                "type": "null"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "profile_conflict_resolution": {
+                "const": "defer"
+              },
+              "other_note": {
+                "const": ""
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "profile_conflict_resolution": {
+                "enum": [
+                  "preserve_dimensions_with_reason",
+                  "correct_suggestion_with_reason"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reason": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 2000
+              }
+            }
+          }
+        }
+      ]
+    },
+    "TypeSource": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "enum": [
+            "mix",
+            "news",
+            "hybrid",
+            "uncertain",
+            null
+          ]
+        },
+        "suggested_type": {
+          "anyOf": [
+            {
+              "type": "string",
+              "maxLength": 100
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "suggestion_ref": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SourceRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "catalog": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "parent_decision_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sha"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "profile",
+        "suggested_type",
+        "suggestion_ref",
+        "catalog",
+        "parent_decision_sha256"
+      ]
+    },
+    "TypedPublication": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "enum": [
+            "case-shared-display-v1.2",
+            "case-shared-display-v1.3"
+          ]
+        },
+        "case_id": {
+          "type": "string",
+          "pattern": "^[0-9]{10,24}$"
+        },
+        "audience": {
+          "const": "eligible_platform_users"
+        },
+        "sequence": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "parent_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sha"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "action": {
+          "const": "publish"
+        },
+        "at": {
+          "type": "string",
+          "minLength": 20
+        },
+        "actor": {
+          "$ref": "#/$defs/ReviewerGrant"
+        },
+        "case_sha256": {
+          "$ref": "#/$defs/Sha"
+        },
+        "approval_receipt_sha256": {
+          "$ref": "#/$defs/Sha"
+        },
+        "allowed_fields": {
+          "const": [
+            "title",
+            "industry",
+            "video_type",
+            "duration_seconds",
+            "structure_summary"
+          ]
+        },
+        "display": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "title": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "industry": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 30
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "video_type": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/Identifier"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "duration_seconds": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "structure_summary": {
+              "type": "string",
+              "maxLength": 1000
+            }
+          },
+          "required": [
+            "title",
+            "industry",
+            "video_type",
+            "duration_seconds",
+            "structure_summary"
+          ]
+        },
+        "sources": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "title": {
+              "type": "object"
+            },
+            "industry": {
+              "type": "object"
+            },
+            "video_type": {
+              "type": "object"
+            },
+            "duration_seconds": {
+              "type": "object"
+            },
+            "structure_summary": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "title",
+            "industry",
+            "video_type",
+            "duration_seconds",
+            "structure_summary"
+          ]
+        },
+        "cover_clearance": {
+          "anyOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "type_decision_ref": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "human_display_decision": {
+          "type": "object"
+        },
+        "publication_operation_id": {
+          "type": "string",
+          "pattern": "^pub_[a-f0-9]{32}$"
+        }
+      },
+      "required": [
+        "schema_version",
+        "case_id",
+        "audience",
+        "sequence",
+        "parent_sha256",
+        "action",
+        "at",
+        "actor",
+        "case_sha256",
+        "approval_receipt_sha256",
+        "allowed_fields",
+        "display",
+        "sources",
+        "cover_clearance",
+        "type_decision_ref"
+      ],
+      "oneOf": [
+        {
+          "properties": {
+            "schema_version": {
+              "const": "case-shared-display-v1.2"
+            }
+          },
+          "required": [
+            "human_display_decision"
+          ],
+          "not": {
+            "required": [
+              "publication_operation_id"
+            ]
+          }
+        },
+        {
+          "properties": {
+            "schema_version": {
+              "const": "case-shared-display-v1.3"
+            }
+          },
+          "required": [
+            "publication_operation_id"
+          ],
+          "not": {
+            "required": [
+              "human_display_decision"
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

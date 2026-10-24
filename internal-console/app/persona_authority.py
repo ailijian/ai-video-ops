@@ -99,6 +99,12 @@ def resolve_persona_authority(
 
     active_review_candidates: list[PersonaArtifact] = []
     for path in root.glob("*/persona_v1.json"):
+        from persona_review_lifecycle_v1 import is_returned
+        try:
+            if is_returned(path):
+                continue
+        except RuntimeError as exc:
+            raise CanonicalOperationError("CURRENT_AUTHORITY_AMBIGUITY", str(exc), "请核对更正收据与原候选。") from exc
         persona = _read_persona(path)
         lifecycle = persona.get("lifecycle") or {}
         status = lifecycle.get("status")

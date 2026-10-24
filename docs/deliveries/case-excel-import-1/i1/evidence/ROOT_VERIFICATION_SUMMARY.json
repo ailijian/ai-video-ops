@@ -1,0 +1,98 @@
+{
+  "path": "E:\\projects\\ai-video-ops\\.worktrees\\cxi\\.verify\\4f25f227\\summary.json",
+  "sha256": "9db9cab517254da67a4b0229b58be91d773474ab887e2eefdc38ec2d1c83cdce",
+  "status": "failed",
+  "mode": "full-fallback",
+  "base": "4287234e5aa7f711751d7ec06dd0935ad6acbab2",
+  "seconds": 903.302,
+  "state_unchanged": true,
+  "tested_tree_fingerprint": "a84d7c4e3eadbc8fdb0f79bdf5a4bfb98676187b363f2d3bec84d98528a26e3a",
+  "open_full_regression_gate": true,
+  "results": [
+    {
+      "target": "pipeline",
+      "status": "passed",
+      "exit_code": 0,
+      "error": null,
+      "counts": {
+        "tests": 740,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "skip_reasons": [],
+        "passed": 740
+      },
+      "junit": "E:\\projects\\ai-video-ops\\.worktrees\\cxi\\.verify\\4f25f227\\0-pipeline.xml",
+      "seconds": 63.977
+    },
+    {
+      "target": "authority-release",
+      "status": "passed",
+      "exit_code": 0,
+      "error": null,
+      "counts": {
+        "tests": 12,
+        "failures": 0,
+        "errors": 0,
+        "skipped": 0,
+        "skip_reasons": [],
+        "passed": 12
+      },
+      "junit": "E:\\projects\\ai-video-ops\\.worktrees\\cxi\\.verify\\4f25f227\\4-authority-release.xml",
+      "seconds": 6.377
+    },
+    {
+      "target": "frp-guard",
+      "status": "passed",
+      "exit_code": 0,
+      "error": null,
+      "counts": {
+        "tests": 30,
+        "passed": 30,
+        "skipped": 0
+      },
+      "junit": null,
+      "seconds": 3.692
+    },
+    {
+      "target": "verification",
+      "status": "passed",
+      "exit_code": 0,
+      "error": null,
+      "counts": {
+        "tests": 27,
+        "passed": 27,
+        "skipped": 0
+      },
+      "junit": null,
+      "seconds": 10.905
+    },
+    {
+      "target": "console",
+      "status": "failed",
+      "exit_code": 124,
+      "error": "Missing/invalid JUnit evidence: [Errno 2] No such file or directory: 'E:\\\\projects\\\\ai-video-ops\\\\.worktrees\\\\cxi\\\\.verify\\\\4f25f227\\\\2-console.xml'",
+      "counts": {},
+      "junit": null,
+      "seconds": 900.431
+    },
+    {
+      "target": "console",
+      "status": "failed",
+      "exit_code": 124,
+      "error": "Missing/invalid JUnit evidence: [Errno 2] No such file or directory: 'E:\\\\projects\\\\ai-video-ops\\\\.worktrees\\\\cxi\\\\.verify\\\\4f25f227\\\\1-console.xml'",
+      "counts": {},
+      "junit": null,
+      "seconds": 900.423
+    },
+    {
+      "target": "console",
+      "status": "failed",
+      "exit_code": 124,
+      "error": "Missing/invalid JUnit evidence: [Errno 2] No such file or directory: 'E:\\\\projects\\\\ai-video-ops\\\\.worktrees\\\\cxi\\\\.verify\\\\4f25f227\\\\3-console.xml'",
+      "counts": {},
+      "junit": null,
+      "seconds": 900.405
+    }
+  ]
+}

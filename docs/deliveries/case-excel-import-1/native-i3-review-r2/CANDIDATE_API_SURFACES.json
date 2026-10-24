@@ -1,0 +1,112 @@
+{
+  "status": "ALL_PATHS_PROPOSED_NOT_REGISTERED",
+  "apis": [
+    {
+      "unit": "EX-S1",
+      "method": "POST",
+      "path": "/api/case-excel/imports/{batch}/rows/{row}/native-preview",
+      "authorization": "本人 Session+CSRF",
+      "effect": "READ_ONLY_NO_CANONICAL_WRITE",
+      "request_schema": "NativePrepareInput",
+      "response_schema": "NativePreview",
+      "schema_document": "CONTRACT_CANDIDATES_R2.json#/$defs/",
+      "unlisted_body_fields": "REJECT; path/session identities resolved by original Owner"
+    },
+    {
+      "unit": "EX-S1",
+      "method": "POST",
+      "path": "/api/case-excel/imports/{batch}/rows/{row}/native-submissions",
+      "authorization": "本人 Session+CSRF+explicit intent+preflight",
+      "effect": "NEW_INTENT_AND_ORIGINAL_TASK_ADMISSION",
+      "request_schema": "NativeSubmissionInput",
+      "response_schema": "NativeSubmissionRecord",
+      "schema_document": "CONTRACT_CANDIDATES_R2.json#/$defs/",
+      "unlisted_body_fields": "REJECT; path/session identities resolved by original Owner"
+    },
+    {
+      "unit": "EX-S1",
+      "method": "GET",
+      "path": "/api/case-excel/imports/{batch}/rows/{row}/native-submissions/{operation}",
+      "authorization": "本人 Session",
+      "effect": "READ_ORIGINAL_RESULT_ONLY",
+      "request_schema": null,
+      "response_schema": "NativeSubmissionRecord",
+      "schema_document": "CONTRACT_CANDIDATES_R2.json#/$defs/",
+      "unlisted_body_fields": "REJECT; path/session identities resolved by original Owner"
+    },
+    {
+      "unit": "ME-R1",
+      "method": "GET",
+      "path": "/api/cases/{case}/attempts/{attempt}/excel-notes",
+      "authorization": "当前真实 Reviewer+准确 primary origin",
+      "effect": "READ_MINIMUM_BOUND_UNVERIFIED_NOTES",
+      "request_schema": null,
+      "response_schema": "BoundNotesProjection",
+      "schema_document": "CONTRACT_CANDIDATES_R2.json#/$defs/",
+      "unlisted_body_fields": "REJECT; path/session identities resolved by original Owner"
+    },
+    {
+      "unit": "CC-01",
+      "method": "POST",
+      "path": "/api/cases/{case}/content-type/preview",
+      "authorization": "当前 Reviewer+CSRF",
+      "effect": "READ_ONLY_AFTER_ORIGINAL_CASE_APPROVAL",
+      "request_schema": null,
+      "response_schema": null,
+      "schema_document": "CONTRACT_CANDIDATES_R2.json#/$defs/",
+      "unlisted_body_fields": "REJECT; path/session identities resolved by original Owner"
+    },
+    {
+      "unit": "CC-01",
+      "method": "POST",
+      "path": "/api/cases/{case}/content-type/decisions",
+      "authorization": "当前 Reviewer+CSRF+explicit Human type action",
+      "effect": "APPEND_TYPE_COMPANION_NOT_CASE_JSON",
+      "request_schema": "TypeDecisionInput",
+      "response_schema": "TypeDecision",
+      "schema_document": "CONTRACT_CANDIDATES_R2.json#/$defs/",
+      "unlisted_body_fields": "REJECT; path/session identities resolved by original Owner"
+    },
+    {
+      "unit": "CC-01",
+      "method": "GET",
+      "path": "/api/cases/{case}/content-type",
+      "authorization": "原 Case 可读权限；私有不外泄",
+      "effect": "READ_EFFECTIVE_TYPE_OR_NULL",
+      "request_schema": null,
+      "response_schema": null,
+      "schema_document": "CONTRACT_CANDIDATES_R2.json#/$defs/",
+      "unlisted_body_fields": "REJECT; path/session identities resolved by original Owner"
+    },
+    {
+      "unit": "CC-02",
+      "method": "POST",
+      "path": "/api/cases/{case}/typed-publication/preview",
+      "authorization": "当前 Reviewer+CSRF",
+      "effect": "READ_ONLY_EXACT_TYPED_PREVIEW",
+      "request_schema": null,
+      "response_schema": "TypedDisplayPreview",
+      "schema_document": "CONTRACT_CANDIDATES_R2.json#/$defs/",
+      "unlisted_body_fields": "REJECT; path/session identities resolved by original Owner"
+    },
+    {
+      "unit": "CC-02",
+      "method": "POST",
+      "path": "/api/cases/{case}/typed-publication/commands",
+      "authorization": "当前 Reviewer+CSRF+independent Human display intent",
+      "effect": "APPEND_ORIGINAL_PUBLICATION_HISTORY_VERSIONED_READER",
+      "request_schema": [
+        "TypedPublishInput",
+        "TypedWithdrawInput"
+      ],
+      "response_schema": "TypedHistoryReceipt",
+      "schema_document": "CONTRACT_CANDIDATES_R2.json#/$defs/",
+      "unlisted_body_fields": "REJECT; path/session identities resolved by original Owner"
+    }
+  ],
+  "legacy_routes": "Unchanged; old save never dispatches, old shared publication stays null-safe",
+  "non_record_projection_contracts": {
+    "content_type_preview": "Read current approved Case/Receipt/Attempt/catalog/grant/parent and produce exact logical digest; no client body, no writes. TypeDecisionInput expected fields must match; source detail privacy stays original Case Reader.",
+    "content_type_get": "Original Case-read authorization; effective confirmed catalog type ID/label and exact decision ref, or null. No Excel hint fallback; stale/revoked returns null, not a new decision."
+  }
+}

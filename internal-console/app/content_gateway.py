@@ -4,6 +4,7 @@ import hashlib
 import json
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ from .canonical_gateway import (
 from .config import Settings
 from .customer_gateway import (
     list_customers,
+    get_customer_detail,
 )
 from .speaker_gateway import (
     list_speakers,
@@ -20,6 +22,7 @@ from .speaker_gateway import (
 from .path_safety import validate_identifier
 from .subprocess_env import pipeline_subprocess_env
 from .operator_projection import request_actor
+from creative_style_v1 import request_schema_supported
 
 GENERATION_REQUEST_SCHEMA = "generation-request-v1.0"
 
@@ -584,10 +587,7 @@ def get_active_generation_request(
             request,
             dict,
         )
-        or request.get(
-            "schema_version"
-        )
-        != GENERATION_REQUEST_SCHEMA
+        or not request_schema_supported(request)
         or request.get(
             "request_id"
         )
@@ -878,14 +878,20 @@ def get_active_generation_request(
 
 def list_creation_options(
     settings: Settings,
+    business_id: str | None = None,
 ) -> dict[str, Any]:
     customers: list[dict[str, Any]] = []
+    context = get_customer_detail(settings, business_id) if business_id else None
 
-    for customer in list_customers(settings):
-        if customer.get("status") != "approved":
+    for customer in ([context] if context else list_customers(settings)):
+        if customer.get("status") != "approved" and not (customer.get("current_business_persona") or {}).get("approved"):
             continue
 
         business_id = str(customer["business_id"])
+        from .persona_authority import resolve_persona_authority
+        business = resolve_persona_authority(settings, business_id, "business").current
+        restriction_blocked = bool(business and (business.get("production_constraints") or {}).get("blockers"))
+        restriction_url = f"/customers/{business_id}#constraints"
 
         try:
             speakers = list_speakers(
@@ -922,8 +928,8 @@ def list_creation_options(
                 "industry": (customer.get("industry")),
                 "business_persona_status": ("approved"),
                 "speakers": (approved_speakers),
-                "creation_ready": bool(approved_speakers),
-                "authority_blocker": (authority_blocker),
+                "creation_ready": bool(approved_speakers) and not restriction_blocked,
+                "authority_blocker": ({"code": "BUSINESS_CONSTRAINT_BLOCKED", "message": "客户档案已批准，但仍有重要限制需要核实。", "next_action": "查看客户待核实事项。", "url": restriction_url} if restriction_blocked else authority_blocker),
             }
         )
 
@@ -936,6 +942,7 @@ def list_creation_options(
 
     return {
         "customers": customers,
+        "customer_context": ({"business_id": context["business_id"], "display_name": context["display_name"], "status": context["status"]} if context else None),
         "ready_customer_count": sum(
             customer["creation_ready"] for customer in customers
         ),
@@ -983,6 +990,8 @@ def preview_content_creation(
     speaker_id: str,
     profile: str,
     quantity: int,
+    creative_style_id: str | None = None,
+    configuration: dict | None = None,
 ) -> dict[str, Any]:
     executable = settings.pipeline_python_executable or settings.python_executable
 
@@ -1002,7 +1011,14 @@ def preview_content_creation(
     ]
 
     env = pipeline_subprocess_env(needs_deepseek=False)
-
+    config_path=None
+    if creative_style_id is not None:
+        command.extend(['--creative-style-id',creative_style_id])
+        if configuration is not None:
+            directory=settings.repo_root/'.verify/creation-contexts';directory.mkdir(parents=True,exist_ok=True)
+            with tempfile.NamedTemporaryFile(mode='w',encoding='utf-8',suffix='.json',dir=directory,delete=False) as handle:
+                json.dump(configuration,handle,ensure_ascii=False);config_path=Path(handle.name)
+            command.extend(['--configuration-file',str(config_path)])
     try:
         result = subprocess.run(
             command,
@@ -1025,6 +1041,8 @@ def preview_content_creation(
             "内容容量暂时无法检查。",
             "请稍后重新检查；当前没有生成任何脚本。",
         ) from exc
+    finally:
+        if config_path:config_path.unlink(missing_ok=True)
 
     parsed = _parse_json_output(result.stdout)
 
@@ -1075,6 +1093,10 @@ def preview_content_creation(
     return entry
 
 
+from .compatibility_gate import checked_subprocess as compatibility_guarded
+
+
+@compatibility_guarded
 def confirm_content_creation(
     settings: Settings,
     *,
@@ -1087,6 +1109,10 @@ def confirm_content_creation(
     created_by_user_id: int | None = None,
     created_by_phone: str | None = None,
     selected_opportunity_id: str | None = None,
+    creative_style_id: str | None = None,
+    configuration: dict | None = None,
+    authorization_context: dict | None = None,
+    style_preflight_sha256: str | None = None,
 ) -> dict[str, Any]:
     executable = settings.pipeline_python_executable or settings.python_executable
 
@@ -1115,9 +1141,21 @@ def confirm_content_creation(
         command.extend(["--created-by-phone", str(created_by_phone or "")])
     if selected_opportunity_id is not None:
         command.extend(["--selected-opportunity-id", selected_opportunity_id])
+    if creative_style_id is not None:
+        command.extend(["--creative-style-id", creative_style_id])
+        if style_preflight_sha256 is not None:command.extend(['--style-preflight-sha256',style_preflight_sha256])
 
     env = pipeline_subprocess_env(needs_deepseek=False)
-
+    temporary_files = []
+    if creative_style_id is not None:
+        directory = settings.repo_root / '.verify' / 'creation-contexts'
+        directory.mkdir(parents=True, exist_ok=True)
+        for flag, value in [('--configuration-file', configuration), ('--authorization-file', authorization_context)]:
+            if value is not None:
+                with tempfile.NamedTemporaryFile(mode='w', encoding='utf-8', suffix='.json', dir=directory, delete=False) as handle:
+                    json.dump(value, handle, ensure_ascii=False)
+                    temporary_files.append(Path(handle.name))
+                    command.extend([flag, handle.name])
     try:
         process = subprocess.run(
             command,
@@ -1140,6 +1178,9 @@ def confirm_content_creation(
             "Generation Request 暂时无法建立。",
             ("请稍后重试；当前没有" "生成任何脚本。"),
         ) from exc
+    finally:
+        for path in temporary_files:
+            path.unlink(missing_ok=True)
 
     parsed = _parse_json_output(process.stdout)
 

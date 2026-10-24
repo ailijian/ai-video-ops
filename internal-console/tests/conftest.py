@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from app.auth_service import provision_user
 from app.config import Settings
 from app.main import build_app
+from app.case_library_access import manage_reviewer
 
 
 @pytest.fixture()
@@ -43,6 +44,7 @@ def settings(tmp_path: Path) -> Settings:
         case_analysis_worker_enabled=False,
         customer_analysis_worker_enabled=False,
         speaker_analysis_worker_enabled=False,
+        creation_batch_enabled=True,  # Explicit isolated engineering scope, never a runtime fallback.
         default_business_id="fixture_business_001",
     )
 
@@ -51,6 +53,9 @@ def settings(tmp_path: Path) -> Settings:
 def client(settings: Settings):
     with TestClient(build_app(settings)) as test_client:
         provision_user(settings.database_path, "13800000000")
+        # Legacy workflow fixture is explicitly an authorized internal reviewer.
+        # Ordinary A/B/D and default-deny are independently covered by CL0 tests.
+        manage_reviewer(settings,1,action="grant",operator="isolated-test-operator",reason="Explicit workflow reviewer fixture")
         yield test_client
 
 

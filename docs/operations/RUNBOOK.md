@@ -62,6 +62,7 @@ For scoped product/design rules and machine owners, start with the [Knowledge an
 - **Authority Preconditions:** Raw input and Fact Candidates are not Production Authority.
 - **Canonical Entry Point:** Internal Console Customer gateway and durable Customer Analysis task, backed by `customer_onboarding_analysis_v1.py`, `customer_fact_review_v1.py`, `build_persona_v1.py`, and `approve_persona_v1.py`.
 - **Execution:** Create customer → analyze materials → Human fact review → explicit Persona approval. The Console routes `/api/customers/analyze`, `/api/customers/<business_id>/facts/review`, and `/api/customers/<business_id>/persona/approve` preserve this separation. Speaker discovery creates only drafts; Speaker review/approval remains separate. No generic one-command intake CLI exists; do not use `--run-stage-a` as a real-customer command. Offline Persona recovery uses the build/approval CLIs below with reviewed inputs and exact lineage.
+- **Intake/recovery:** Industry is optional. Name-only save starts no task; continue with the same Business ID. Resume independent Speaker confirmation after partial Customer-review success; discovery-only retry consumes the saved safe projection without rerunning Customer extraction. Approved Customer supplements produce additive candidates and preserve the effective approved revision until Human approval. [Console contracts](../../internal-console/README.md#customer-and-speaker-smart-intake) own routes and payload semantics.
 - **Human Gate:** Fact review and Customer Truth Approval.
 - **Outputs:** Approved Business Persona, Approved Speaker Persona, receipts.
 - **Stop Conditions:** Any unresolved or `requires_review` fact; ambiguous business/speaker binding.
@@ -76,6 +77,7 @@ For scoped product/design rules and machine owners, start with the [Knowledge an
 - **Human Gate:** Speaker fact review and separate Persona approval; media/rights confirmation is independent.
 - **Outputs:** Immutable Speaker Persona revision and approval receipt bound to the approved Business Persona.
 - **Stop Conditions:** Unapproved/ambiguous Business Persona, unresolved Speaker facts or stale business binding.
+- **Business revision update:** A stale Speaker is unavailable to new production inputs. Compare unchanged personal facts with the new Business revision, explicitly revalidate with exact hashes, then separately approve the new Speaker candidate. If personal facts changed, retain the blocked state and review new evidence/conflicts; do not use unchanged-evidence confirmation or rewrite old requests. Historical Persona/receipt/Request references remain immutable.
 - **Implementation Status:** `IMPLEMENTED / CONSOLE-ORCHESTRATED`.
 
 ## BUILD_PERSONA

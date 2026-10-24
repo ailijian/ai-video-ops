@@ -49,6 +49,7 @@ INPUT_ACTORS = {
 SPEAKER_TYPES = {"owner_founder", "frontline_expert", "brand", "generic"}
 CANDIDATE_STATES = {"known_candidate", "unknown", "requires_review"}
 PERSONA_SCOPES = {"business", "speaker"}
+CUSTOMER_INDUSTRIES = ("餐饮", "本地生活", "零售", "烘焙甜品", "美容", "教培", "服装", "饰品", "通用行业")
 
 SCALAR_PERSONA_FIELDS = {
     "public_display_name",

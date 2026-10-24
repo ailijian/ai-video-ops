@@ -81,12 +81,14 @@ def price_novelty_status(
 
 
 def project_novel_news_opportunities(
-    *, pipeline_root: Path, business_id: str, speaker_id: str
+    *, pipeline_root: Path, business_id: str, speaker_id: str, reservation_request_id: str | None = None
 ) -> dict[str, Any]:
     pipeline_root = pipeline_root.expanduser().resolve()
     business = resolve_current_persona(pipeline_root, business_id, "business")
     speaker = resolve_speaker_persona(pipeline_root, business, speaker_id)
     persona = business["artifact"]
+    from customer_constraints_v1 import assert_production_allowed
+    assert_production_allowed(persona, business["path"], consumer="novel_news")
     safe_fields = set(safe_persona_projection(persona)["facts"])
     atoms = build_fact_atom_catalog(persona, sha256_file(business["path"]), safe_fields)
     ledger_path = pipeline_root / "data/content_ledgers" / business_id / "content_ledger_v1.json"
@@ -122,6 +124,14 @@ def project_novel_news_opportunities(
         }
         concept["semantic_signature"] = semantic_signature(concept, business_id)
         concept["novelty_status"] = price_novelty_status(atom, concept, ledger)
+        if concept['novelty_status'] == 'novel':
+            from content_intent_reservations_v1 import assert_available
+            from creation_batch_contract_v1 import BatchError
+            try:
+                assert_available(pipeline_root, business_id, [concept], reservation_request_id)
+            except BatchError as exc:
+                if exc.code != 'CONTENT_INTENT_ALREADY_RESERVED':raise
+                concept['novelty_status'] = 'reserved'
         if concept["novelty_status"] == "novel":
             feasibility = preview_generation_feasibility(
                 pipeline_root=pipeline_root,

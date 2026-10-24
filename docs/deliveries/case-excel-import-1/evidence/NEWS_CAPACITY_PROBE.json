@@ -1,0 +1,241 @@
+{
+  "code_head": "4287234e5aa7f711751d7ec06dd0935ad6acbab2",
+  "source_bindings": {
+    "novel_news_opportunity_v1.py": {
+      "audit_sha256": "9f00ee2d9905c6f7e370f7f9d5601cac765fec5e231f670fac7c7bfb69530ca2",
+      "runtime_sha256": "9f00ee2d9905c6f7e370f7f9d5601cac765fec5e231f670fac7c7bfb69530ca2",
+      "equal": true
+    },
+    "content_quality_v1.py": {
+      "audit_sha256": "297f3523b75e600fba0ca0688053c764cd1801487432a345c1199defbcf3cdca",
+      "runtime_sha256": "297f3523b75e600fba0ca0688053c764cd1801487432a345c1199defbcf3cdca",
+      "equal": true
+    },
+    "generation_feasibility_v1.py": {
+      "audit_sha256": "bd3285a170e71b9bcc6603d50d5c905af1bdd3e20cf7bdcf1066c507e18b40ce",
+      "runtime_sha256": "bd3285a170e71b9bcc6603d50d5c905af1bdd3e20cf7bdcf1066c507e18b40ce",
+      "equal": true
+    },
+    "news_runtime_v1_2.py": {
+      "audit_sha256": "cb45d02ed5199b15d8f70a09785de530135bf3e9fe35ff5f27381d3089107c08",
+      "runtime_sha256": "cb45d02ed5199b15d8f70a09785de530135bf3e9fe35ff5f27381d3089107c08",
+      "equal": true
+    }
+  },
+  "runtime_scope": "existing fictional Golden UAT fixture, read-only; not production customer",
+  "business_id": "customer_cacaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "speaker_id": "speaker_bdbc2285ee0c5e",
+  "business_persona": {
+    "path": "E:\\projects\\ai-video-ops\\.verify\\uat1\\r0\\repo\\ops-pipeline\\data\\personas\\customer_cacaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\\revision_0002_cdfaaaaaaaaa\\persona_v1.json",
+    "sha256": "e0fc106ea04ab4d91db383e0668008b42831d56ff5bdfb3da265394121e6cd50",
+    "revision": 2
+  },
+  "speaker_persona": {
+    "path": "E:\\projects\\ai-video-ops\\.verify\\uat1\\r0\\repo\\ops-pipeline\\data\\personas\\speaker_bdbc2285ee0c5e\\revision_0002_dbaaaaaaaaaa\\persona_v1.json",
+    "sha256": "cd9913c7e1c11fe66f589386f1d4dea6437f73b3e29ad3ed1b8e3edd1df427d6",
+    "revision": 2
+  },
+  "fact_atom_counts_by_field": {
+    "core_audience": 1,
+    "customer_pains": 1,
+    "customer_use_cases": 1,
+    "differentiators": 1,
+    "founder_or_operator_story": 6,
+    "included_service_facts": 2,
+    "industry": 1,
+    "pricing_facts": 3,
+    "primary_products_or_services": 1,
+    "process_facts": 3,
+    "public_display_name": 1
+  },
+  "ledger": {
+    "entries": 4,
+    "strong_memory_entries": 4,
+    "sha256": "87e39227ba01be83332d1863df59cfe144ff3ab3075592dea9aeda28e54a05c2"
+  },
+  "novelty_counts": {
+    "already_communicated": 2,
+    "novel": 1
+  },
+  "available_novel_count": 1,
+  "production_ready_count": 1,
+  "opportunities": [
+    {
+      "concept_id": "news-price-9f751b6bb4b65257",
+      "content_job": "price_offer_explanation",
+      "primary_topic": "price_offer",
+      "central_claim": "午餐套餐29元，仅限工作日到店自取，不含配送",
+      "primary_fact_atom_refs": [
+        "pricing_facts::76079f438bcf9b320c0e"
+      ],
+      "novelty_status": "already_communicated",
+      "applicable_pattern_id": null,
+      "production_feasibility": {
+        "status": "unsupported",
+        "blocker_type": "CONTENT_NOT_NOVEL"
+      }
+    },
+    {
+      "concept_id": "news-price-113997b0f1a38d30",
+      "content_job": "price_offer_explanation",
+      "primary_topic": "price_offer",
+      "central_claim": "儿童小份餐15元，仅限周末店内点单，不参与工作日午餐套餐",
+      "primary_fact_atom_refs": [
+        "pricing_facts::6e5b2ff424a054dc0655"
+      ],
+      "novelty_status": "already_communicated",
+      "applicable_pattern_id": null,
+      "production_feasibility": {
+        "status": "unsupported",
+        "blocker_type": "CONTENT_NOT_NOVEL"
+      }
+    },
+    {
+      "concept_id": "news-price-9e044460f725236a",
+      "content_job": "price_offer_explanation",
+      "primary_topic": "price_offer",
+      "central_claim": "线上预订菌菇午餐35元，周三营业时段可自取，每单仅限一份套餐",
+      "primary_fact_atom_refs": [
+        "pricing_facts::29e6b217a8ef8f010b7e"
+      ],
+      "novelty_status": "novel",
+      "applicable_pattern_id": "pcv1_news_price_offer_led_micro_information",
+      "production_feasibility": {
+        "status": "supported",
+        "blocker_type": null,
+        "blocker_codes": [],
+        "humanized_reason": "已批准结构可用于本次隔离新闻体验证。",
+        "optional_customer_truth_route": null,
+        "requested_quantity": 1,
+        "supported_quantity": 1,
+        "selected_pattern_count": 1,
+        "eligible_case_count": 3,
+        "authority": {
+          "generation_request_created": false,
+          "source_plan_written": false,
+          "matching_core": "native News v1.2 effective graph",
+          "production_eligibility_granted": false
+        },
+        "profile_compatibility_v1_2": {
+          "schema_version": "profile-compatibility-runtime-binding-v1.2",
+          "target_profile": "news",
+          "reuse_intent": "novel_content",
+          "usage_scope": "human_authorized_isolated_qualification",
+          "activation_ref": {
+            "path": "data/production_profiles/compatibility_v1_1/activations/deaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json",
+            "sha256": "eb9bd299cad0253a99b6d568355323cb4ac98e9d07d008ece3e9a643ac30e5d1"
+          },
+          "release_ref": {
+            "path": "data/production_profiles/compatibility_v1_1/staged/ddfaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/manifest.json",
+            "sha256": "65464db12b9567e730c9b713ab843c7041e501ef39e08dc42c047f8d67d003db"
+          },
+          "decision_head_sha256": "eeeac45efd536cc1fc82f990bd309164409a03f1fbf9ba4fe7745cf7afb1cb9a",
+          "control_id": "baaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "approval_refs": [
+            {
+              "path": "data/production_profiles/compatibility_v1_1/decisions/cabaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json",
+              "sha256": "bcef345e7e39aebacbe0afbce37fee7373eb796919aed0b5594f5b010823dd42"
+            },
+            {
+              "path": "data/production_profiles/compatibility_v1_1/decisions/ffaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json",
+              "sha256": "11117860f31e1f16af1cbfe66abd0a1f5eca26e10be56cd56e0facc2f558c46d"
+            }
+          ],
+          "target_refs": [
+            {
+              "path": "data/production_profiles/compatibility_v1_1/decisions/cabaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.json",
+              "sha256": "bcef345e7e39aebacbe0afbce37fee7373eb796919aed0b5594f5b010823dd42"
+            }
+          ],
+          "profile_ref": {
+            "path": "data/production_profiles/compatibility_v1_1/definitions/820ed6591a83a2dfbf574bffaf57361fc4c1345641470607639c286a0345fa9a/profile.json",
+            "sha256": "f110d982d9f9ebc6ee485b344c11ff64534d83e9aa7907af186de35017b22e74"
+          },
+          "rules_ref": {
+            "path": "data/production_profiles/compatibility_v1_1/definitions/820ed6591a83a2dfbf574bffaf57361fc4c1345641470607639c286a0345fa9a/rules.json",
+            "sha256": "9689a42b51cc841097aff49f17bdedaaaefbca9f09c31d2c54d43a9400a49ef2"
+          },
+          "coverage_ref": {
+            "path": "data/production_profiles/compatibility_v1_1/registries/b19f51bfed94aba08351c6059094f9ad553c04199c7c4c38c6a327168e5242cc/coverage.json",
+            "sha256": "9ee5015126d6d3773772f4a26767f28d8720b71fa8f53575fc807b46a8098cc2"
+          },
+          "pattern_ref": {
+            "path": "data/patterns/approved/pcv1_news_price_offer_led_micro_information/versions/caaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/pattern_v1.json",
+            "sha256": "361a7cd373e12fcd20975550749bb046160bd3de51a6cd06c56c2523158e106b"
+          },
+          "pattern_approval_ref": {
+            "path": "data/patterns/approved/pcv1_news_price_offer_led_micro_information/versions/caaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/approval_receipt.json",
+            "sha256": "4eead02c0c5552037e5d63cd89e421a3ab8f175bb447e78b6c5478b885d0e08a"
+          },
+          "structural_sources": [
+            {
+              "case_id": "7999999999999999861",
+              "case_ref": {
+                "path": "data/cases/7999999999999999861/case_v1.json",
+                "sha256": "c4bc777c6bfa1f91217417d4379dd1ea2aae9740eb193aedb300b3611479701c"
+              },
+              "case_approval_ref": {
+                "path": "data/cases/7999999999999999861/approval_receipt.json",
+                "sha256": "845d26b7f0e420706a27edde196393129e69c695ecb09f6de7fa3f7aad528258"
+              },
+              "fingerprint_ref": {
+                "path": "data/fingerprints/7999999999999999861/case_fingerprint_v1.json",
+                "sha256": "8eff34e3c3e5be17a7a373055f2c81a1bb85a1b6b3fb689e5dc7a8db62d5a2c7"
+              },
+              "storyboard_ref": {
+                "path": "data/production_profiles/compatibility_v1_1/sources/58093072b1b285531fcea6d39f1f059ef47bc0fc3989003a369c54b61477c2ae/storyboard.json",
+                "sha256": "58093072b1b285531fcea6d39f1f059ef47bc0fc3989003a369c54b61477c2ae"
+              }
+            },
+            {
+              "case_id": "7999999999999999862",
+              "case_ref": {
+                "path": "data/cases/7999999999999999862/case_v1.json",
+                "sha256": "8a30cce5557216dd5856bbc559499aa748144f908b01481e6dc8fe361855d047"
+              },
+              "case_approval_ref": {
+                "path": "data/cases/7999999999999999862/approval_receipt.json",
+                "sha256": "c9f8f5af1b875e63f645ed8bb89751dea45785029745e13c8d59f5fba5bae101"
+              },
+              "fingerprint_ref": {
+                "path": "data/fingerprints/7999999999999999862/case_fingerprint_v1.json",
+                "sha256": "4aba913c3c9c23d07dd08ade53eefbffcd68e46b4046f1a5a9c107bfdbe510d3"
+              },
+              "storyboard_ref": {
+                "path": "data/production_profiles/compatibility_v1_1/sources/69eb6ac4fe5e2ec427877228b225a190de6bfb7c274585c9b21c49bdc4eb0f77/storyboard.json",
+                "sha256": "69eb6ac4fe5e2ec427877228b225a190de6bfb7c274585c9b21c49bdc4eb0f77"
+              }
+            },
+            {
+              "case_id": "7999999999999999863",
+              "case_ref": {
+                "path": "data/cases/7999999999999999863/case_v1.json",
+                "sha256": "317ab621547714939a44d52a69542519a7b914335803afd00a5c76c81db956f7"
+              },
+              "case_approval_ref": {
+                "path": "data/cases/7999999999999999863/approval_receipt.json",
+                "sha256": "b4aa7e5533828626a9c6cb70eaf9ba9dbce9537197c139632d9191a8ec2771de"
+              },
+              "fingerprint_ref": {
+                "path": "data/fingerprints/7999999999999999863/case_fingerprint_v1.json",
+                "sha256": "fb82e5fe7da5d725fee59398e8bd587765873d2be01ef90a674bce07a063955e"
+              },
+              "storyboard_ref": {
+                "path": "data/production_profiles/compatibility_v1_1/sources/5c18840b19cbf95486bf807ac7a9c33a4f4a74dd9ae0bf265909ec6089d731a7/storyboard.json",
+                "sha256": "5c18840b19cbf95486bf807ac7a9c33a4f4a74dd9ae0bf265909ec6089d731a7"
+              }
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "authority": {
+    "generation_request_created": false,
+    "source_plan_written": false,
+    "content_ledger_written": false,
+    "remote_model_called": false
+  },
+  "constraint_gate": "assert_production_allowed passed before opportunity enumeration; no bypass",
+  "case_import_effect": "No direct addition to pricing_facts or novelty; can only address creative feasibility after original Case/Pattern/Compatibility/Release gates"
+}

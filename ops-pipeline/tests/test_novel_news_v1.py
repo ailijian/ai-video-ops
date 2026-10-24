@@ -11,6 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
 import novel_news_v1 as subject
+from news_export_support import context as export_context, generate as generate_native
 from content_quality_v1 import build_fact_atom_catalog, semantic_signature
 from show_customer_status_v1 import sha256_file
 from show_customer_status_v1 import _validated_novel_news_entries_after_mix
@@ -114,15 +115,19 @@ def test_novel_news_offline_generation_review_export_and_idempotency(tmp_path: P
 
     def fake_transport(prompt: str) -> dict:
         prompts.append(prompt)
-        return {"payload": {"beats": beats}, "response_sha256": "fixture"}
+        aliases={v['fact']:v['fact_atom_id'] for v in json.loads(prompt)['allowed_fact_atoms']}
+        external=[{**b,'source_fact_refs':[aliases[b['text']]]} for b in beats]
+        return {"payload": {"beats": external}, "response_sha256": "fixture"}
 
-    plan = subject.generate_novel_news_plan(pipeline_root=root, request_id=request_id, transport=fake_transport)
+    plan = generate_native(pipeline_root=root, request_id=request_id, transport=fake_transport)
     assert len(prompts) == 1
-    assert "7059858129298803968" in prompts[0]
+    assert "7059858129298803968" not in prompts[0]
+    assert all(v['fact_atom_id'].startswith('FACT_') for v in json.loads(prompts[0])['allowed_fact_atoms'])
     assert "Case title" not in prompts[0]
     assert "price_or_offer_first_semantic_anchor" in prompts[0]
     assert "price_anchor_then_context" in prompts[0]
     assert len(plan["micro_information_beats"]) == 4
+    assert [b['source_fact_refs'] for b in plan['micro_information_beats']]==[b['source_fact_refs'] for b in beats]
     assert plan["status"] == "review_required"
     with pytest.raises(subject.NovelNewsError):
         subject.review_novel_news_plan(
@@ -139,8 +144,8 @@ def test_novel_news_offline_generation_review_export_and_idempotency(tmp_path: P
         decisions=[{"beat_id": f"B{i:03d}", "decision": "approved"} for i in range(1, 5)],
     )
     assert approved["human_gate"] is True
-    first = subject.export_novel_news(pipeline_root=root, request_id=request_id, exported_by="operator")
-    second = subject.export_novel_news(pipeline_root=root, request_id=request_id, exported_by="operator")
+    first = subject.export_novel_news(pipeline_root=root, request_id=request_id, exported_by="operator", export_context=export_context(root))
+    second = subject.export_novel_news(pipeline_root=root, request_id=request_id, exported_by="operator", export_context=export_context(root))
     assert first["new_semantic_content_count_delta"] == second["new_semantic_content_count_delta"] == 1
     ledger = json.loads((root / "data/content_ledgers/business/content_ledger_v1.json").read_text(encoding="utf-8"))
     assert len(ledger["entries"]) == 1
@@ -200,7 +205,7 @@ def test_model_prompt_uses_privacy_safe_fact_atoms(tmp_path: Path) -> None:
         prompts.append(prompt)
         return {"payload": {"beats": beats}, "response_sha256": "fixture"}
 
-    subject.generate_novel_news_plan(pipeline_root=root, request_id=request_id, transport=fake_transport)
+    generate_native(pipeline_root=root, request_id=request_id, transport=fake_transport)
     assert "13800138000" not in prompts[0]
     assert "调味料免费提供" in prompts[0]
 
@@ -213,7 +218,7 @@ def test_structural_fingerprint_change_fails_closed_before_model_call(tmp_path: 
     write(fingerprint_path, fingerprint)
     prompts: list[str] = []
     with pytest.raises(subject.NovelNewsError, match="Fingerprint changed"):
-        subject.generate_novel_news_plan(
+        generate_native(
             pipeline_root=root, request_id=request_id,
             transport=lambda prompt: prompts.append(prompt) or {},
         )
@@ -222,7 +227,7 @@ def test_structural_fingerprint_change_fails_closed_before_model_call(tmp_path: 
 
 def test_review_recovers_matching_sidecar_without_changing_human_decision(tmp_path: Path) -> None:
     root, request_id, beats = fixture(tmp_path)
-    subject.generate_novel_news_plan(
+    generate_native(
         pipeline_root=root, request_id=request_id,
         transport=lambda prompt: {"payload": {"beats": beats}, "response_sha256": "fixture"},
     )
@@ -240,7 +245,7 @@ def test_review_recovers_matching_sidecar_without_changing_human_decision(tmp_pa
 
 def test_export_rechecks_business_wide_novelty_after_request(tmp_path: Path) -> None:
     root, request_id, beats = fixture(tmp_path)
-    subject.generate_novel_news_plan(
+    generate_native(
         pipeline_root=root, request_id=request_id,
         transport=lambda prompt: {"payload": {"beats": beats}, "response_sha256": "fixture"},
     )
@@ -261,7 +266,7 @@ def test_export_rechecks_business_wide_novelty_after_request(tmp_path: Path) -> 
     ledger_path = root / "data/content_ledgers/business/content_ledger_v1.json"
     write(ledger_path, ledger)
     with pytest.raises(subject.NovelNewsError, match="already communicated"):
-        subject.export_novel_news(pipeline_root=root, request_id=request_id, exported_by="operator")
+        subject.export_novel_news(pipeline_root=root, request_id=request_id, exported_by="operator", export_context=export_context(root))
     assert len(json.loads(ledger_path.read_text(encoding="utf-8"))["entries"]) == 1
     paths = subject._paths(root, request_id)
     assert not paths["receipt"].exists()
@@ -346,7 +351,7 @@ def test_scene_runtime_is_fixture_routable_but_ordinary_production_is_human_gate
         {"semantic_role": "price_scope_information", "text": "素菜加工约8元", "visual_anchor": "价格信息", "duration_guidance": "约2秒", "source_fact_refs": [by_field["pricing_facts"]["fact_atom_id"]]},
         {"semantic_role": "state_b", "text": "现在顾客可以在线预约", "visual_anchor": "现在现场", "duration_guidance": "约2秒", "source_fact_refs": [state_b]},
     ]
-    plan = subject.generate_novel_news_plan(
+    plan = generate_native(
         pipeline_root=root, request_id=request_id,
         transport=lambda prompt: {"payload": {"beats": beats}, "response_sha256": "fixture"},
     )

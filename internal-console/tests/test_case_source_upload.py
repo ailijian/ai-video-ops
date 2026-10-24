@@ -1,3 +1,5 @@
+from app import review_commands
+from review_protocol import post_review
 from datetime import datetime, timedelta, timezone
 import json
 import os
@@ -233,16 +235,19 @@ def test_review_reanalysis_validates_upload_before_any_review_mutation(client, s
     from app import main
     csrf = login_and_change_password(client)
     upload_id = upload(client, csrf).json()["upload_id"]
+    from review_protocol import case_command_fixture
+    token=case_command_fixture(settings,CASE_ID)
     decisions = []
-    monkeypatch.setattr(main, "get_case_detail", lambda *a: {"source_url": URL, "operator_profile_hint": "news"})
-    monkeypatch.setattr(main, "record_case_review_decision", lambda *a, **kw: decisions.append(kw) or {})
-    response = client.post(f"/api/cases/{CASE_ID}/review", headers={"X-CSRF-Token": csrf}, json={
-        "decision": "reanalyze", "reason": "New authorized source file", "source_upload_id": upload_id,
+    monkeypatch.setattr(main, "get_case_detail", lambda *a, **kw: {"source_url": URL, "operator_profile_hint": "news"})
+    monkeypatch.setattr(main, "record_case_review_decision", lambda *a, **kw: decisions.append(kw) or {"attempt_id": kw["expected_target"]["attempt_id"]})
+    response = post_review(client, f"/api/cases/{CASE_ID}/review", headers={"X-CSRF-Token": csrf}, json={
+        "review_context":token, "decision": "reanalyze", "reason": "New authorized source file", "source_upload_id": upload_id,
     })
     assert response.status_code == 200, response.text
     assert response.json()["task"]["payload"]["source_upload"]["upload_id"] == upload_id
     assert len(decisions) == 1
-    repeated = client.post(f"/api/cases/{CASE_ID}/review", headers={"X-CSRF-Token": csrf}, json={
+    repeated = client.request("POST", f"/api/cases/{CASE_ID}/review", headers={"X-CSRF-Token": csrf}, json={
+        "review_context": review_commands.issue(settings,"case",CASE_ID,1)["token"],
         "decision": "reanalyze", "reason": "Repeated", "source_upload_id": upload_id,
     })
     assert repeated.status_code == 422
@@ -255,17 +260,19 @@ def test_reanalysis_missing_provider_credentials_does_not_mutate_review(client, 
     object.__setattr__(settings, "case_acquisition_provider", "qiyun")
     monkeypatch.delenv("QYAPI_APP_ID", raising=False)
     monkeypatch.delenv("QYAPI_APP_KEY", raising=False)
-    monkeypatch.setattr(main, "get_case_detail", lambda *a: {
+    monkeypatch.setattr(main, "get_case_detail", lambda *a, **kw: {
         "source_url": URL, "operator_profile_hint": "news", "review_media": {},
     })
+    from review_protocol import case_command_fixture
+    token=case_command_fixture(settings,CASE_ID)
     decisions = []
     monkeypatch.setattr(main, "record_case_review_decision", lambda *a, **kw: decisions.append(kw))
-    response = client.post(f"/api/cases/{CASE_ID}/review", headers={"X-CSRF-Token": csrf}, json={
-        "decision": "reanalyze", "reason": "重新分析",
+    response = post_review(client, f"/api/cases/{CASE_ID}/review", headers={"X-CSRF-Token": csrf}, json={
+        "review_context":token, "decision": "reanalyze", "reason": "重新分析",
     })
     assert response.status_code == 503
     assert decisions == []
-    assert client.get("/api/tasks").json()["tasks"] == []
+    assert len(client.get("/api/tasks").json()["tasks"]) == 1
 
 
 def test_uploads_excluded_from_authority_backup():

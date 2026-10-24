@@ -1,0 +1,283 @@
+{
+  "proposal_tests": [
+    {
+      "id": "S01",
+      "unit": "EX-S1",
+      "trigger": "one lawful new source, original uploaded fictional video",
+      "expected": "exact same Row→Intent→Task→Attempt; no Case Approval",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "S02",
+      "unit": "EX-S1",
+      "trigger": "same operation/input double click and lost response",
+      "expected": "one mapping/Task; original result only",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "S03",
+      "unit": "EX-S1",
+      "trigger": "same operation different Row/source/parent",
+      "expected": "409; no overwrite or replacement Task",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "S04",
+      "unit": "EX-S1",
+      "trigger": "exit before intent / after intent / after DB commit",
+      "expected": "no Task or recover exact mapped Task; no guessed latest source",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "S05",
+      "unit": "EX-S1",
+      "trigger": "exit before association/submission/schedule",
+      "expected": "worker cannot execute incomplete admission; same task resumes",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "S06",
+      "unit": "EX-S1",
+      "trigger": "worker claimed then died, expired lease, unknown external result",
+      "expected": "original owner reconciles or unknown hold; zero automatic resend",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "S07",
+      "unit": "EX-S1",
+      "trigger": "ordinary legacy URL/group/reanalysis racing same new origin",
+      "expected": "global Native active-source/upload uniqueness and same limits",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "S08",
+      "unit": "EX-S1",
+      "trigger": "same source another user private task",
+      "expected": "generic response; no foreign Task/Case detail, ownership or notes",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "S09",
+      "unit": "EX-S1",
+      "trigger": "same own active task or old completed task",
+      "expected": "read exact owned state; no new primary origin or new execution",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "S10",
+      "unit": "EX-S1",
+      "trigger": "filename-only/text-only/unsupported platform",
+      "expected": "remain private pending evidence; zero native tasks",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "S11",
+      "unit": "EX-S1",
+      "trigger": "upload expired/revoked/hash changed/provider unavailable",
+      "expected": "stale preflight rejected; no silent source switch",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "S12",
+      "unit": "EX-S1",
+      "trigger": "cleanup races prepared intent / failed unknown task",
+      "expected": "correct validated hold; no premature deletion, no arbitrary retention file",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "S13",
+      "unit": "EX-S1",
+      "trigger": "backup + case + upload + DB + reviewer concurrency",
+      "expected": "documented order, no lock inside DB wait, no nested HTTP lock",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "S14",
+      "unit": "EX-S1",
+      "trigger": "cancel/reanalysis while original outcome unresolved",
+      "expected": "preserve original operation; block replacement analysis until settled",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "M01",
+      "unit": "ME-R1",
+      "trigger": "real current reviewer, exact primary-origin Attempt",
+      "expected": "read only bound minimum unverified notes",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "M02",
+      "unit": "ME-R1",
+      "trigger": "ordinary user/expired/revoked grant/cross namespace",
+      "expected": "deny without foreign Row disclosure",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "M03",
+      "unit": "ME-R1",
+      "trigger": "borrow Row/Attempt/association/SHA/old owned linked Task",
+      "expected": "deny; no arbitrary import scan",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "M04",
+      "unit": "ME-R1",
+      "trigger": "manual narration/seconds/license/type hint",
+      "expected": "visible unverified only; no ASR/Shot/Proof/rights writes",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "T01",
+      "unit": "CC-01",
+      "trigger": "explicit confirm after original approved Case",
+      "expected": "append type decision bound to Case/Receipt/Attempt/catalog/grant",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "T02",
+      "unit": "CC-01",
+      "trigger": "Excel hint only / pre-approval candidate",
+      "expected": "no formal type; no automatic carry across approval SHA",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "T03",
+      "unit": "CC-01",
+      "trigger": "unknown/defer/revoke and other blank/whitespace",
+      "expected": "formal null or rejection; other requires real Human note",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "T04",
+      "unit": "CC-01",
+      "trigger": "profile conflict preserve/correct/defer",
+      "expected": "explicit reason/decision; no raw Row/profile mutation",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "T05",
+      "unit": "CC-01",
+      "trigger": "repeat operation, changed payload, stale parent",
+      "expected": "same immutable result or409; one event; no timestamp head guessing",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "T06",
+      "unit": "CC-01",
+      "trigger": "current grant revoked; historical prior grant valid",
+      "expected": "block new writes/reads, validate historical evidence without erasing decisions",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "T07",
+      "unit": "CC-01",
+      "trigger": "catalog/version/source/approval change",
+      "expected": "preview stale; no silent new label; unknown versions closed",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "P01",
+      "unit": "CC-02",
+      "trigger": "approved Case + effective type + explicit exact display confirmation",
+      "expected": "one typed receipt; no automatic share",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "P02",
+      "unit": "CC-02",
+      "trigger": "no approval/type or unverified Excel title/rights",
+      "expected": "reject typed publish; retain legacy null semantics",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "P03",
+      "unit": "CC-02",
+      "trigger": "type changed/revoked, fresh preview not confirmed",
+      "expected": "old typed projection unavailable; history unchanged, no silent rewrite",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "P04",
+      "unit": "CC-02",
+      "trigger": "old v1.0/v1.1 before and after typed events",
+      "expected": "strict mixed ordered reader; old bytes unchanged; no automatic upgrade",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "P05",
+      "unit": "CC-02",
+      "trigger": "receipt committed, result/response lost, repeated command",
+      "expected": "same original sequence/result, no duplicate publication",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "P06",
+      "unit": "CC-02",
+      "trigger": "withdraw when media/type/approval now invalid",
+      "expected": "allow accurate authorized withdrawal, no new publish prerequisite",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "P07",
+      "unit": "CC-02",
+      "trigger": "stale parent or corrupted history",
+      "expected": "reject stale writes, restore exact history; no invented repair receipt",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "P08",
+      "unit": "CC-02",
+      "trigger": "private user requests shared details/cover via guessed IDs",
+      "expected": "original visibility and cover/privacy/source gates",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    },
+    {
+      "id": "U01",
+      "unit": "ALL",
+      "trigger": "one fictional media entire pipeline then multiple rows/partial failure",
+      "expected": "stable identities; original Evidence/Human/Case Approval and independent sharing; Founder last unified UAT",
+      "status": "NOT_EXECUTED_PENDING_EXACT_APPROVAL",
+      "layer": "Native Owner + HTTP/JS where applicable"
+    }
+  ],
+  "current_authorized_change": {
+    "scope": "EX-R1 explicit empty/malformed row selector fails closed",
+    "status": "CURRENT_FOCUSED_RUN_OBSERVED",
+    "evidence": "focused-current.xml; javascript.log; FOCUSED_RUN.json"
+  },
+  "historical_full_console": "1013 cxi / 884 cc2 were complete at the previous exact source; do not relabel them current after the JS delta",
+  "gate": "After exact approvals: Owner schemas→1 media thin slice→failure/privacy/legacy tests→affected checks/code review→full required regression on final code→Founder unified UAT"
+}

@@ -657,6 +657,9 @@ def main() -> None:
         },
         "storyboard": {
             "storyboard_type": "reverse",
+            **({'micro_beat_sequence':storyboard['micro_beat_sequence'],
+                'production_profile':'news','semantic_carrier':storyboard['semantic_carrier']}
+               if storyboard.get('schema_version')=='reverse-storyboard-v1.2-news-micro-beat' else {}),
             "shots": board_shots,
             "video_understanding": storyboard.get("video_understanding", {}),
             "claims_semantics": claims_semantics,

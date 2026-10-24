@@ -1,0 +1,138 @@
+{
+  "schema_version": "delivery-review-document-manifest-v1.0",
+  "plan_revision": 5,
+  "baseline_revision": 1,
+  "baseline_sha256": "13844cf74cd3eaf3a80e104fad26fbf56aa4548204c26597ab2e9623625fd0c3",
+  "plan_sha256": "f1ebd4283dc0e341aca7675c245e2c515cbab1e314af8843eee3e426831e07bb",
+  "working_plan_input_revision": 4,
+  "working_plan_input_sha256": "f9cea03c7c160f586d8d3dda24515ca5400763056f4388b5c17931bf3b439e8e",
+  "prior_r4_manifest_sha256": "872fb3ab97ceab00d09bbcb6625ba6035c1d203f2b4541887a468692ee1980db",
+  "planning_preflight": "PASS",
+  "planning_preflight_input_revision": 4,
+  "planning_preflight_result_path": ".local/evidence/creation-batch-ux1-prestart-r5-20261022/evidence/PLANNING_PREFLIGHT_RESULT.json",
+  "planning_preflight_result_sha256": "4434e65228d0530e1f36ab6fb18a4e8c7245706132153d4c84852835bfeb433b",
+  "design_readiness": "Inherited PASS; implementation assets refined under I-04, no product decision changed",
+  "design_result_path": ".local/evidence/creation-batch-ux1-design-resolution-r3-20261022/evidence/DESIGN_READINESS_RESULT.json",
+  "design_result_sha256": "d3ca301c5b8317b6ee7ad8092969cdf2402d0f7f3b3d3a0976845501db5fa6d1",
+  "material_design_inputs_revision": 3,
+  "prestart_materials_status": "PREPARED_FOR_EXTERNAL_DECISION",
+  "contract_candidate_path": ".local/evidence/creation-batch-ux1-prestart-r5-20261022/proposals/NATIVE_CONTRACT_CANDIDATES.json",
+  "contract_candidate_sha256": "840206fa672860cb823e049ebb3028f94154e685f697ba33dedcfcb8a2cae79f",
+  "native_approvals_signed": false,
+  "independent_plan_approval_received": false,
+  "plan_freeze_authorized": false,
+  "implementation_authorized": false,
+  "hash_base": "this directory/raw bytes; manifest and checksum self references excluded",
+  "files": [
+    {
+      "path": "AUTHORITY_AND_SOURCE_GRAPH.md",
+      "bytes": 32739,
+      "sha256": "c4fbeaf7b09c868ece71b25db6a2c72048571245403fd64480310e535837b6d0"
+    },
+    {
+      "path": "BASELINE.md",
+      "bytes": 28219,
+      "sha256": "13844cf74cd3eaf3a80e104fad26fbf56aa4548204c26597ab2e9623625fd0c3"
+    },
+    {
+      "path": "BASELINE_APPROVAL_RECORD.json",
+      "bytes": 5255,
+      "sha256": "b1151e8e88c208617f6fc11070e044f3a25b2dfa5de0deb52350a9f1a5722c5a"
+    },
+    {
+      "path": "BASELINE_APPROVAL_RECORD.md",
+      "bytes": 3961,
+      "sha256": "be8d02dbaafbf392f6bc76b5506d856635e1287d10b3f86066d41065717f2869"
+    },
+    {
+      "path": "BASELINE_EVIDENCE.json",
+      "bytes": 152346,
+      "sha256": "dc0923f4c6cb12d24f12893dbf23b5d12253c7d1d15690422f72709ae58bb2e3"
+    },
+    {
+      "path": "BASELINE_REVIEW_CHECKLIST.md",
+      "bytes": 4391,
+      "sha256": "72628d8f8342a6c02df8c6b468217f0b1fe8c43c91d83751b45ddcdbbd8a85f5"
+    },
+    {
+      "path": "BASELINE_REVIEW_RECORD.json",
+      "bytes": 3061,
+      "sha256": "8331539cda5497a58d15a34fe24f0291f1454992006f9a655981e3d45f3f72f9"
+    },
+    {
+      "path": "BASELINE_REVIEW_RECORD.md",
+      "bytes": 3522,
+      "sha256": "66703cd4306a2fee80321fe546562fa32d4860a905f250538bfa182b30192b3e"
+    },
+    {
+      "path": "CAPABILITY_MATRIX.json",
+      "bytes": 20932,
+      "sha256": "47f9ecd4742c59c88838eb28721a6340760eb10193e6be826ca42e4e80eae5c0"
+    },
+    {
+      "path": "DESIGN_OPTIONS.md",
+      "bytes": 7870,
+      "sha256": "3b731237aaeace4a55a678023d58fa0b8c6e50927900b016702c555558fb1f44"
+    },
+    {
+      "path": "FOUNDER_TARGET.md",
+      "bytes": 3315,
+      "sha256": "ce4990b2d3c453fb0b9f6c42bbbac592199b8f18967c10ef0397f330a3305a2c"
+    },
+    {
+      "path": "GAP_REGISTER.md",
+      "bytes": 6444,
+      "sha256": "db3b0b26be394100fef33c02506de32a6b9c3f02dadaf7a2e63dda78390bbeec"
+    },
+    {
+      "path": "IMPLEMENTATION_GATES.md",
+      "bytes": 10838,
+      "sha256": "ae442631e5000dfa89e5cd13a72c234f6d897f3dc43419b932787281a797040f"
+    },
+    {
+      "path": "MACHINE_CONTRACT_DELTA_PROPOSAL.md",
+      "bytes": 23986,
+      "sha256": "6fe616c251e2b42f4f890c3b6f9cc466cca5bbdc85e4aa4f55bb671e22553c54"
+    },
+    {
+      "path": "OWNER_AND_DEPENDENCY_MAP.md",
+      "bytes": 13582,
+      "sha256": "c8535c94ddfe795b61a1455504444d8d57f8c4cc4e39f6336246c9dadc16ed46"
+    },
+    {
+      "path": "PLAN.md",
+      "bytes": 42949,
+      "sha256": "f1ebd4283dc0e341aca7675c245e2c515cbab1e314af8843eee3e426831e07bb"
+    },
+    {
+      "path": "PLAN_INDEPENDENT_REVIEW_RECORD.json",
+      "bytes": 1226,
+      "sha256": "1365e601dbaf509d2bde5502877cb929985eb1ce7dd3bc9a1f05c6aff8e1c2c7"
+    },
+    {
+      "path": "PLAN_INDEPENDENT_REVIEW_RECORD.md",
+      "bytes": 1218,
+      "sha256": "cbea233bd37bb5f9709301aa9ec2c044da254f27a6292f7cecabf82175c8d5b5"
+    },
+    {
+      "path": "PLAN_REVIEW_CHECKLIST.md",
+      "bytes": 8217,
+      "sha256": "22779517eefcdcc1a0d7a96bef19149d46327e3a633f0dd176d1832c97f5d908"
+    },
+    {
+      "path": "PRODUCT_DECISION_REGISTER.md",
+      "bytes": 7156,
+      "sha256": "b1ee3a61fc1031551afc642b5f25be6126125f784c76fbad6824da9fc0c0adfd"
+    },
+    {
+      "path": "README.md",
+      "bytes": 8487,
+      "sha256": "bb8c77302a8d50a3391a0f22fc8e9649c5c8fced601b682f6aad59cc8b133eba"
+    },
+    {
+      "path": "TEST_AND_UAT_MATRIX.md",
+      "bytes": 12227,
+      "sha256": "77670ebf0d1bb9ef3906d5c8520fc52278b53bacdacb5bdd16ef1d4e2571742c"
+    }
+  ]
+}

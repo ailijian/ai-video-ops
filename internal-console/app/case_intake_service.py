@@ -13,6 +13,31 @@ from .douyin_source_input import ALLOWED_HOSTS, URL_RE, SourceInputError
 from .task_service import get_task
 
 
+def preview_excel_native(*args):
+    from .case_excel_native import preview
+    return preview(*args)
+
+
+def submit_excel_native(*args):
+    from .case_excel_native import submit
+    return submit(*args)
+
+
+def read_excel_native(*args):
+    from .case_excel_native import read_submission
+    return read_submission(*args)
+
+
+def prepare_excel_orchestration(*args):
+    from .case_excel_orchestration import preview
+    return preview(*args)
+
+
+def submit_excel_orchestration(*args):
+    from .case_excel_orchestration import submit
+    return submit(*args)
+
+
 def prepare_items(raw: str, resolve) -> list[dict]:
     candidates = [m.group(0).rstrip(",.，。；;：:！!？?、\"'」》】") for m in URL_RE.finditer(raw)]
     if not candidates:
@@ -128,9 +153,22 @@ def get_group(database_path, group_id: str) -> dict | None:
     return {**dict(group), "items": items}
 
 
-def list_groups(database_path) -> list[dict]:
+def list_groups(database_path, *, user_id=None, reviewer=False) -> list[dict]:
     conn = connect(database_path)
     try:
-        return [dict(r) for r in conn.execute("SELECT group_id,created_at FROM case_intake_groups ORDER BY created_at DESC LIMIT 50")]
+        return [dict(r) for r in conn.execute("SELECT group_id,created_at FROM case_intake_groups WHERE (? IS NULL OR ?=1 OR created_by_user_id=?) ORDER BY created_at DESC,group_id DESC LIMIT 50",(user_id,int(reviewer),user_id))]
     finally:
         conn.close()
+
+
+# Excel candidates remain under this Intake owner but never enter the legacy
+# link groups, whose maintenance consumer dispatches model analysis.
+from .case_excel_import import (  # noqa: E402
+    prepare as prepare_excel_import,
+    save as save_excel_import,
+    detail as get_excel_import,
+    list_owned as list_excel_imports,
+    submission_cards as list_excel_submission_cards,
+    recover as recover_excel_import,
+    cancel_remaining as cancel_excel_import,
+)

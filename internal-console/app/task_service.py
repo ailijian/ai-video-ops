@@ -8,6 +8,7 @@ import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -16,7 +17,6 @@ from .canonical_gateway import approved_case_attempt_id
 from .config import Settings
 from .database import connect, transaction
 from .subprocess_env import pipeline_subprocess_env
-
 
 GPU_HEAVY = "GPU_HEAVY"
 STANDARD_BACKGROUND = "STANDARD_BACKGROUND"
@@ -110,6 +110,13 @@ def _row_to_task(row: Any) -> dict[str, Any]:
         elif task_type in {"content_generation", "excel_export"}:
             public_error = "后台操作没有完成，请按提示刷新业务状态后重试。"
 
+        elif task_type == "case_analysis" and payload.get("evidence_revision"):
+            public_error = ("修订隐私检查没有通过，已保存的修改仍然保留。"
+                            if "privacy" in lowered else "修订校验没有完成，已保存的修改仍然保留。")
+
+        elif row["error_code"] == "CASE_EXTERNAL_RESULT_UNKNOWN":
+            public_error = "原分析已开始，但结果尚未核清。请恢复原操作，不要重新发起分析。"
+
         elif row["error_code"] == "SOURCE_PROVIDER_RATE_LIMITED":
             public_error = "视频解析请求较多，请稍后重新分析；也可以上传本地视频。"
 
@@ -160,7 +167,8 @@ def _row_to_task(row: Any) -> dict[str, Any]:
     }
 
 
-def list_tasks(database_path: Path, limit: int = 50) -> list[dict[str, Any]]:
+def list_tasks(database_path: Path, limit: int = 50, *, case_actor_user_id: int | None = None,
+               case_reviewer: bool = False) -> list[dict[str, Any]]:
     connection = connect(database_path)
     try:
         rows = connection.execute(
@@ -168,14 +176,43 @@ def list_tasks(database_path: Path, limit: int = 50) -> list[dict[str, Any]]:
             SELECT {columns}
             FROM tasks AS t
             LEFT JOIN users AS u ON u.id = t.created_by_user_id
-            ORDER BY t.updated_at DESC
+            WHERE (? IS NULL OR ? = 1 OR t.task_type != 'case_analysis' OR t.created_by_user_id = ?)
+            ORDER BY t.updated_at DESC, t.task_id DESC
             LIMIT ?
             """.format(columns=TASK_COLUMNS),
-            (max(1, min(limit, 500)),),
+            (case_actor_user_id, int(case_reviewer), case_actor_user_id, max(1, min(limit, 500))),
         ).fetchall()
     finally:
         connection.close()
     return [_row_to_task(row) for row in rows]
+
+
+def latest_subject_task(
+    database_path: Path,
+    task_type: str,
+    subject_ref: str,
+    *,
+    intake_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Read a subject's execution identity, independent of global pagination.
+
+    Creation order wins over a late heartbeat/update on a historical attempt.
+    When canonical intake identity is available, never overlay an older intake.
+    """
+    connection = connect(database_path)
+    try:
+        row = connection.execute(
+            f"""SELECT {TASK_COLUMNS} FROM tasks AS t
+            LEFT JOIN users AS u ON u.id = t.created_by_user_id
+            WHERE t.task_type = ? AND t.subject_ref = ?
+              AND (t.task_type != 'case_analysis' OR json_extract(t.payload_json,'$.evidence_revision') IS NULL)
+              AND (? IS NULL OR json_extract(t.payload_json, '$.intake_id') = ?)
+            ORDER BY t.rowid DESC LIMIT 1""",
+            (task_type, subject_ref, intake_id, intake_id),
+        ).fetchone()
+    finally:
+        connection.close()
+    return _row_to_task(row) if row is not None else None
 
 
 def get_task(database_path: Path, task_id: str) -> dict[str, Any] | None:
@@ -204,6 +241,7 @@ def find_active_case_task(database_path: Path, case_id: str) -> dict[str, Any] |
             FROM tasks AS t
             LEFT JOIN users AS u ON u.id = t.created_by_user_id
             WHERE t.task_type = 'case_analysis' AND t.subject_ref = ?
+              AND json_extract(t.payload_json,'$.evidence_revision') IS NULL
               AND t.status IN ('queued', 'running', 'awaiting_review')
             ORDER BY t.updated_at DESC LIMIT 1
             """.format(columns=TASK_COLUMNS),
@@ -229,6 +267,9 @@ def create_case_task(
     created_by_user_id: int | None = None,
     queue_max: int = 20,
     gpu_pending_per_user_max: int = 3,
+    review_operation_id: str | None = None,
+    excel_native_origin: dict | None = None,
+    _connection=None,
 ) -> dict[str, Any]:
     if operator_profile_hint is not None and operator_profile_hint not in {"mix", "news", "hybrid", "uncertain"}:
         raise ValueError("Invalid Case operator_profile_hint")
@@ -241,6 +282,10 @@ def create_case_task(
         "reason": reason,
         "acquisition_provider": acquisition_provider,
     }
+    if review_operation_id:
+        payload["review_operation_id"] = review_operation_id
+    if excel_native_origin is not None:
+        payload['excel_native_origin'] = excel_native_origin
     if operator_profile_hint is not None:
         payload["operator_profile_hint"] = operator_profile_hint
     if source_upload is not None:
@@ -261,6 +306,7 @@ def create_case_task(
         gpu_pending_per_user_max=gpu_pending_per_user_max,
         include_awaiting_review=True,
         allow_existing=(not reanalyze),
+        _connection=_connection,
     )
 
 
@@ -273,6 +319,157 @@ def ensure_task_capacity(connection, *, queue_max: int, gpu_pending_per_user_max
         count = connection.execute("SELECT COUNT(*) FROM tasks WHERE execution_lane='GPU_HEAVY' AND created_by_user_id=? AND status IN ('queued','running')", (created_by_user_id,)).fetchone()[0]
         if count >= gpu_pending_per_user_max:
             raise TaskSubmissionError("GPU_PENDING_LIMIT_REACHED", "The user already has the maximum number of pending GPU tasks.")
+
+
+def resume_generation_recovery_task(database_path: Path, task_id: str, *, queue_max: int) -> dict[str, Any]:
+    """Scoped continuation after native intent/source admission; no new Task."""
+    with transaction(database_path, immediate=True) as db:
+        row = db.execute("SELECT * FROM tasks WHERE task_id=?", (task_id,)).fetchone()
+        payload = json.loads(row['payload_json']) if row else {}
+        if (not row or row['task_type'] != 'content_generation'
+                or payload.get('operation') != 'script_generation' or not payload.get('generation_recovery')):
+            raise TaskSubmissionError('GENERATION_RECOVERY_CONFLICT', 'Not a generation recovery Task')
+        if row['status'] == 'failed':
+            ensure_task_capacity(db, queue_max=queue_max, gpu_pending_per_user_max=1,
+                execution_lane=STANDARD_BACKGROUND, created_by_user_id=row['created_by_user_id'])
+            if db.execute("SELECT 1 FROM tasks WHERE operation_identity=? AND task_id<>? AND status IN ('queued','running')", (row['operation_identity'],task_id)).fetchone():
+                raise TaskSubmissionError('OPERATION_ALREADY_ACTIVE', 'Another generation operation is active')
+            db.execute("UPDATE tasks SET status='queued',stage='恢复原生成操作',worker_id=NULL,heartbeat_at=NULL,lease_expires_at=NULL,updated_at=? WHERE task_id=? AND status='failed'", (iso_utc(),task_id))
+    return get_task(database_path, task_id)
+
+
+def resume_creation_batch_task(database_path: Path, task_id: str, authorization_context: dict,
+                               resume_operation_id: str, *, queue_max: int) -> dict[str, Any]:
+    """One continuation per explicit canonical Batch resume; no new Task.
+
+    Caller has verified the exact C04, current Session/source, non-unknown
+    provider evidence and absence of a terminal Native rejection.
+    """
+    with transaction(database_path, immediate=True) as db:
+        row = db.execute('SELECT * FROM tasks WHERE task_id=?', (task_id,)).fetchone()
+        payload = json.loads(row['payload_json']) if row else {}
+        if (not row or row['task_type'] != 'content_generation'
+                or payload.get('operation') not in {'content_plan', 'script_generation','news_plan'}
+                or payload.get('generation_recovery')
+                or payload.get('request_id') != row['subject_ref']
+                or row['created_by_user_id'] != authorization_context['actor']['user_id']):
+            raise TaskSubmissionError('CREATION_BATCH_TASK_INVALID', 'Original batch Native Task required')
+        if row['status'] == 'failed' and payload.get('batch_resume_operation') != resume_operation_id:
+            ensure_task_capacity(db, queue_max=queue_max, gpu_pending_per_user_max=1,
+                execution_lane=STANDARD_BACKGROUND, created_by_user_id=row['created_by_user_id'])
+            payload['batch_resume_operation'] = resume_operation_id
+            db.execute("UPDATE tasks SET status='queued',stage='恢复原批次本地执行',payload_json=?,worker_id=NULL,"
+                       "heartbeat_at=NULL,lease_expires_at=NULL,updated_at=? WHERE task_id=? AND status='failed'",
+                       (json.dumps(payload, ensure_ascii=False), iso_utc(), task_id))
+    return get_task(database_path, task_id)
+
+
+def end_unissued_batch_tasks(database_path: Path, request_ids, *, user_id: int):
+    """Project original safe cancellation onto queued Tasks, never in-flight RPC.
+
+    Caller supplies only C05 Native-safe-released Request identities. Existing
+    completed/failed/running history and immutable operation payloads stay put.
+    """
+    ended=[]
+    with transaction(database_path,immediate=True) as db:
+        for rid in request_ids:
+            rows=db.execute("SELECT task_id FROM tasks WHERE subject_ref=? AND created_by_user_id=? "
+                "AND task_type='content_generation' AND status='queued' AND json_extract(payload_json,'$.operation') "
+                "IN ('content_plan','script_generation','novel_news_generate','news_plan')",(rid,user_id)).fetchall()
+            for row in rows:
+                db.execute("UPDATE tasks SET status='failed',stage='本批已结束，未继续生成',error_code='CREATION_BATCH_ENDED',"
+                    "error_message='已停止未派发工作，原始记录保留。',updated_at=? WHERE task_id=? AND status='queued'",
+                    (iso_utc(),row['task_id']))
+                ended.append(row['task_id'])
+    return ended
+
+
+def resume_novel_generation_task(database_path: Path, task_id: str, authorization_context: dict, *, queue_max: int) -> dict[str, Any]:
+    """Only after Native non-dispatch/prepared admission; never generic retry."""
+    with transaction(database_path, immediate=True) as db:
+        row = db.execute('SELECT * FROM tasks WHERE task_id=?', (task_id,)).fetchone()
+        payload = json.loads(row['payload_json']) if row else {}
+        if not row or payload.get('operation') != 'novel_news_generate' or not payload.get('novel_generation'):
+            raise TaskSubmissionError('NEWS_GENERATION_OPERATION_REQUIRED', 'Not an admitted Native attempt')
+        if row['status'] == 'failed':
+            ensure_task_capacity(db, queue_max=queue_max, gpu_pending_per_user_max=1,
+                execution_lane=STANDARD_BACKGROUND, created_by_user_id=row['created_by_user_id'])
+            payload['novel_generation']['authorization_context'] = authorization_context
+            db.execute("UPDATE tasks SET status='queued',stage='继续原生成操作',payload_json=?,worker_id=NULL,"
+                       "lease_expires_at=NULL,updated_at=? WHERE task_id=? AND status='failed'",
+                       (json.dumps(payload, ensure_ascii=False), iso_utc(), task_id))
+    return get_task(database_path, task_id)
+
+
+def resume_publish_copy_task(database_path: Path, task_id: str, authorization_context: dict, *, queue_max: int) -> dict[str, Any]:
+    """Only admitted by the typed Native preview; preserve the original Task."""
+    with transaction(database_path, immediate=True) as db:
+        row = db.execute('SELECT * FROM tasks WHERE task_id=?', (task_id,)).fetchone()
+        payload = json.loads(row['payload_json']) if row else {}
+        if not row or payload.get('operation') not in {'publish_copy_generate', 'publish_copy_export'} or not payload.get('publish_copy'):
+            raise TaskSubmissionError('PUBLISH_COPY_OPERATION_REQUIRED', 'Original publish operation required')
+        if row['status'] == 'failed':
+            ensure_task_capacity(db, queue_max=queue_max, gpu_pending_per_user_max=1,
+                execution_lane=STANDARD_BACKGROUND, created_by_user_id=row['created_by_user_id'])
+            payload['publish_copy']['authorization_context'] = authorization_context
+            db.execute("UPDATE tasks SET status='queued',stage='继续完成原操作',payload_json=?,worker_id=NULL,"
+                "heartbeat_at=NULL,lease_expires_at=NULL,error_code=NULL,error_message=NULL,updated_at=? WHERE task_id=? AND status='failed'",
+                (json.dumps(payload, ensure_ascii=False), iso_utc(), task_id))
+    return get_task(database_path, task_id)
+
+
+def resume_news_export_task(database_path: Path, task_id: str, authorization_context: dict, *, queue_max: int) -> dict[str, Any]:
+    """Continue the same admitted Native News delivery, not a second Task."""
+    with transaction(database_path, immediate=True) as db:
+        row = db.execute('SELECT * FROM tasks WHERE task_id=?', (task_id,)).fetchone()
+        payload = json.loads(row['payload_json']) if row else {}
+        if (not row or row['task_type'] != 'excel_export' or payload.get('operation') not in {'news_export','novel_news_export'}
+                or not payload.get('export_context')):
+            raise TaskSubmissionError('NEWS_EXPORT_TASK_UNBOUND', 'Original Native export Task required')
+        if row['status'] == 'failed':
+            ensure_task_capacity(db, queue_max=queue_max, gpu_pending_per_user_max=1,
+                execution_lane=STANDARD_BACKGROUND, created_by_user_id=row['created_by_user_id'])
+            payload['export_context'] = {'authorization_context': authorization_context}
+            db.execute("UPDATE tasks SET status='queued',stage='继续完成原导出操作',payload_json=?,worker_id=NULL,"
+                "heartbeat_at=NULL,lease_expires_at=NULL,error_code=NULL,error_message=NULL,updated_at=? WHERE task_id=? AND status='failed'",
+                (json.dumps(payload, ensure_ascii=False), iso_utc(), task_id))
+    return get_task(database_path, task_id)
+
+
+def resume_creation_batch_delivery_task(database_path: Path, task_id: str, authorization_context: dict, *, queue_max: int) -> dict[str, Any]:
+    """Same C08 local delivery Task; refresh Session without changing its source/scope."""
+    with transaction(database_path,immediate=True) as db:
+        row=db.execute('SELECT * FROM tasks WHERE task_id=?',(task_id,)).fetchone()
+        payload=json.loads(row['payload_json']) if row else {}
+        execution=payload.get('creation_batch_delivery') or {};old=execution.get('authorization_context') or {}
+        if (not row or row['task_type']!='excel_export' or row['execution_lane']!=STANDARD_BACKGROUND
+                or payload.get('operation')!='creation_batch_export' or payload.get('request_id')!=row['subject_ref']
+                or row['created_by_user_id']!=authorization_context['actor']['user_id'] or old.get('actor')!=authorization_context['actor']
+                or any((old.get('authorization') or {}).get(k)!=authorization_context['authorization'][k] for k in ('database_path','user_state_sha256'))):
+            raise TaskSubmissionError('CREATION_BATCH_DELIVERY_CONFLICT','Original admitted delivery Task/principal required')
+        if row['status']=='failed':
+            ensure_task_capacity(db,queue_max=queue_max,gpu_pending_per_user_max=1,execution_lane=STANDARD_BACKGROUND,created_by_user_id=row['created_by_user_id'])
+            execution['authorization_context']=authorization_context
+            db.execute("UPDATE tasks SET status='queued',stage='继续原批次交付',payload_json=?,worker_id=NULL,heartbeat_at=NULL,lease_expires_at=NULL,"
+                "error_code=NULL,error_message=NULL,updated_at=? WHERE task_id=? AND status='failed'",(json.dumps(payload,ensure_ascii=False),iso_utc(),task_id))
+    return get_task(database_path,task_id)
+
+
+def resume_mix_export_task(database_path: Path, task_id: str, export_context: dict, *, queue_max: int) -> dict[str, Any]:
+    """Same admitted native export intent; refresh execution Session, not authority."""
+    with transaction(database_path,immediate=True) as db:
+        row=db.execute('SELECT * FROM tasks WHERE task_id=?',(task_id,)).fetchone()
+        payload=json.loads(row['payload_json']) if row else {}
+        if (not row or payload.get('operation')!='mix_export' or
+            (payload.get('export_context') or {}).get('export_intent_ref')!=export_context['export_intent_ref']):
+            raise TaskSubmissionError('DELIVERY_INTENT_CONFLICT','Not the original native export Task')
+        if row['status']=='failed':
+            ensure_task_capacity(db,queue_max=queue_max,gpu_pending_per_user_max=1,execution_lane=STANDARD_BACKGROUND,created_by_user_id=row['created_by_user_id'])
+            if db.execute("SELECT 1 FROM tasks WHERE operation_identity=? AND task_id<>? AND status IN ('queued','running')",(row['operation_identity'],task_id)).fetchone():
+                raise TaskSubmissionError('OPERATION_ALREADY_ACTIVE','Another export operation is active')
+            payload['export_context']=export_context
+            db.execute("UPDATE tasks SET status='queued',stage='继续完成原导出操作',payload_json=?,worker_id=NULL,lease_expires_at=NULL,updated_at=? WHERE task_id=? AND status='failed'",(json.dumps(payload,ensure_ascii=False),iso_utc(),task_id))
+    return get_task(database_path,task_id)
 
 
 def submit_task(
@@ -290,12 +487,55 @@ def submit_task(
     gpu_pending_per_user_max: int,
     include_awaiting_review: bool = False,
     allow_existing: bool = True,
+    _connection=None,
 ) -> dict[str, Any]:
     statuses = "'queued', 'running', 'awaiting_review'" if include_awaiting_review else "'queued', 'running'"
     timestamp = iso_utc()
     task_id = f"{task_id_prefix}-{uuid.uuid4().hex[:12]}"
 
-    with transaction(database_path, immediate=True) as connection:
+    with (nullcontext(_connection) if _connection is not None else transaction(database_path, immediate=True)) as connection:
+        if task_type == 'case_analysis':
+            # All legacy URL/upload/group callers share this fence. A fresh
+            # operation ID must not wash an unknown Excel-origin execution.
+            has_admissions = connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='case_excel_native_admissions_v1'").fetchone()
+            if not has_admissions and (payload.get('excel_native_origin') or connection.execute(
+                    "SELECT 1 FROM tasks WHERE task_type='case_analysis' AND json_type(payload_json,'$.excel_native_origin') IS NOT NULL LIMIT 1").fetchone()):
+                # Pre-009 legacy DBs contain no Excel Native origins. Missing
+                # metadata on a DB that DOES contain one is a corrupt/downgraded
+                # store, never permission to drop its execution fence.
+                raise TaskSubmissionError('EXCEL_NATIVE_MIGRATION_REQUIRED','原生导入调度身份缺失，请先恢复准确迁移。')
+            held = connection.execute("SELECT 1 FROM tasks t JOIN case_excel_native_admissions_v1 a ON a.task_id=t.task_id "
+                "WHERE t.subject_ref=? AND a.execution_claimed=1 AND t.error_code='CASE_EXTERNAL_RESULT_UNKNOWN' LIMIT 1",(subject_ref,)).fetchone() if has_admissions else None
+            if held:
+                raise TaskSubmissionError('CASE_EXTERNAL_RESULT_UNKNOWN','原分析结果未知，不能重新派发。')
+        review_operation = payload.get("review_operation_id")
+        recovered = connection.execute(
+            "SELECT task_id FROM tasks WHERE task_type=? AND subject_ref=? AND json_extract(payload_json,'$.review_operation_id')=?",
+            (task_type, subject_ref, review_operation)).fetchone() if review_operation else None
+        if recovered:
+            # Stable retry identity covers queued, failed, review and completed tasks.
+            return get_task(database_path, recovered["task_id"])
+        recovery = payload.get('generation_recovery') if payload.get('operation') == 'script_generation' and task_type == 'content_generation' else None
+        if recovery:
+            row = connection.execute("SELECT task_id,payload_json FROM tasks WHERE task_type=? AND subject_ref=? AND json_extract(payload_json,'$.generation_recovery.operation_id')=?", (task_type, subject_ref, recovery['operation_id'])).fetchone()
+            if row:
+                if json.loads(row['payload_json']) != payload:
+                    raise TaskSubmissionError('GENERATION_RECOVERY_CONFLICT', 'Generation operation payload conflicts')
+                return get_task(database_path, row['task_id'])
+        if payload.get('operation')=='creation_batch_export':
+            execution=payload.get('creation_batch_delivery') or {}
+            rows=connection.execute("SELECT * FROM tasks WHERE operation_identity=? OR (subject_ref=? AND created_by_user_id=? "
+                "AND json_extract(payload_json,'$.operation')='creation_batch_export' AND json_extract(payload_json,'$.creation_batch_delivery.operation_id')=?) "
+                "ORDER BY rowid DESC",(operation_identity,subject_ref,created_by_user_id,execution.get('operation_id'))).fetchall()
+            for row in rows:
+                old=json.loads(row['payload_json']);before=old.get('creation_batch_delivery') or {}
+                after=payload.get('creation_batch_delivery') or {}
+                stable=lambda value:{k:v for k,v in value.items() if k not in {'authorization_context','operation_id'}}
+                if (old.get('operation')!='creation_batch_export' or row['subject_ref']!=subject_ref or row['task_type']!=task_type
+                        or row['created_by_user_id']!=created_by_user_id or stable(before)!=stable(after)
+                        or (before.get('authorization_context') or {}).get('actor')!=(after.get('authorization_context') or {}).get('actor')):
+                    raise TaskSubmissionError('CREATION_BATCH_DELIVERY_CONFLICT','Original delivery Task scope differs')
+            if rows:return get_task(database_path,rows[0]['task_id'])
         existing = connection.execute(
             f"""
             SELECT task_id FROM tasks
@@ -306,6 +546,10 @@ def submit_task(
             (task_type, operation_identity),
         ).fetchone()
         if existing is not None:
+            if recovery:
+                active = connection.execute('SELECT payload_json FROM tasks WHERE task_id=?', (existing['task_id'],)).fetchone()
+                if json.loads(active['payload_json']) != payload:
+                    raise TaskSubmissionError('OPERATION_ALREADY_ACTIVE', 'Another generation operation is still active')
             if allow_existing:
                 existing_id = str(existing["task_id"])
             else:
@@ -361,6 +605,9 @@ def submit_task(
                     raise
                 existing_id = str(conflict["task_id"])
 
+        if _connection is not None:
+            row = connection.execute(f'SELECT {TASK_COLUMNS} FROM tasks t LEFT JOIN users u ON u.id=t.created_by_user_id WHERE t.task_id=?',(existing_id,)).fetchone()
+            return _row_to_task(row)
     task = get_task(database_path, existing_id)
     assert task is not None
     return task
@@ -590,9 +837,18 @@ def claim_task(
     lease_seconds: int,
     stage: str,
     task_type: str | None = None,
+    excel_native_ready: bool = False,
 ) -> bool:
     now = datetime.now(timezone.utc)
     with transaction(database_path, immediate=True) as connection:
+        original = connection.execute('SELECT payload_json,status,task_type FROM tasks WHERE task_id=?',(task_id,)).fetchone()
+        if original and json.loads(original['payload_json']).get('excel_native_origin'):
+            if not excel_native_ready or original['status'] != 'queued' or (task_type and original['task_type']!=task_type):
+                return False
+            claimed = connection.execute("UPDATE case_excel_native_admissions_v1 SET execution_claimed=1 "
+                "WHERE task_id=? AND relation_kind='new_origin_task' AND execution_claimed=0",(task_id,))
+            if claimed.rowcount != 1:
+                return False
         task_type_clause = " AND task_type = ?" if task_type else ""
         values: list[Any] = [
             stage,
@@ -652,6 +908,12 @@ def recover_expired_tasks(
             )
             continue
         with transaction(database_path, immediate=True) as transaction_connection:
+            original = transaction_connection.execute('SELECT payload_json FROM tasks WHERE task_id=?',(task_id,)).fetchone()
+            if original and json.loads(original['payload_json']).get('excel_native_origin'):
+                transaction_connection.execute("UPDATE tasks SET status='failed',stage='原分析结果待核对',error_code='CASE_EXTERNAL_RESULT_UNKNOWN',"
+                    "error_message='原执行已开始，结果未知；不能自动重发。',updated_at=? WHERE task_id=? AND status='running' "
+                    "AND (lease_expires_at IS NULL OR lease_expires_at<=?)",(iso_utc(),task_id,iso_utc()))
+                continue
             result = transaction_connection.execute(
                 """
                 UPDATE tasks
@@ -677,6 +939,21 @@ STAGE_LABELS = {
 }
 
 
+def end_case_revision_tasks(settings: Settings, case_id: str, attempt_id: str) -> None:
+    """Execution closure projected from the exact immutable Human terminal decision.
+
+    There is no new Task status: existing completed also closes rejected source
+    analysis. Stage text explicitly says no further calculation was performed.
+    Failed/completed history is retained; later retry rechecks the parent Gate.
+    """
+    with transaction(settings.database_path) as db:
+        rows=db.execute("SELECT task_id FROM tasks WHERE task_type='case_analysis' AND subject_ref=? "
+            "AND json_extract(payload_json,'$.evidence_revision.attempt_id')=? AND status IN ('queued','running','awaiting_review')",
+            (case_id,attempt_id)).fetchall()
+    for row in rows:
+        update_task(settings.database_path,row['task_id'],status='completed',stage='原投稿已结束，未继续计算')
+
+
 class CaseTaskRunner:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -699,6 +976,16 @@ class CaseTaskRunner:
         if task is None:
             return None
         case_id = str(task["subject_ref"] or "")
+        revision = task['payload'].get('evidence_revision')
+        if revision:
+            from case_evidence_revision_v1 import resolve_target
+            try:
+                parent=self.settings.pipeline_root/'data/case_analysis_attempts'/case_id/revision['attempt_id']
+                if (parent/'human_review_decision_v1.json').exists():return 'completed'
+                target=resolve_target(self.settings.pipeline_root,case_id,revision['attempt_id'])
+                return 'completed' if target.state=='validated' else 'failed' if target.state=='failed' else None
+            except (OSError,ValueError,RuntimeError):
+                return None
         if approved_case_attempt_id(self.settings, case_id) == task_id:
             return "completed"
         state_path = (
@@ -721,6 +1008,8 @@ class CaseTaskRunner:
             # when this case has an older approved canonical artifact.
             return None
         canonical = self.settings.pipeline_root / "data" / "cases" / case_id / "case_v1.json"
+        if task['payload'].get('excel_native_origin'):
+            return None  # Another Attempt's old Case cannot reconcile this execution.
         return "completed" if canonical.is_file() else None
 
     def start(self) -> None:
@@ -821,6 +1110,15 @@ class CaseTaskRunner:
 
     def _run(self, task_id: str) -> None:
         try:
+            original = get_task(self.settings.database_path,task_id)
+            excel_ready = False
+            if original and original['payload'].get('excel_native_origin'):
+                from .case_excel_native import validate_primary_origin
+                try:
+                    validate_primary_origin(self.settings,original,for_dispatch=True)
+                    excel_ready = True
+                except (OSError,ValueError,RuntimeError):
+                    return  # Admission recovery must finish exact companions first.
             if not claim_task(
                 self.settings.database_path,
                 task_id,
@@ -828,6 +1126,7 @@ class CaseTaskRunner:
                 lease_seconds=self.settings.task_lease_seconds,
                 stage="获取视频",
                 task_type="case_analysis",
+                excel_native_ready=excel_ready,
             ):
                 return
             task = get_task(self.settings.database_path, task_id)
@@ -872,6 +1171,14 @@ class CaseTaskRunner:
                 ])
             if payload.get("provider_source_url"):
                 command.extend(["--provider-source-url", str(payload["provider_source_url"])])
+            revision=payload.get('evidence_revision')
+            if revision:
+                command=[self.settings.pipeline_python_executable or self.settings.python_executable,
+                    str(self.settings.pipeline_root/'scripts/case_analysis_v1.py'),
+                    '--source-url',str(payload['source_url']),'--attempt-id',revision['attempt_id'],
+                    '--revision-id',revision['revision_id'],'--build-task-id',task_id,
+                    '--console-authority-db',str(self.settings.database_path)]
+                state_path=self.settings.pipeline_root/'data/case_analysis_attempts'/case_id/revision['attempt_id']/'human_revisions'/revision['revision_id']/'execution_status_v1.json'
             child_env = pipeline_subprocess_env(
                 needs_deepseek=True,
                 needs_qiyun=(payload.get("acquisition_provider") == "qiyun" and not payload.get("source_upload")),
@@ -919,6 +1226,9 @@ class CaseTaskRunner:
 
                 elif stderr.strip() or stdout.strip():
                     message = (stderr.strip() or stdout.strip()).splitlines()[-1]
+                if payload.get('excel_native_origin') and not state_path.is_file():
+                    code='CASE_EXTERNAL_RESULT_UNKNOWN'
+                    message='原执行已开始，未取得可核对结果；不能自动重发。'
                 update_task(
                     self.settings.database_path,
                     task_id,
@@ -931,17 +1241,19 @@ class CaseTaskRunner:
             update_task(
                 self.settings.database_path,
                 task_id,
-                status="awaiting_review",
+                status="completed" if revision else "awaiting_review",
                 progress=100,
-                stage="等待人工审核",
+                stage="修订校验完成" if revision else "等待人工审核",
             )
         except Exception as exc:
+            original=get_task(self.settings.database_path,task_id)
+            uncertain=bool(original and original['payload'].get('excel_native_origin') and original['status']=='running')
             update_task(
                 self.settings.database_path,
                 task_id,
                 status="failed",
                 stage="分析失败",
-                error_code="CASE_ANALYSIS_WORKER_FAILED",
+                error_code="CASE_EXTERNAL_RESULT_UNKNOWN" if uncertain else "CASE_ANALYSIS_WORKER_FAILED",
                 error_message=str(exc),
             )
         finally:

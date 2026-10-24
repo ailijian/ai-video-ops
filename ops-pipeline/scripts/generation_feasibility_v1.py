@@ -30,6 +30,9 @@ def preview_generation_feasibility(
     """
 
     pipeline_root = pipeline_root.expanduser().resolve()
+    from news_runtime_v1_2 import configured,feasibility
+    if configured(pipeline_root) and target_profile=='news':
+        return feasibility(pipeline_root,business_persona_path,speaker_persona_path,quantity,selected_content,reuse_intent)
     universe = resolve_matching_universe(pipeline_root)
     context = {
         "target_profile": target_profile,

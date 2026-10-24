@@ -31,11 +31,12 @@ def sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def approval_fixture(tmp_path: Path) -> tuple[Settings, Path, Path]:
+def approval_fixture(tmp_path: Path, *, attempt_id: str = ATTEMPT_ID, case_id: str = CASE_ID, pipeline_root: Path | None = None) -> tuple[Settings, Path, Path]:
     project = Path(__file__).resolve().parents[2]
     repo = tmp_path / "repo"
-    pipeline = repo / "ops-pipeline"
-    shutil.copytree(project / "ops-pipeline" / "scripts", pipeline / "scripts")
+    pipeline = pipeline_root or repo / "ops-pipeline"
+    repo = pipeline.parent
+    shutil.copytree(project / "ops-pipeline" / "scripts", pipeline / "scripts", dirs_exist_ok=True)
     settings = Settings(
         repo_root=repo,
         console_root=repo / "internal-console",
@@ -59,6 +60,7 @@ def approval_fixture(tmp_path: Path) -> tuple[Settings, Path, Path]:
         / "case_v1.json"
     )
     case = json.loads(source_case.read_text(encoding="utf-8"))
+    case["case_id"] = case_id
     case["lifecycle"].update(
         {
             "status": "review_required",
@@ -71,7 +73,7 @@ def approval_fixture(tmp_path: Path) -> tuple[Settings, Path, Path]:
     case.pop("source_rights_gate", None)
     case["analysis_lineage"] = {
         "operation": "case_analysis_v1",
-        "attempt_id": ATTEMPT_ID,
+        "attempt_id": attempt_id,
         "previous_attempt_id": None,
         "reanalysis": False,
     }
@@ -105,7 +107,7 @@ def approval_fixture(tmp_path: Path) -> tuple[Settings, Path, Path]:
     case["pattern_state"] = {"pattern_mining_performed": False}
 
     attempt_root = (
-        pipeline / "data" / "case_analysis_attempts" / CASE_ID / ATTEMPT_ID
+        pipeline / "data" / "case_analysis_attempts" / case_id / attempt_id
     )
     missing_video = attempt_root / "transient-source-already-cleaned.mp4"
     metadata = attempt_root / "source_metadata_v1.json"
@@ -113,16 +115,16 @@ def approval_fixture(tmp_path: Path) -> tuple[Settings, Path, Path]:
     storyboard = attempt_root / "reverse_storyboard_v1.json"
     privacy = attempt_root / "privacy_projection_v1.json"
     recorded_sha = hashlib.sha256(b"source-media-was-cleaned").hexdigest()
-    source_url = f"https://www.douyin.com/video/{CASE_ID}"
+    source_url = f"https://www.douyin.com/video/{case_id}"
     write_json(
         metadata,
-        {"aweme_id": CASE_ID, "desc": "用于审批测试的公开来源", "video": {"width": 1080, "height": 1920}},
+        {"aweme_id": case_id, "desc": "用于审批测试的公开来源", "video": {"width": 1080, "height": 1920}},
     )
     write_json(
         acquisition,
         {
-            "case_id": CASE_ID,
-            "stable_video_id": CASE_ID,
+            "case_id": case_id,
+            "stable_video_id": case_id,
             "source_url": source_url,
             "platform": "douyin",
             "video": str(missing_video),
@@ -130,11 +132,11 @@ def approval_fixture(tmp_path: Path) -> tuple[Settings, Path, Path]:
             "source_video_sha256": recorded_sha,
         },
     )
-    write_json(storyboard, {"case_id": CASE_ID, "synthetic_fixture": True})
+    write_json(storyboard, {"case_id": case_id, "synthetic_fixture": True})
     write_json(
         privacy,
         {
-            "case_id": CASE_ID,
+            "case_id": case_id,
             "library_safe": True,
             "privacy_policy_version": "privacy-policy-v1.0",
         },
@@ -149,7 +151,7 @@ def approval_fixture(tmp_path: Path) -> tuple[Settings, Path, Path]:
     case["source_provenance"] = {
         "platform": "douyin",
         "canonical_source_url": source_url,
-        "stable_video_id": CASE_ID,
+        "stable_video_id": case_id,
         "recorded_source_media_sha256": recorded_sha,
         "source_acquisition_ref": {"path": str(acquisition), "sha256": sha256(acquisition)},
         "source_metadata_ref": {"path": str(metadata), "sha256": sha256(metadata)},
@@ -163,20 +165,26 @@ def approval_fixture(tmp_path: Path) -> tuple[Settings, Path, Path]:
             "privacy_projection_v1": str(privacy),
         }
     )
-    candidate = attempt_root / "candidate_cases" / CASE_ID / "case_v1.json"
+    candidate = attempt_root / "candidate_cases" / case_id / "case_v1.json"
     write_json(candidate, case)
     state_path = attempt_root / "case_analysis_attempt_v1.json"
     write_json(
         state_path,
         {
             "schema_version": "case-analysis-attempt-v1.0",
-            "case_id": CASE_ID,
-            "attempt_id": ATTEMPT_ID,
+            "case_id": case_id,
+            "attempt_id": attempt_id,
             "status": "awaiting_review",
             "artifacts": {"case_candidate_v1": str(candidate)},
         },
     )
     return settings, candidate, state_path
+
+
+def positive_quality(settings):
+    from case_human_review_v2 import quality_context
+    from app.canonical_gateway import _approval_candidate
+    return {**quality_context(_approval_candidate(settings, CASE_ID)[0]), "decision": "suitable", "origin": "human_final_confirmation"}
 
 
 def approve(settings: Settings):
@@ -185,21 +193,22 @@ def approve(settings: Settings):
         CASE_ID,
         reviewer=REVIEWER,
         note="已对照公开来源完成测试审核。",
+        quality_decision=positive_quality(settings),
     )
 
 
-def provisional_review_fixture(tmp_path: Path) -> tuple[Settings, Path, dict]:
-    settings, candidate, _ = approval_fixture(tmp_path)
+def provisional_review_fixture(tmp_path: Path, *, attempt_id: str = ATTEMPT_ID, case_id: str = CASE_ID, pipeline_root: Path | None = None) -> tuple[Settings, Path, dict]:
+    settings, candidate, _ = approval_fixture(tmp_path,attempt_id=attempt_id,case_id=case_id,pipeline_root=pipeline_root)
     case = json.loads(candidate.read_text(encoding="utf-8"))
     attempt = candidate.parents[2]
     narration = attempt / "evidence" / "narration" / "narration_review_v1.json"
     shots = attempt / "evidence" / "shots" / "shot_boundaries_v1_1.json"
     write_json(narration, {
-        "case_id": CASE_ID,
+        "case_id": case_id,
         "manual_review": {"required": True, "items": [{"segment_id": "A001", "start": 0, "end": 1, "source_text": "原始识别内容"}]},
     })
     write_json(shots, {
-        "case_id": CASE_ID,
+        "case_id": case_id,
         "manual_review": {"required": True, "items": [{"frame_id": "frame_000003000ms.jpg", "timestamp_seconds": 3}]},
     })
     case["source_artifacts"].update({"narration_review_v1": str(narration), "shot_boundaries": str(shots)})
@@ -253,7 +262,7 @@ def test_final_evidence_review_approves_without_changing_source_artifacts(tmp_pa
     before = (narration.read_bytes(), shots.read_bytes())
     detail = approve_case_candidate(
         settings, CASE_ID, reviewer=REVIEWER, note="已核对疑点",
-        evidence_review=decisions, reviewer_user_id=1,
+        evidence_review=decisions, reviewer_user_id=1, quality_decision=positive_quality(settings),
     )
     assert detail["status"] == "approved"
     approved = json.loads((settings.pipeline_root / "data" / "cases" / CASE_ID / "case_v1.json").read_text(encoding="utf-8"))

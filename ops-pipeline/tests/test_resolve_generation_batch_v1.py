@@ -334,7 +334,7 @@ def patch_runtime(monkeypatch, paths: dict[str, Path], *, leak: bool = False, mi
             "content_plan_ref": {"sha256": subject.canonical_sha256(content_plan)},
             "lineage": {"content_ledger": {"sha256": subject.canonical_sha256(content_ledger)}},
             "authority": {"human_review_required": True, "auto_approved": False},
-            "validation": {},
+            "validation": {"passed": True},
         }
     monkeypatch.setattr(subject, "generate_batch", fake_generate_batch)
 
@@ -531,6 +531,32 @@ def test_final_content_plan_is_required(tmp_path: Path, monkeypatch):
             model="fake-model",
         )
     assert exc.value.code == "FINAL_CONTENT_PLAN_REQUIRED"
+
+
+def test_missing_derived_review_pack_recovers_without_another_model_call(tmp_path: Path, monkeypatch):
+    paths = stage_runtime(tmp_path)
+    calls, _, _ = patch_runtime(monkeypatch, paths)
+    first = subject.resolve_generation_batch(pipeline_root=tmp_path, request_id=REQUEST_ID, transport=fake_transport)
+    original = Path(first['generation_batch_path']).read_bytes()
+    Path(first['review_pack_path']).unlink()
+    state = subject.generation_snapshot(tmp_path, REQUEST_ID)
+    assert state['artifact_present'] and not state['ready_for_human_review']
+    assert state['can_recover_artifacts'] is True
+    recovered = subject.resolve_generation_batch(pipeline_root=tmp_path, request_id=REQUEST_ID, transport=fake_transport)
+    assert recovered['ready_for_human_review'] and recovered['remote_model_called'] is False
+    assert calls['generate_batch'] == 1
+    assert Path(first['generation_batch_path']).read_bytes() == original
+
+
+@pytest.mark.parametrize('flags', [{'operation_id': 'a' * 32}, {'intent_sha256': 'b' * 64}])
+def test_recovery_operation_and_intent_are_an_indivisible_identity(tmp_path: Path, monkeypatch, flags):
+    paths = stage_runtime(tmp_path)
+    calls, _, _ = patch_runtime(monkeypatch, paths)
+    with pytest.raises(subject.recovery.RecoveryError) as error:
+        subject.resolve_generation_batch(pipeline_root=tmp_path, request_id=REQUEST_ID,
+                                         transport=fake_transport, **flags)
+    assert error.value.code == 'GENERATION_RECOVERY_SCHEMA_INVALID'
+    assert calls['generate_batch'] == 0
 
 
 def test_existing_batch_lineage_drift_fails_closed(tmp_path: Path, monkeypatch):

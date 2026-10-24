@@ -312,11 +312,111 @@ def _validate_recovered_closure(
         )
 
 
+def historical_ledger_material(root, request_id, kind, exported_at, *, _sealed_export_receipt=False):
+    """Frozen Native sources for full semantic replay, without a current gate."""
+    from profile_compatibility_decisions_v1_1 import ref, resolve_ref
+    from delivery_receipt_recovery_v1 import human_state, validate_export_receipt
+    from export_mix_excel_v1 import validate_workbook
+    directory=Path(root)/'data/generation_batches'/request_id
+    request_path=Path(root)/'data/generation_requests'/request_id/'generation_request_v1.json'
+    request=read_json(request_path);approved_path=directory/'approved_generation_batch_v1.json'
+    approved=read_json(approved_path);human=directory/'generation_batch_approval_receipt.json'
+    state=human_state(directory)
+    if kind!='mix_semantic' or not state['completed'] or not state['approved']:
+        from ledger_history_v1 import LedgerHistoryError
+        raise LedgerHistoryError('HUMAN_PROOF_REQUIRED')
+    intent_path=directory/'generation_export_intent_v1.json'
+    intent=read_json(intent_path)
+    output=Path(root)/intent['output_path'];receipt_path=output.with_suffix('.export_receipt.json')
+    receipt=read_json(receipt_path);validate_export_receipt(root,receipt,output,request_id=request_id)
+    template=resolve_ref(root,intent['template_ref'])
+    if not _sealed_export_receipt:
+        validate_workbook(output,template,approved['contents'])
+    # The Ledger owner's sealed read path already checks the immutable Native
+    # seal, publication/receipt and every source/output SHA. Only that reader
+    # reuses the original workbook verdict; all write/replay defaults still
+    # perform the complete workbook validation above.
+    persona=_resolve_lineage_file(request['lineage']['business_persona_ref'],'Business Persona')
+    speaker=_resolve_lineage_file(request['lineage']['speaker_persona_ref'],'Speaker Persona')
+    sources={k:ref(root,p) for k,p in {'request':request_path,'approved':approved_path,'human':human,
+        'review':directory/'generation_human_review_v2.json','receipt':receipt_path,'output':output,
+        'business':persona,'speaker':speaker,'intent':intent_path,'template':template,
+        'publication':directory/'generation_export_publication_v1.json'}.items()}
+    return {'kind':kind,'request_id':request_id,'source_refs':sources,'exported_at':exported_at,
+        'entries':_build_export_entries(approved=approved,approved_batch_path=approved_path,
+            approval_receipt_path=human,excel_path=output,exported_at=exported_at),
+        'fact_atoms':_build_fact_atoms(read_json(persona),sha256_file(persona),read_json(speaker),sha256_file(speaker)),
+        'receipt_path':receipt_path,'closure_path':directory/'generation_export_closure_v1.json'}
+
+
+def validate_historical_core_bundle(root, request_id, ledger_snapshot):
+    """Explicit A0 reader. The original v1.0 reader above remains unchanged."""
+    from profile_compatibility_decisions_v1_1 import ref
+    from ledger_history_v1 import LedgerHistoryError
+    directory=Path(root)/'data/generation_batches'/request_id
+    closure_path=directory/'generation_export_closure_v1.json';closure=read_json(closure_path)
+    recipe=historical_ledger_material(root,request_id,'mix_semantic',closure['created_at'])
+    sources=recipe['source_refs'];approved=Path(root)/sources['approved']['path'];output=recipe['receipt_path'].with_suffix('.xlsx')
+    # .export_receipt.json is not a workbook suffix; use the Native output ref.
+    output=Path(root)/sources['output']['path']
+    _validate_recovered_closure(closure=closure,request_id=request_id,approved_batch_path=approved,
+        excel_path=output,ledger_path=Path(ledger_snapshot))
+    request=read_json(Path(root)/sources['request']['path'])
+    ledger=read_json(ledger_snapshot)
+    if (ledger.get('business_id')!=request['persona_id'] or ledger.get('schema_version')!=LEDGER_SCHEMA_VERSION
+        or canonical_sha256(ledger)!=closure['content_ledger']['canonical_sha256_after']
+        or closure['approval_receipt']['sha256']!=sources['human']['sha256']
+        or closure['excel_export']['receipt_sha256']!=sources['receipt']['sha256']):
+        raise LedgerHistoryError('CORE_BUNDLE_INVALID')
+    _validate_existing_entries(ledger,recipe['entries'])
+    return {'closure_ref':ref(root,closure_path),'approved_ref':sources['approved'],
+        'approval_receipt_ref':sources['human'],'xlsx_ref':sources['output'],'export_receipt_ref':sources['receipt']}
+
+
+def verify_generation_export_anchor(*, pipeline_root, request_id):
+    from ledger_history_v1 import validate_anchor
+    return validate_anchor(Path(pipeline_root),request_id)
+
+
+def read_completed_generation_export(*, pipeline_root, request_id, excel_path):
+    """Explicit reader dispatch. Unknown/invalid anchor never downgrades."""
+    from ledger_history_v1 import anchor_path
+    root=Path(pipeline_root)
+    if not anchor_path(root,request_id).is_file():
+        return close_generation_export(pipeline_root=root,request_id=request_id,excel_path=Path(excel_path),verify_only=True)
+    verified=verify_generation_export_anchor(pipeline_root=root,request_id=request_id)
+    closure_path=root/verified['closure_ref']['path'];closure=read_json(closure_path)
+    if Path(closure['excel_export']['path']).resolve()!=Path(excel_path).resolve():
+        raise ExportClosureError('EXPORT_CLOSURE_EXCEL_LINEAGE_MISMATCH','Original Excel identity differs')
+    return {'ok':True,'request_id':request_id,'recovered':True,'closure_path':str(closure_path),
+        'closure_sha256':sha256_file(closure_path),'content_ledger_path':str(root/verified['ledger_ref']['path']),
+        'content_ledger_sha256':verified['ledger_ref']['sha256'],
+        'appended_content_ids':closure['content_ledger']['appended_content_ids'],
+        'remote_model_called':False,'stop_point_reached':True,'history_anchor_ref':verified['anchor_ref']}
+
+
+def ensure_generation_export_anchor(*, pipeline_root, request_id):
+    from ledger_history_v1 import ensure_anchor, validate_anchor, finish_request
+    root=Path(pipeline_root);directory=root/'data/generation_batches'/request_id
+    closure=read_json(directory/'generation_export_closure_v1.json')
+    request=read_json(root/'data/generation_requests'/request_id/'generation_request_v1.json')
+    finish_request(root,request['persona_id'],request_id,Path(closure['excel_export']['receipt_path']),
+                   directory/'generation_export_closure_v1.json')
+    ensure_anchor(root,request_id)
+    return validate_anchor(root,request_id)
+
+
+from profile_compatibility_consumers_v1_1 import guarded as compatibility_guarded
+
+
+@compatibility_guarded
 def close_generation_export(
     *,
     pipeline_root: Path,
     request_id: str,
     excel_path: Path,
+    verify_only: bool = False,
+    authorization_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     pipeline_root = pipeline_root.expanduser().resolve()
     excel_path = excel_path.expanduser().resolve()
@@ -363,7 +463,11 @@ def close_generation_export(
     request = read_json(request_path)
     approved = read_json(approved_batch_path)
     approval_receipt = read_json(approval_receipt_path)
+    from generation_recovery_v1 import validate_approved_source
+    validate_approved_source(pipeline_root, request_id, approved, approval_receipt)
     export_receipt = read_json(export_receipt_path)
+    from delivery_receipt_recovery_v1 import validate_export_receipt
+    validate_export_receipt(pipeline_root, export_receipt, excel_path, request_id=request_id)
 
     if (
         str(request.get("request_id") or "") != request_id
@@ -413,6 +517,8 @@ def close_generation_export(
         / "content_ledger_v1.json"
     )
 
+    if verify_only and not closure_path.is_file():
+        raise ExportClosureError('EXPORT_CLOSURE_REQUIRED_ARTIFACT_MISSING', 'No completed canonical Closure exists')
     if closure_path.is_file():
         closure = read_json(closure_path)
         _validate_recovered_closure(
@@ -422,6 +528,8 @@ def close_generation_export(
             excel_path=excel_path,
             ledger_path=ledger_path,
         )
+        if not verify_only and (batch_root/'generation_export_intent_v1.json').is_file():
+            ensure_generation_export_anchor(pipeline_root=pipeline_root,request_id=request_id)
         return {
             "ok": True,
             "request_id": request_id,
@@ -450,6 +558,8 @@ def close_generation_export(
         "Speaker Persona",
     )
     persona = read_json(persona_path)
+    from customer_constraints_v1 import assert_publication_allowed, publication_text
+    assert_publication_allowed(persona, persona_path, [publication_text(v) for v in approved.get("contents", [])])
     speaker = read_json(speaker_path)
 
     if (
@@ -491,6 +601,15 @@ def close_generation_export(
             "Approved content Business Persona differs from Generation Request.",
         )
 
+    def authorize_pending_closure():
+        from delivery_receipt_recovery_v1 import export_paths,check,EXPORT,identity,source_snapshot,ReceiptRecoveryError
+        from generation_recovery_v1 import resolve_ref
+        intent_path,_=export_paths(pipeline_root,request_id)
+        if intent_path.is_file():
+            intent=check(read_json(intent_path),EXPORT);identity(authorization_context,intent)
+            if source_snapshot(pipeline_root,resolve_ref(pipeline_root,intent['sources']['batch_ref']))!=intent['sources']:
+                raise ReceiptRecoveryError('DELIVERY_SOURCE_CHANGED','Source changed before native Closure')
+    authorize_pending_closure()
     ledger_existed = ledger_path.is_file()
     if ledger_existed:
         ledger_before = read_json(ledger_path)
@@ -558,19 +677,25 @@ def close_generation_export(
             "latest_export_request_id": request_id,
         }
 
+        authorize_pending_closure()
         if ledger_existed:
             ledger_file_sha_after = (
                 replace_ledger_after_export(
                     ledger_path,
                     ledger_before,
                     prospective_ledger,
+                    history_context={'root':pipeline_root,'business':business_id,'request_id':request_id,
+                        'kind':'mix_semantic','exported_at':exported_at}
+                    if (batch_root/'generation_export_intent_v1.json').is_file() else None,
                 )
             )
         else:
-            ledger_file_sha_after = write_new_json(
-                ledger_path,
-                prospective_ledger,
-            )
+            from contextlib import nullcontext
+            from ledger_history_v1 import transition, bytes_for
+            scope=transition(pipeline_root,business_id,request_id,'mix_semantic',ledger_before,prospective_ledger,
+                exported_at=exported_at,after_bytes=bytes_for(prospective_ledger)) if (batch_root/'generation_export_intent_v1.json').is_file() else nullcontext()
+            with scope:
+                ledger_file_sha_after = write_new_json(ledger_path, prospective_ledger)
 
     persisted = read_json(ledger_path)
     _validate_existing_entries(
@@ -652,10 +777,13 @@ def close_generation_export(
         },
     }
 
+    authorize_pending_closure()
     closure_sha = write_new_json(
         closure_path,
         closure,
     )
+    if (batch_root/'generation_export_intent_v1.json').is_file():
+        ensure_generation_export_anchor(pipeline_root=pipeline_root,request_id=request_id)
 
     return {
         "ok": True,
@@ -701,24 +829,26 @@ def main() -> None:
         "--excel",
         required=True,
     )
+    parser.add_argument('--authorization-file')
+    parser.add_argument('--verify-history', action='store_true',
+        help='Read-only versioned completed-export verification; never repair or enqueue.')
     args = parser.parse_args()
 
     try:
-        result = close_generation_export(
-            pipeline_root=Path(
-                args.pipeline_root
-            ),
-            request_id=str(
-                args.request_id
-            ).strip(),
-            excel_path=Path(args.excel),
-        )
-    except ExportClosureError as exc:
+        if args.verify_history:
+            result = read_completed_generation_export(pipeline_root=Path(args.pipeline_root),
+                request_id=str(args.request_id).strip(), excel_path=Path(args.excel))
+        else:
+            result = close_generation_export(
+                pipeline_root=Path(args.pipeline_root),
+                request_id=str(args.request_id).strip(), excel_path=Path(args.excel),
+                authorization_context=read_json(Path(args.authorization_file)) if args.authorization_file else None)
+    except (ExportClosureError, RuntimeError, OSError, ValueError) as exc:
         print(
             json.dumps(
                 {
                     "ok": False,
-                    "code": exc.code,
+                    "code": getattr(exc, 'code', 'EXPORT_HISTORY_VERIFICATION_FAILED'),
                     "message": str(exc),
                 },
                 ensure_ascii=False,

@@ -1,0 +1,23 @@
+{
+  "record_type": "development_scope_authorization_provenance_not_business_approval",
+  "source": "direct human reply in this chat",
+  "question_item_id": "call_c902f54593334e6a834f51b5dffadaea/0",
+  "answer": "批准该 I2 受限开发范围，最后统一验收",
+  "approved_contract_sha256": "b483223d796fb7d2c233c436dfda100d2cdfe6a5ca6b7b21f33483824f4b58dd",
+  "scope": [
+    "I2 private unverified candidates",
+    "exact source binding",
+    "idempotency and isolated recovery tests"
+  ],
+  "not_authorized": [
+    "model dispatch",
+    "Case Approval",
+    "Shared Publication",
+    "I3",
+    "new Novelty policy",
+    "commit",
+    "push",
+    "merge",
+    "deployment"
+  ]
+}

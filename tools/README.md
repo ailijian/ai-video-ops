@@ -1,5 +1,47 @@
 # Repository verification
 
+## Development storage
+
+All development for this repository stays inside the project directory, including
+one-off scripts, browser harnesses, test databases, screenshots, source snapshots
+and additional Git worktrees. Do not create short-path test folders at `E:\`.
+
+| Local output | Location relative to the project root |
+|---|---|
+| Test runs, temporary files and disposable caches | `.verify/<run>/` |
+| Browser/audit evidence and source snapshots worth retaining | `.local/evidence/<task>/` |
+| Cleanup inventory and relocation receipts | `.local/cleanup/<date>/` |
+| Additional worktrees, only when needed | `.worktrees/<task>/` |
+
+These directories are ignored by Git. Ignored does not mean disposable: retain
+useful evidence and all uncommitted work. Move registered worktrees with
+`git worktree move` so their Git metadata stays valid; moved virtual environments
+may need recreation before their installed entry points can be used.
+
+The canonical runner below sets each child's `TEMP`, `TMP`, `TMPDIR` and Python
+bytecode cache inside its job directory. For manual commands, initialize a local
+session from the project root (these settings affect only that shell and its
+children):
+
+```powershell
+$devStorageRoot = Join-Path (Get-Location).Path '.verify/manual'
+New-Item -ItemType Directory -Force -Path "$devStorageRoot/tmp" | Out-Null
+$env:TEMP = "$devStorageRoot/tmp"
+$env:TMP = $env:TEMP
+$env:TMPDIR = $env:TEMP
+$env:PYTHONPYCACHEPREFIX = "$devStorageRoot/pycache"
+# Use a fresh run name for concurrent or separate runs.
+python -m pytest --basetemp "$devStorageRoot/tests" -o "cache_dir=$devStorageRoot/cache"
+```
+
+Run package tests from their package directory after initializing the session.
+Always pass project-local output/workdir paths to manual scripts and browser
+harnesses. Production configuration, Authority releases, models, services and
+backup destinations keep their separate deployment contracts. Changing those
+locations requires an explicit runtime migration, not a development cleanup.
+
+## Verification commands
+
 Run from the repository root with Python 3.12+. Install the two existing test
 environments: `ops-pipeline/requirements-dev.txt` in the Pipeline venv and
 `internal-console[dev]` in the Console venv. Console verification also requires
@@ -10,6 +52,10 @@ Windows PowerShell 5.1 and Git. The runner never installs dependencies.
 # Complete isolated regression, with bounded parallel execution.
 python tools/verify.py
 
+# Windows nested worktrees: same full suite with short, isolated project .verify paths.
+# This explicitly loads only the repository storage adapter; no test or gate is skipped.
+python tools/verify.py --windows-short-temp
+
 # Resolve all changes since an explicit base, including staged/unstaged/untracked.
 python tools/verify.py --mode affected --base HEAD
 
@@ -19,9 +65,19 @@ python tools/verify.py --mode affected --base HEAD --list
 # Explicit package feedback; this is reported as targeted verification.
 python tools/verify.py --target console
 
+# Complete Console lifecycle regression on Windows (all Console modules).
+# Native generation/review/delivery and recovery checks can exceed 20 minutes
+# per shard. Keep only one heavy suite active; set an explicit measured budget.
+python tools/verify.py --target console --jobs 4 --timeout 3600 --windows-short-temp
+
 # Serial reference execution for diagnosis or performance comparison.
 python tools/verify.py --jobs 1
 ```
+
+Console logs identify each test as it executes. A timeout remains a failed run;
+the summary retains both the execution deadline and any missing JUnit evidence.
+Increasing the process budget does not remove tests or extend Native operation
+deadlines. Use completed JUnit durations to reassess the budget on each host.
 
 ## Scope and selection
 

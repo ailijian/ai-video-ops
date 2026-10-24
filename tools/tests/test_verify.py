@@ -173,6 +173,26 @@ class ExecutionTests(unittest.TestCase):
         self.assertNotEqual(result["exit_code"], 0)
         self.assertIn("sentinel failure", Path(result["log"]).read_text(encoding="utf-8"))
 
+    def test_console_timeout_retains_primary_cause_and_missing_junit(self):
+        python = self.root / "internal-console/.venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
+        python.parent.mkdir(parents=True)
+        python.touch()
+        process = unittest.mock.Mock()
+        process.wait.side_effect = subprocess.TimeoutExpired("pytest", 1)
+        with patch.object(verify, "python_toolchain", return_value={}), \
+             patch.object(verify.subprocess, "Popen", return_value=process), \
+             patch.object(verify, "terminate_tree") as terminate:
+            result = verify.execute(self.root, self.run, verify.Job("console", ["tests/test_slow.py"], 0), 1)
+        terminate.assert_called_once_with(process)
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["exit_code"], 124)
+        self.assertIn("Exceeded 1s timeout", result["error"])
+        self.assertIn("Missing/invalid JUnit evidence", result["error"])
+        self.assertIsNone(result["junit"])
+        self.assertEqual(result["counts"], {})
+        self.assertIn("-vv", result["command"])
+        self.assertEqual(result["modules"], ["tests/test_slow.py"])
+
     def test_empty_required_verifier_suite_cannot_pass(self):
         result = verify.execute(self.root, self.run, verify.Job("verification", [], 0), 20)
         self.assertEqual(result["status"], "failed")
@@ -189,6 +209,22 @@ class ExecutionTests(unittest.TestCase):
                 "  self.assertNotIn('PYTEST_ADDOPTS',os.environ)\n"
                 "  self.assertNotIn('PSMODULEPATH',os.environ)\n"
                 "  self.assertEqual(os.environ['AIVO_BACKGROUND_WORKER'],'0')\n"
+            )
+        self.assertEqual(result["status"], "passed")
+        self.assertEqual(result["counts"]["tests"], 1)
+
+    def test_child_temporary_files_and_import_cache_stay_in_job_directory(self):
+        with patch.dict(os.environ, {"TEMP": "E:/outside", "TMP": "E:/outside",
+                                     "TMPDIR": "E:/outside", "PYTHONPYCACHEPREFIX": "E:/outside"}):
+            result = self.execute_test(
+                "import os,sys,tempfile,unittest\nfrom pathlib import Path\n"
+                "class TestStorage(unittest.TestCase):\n"
+                " def test_storage(self):\n"
+                "  work=Path(os.environ['AIVO_VERIFICATION_ARTIFACTS']).resolve()\n"
+                "  self.assertTrue(Path(tempfile.gettempdir()).resolve().is_relative_to(work))\n"
+                "  self.assertTrue(Path(sys.pycache_prefix).resolve().is_relative_to(work))\n"
+                "  with tempfile.TemporaryDirectory() as directory:\n"
+                "   self.assertTrue(Path(directory).resolve().is_relative_to(work))\n"
             )
         self.assertEqual(result["status"], "passed")
         self.assertEqual(result["counts"]["tests"], 1)

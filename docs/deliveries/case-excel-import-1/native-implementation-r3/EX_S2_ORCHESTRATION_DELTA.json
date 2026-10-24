@@ -1,0 +1,31 @@
+{
+  "id": "EX-S2",
+  "status": "EXACT_ORCHESTRATION_DELTA_PENDING_APPROVAL",
+  "reason": "EX-S1 accepts one exact Row and operation; no signed finite row-set or stable multi-row intent/result exists. Existing link groups auto-dispatch and must not be reused for inert Excel save.",
+  "owner": "original Case Intake; only original Task scheduler executes",
+  "proposed_identity": [
+    "current principal namespace/user",
+    "stable orchestration operation",
+    "original Import Batch/Intent/Result/head SHA",
+    "ordered unique selected Row identities and per-row Native preview SHA",
+    "explicit finite intended task count and source-pending/duplicate exclusions",
+    "per-row deterministic Native submission operation derived from orchestration ID + Row"
+  ],
+  "proposed_protocol": [
+    "preview exact eligible selected row-set and actual new-task count",
+    "one explicit confirmation persists only Intake orchestration intent",
+    "controlled sequential admission through EX-S1 under original queue/per-user limits",
+    "original admission mapping/worker/unknown fence unchanged",
+    "per-row immutable success/linked/private-duplicate/source-pending/failed outcomes",
+    "replay or relogin resumes only missing unissued rows with exact source/version checks",
+    "one failed row preserves other successes; never auto-replace source/type",
+    "stop/cancel only unissued rows; keep in-flight and unknown results"
+  ],
+  "no_new_task_system": true,
+  "not_authorized": [
+    "bulk dispatch before this exact approval",
+    "new Case/Pattern/Compatibility authority",
+    "real model or production"
+  ],
+  "gate": "after legal single Native thin slice and required failures; approve exact finite orchestration contract before implementing batch UI/dispatch"
+}

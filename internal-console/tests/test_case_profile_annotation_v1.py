@@ -85,7 +85,7 @@ def test_legacy_annotation_preserves_all_approved_artifacts_and_attribution(clie
     assert "compatible_generation_profiles" not in saved
     assert result["operator_profile_hint"] is None
     assert get_case_detail(settings, CASE_ID)["profile_annotation"] == saved
-    listed = next(item for item in client.get("/api/cases").json()["cases"] if item["case_id"] == CASE_ID)
+    listed = next(item for item in client.get("/api/cases?view=review").json()["cases"] if item["case_id"] == CASE_ID)
     assert listed["profile_annotation"] == saved
     assert result["media_rights"]["production_authorized"] is False
     for path, original in before.items():
@@ -101,7 +101,7 @@ def test_read_never_backfills_or_copies_system_observation(client, settings):
     assert detail["operator_profile_hint"] is None
     assert detail["profile_annotation"] is None
     assert detail["can_annotate_profile"] is True
-    client.get("/api/cases")
+    client.get("/api/cases?view=review")
     assert not annotation_path(settings).exists()
 
 
@@ -262,7 +262,7 @@ def test_annotation_read_rejects_wrong_sha_and_compatibility_grant(client, setti
     ):
         annotation_path(settings).write_text(json.dumps(corrupt), encoding="utf-8")
         assert client.get(f"/api/cases/{CASE_ID}").status_code == 409
-        assert client.get("/api/cases").status_code == 409
+        assert client.get("/api/cases?view=review").status_code == 409
 
 
 def test_annotation_requires_auth_csrf_and_valid_hint(client, settings):

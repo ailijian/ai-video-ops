@@ -1,0 +1,35 @@
+{
+  "record_type": "exact_review_input_binding_NOT_APPROVAL",
+  "revision": 2,
+  "head": "61efbc477ea28b9aee9a492d3ee96324718ef592",
+  "working_tree_branch": "codex/checkpoint-case-excel-i1-i2-founder-uat-20261024",
+  "approval_units": [
+    "EX-S1",
+    "ME-R1",
+    "CC-01",
+    "CC-02"
+  ],
+  "product_decisions": [
+    "P-R2-01",
+    "P-R2-02",
+    "P-R2-03",
+    "P-R2-04",
+    "P-R2-05"
+  ],
+  "proposal_files_sha256": {
+    "ADMISSION_TABLE.sql.proposal": "31651f1fa6c9ff581b2bc1f17725646e44a76ede86103ec45d2e6446d2aff920",
+    "CANDIDATE_API_SURFACES.json": "d13b97797c9fab7563a7e62c418c57a115512d3565ff39ebd129be6a2332c107",
+    "CATALOG_EXAMPLE_REVIEW_ONLY.json": "3ccad7905f94b22904dcd7ad2dbeee6a9f3cf4ea3a2f5e7c9d2921cf94d8d280",
+    "CONTRACT_CANDIDATES_R2.json": "2677e9fdf84ceb8f793d44e4282e5cc1baf9ec7ad371b2c83cfe08128e936088",
+    "DECISION_REQUEST.md": "9b3f016b3666a353b290d7ed48b9eb242f4c7b06291aacbd18aaa354d5ca22a2",
+    "EXACT_APPROVAL_SCOPE.json": "00edcc1fd970e757f20a994ab013e3597fb990acab24563879539c68e0014f54",
+    "I3_TYPE_AND_PUBLICATION_PROTOCOL.md": "e010e56e62c8f51a8c5181d495a6b04d6840de704972416d84a35e2d8a086269",
+    "NATIVE_SUBMISSION_PROTOCOL.md": "88bee12b80040d56c59bba28126fd0ba3a605013624da8fd59c6d693f8fa231e",
+    "PRODUCT_DECISIONS.json": "ebec1797c352a796dff3b657dc47fbe8e3c15c277c14c5c7ec773d94deb77762",
+    "README.md": "d80debcf54c99c8b83aeaf9f13ca422c0536a0f6c8f49e0c3c3727c74ca661ce",
+    "RECOVERY_AND_TEST_MATRIX.json": "e79234e06feefcfaa9906a79805223a96e47146eb2542d9937611118057461e2",
+    "SOURCE_OWNER_MAP.json": "2f17d495b97bf5c72fb6f1d43c71173beee3cd49705a7178ec959df157234998",
+    "VERIFICATION_AND_SCOPE.md": "fa966bfec953dca0f8149083ad7696182f4586f12508a26d9b5c5d292a0cbb57"
+  },
+  "provenance": "No approval has been recorded; direct user request is preparation and existing authorized EX-R1 only."
+}

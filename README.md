@@ -8,6 +8,7 @@ This repository contains the approved Customer Truth → Content → Pre-product
 2. [Frozen Operations Baseline](docs/product/AI%20Video%20Ops%20MVP%20V1｜End-to-End%20System%20Map%20&%20Operations%20Baseline.md) — Approved / Frozen system rules; dated customer values are checkpoint evidence.
 3. [Operations RUNBOOK](docs/operations/RUNBOOK.md) — current operation entry points, recovery paths, and implementation/rollout boundaries.
 4. [Current Status Read Model](docs/operations/CURRENT_STATUS_READ_MODEL_V1.md) — read-only customer status and next-action projection.
+5. [Delivery Baselines](docs/deliveries/README.md) — delivery documents, their single editable Baseline, approval status, and retained review evidence.
 
 Coding Agents should also read [Repository Agent Guide](AGENTS.md).
 

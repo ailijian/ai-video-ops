@@ -1709,13 +1709,19 @@ def build_comparison_human_approval(
     *,
     reviewer: str,
     reviewed_at: str | None = None,
+    trusted_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     comparison_path = comparison_path.expanduser().resolve()
     if not comparison_path.is_file():
         raise FileNotFoundError(comparison_path)
     comparison = read_json(comparison_path)
     validate_generalized_research_comparison(comparison)
-    if reviewer.strip() != "李健":
+    if trusted_context is not None:
+        from news_pattern_authority_v1_1 import research_context
+        trusted_context = research_context(comparison_path, trusted_context)
+        reviewer = trusted_context['reviewer']
+        reviewed_at = trusted_context['decided_at']
+    elif reviewer.strip() != "李健":
         raise ValueError("This Comparison Human Approval is authorized for reviewer 李健.")
     if comparison.get("case_count") != 3:
         raise RuntimeError("This Human Decision applies to the reviewed three-Case Comparison.")
@@ -1812,6 +1818,9 @@ def build_comparison_human_approval(
             "remote_model_used": False,
         },
     }
+    if trusted_context is not None:
+        from news_pattern_authority_v1_1 import research_record
+        approval = research_record(approval, trusted_context)
     validate_comparison_human_approval(
         approval, expected_comparison_sha256=sha256_file(comparison_path)
     )
@@ -1823,12 +1832,16 @@ def validate_comparison_human_approval(
     *,
     expected_comparison_sha256: str | None = None,
 ) -> None:
+    trusted_reviewer = None
+    if approval.get('schema_version') == 'news-research-human-approval-v1.1':
+        from news_pattern_authority_v1_1 import research_projection
+        trusted_reviewer, approval = research_projection(approval, expected_comparison_sha256)
     if approval.get("schema_version") != COMPARISON_HUMAN_APPROVAL_VERSION:
         raise ValueError("Comparison Human Approval schema is invalid.")
     if (
         approval.get("status") != "approved"
         or approval.get("decision") != "approve_research_comparison"
-        or approval.get("reviewer") != "李健"
+        or approval.get("reviewer") != (trusted_reviewer or "李健")
     ):
         raise ValueError("Comparison Human Approval decision is invalid.")
     if approval.get("approval_scope") != "research_comparison_only_not_pattern_approval":

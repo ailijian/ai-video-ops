@@ -489,7 +489,8 @@ def build_privacy_projection(
 ) -> dict[str, Any]:
     raw_materials = request["materials"]
 
-    safe_materials = project_safe_semantic(raw_materials)
+    from privacy_projection_v1 import project_task_materials
+    safe_materials = project_task_materials(raw_materials, task="speaker")
 
     safe_name = project_safe_semantic(request["speaker_name"])
 
@@ -732,6 +733,12 @@ def validate_model_fact(
     )
 
 
+def personal_quote_has_foreign_owner(quote: str) -> bool:
+    """Company tenure and explicitly third-party experience are not personal."""
+    return bool(re.search(r"(?:公司|企业|品牌|餐厅|门店|团队|经营年限).{0,12}(?:经营|成立|创立|历史|年限|三十|二十|十年)", quote)
+        or re.search(r"(?:同事|另一位|其他人|第三方|顾客).{0,12}(?:亲自|曾|经历|做过|负责)", quote))
+
+
 def build_ai_candidates(
     *,
     intake: dict[str, Any],
@@ -771,6 +778,10 @@ def build_ai_candidates(
         ) = validated
 
         if target_field in existing_fields:
+            continue
+        if not safe_quote or safe_quote not in safe_materials or safe_quote not in raw_materials:
+            continue
+        if personal_quote_has_foreign_owner(safe_quote):
             continue
 
         if safe_quote and safe_quote in safe_materials and safe_quote in raw_materials:
@@ -831,8 +842,15 @@ def analyze_speaker_onboarding(
         | None
     ) = None,
     created_at: str | None = None,
+    prepared_extraction_ref: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     request = validate_request(request)
+    if prepared_extraction_ref is not None:
+        from human_review_operations_v1 import file_sha
+        prepared_path=(pipeline_root/prepared_extraction_ref['path']).resolve()
+        if (extractor is None or not prepared_path.is_relative_to((pipeline_root/'data/speaker_preparations').resolve())
+                or file_sha(prepared_path)!=prepared_extraction_ref['sha256']):
+            raise SpeakerOnboardingError('SPEAKER_PREPARATION_SOURCE_INVALID','Prepared extraction source is invalid.')
 
     (
         business_path,
@@ -1069,7 +1087,8 @@ def analyze_speaker_onboarding(
                 privacy_context={"privacy_projection_sha256": (sha256_json(privacy))},
             ),
             "recovered_from_existing_candidates": (candidates_preexisting),
-            "remote_model_call_performed": request["intake_type"] != "gap_supplement",
+            "remote_model_call_performed": request["intake_type"] != "gap_supplement" and prepared_extraction_ref is None,
+            **({'prepared_extraction_ref':copy.deepcopy(prepared_extraction_ref)} if prepared_extraction_ref is not None else {}),
             "new_supplement_only": request["intake_type"] == "gap_supplement",
         }
 

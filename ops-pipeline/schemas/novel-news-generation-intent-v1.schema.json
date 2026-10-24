@@ -1,0 +1,290 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": "novel-news-generation-intent-v1.0"
+    },
+    "operation_id": {
+      "type": "string",
+      "pattern": "[a-f0-9]{32}"
+    },
+    "request_id": {
+      "type": "string",
+      "pattern": "gen_[a-zA-Z0-9]+"
+    },
+    "created_at": {
+      "type": "string",
+      "minLength": 1
+    },
+    "parent": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "operation_id": {
+              "type": "string",
+              "pattern": "[a-f0-9]{32}"
+            },
+            "sha256": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          },
+          "required": [
+            "operation_id",
+            "sha256"
+          ],
+          "additionalProperties": false
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "snapshot": {
+      "type": "object",
+      "properties": {
+        "refs": {
+          "type": "object",
+          "properties": {
+            "request": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "path",
+                "sha256"
+              ],
+              "additionalProperties": false
+            },
+            "source_plan": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "path",
+                "sha256"
+              ],
+              "additionalProperties": false
+            },
+            "business_persona_ref": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "path",
+                "sha256"
+              ],
+              "additionalProperties": false
+            },
+            "speaker_persona_ref": {
+              "type": "object",
+              "properties": {
+                "path": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "sha256": {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                }
+              },
+              "required": [
+                "path",
+                "sha256"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "request",
+            "source_plan",
+            "business_persona_ref",
+            "speaker_persona_ref"
+          ],
+          "additionalProperties": false
+        },
+        "fact_atoms_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "selected_opportunity_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "authority_binding": {
+          "oneOf": [
+            {
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "memory_sha256": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "refs",
+        "fact_atoms_sha256",
+        "selected_opportunity_sha256",
+        "authority_binding",
+        "memory_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "prompt_sha256": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "parameters": {
+      "type": "object",
+      "properties": {
+        "prompt_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "transport": {
+          "type": "string",
+          "minLength": 1
+        },
+        "generator_owner_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "transport_owner_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "minimum_beats": {
+          "const": 4
+        },
+        "maximum_beats": {
+          "const": 8
+        }
+      },
+      "required": [
+        "prompt_version",
+        "model",
+        "transport",
+        "generator_owner_sha256",
+        "transport_owner_sha256",
+        "minimum_beats",
+        "maximum_beats"
+      ],
+      "additionalProperties": false
+    },
+    "actor": {
+      "type": "object",
+      "properties": {
+        "namespace": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{32}$"
+        },
+        "user_id": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "namespace",
+        "user_id"
+      ],
+      "additionalProperties": false
+    },
+    "authorization": {
+      "type": "object",
+      "properties": {
+        "principal": {
+          "type": "object",
+          "properties": {
+            "namespace": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            "user_id": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "required": [
+            "namespace",
+            "user_id"
+          ],
+          "additionalProperties": false
+        },
+        "database_identity_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "user_state_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "principal",
+        "database_identity_sha256",
+        "user_state_sha256"
+      ],
+      "additionalProperties": false
+    },
+    "task_operation_identity": {
+      "type": "string",
+      "minLength": 1
+    }
+  },
+  "required": [
+    "schema_version",
+    "operation_id",
+    "request_id",
+    "created_at",
+    "parent",
+    "snapshot",
+    "prompt_sha256",
+    "parameters",
+    "actor",
+    "authorization",
+    "task_operation_identity"
+  ],
+  "additionalProperties": false
+}

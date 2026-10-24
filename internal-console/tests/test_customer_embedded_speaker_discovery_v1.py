@@ -1,4 +1,6 @@
 from __future__ import annotations
+from app import persona_review_gateway
+from review_protocol import post_review
 
 import json
 from pathlib import Path
@@ -230,8 +232,8 @@ def test_business_approval_auto_starts_confirmed_speaker_analysis(
     request_path = tmp_path / "speaker_request.json"
     write_json(request_path, {"fixture": True})
     monkeypatch.setattr(
-        main_module,
-        "approve_business_persona",
+        persona_review_gateway,
+        "approve",
         lambda *_args, **_kwargs: {"business_id": "fixture_business", "status": "approved"},
     )
     monkeypatch.setattr(
@@ -275,10 +277,13 @@ def test_business_approval_auto_starts_confirmed_speaker_analysis(
     )
     with TestClient(build_app(settings)) as client:
         csrf = login(client, settings)
-        response = client.post(
+        from app import review_commands
+        monkeypatch.setattr(main_module,"get_customer_detail",lambda *a:{"business_id":"fixture_business","status":"approved"})
+        token=review_commands.issue(settings,"business","fixture_business",1)["token"]
+        response = post_review(client,
             "/api/customers/fixture_business/persona/approve",
             headers={"X-CSRF-Token": csrf},
-            json={"note": "approved"},
+            json={"note": "approved", "review_context":token},
         )
     assert response.status_code == 200
     handoff = response.json()["speaker_handoff"]
@@ -293,8 +298,8 @@ def test_auto_handoff_failure_never_rolls_back_business_approval(
 ) -> None:
     settings = settings_for(tmp_path)
     monkeypatch.setattr(
-        main_module,
-        "approve_business_persona",
+        persona_review_gateway,
+        "approve",
         lambda *_args, **_kwargs: {"business_id": "fixture_business", "status": "approved"},
     )
     monkeypatch.setattr(
@@ -321,10 +326,13 @@ def test_auto_handoff_failure_never_rolls_back_business_approval(
     )
     with TestClient(build_app(settings)) as client:
         csrf = login(client, settings)
-        response = client.post(
+        from app import review_commands
+        monkeypatch.setattr(main_module,"get_customer_detail",lambda *a:{"business_id":"fixture_business","status":"approved"})
+        token=review_commands.issue(settings,"business","fixture_business",1)["token"]
+        response = post_review(client,
             "/api/customers/fixture_business/persona/approve",
             headers={"X-CSRF-Token": csrf},
-            json={"note": "approved"},
+            json={"note": "approved", "review_context":token},
         )
     assert response.status_code == 200
     assert response.json()["customer"]["status"] == "approved"

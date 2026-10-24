@@ -270,8 +270,12 @@ def validate_news_pattern_candidate_for_approval(
     if sorted(str(item.get("case_id")) for item in evidence) != sorted(case_ids):
         errors.append("Candidate Evidence does not match the three supporting Case IDs.")
 
-    registry_news = (registry.get("profiles") or {}).get("news") or {}
-    if registry.get("status") != "approved_frozen":
+    pure_profile = registry.get('schema_version') == 'news-production-profile-definition-v1.2'
+    if pure_profile:
+        from profile_compatibility_contract_v1_2 import validate_contract, PROFILE
+        validate_contract(registry,PROFILE)
+    registry_news = registry if pure_profile else (registry.get("profiles") or {}).get("news") or {}
+    if not pure_profile and registry.get("status") != "approved_frozen":
         errors.append("Production Profile Registry is not Approved / Frozen.")
     if registry_news.get("profile_id") != "news":
         errors.append("Frozen Registry does not contain the News Profile.")
@@ -292,6 +296,11 @@ def validate_news_pattern_candidate_for_approval(
         )
         comparison = read_json(comparison_path)
         comparison_approval = read_json(approval_path)
+        if comparison_approval.get('schema_version') == 'news-research-human-approval-v1.1':
+            from compare_approved_cases_v1 import validate_comparison_human_approval
+            from news_pattern_authority_v1_1 import research_projection
+            validate_comparison_human_approval(comparison_approval,expected_comparison_sha256=comparison_sha)
+            _, comparison_approval = research_projection(comparison_approval,comparison_sha)
         if comparison.get("status") != "review_required":
             errors.append("Source Comparison status changed unexpectedly.")
         if comparison.get("validation", {}).get("passed") is not True:
@@ -403,12 +412,21 @@ def build_news_approved_pattern(
     registry_path: Path,
     reviewer: str,
     approved_at: str | None = None,
+    trusted_context: dict[str, Any] | None = None,
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     candidate_path = candidate_path.expanduser().resolve()
     registry_path = registry_path.expanduser().resolve()
     candidate, _registry, candidate_sha, registry_sha = (
         validate_news_pattern_candidate_for_approval(candidate_path, registry_path)
     )
+    if _registry.get('schema_version') == 'news-production-profile-definition-v1.2':
+        if trusted_context is None:
+            raise RuntimeError('A pure News definition requires an independent authenticated Pattern decision')
+        from news_pattern_authority_v1_1 import pattern_context
+        trusted_context = pattern_context(candidate_path,registry_path,trusted_context)
+        reviewer,approved_at = trusted_context['reviewer'],trusted_context['decided_at']
+    elif trusted_context is not None:
+        raise RuntimeError('New Pattern review cannot downgrade to a legacy Registry')
     timestamp = approved_at or now_iso()
     pattern_id = candidate["pattern_id"]
     definition = news_pattern_definition(candidate)
@@ -425,6 +443,8 @@ def build_news_approved_pattern(
             "sha256": registry_sha,
         },
     }
+    if trusted_context is not None:
+        profile_constraint['profile_definition_ref'] = profile_constraint.pop('registry_ref')
     scope = copy.deepcopy(candidate["scope"])
     if pattern_id == NEWS_PRICE_PATTERN_ID:
         scope.update(

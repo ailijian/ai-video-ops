@@ -195,10 +195,14 @@ def make_jobs(root: Path, selection: dict, jobs: int, timings: dict) -> list[Job
 
 
 def child_environment(work: Path) -> dict[str, str]:
+    temporary = work / "tmp"
+    temporary.mkdir(parents=True, exist_ok=True)
     env = {k: v for k, v in os.environ.items() if not k.upper().startswith("AIVO_") and
            k.upper() not in {"PYTEST_ADDOPTS", "PYTEST_PLUGINS", "PYTHONPATH", "PSMODULEPATH"}}
     env.update({
         "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8",
+        "TEMP": str(temporary), "TMP": str(temporary), "TMPDIR": str(temporary),
+        "PYTHONPYCACHEPREFIX": str(work / "pycache"),
         "PYTEST_DISABLE_PLUGIN_AUTOLOAD": "1",
         "AIVO_CONSOLE_DB": str(work / "import.sqlite3"),
         "AIVO_CASE_ANALYSIS_WORKER": "0", "AIVO_CUSTOMER_ANALYSIS_WORKER": "0",
@@ -247,7 +251,16 @@ def python_toolchain(python: Path, env: dict) -> dict:
     return json.loads(subprocess.check_output([str(python), "-c", code], env=env, text=True, encoding="utf-8", timeout=20))
 
 
-def execute(root: Path, run: Path, job: Job, timeout: int) -> dict:
+def windows_storage_root(root: Path) -> Path:
+    """The same project's ignored storage, including managed worktrees."""
+    common = Path(git(root, 'rev-parse', '--path-format=absolute', '--git-common-dir').decode().strip()).resolve()
+    workspace = common.parent
+    if not root.resolve().is_relative_to(workspace):
+        raise ValueError('Short verification storage must remain inside the project workspace')
+    return workspace / '.verify'
+
+
+def execute(root: Path, run: Path, job: Job, timeout: int, windows_short_temp: bool = False) -> dict:
     work = run / str(job.index)
     work.mkdir()
     log = run / f"{job.index}-{job.target}.log"
@@ -255,6 +268,7 @@ def execute(root: Path, run: Path, job: Job, timeout: int) -> dict:
     cwd = root
     counts, durations = {}, {}
     toolchain = {}
+    environment = child_environment(work)
     if job.target in PYTEST_ROOTS:
         owner = "internal-console" if job.target == "console" else "ops-pipeline"
         python = root / owner / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
@@ -264,6 +278,15 @@ def execute(root: Path, run: Path, job: Job, timeout: int) -> dict:
         toolchain = python_toolchain(python, child_environment(work))
         command = [str(python), "-m", "pytest", *job.modules, "--basetemp", str(work / "t"),
                    "--junitxml", str(junit), "-o", f"cache_dir={work / 'cache'}", "--durations=10", "-ra"]
+        if job.target == "console":
+            # The native lifecycle tests can run for several minutes. Identify
+            # the active test even when a shard cannot reach its final JUnit.
+            command.append("-vv")
+        if windows_short_temp:
+            # Only this repository-owned storage plugin is explicitly loaded.
+            # External plugin/addopts/PYTHONPATH remain excluded above.
+            environment['PYTHONPATH'] = str(root / 'tools')
+            command.extend(['-p', 'windows_pytest_storage', '--aivo-short-temp-root', str(windows_storage_root(root))])
     elif job.target == "frp-guard":
         powershell = shutil.which("powershell.exe")
         if not powershell:
@@ -280,7 +303,7 @@ def execute(root: Path, run: Path, job: Job, timeout: int) -> dict:
     started = time.perf_counter()
     error = None
     with log.open("w", encoding="utf-8") as stream:
-        process = subprocess.Popen(command, cwd=cwd, env=child_environment(work), stdout=stream,
+        process = subprocess.Popen(command, cwd=cwd, env=environment, stdout=stream,
                                    stderr=subprocess.STDOUT, start_new_session=os.name != "nt",
                                    creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
         try:
@@ -298,7 +321,9 @@ def execute(root: Path, run: Path, job: Job, timeout: int) -> dict:
             if not counts["tests"] or counts["errors"] or counts["failures"]:
                 code = code or 1
         except (OSError, ET.ParseError) as exc:
-            code, error = code or 1, f"Missing/invalid JUnit evidence: {exc}"
+            evidence_error = f"Missing/invalid JUnit evidence: {exc}"
+            code = code or 1
+            error = f"{error}; {evidence_error}" if error else evidence_error
     elif job.target == "frp-guard":
         match = re.search(r"FRP_GUARD_TESTS_PASS: (\d+);", output)
         if not match or not int(match[1]):
@@ -330,7 +355,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--target", action="append", choices=TARGETS, help="Explicit target execution; reported as targeted, not full")
     parser.add_argument("--list", action="store_true", help="Print resolved scope without executing or writing artifacts")
     parser.add_argument("--timeout", type=int, default=600, help="Per-process timeout in seconds")
+    parser.add_argument('--windows-short-temp', action='store_true',
+                        help='Use repository-owned short isolated pytest paths inside project .verify (Windows)')
     args = parser.parse_args(argv)
+    if args.windows_short_temp and os.name != 'nt':
+        parser.error('--windows-short-temp requires Windows')
     if args.jobs < 1 or args.timeout < 1:
         parser.error("--jobs and --timeout must be positive")
     state = snapshot(ROOT)
@@ -374,7 +403,7 @@ def main(argv: list[str] | None = None) -> int:
         work = []
         results.append({"target": "planning", "status": "failed", "error": str(exc)})
     with ThreadPoolExecutor(max_workers=args.jobs) as pool:
-        futures = {pool.submit(execute, ROOT, run, job, args.timeout): job for job in work}
+        futures = {pool.submit(execute, ROOT, run, job, args.timeout, args.windows_short_temp): job for job in work}
         for future in as_completed(futures):
             job = futures[future]
             try:
@@ -388,7 +417,8 @@ def main(argv: list[str] | None = None) -> int:
     report = {**plan, "status": "passed" if passed else "failed", "results": results,
               "state_unchanged": final == state, "final_state": final, "seconds": round(time.perf_counter() - started, 3),
               "environment": {"platform": platform.platform(), "coordinator_python": sys.version,
-                              "plugin_autoload": False, "production_environment_inherited": False},
+                              "plugin_autoload": False, "production_environment_inherited": False,
+                              "windows_short_temp": args.windows_short_temp},
               "result_cache": "disabled; every selected check executes"}
     report_path = run / "summary.json"
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

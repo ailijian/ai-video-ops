@@ -159,6 +159,7 @@ def test_legacy_excel_is_recovered_but_download_name_is_friendly(
     legacy.write_bytes(b"legacy")
 
     receipt = {
+        'schema_version':'mix-excel-export-receipt-v1.0',
         "validation_passed": True,
         "output_sha256": sha256(legacy),
         "exported_row_count": 2,
@@ -246,7 +247,7 @@ def test_excel_without_ledger_closure_is_not_stop_point(
     monkeypatch.setattr(
         subject,
         "_project_generation_batch",
-        lambda path: {
+        lambda path, **kwargs: {
             "ready": True,
         },
     )

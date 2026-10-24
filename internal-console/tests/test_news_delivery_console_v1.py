@@ -515,7 +515,7 @@ def test_news_review_passes_authenticated_reviewer(
         )
 
 
-def test_news_export_route_returns_durable_task(news_settings: Settings):
+def test_missing_news_request_does_not_create_export_task(news_settings: Settings):
     with TestClient(
         main_module.build_app(
             news_settings
@@ -537,12 +537,11 @@ def test_news_export_route_returns_durable_task(news_settings: Settings):
 
         assert (
             response.status_code
-            == 200
+            == 503
         )
-        task = response.json()["task"]
-        assert task["task_type"] == "excel_export"
-        assert task["payload"]["operation"] == "news_export"
-        assert task["subject_ref"] == "news_fixture_001"
+        from app.database import connect
+        with connect(news_settings.database_path) as db:
+            assert db.execute("SELECT count(*) FROM tasks WHERE subject_ref='news_fixture_001'").fetchone()[0] == 0
 
 
 def test_news_download_route(

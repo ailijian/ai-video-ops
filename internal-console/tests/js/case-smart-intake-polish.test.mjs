@@ -26,7 +26,7 @@ let render = renderer([confirmed]);
 await render.views.renderIntakeGroup('group');
 assert.doesNotMatch(render.app.innerHTML,/data-classify=|<select|type="checkbox"/,'confirmed result defaults to read-only');
 assert.match(render.app.innerHTML,/data-edit-classify/);
-assert.match(render.app.innerHTML,/btn btn-primary[^>]*[^]*?继续案例审核/);
+assert.match(render.app.innerHTML,/btn btn-primary[^>]*[^]*?查看投稿详情/);
 assert.equal((render.app.innerHTML.match(/btn btn-primary/g)||[]).length,1,'one primary action on confirmed card');
 assert.match(render.app.innerHTML,/<details class="intake-evidence">/,'full reasons/source are disclosed on demand');
 assert.equal(render.batchButton.hidden,true);
@@ -45,7 +45,7 @@ for (const [industry,profile,label] of [
   render=renderer([item]);
   await render.views.renderIntakeGroup('group');
   assert.ok(render.app.innerHTML.includes(`<strong>${label}</strong>`));
-  assert.match(render.app.innerHTML,/继续案例审核/,'unknown labels never block Human Review');
+  assert.match(render.app.innerHTML,/查看投稿详情/,'unknown labels never block Human Review');
   assert.doesNotMatch(render.app.innerHTML,/data-classify=|<select|type="checkbox"/);
   assert.equal((render.app.innerHTML.match(/btn btn-primary/g)||[]).length,1);
   render.views.dispose();

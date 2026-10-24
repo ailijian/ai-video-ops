@@ -1,0 +1,117 @@
+{
+  "schema_version": "case-native-i3-approval-scope-r2",
+  "status": "EXACT_REVIEW_REQUEST_NOT_APPROVED",
+  "code_base": "61efbc477ea28b9aee9a492d3ee96324718ef592",
+  "working_tree": "E:/projects/ai-video-ops/.worktrees/cxi",
+  "scope_revision": 2,
+  "units": [
+    {
+      "id": "EX-S1",
+      "owner": "Case Intake + Task/Source/Upload owners",
+      "decision": "APPROVAL_REQUESTED_NOT_GRANTED",
+      "scope": [
+        "owned exact Import Row native preview/submit/read",
+        "canonical submission intent and write-once association",
+        "Task admission/index in the original Task transaction",
+        "new-origin worker dispatch/recovery fence",
+        "upload cleanup coordination; source duplicate privacy",
+        "My Submissions exact Native Task progress projection"
+      ],
+      "files": [
+        "internal-console/app/case_intake_service.py",
+        "internal-console/app/case_excel_import.py",
+        "internal-console/app/main.py",
+        "internal-console/app/task_service.py",
+        "internal-console/app/database.py",
+        "internal-console/app/case_uploads.py",
+        "internal-console/migrations/009_case_excel_native_admissions.sql"
+      ],
+      "stops": [
+        "No new-origin dispatch without complete companion and original source admission",
+        "No automatic resend after claimed/unknown execution",
+        "No filename-only, text-only or unsupported-platform synthetic Case identity"
+      ]
+    },
+    {
+      "id": "ME-R1",
+      "owner": "Case Access + Evidence Review + Import Row reader",
+      "decision": "APPROVAL_REQUESTED_NOT_GRANTED",
+      "scope": [
+        "specific real Reviewer reads only notes bound to an exact native primary-origin Attempt",
+        "source/hash/grant revalidation; unverified trust labels"
+      ],
+      "files": [
+        "internal-console/app/case_library_access.py",
+        "internal-console/app/case_intake_service.py",
+        "internal-console/app/main.py",
+        "internal-console/static/assets/case-views.js"
+      ],
+      "stops": [
+        "No reviewer impersonation as submitter",
+        "No arbitrary Batch/Row browsing",
+        "No ASR/Shot/Proof or rights promotion"
+      ]
+    },
+    {
+      "id": "CC-01",
+      "owner": "Case Classification + original Case Reviewer authorization",
+      "decision": "APPROVAL_REQUESTED_NOT_GRANTED",
+      "scope": [
+        "versioned extensible Case content type catalog",
+        "append-only Human type decision after original Case Approval",
+        "confirm/defer/revoke; other/unknown/profile conflict handling",
+        "stable operation replay and current source/head checks"
+      ],
+      "files": [
+        "internal-console/app/case_classification.py",
+        "internal-console/app/case_library_access.py",
+        "internal-console/app/main.py",
+        "internal-console/static/assets/case-views.js"
+      ],
+      "stops": [
+        "No approved Case JSON edits",
+        "No automatic Excel suggestion approval",
+        "No Production Profile/Style/Pattern/Compatibility grants"
+      ]
+    },
+    {
+      "id": "CC-02",
+      "owner": "Shared Display + original Human Display/Publication owner",
+      "decision": "APPROVAL_REQUESTED_NOT_GRANTED",
+      "scope": [
+        "typed preview and new v1.2-proposal publication/withdrawal companions",
+        "current Case Approval/type/catalog/preview and independent display consent binding",
+        "mixed legacy/typed ordered history and atomic publication recovery",
+        "stale typed projection fencing; safe withdrawal independent of publish readiness"
+      ],
+      "files": [
+        "internal-console/app/case_shared_display.py",
+        "internal-console/app/review_commands.py",
+        "internal-console/app/main.py",
+        "internal-console/static/assets/case-views.js"
+      ],
+      "stops": [
+        "No rewriting v1.0/v1.1 receipts",
+        "No shared display from private unapproved candidate",
+        "No automatic publication or media production rights"
+      ]
+    }
+  ],
+  "approval_binding": "APPROVAL_SCOPE_BINDING.json SHA-256; approval must name units and product decisions",
+  "authorization_provenance": {
+    "I2": "../i2/SCOPE_AUTHORIZATION.json; b483223d796fb7d2c233c436dfda100d2cdfe6a5ca6b7b21f33483824f4b58dd",
+    "EX-R1": "direct user continuation request; owned read only, existing code and focused evidence",
+    "this_turn": "prepare exact independent review package; continue existing authorized work; no automatic project commit"
+  },
+  "excluded": [
+    "real paid models",
+    "production or 4090",
+    "project commit/push/merge",
+    "AUTH/OIDC",
+    "new Novelty/CIU/Ledger policy",
+    "second Case Approval or Shared Authority",
+    "automatic Case/Pattern/Compatibility approval",
+    "bulk Excel auto-dispatch"
+  ],
+  "files_rule": "Listed files are candidate seams, not blanket permission. 009 is currently unused and reserved by this proposal only; collision requires review, never overwrite an existing migration."
+}

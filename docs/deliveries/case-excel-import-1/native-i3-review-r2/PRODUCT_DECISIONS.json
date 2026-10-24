@@ -1,0 +1,30 @@
+{
+  "status": "NO_PRODUCT_DECISION_NEWLY_APPROVED_BY_THIS_PACKAGE",
+  "items": [
+    {
+      "id": "P-R2-01",
+      "status": "PROPOSED_REQUIRES_EXPLICIT_ACCEPTANCE",
+      "recommended": "unknown/defer means formal video_type=null; other requires explicit Human note; no new Style/Pattern"
+    },
+    {
+      "id": "P-R2-02",
+      "status": "PROPOSED_REQUIRES_EXPLICIT_ACCEPTANCE",
+      "recommended": "First formal type confirmation occurs after original Case Approval and binds approved Case SHA + Approval Receipt + Attempt. Pre-approval suggestions stay unverified; no automatic transfer across changed SHA."
+    },
+    {
+      "id": "P-R2-03",
+      "status": "PROPOSED_REQUIRES_EXPLICIT_ACCEPTANCE",
+      "recommended": "Changed/revoked current type decision fences an old typed projection until explicit new publication. Historical receipt remains. Legacy null publications keep original reader semantics and are never silently upgraded."
+    },
+    {
+      "id": "P-R2-04",
+      "status": "PROPOSED_REQUIRES_EXPLICIT_ACCEPTANCE",
+      "recommended": "Profile/content-type conflict may preserve the independent dimensions with a reason, correct the formal type with a reason, or defer; never rewrite Excel raw fields or auto-switch Profile."
+    },
+    {
+      "id": "P-R2-05",
+      "status": "PROPOSED_REQUIRES_EXPLICIT_ACCEPTANCE",
+      "recommended": "Initial Native submission supports only a current Native-supported original URL and available acquisition/upload. Text-only, filename-only, unsupported platform stay saved/pending evidence, with no invented Case ID or forced dispatch."
+    }
+  ]
+}

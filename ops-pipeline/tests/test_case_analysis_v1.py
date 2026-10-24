@@ -743,11 +743,15 @@ def test_human_approval_is_explicit_and_does_not_grant_media_rights(tmp_path: Pa
     case["source_artifacts"]["source_metadata_v1"] = str(metadata)
     case["source_artifacts"]["storyboard_v1"] = str(storyboard_artifact)
     case["source_artifacts"]["privacy_projection_v1"] = str(privacy_artifact)
+    case.setdefault("analysis_lineage", {})["attempt_id"] = "synthetic-offline-final-review"
     candidate = tmp_path / "case_v1.json"
     candidate.write_text(
         json.dumps(case, ensure_ascii=False, indent=2), encoding="utf-8"
     )
 
+    from case_human_review_v2 import quality_context
+    quality_input = tmp_path / "human-quality-input.json"
+    quality_input.write_text(json.dumps({**quality_context(candidate), "decision": "suitable", "origin": "human_final_confirmation"}), encoding="utf-8")
     before = json.loads(candidate.read_text(encoding="utf-8"))
     assert before["lifecycle"]["approved"] is False
     result = subprocess.run(
@@ -760,6 +764,7 @@ def test_human_approval_is_explicit_and_does_not_grant_media_rights(tmp_path: Pa
             "test-human-reviewer",
             "--note",
             "Explicit test review only.",
+            "--quality-decision", str(quality_input),
         ],
         cwd=pipeline.parent,
         capture_output=True,

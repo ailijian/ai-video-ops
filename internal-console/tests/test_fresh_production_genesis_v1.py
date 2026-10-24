@@ -232,8 +232,9 @@ def test_workbench_projects_current_customer_case_and_recent_task_data(
         }
     ]
     monkeypatch.setattr(main_module, "list_customers", lambda settings: customers)
-    monkeypatch.setattr(main_module, "list_cases", lambda settings: cases)
-    monkeypatch.setattr(main_module, "list_tasks", lambda database_path, limit=10: tasks)
+    monkeypatch.setattr(main_module, "case_cards", lambda settings, user_id, **kwargs: {
+        "cases": cases, "total": len(cases), "status_counts": {"approved": 2, "awaiting_review": 1}})
+    monkeypatch.setattr(main_module, "list_tasks", lambda database_path, limit=10, **kwargs: tasks)
     monkeypatch.setattr(
         main_module,
         "list_creation_options",
@@ -244,6 +245,12 @@ def test_workbench_projects_current_customer_case_and_recent_task_data(
     with TestClient(main_module.build_app(empty_settings)) as client:
         provision_user(empty_settings.database_path, "13800000000")
         login_and_change_password(client)
+        from app.case_library_access import manage_reviewer
+        import shutil
+        owner = empty_settings.pipeline_root / "scripts/case_console_authorization_v1.py"
+        owner.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(empty_settings.console_root.parent / "ops-pipeline/scripts/case_console_authorization_v1.py", owner)
+        manage_reviewer(empty_settings, 1, action="grant", operator="fixture", reason="Workbench reviewer projection")
         response = client.get("/api/workbench")
 
     assert response.status_code == 200
@@ -366,11 +373,10 @@ def test_workbench_frontend_has_formal_empty_state_and_guarded_creation(
     ).read_text(encoding="utf-8")
 
     assert '"工作台"' in app_source
-    assert "当前没有需要处理的事项。" in app_source
-    assert "还没有客户" in app_source
-    assert "从添加案例或建立第一个客户开始。" in app_source
-    assert "添加案例" in app_source
-    assert "新建客户" in app_source
-    assert "quick-action-disabled" in app_source
-    assert "需要已确认的客户与出镜人" in app_source
+    home = (empty_settings.console_root / "static/assets/dashboard-view.mjs").read_text(encoding="utf-8")
+    assert "目前没有需要处理的事项。" in home
+    assert "添加第一个客户" in home
+    assert 'href="/tasks"' in home
+    assert 'href="/create"' not in home
+    assert "dashboardMarkup" in app_source
     assert "书房市集志泉社区食堂" not in app_source

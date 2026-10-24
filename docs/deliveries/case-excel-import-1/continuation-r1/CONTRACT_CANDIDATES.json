@@ -1,0 +1,643 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Excel native bridge and I3 candidate contracts; not executable approval",
+  "status": "PROPOSED_NOT_APPROVED_NOT_IMPLEMENTED",
+  "input_code_commit": "61efbc477ea28b9aee9a492d3ee96324718ef592",
+  "$defs": {
+    "Sha": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "Identifier": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{1,127}$"
+    },
+    "Principal": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "namespace": {
+          "type": "string",
+          "minLength": 1
+        },
+        "user_id": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": [
+        "namespace",
+        "user_id"
+      ]
+    },
+    "SourceRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sha256": {
+          "$ref": "#/$defs/Sha"
+        }
+      },
+      "required": [
+        "path",
+        "sha256"
+      ]
+    },
+    "ImportOrigin": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "batch_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "batch_sha256": {
+          "$ref": "#/$defs/Sha"
+        },
+        "row_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "row_sha256": {
+          "$ref": "#/$defs/Sha"
+        },
+        "import_operation_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "import_intent_sha256": {
+          "$ref": "#/$defs/Sha"
+        },
+        "workbook_sha256": {
+          "$ref": "#/$defs/Sha"
+        }
+      },
+      "required": [
+        "batch_id",
+        "batch_sha256",
+        "row_id",
+        "row_sha256",
+        "import_operation_id",
+        "import_intent_sha256",
+        "workbook_sha256"
+      ]
+    },
+    "NativeSubmissionInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "case-excel-native-submission-input-v1.0-proposal"
+        },
+        "submission_operation_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "origin": {
+          "$ref": "#/$defs/ImportOrigin"
+        },
+        "expected_submission_parent_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sha"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_upload_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{32}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "confirmed_submit_analysis": {
+          "const": true
+        },
+        "preflight_sha256": {
+          "$ref": "#/$defs/Sha"
+        }
+      },
+      "required": [
+        "schema_version",
+        "submission_operation_id",
+        "origin",
+        "expected_submission_parent_sha256",
+        "source_upload_id",
+        "confirmed_submit_analysis",
+        "preflight_sha256"
+      ]
+    },
+    "NativeSubmissionRecord": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "case-excel-native-submission-v1.0-proposal"
+        },
+        "principal": {
+          "$ref": "#/$defs/Principal"
+        },
+        "submission_operation_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "origin": {
+          "$ref": "#/$defs/ImportOrigin"
+        },
+        "input_digest": {
+          "$ref": "#/$defs/Sha"
+        },
+        "intent_sha256": {
+          "$ref": "#/$defs/Sha"
+        },
+        "parent_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sha"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "state": {
+          "enum": [
+            "admitted",
+            "linked_owned_task",
+            "duplicate_private_recorded",
+            "recovery_required",
+            "blocked"
+          ]
+        },
+        "task_id": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "native_input_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sha"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "case_approved": {
+          "const": false
+        },
+        "shared_published": {
+          "const": false
+        }
+      },
+      "required": [
+        "schema_version",
+        "principal",
+        "submission_operation_id",
+        "origin",
+        "input_digest",
+        "intent_sha256",
+        "parent_sha256",
+        "state",
+        "task_id",
+        "native_input_sha256",
+        "case_approved",
+        "shared_published"
+      ]
+    },
+    "TypeCatalog": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "case-content-type-catalog-v1.0-proposal"
+        },
+        "catalog_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "entries": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "$ref": "#/$defs/Identifier"
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 60
+              },
+              "description": {
+                "type": "string",
+                "maxLength": 500
+              }
+            },
+            "required": [
+              "id",
+              "label",
+              "description"
+            ]
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "catalog_id",
+        "version",
+        "entries"
+      ]
+    },
+    "TypeDecision": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "case-content-type-review-v1.0-proposal"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "actor": {
+          "$ref": "#/$defs/Principal"
+        },
+        "reviewer_grant": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "case_id": {
+          "type": "string",
+          "pattern": "^[0-9]{10,24}$"
+        },
+        "attempt_id": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 128
+        },
+        "case_source": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "import_origin": {
+          "$ref": "#/$defs/ImportOrigin"
+        },
+        "catalog": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "action": {
+          "enum": [
+            "confirm_type",
+            "defer_type"
+          ]
+        },
+        "confirmed_type_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "other_note": {
+          "type": "string",
+          "maxLength": 500
+        },
+        "profile_conflict_resolution": {
+          "enum": [
+            "no_conflict",
+            "preserve_dimensions_with_reason",
+            "correct_suggestion_with_reason",
+            "defer"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "parent_decision_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sha"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "operation_id",
+        "actor",
+        "reviewer_grant",
+        "case_id",
+        "attempt_id",
+        "case_source",
+        "import_origin",
+        "catalog",
+        "action",
+        "confirmed_type_id",
+        "other_note",
+        "profile_conflict_resolution",
+        "reason",
+        "parent_decision_sha256"
+      ]
+    },
+    "TypedPublication": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "case-shared-display-v1.2-proposal"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "actor": {
+          "$ref": "#/$defs/Principal"
+        },
+        "reviewer_grant": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "case_id": {
+          "type": "string",
+          "pattern": "^[0-9]{10,24}$"
+        },
+        "case_approval": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "case_source": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "type_decision": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "catalog": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "display_preview": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "human_display_decision": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "parent_publication_sha256": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Sha"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "action": {
+          "const": "publish"
+        },
+        "attempt_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "schema_version",
+        "operation_id",
+        "actor",
+        "reviewer_grant",
+        "case_id",
+        "case_approval",
+        "case_source",
+        "type_decision",
+        "catalog",
+        "display_preview",
+        "human_display_decision",
+        "parent_publication_sha256",
+        "action",
+        "attempt_id"
+      ]
+    },
+    "BoundNotesReadInput": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "case-excel-bound-notes-read-v1.0-proposal"
+        },
+        "case_id": {
+          "type": "string",
+          "pattern": "^[0-9]{8,32}$"
+        },
+        "attempt_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "submission": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "origin": {
+          "$ref": "#/$defs/ImportOrigin"
+        }
+      },
+      "required": [
+        "schema_version",
+        "case_id",
+        "attempt_id",
+        "submission",
+        "origin"
+      ]
+    },
+    "BoundNotesProjection": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "case-excel-bound-notes-projection-v1.0-proposal"
+        },
+        "actor": {
+          "$ref": "#/$defs/Principal"
+        },
+        "reviewer_grant": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "native_case_attempt": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "submission": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "row": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "trust": {
+          "const": "unverified_submitter_candidate"
+        },
+        "permitted_fields": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "raw_case",
+              "raw_segments",
+              "raw_rights"
+            ]
+          }
+        },
+        "evidence_promoted": {
+          "const": false
+        },
+        "case_approved": {
+          "const": false
+        },
+        "shared_published": {
+          "const": false
+        }
+      },
+      "required": [
+        "schema_version",
+        "actor",
+        "reviewer_grant",
+        "native_case_attempt",
+        "submission",
+        "row",
+        "trust",
+        "permitted_fields",
+        "evidence_promoted",
+        "case_approved",
+        "shared_published"
+      ]
+    },
+    "TypedWithdrawal": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "case-shared-display-withdrawal-v1.2-proposal"
+        },
+        "operation_id": {
+          "$ref": "#/$defs/Identifier"
+        },
+        "actor": {
+          "$ref": "#/$defs/Principal"
+        },
+        "reviewer_grant": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "case_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parent_publication": {
+          "$ref": "#/$defs/SourceRef"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confirmed_withdrawal": {
+          "const": true
+        }
+      },
+      "required": [
+        "schema_version",
+        "operation_id",
+        "actor",
+        "reviewer_grant",
+        "case_id",
+        "parent_publication",
+        "reason",
+        "confirmed_withdrawal"
+      ]
+    }
+  },
+  "owner_mapping": {
+    "EX-R1": "case_intake_service -> case_excel_import existing read owner",
+    "EX-S1": "Case Intake + task_service + Source Owner, no separate Task truth",
+    "ME-R1": "case_library_access + original evidence review",
+    "CC-01": "case_classification + original reviewer authorization",
+    "CC-02": "case_shared_display + review_commands"
+  },
+  "semantic_validators_required": [
+    "Owner/principal/session/CSRF current at command; server derives actor and native source",
+    "same operation + same digest replays; different digest conflicts",
+    "Native task-origin index and Task creation must be same existing Task DB transaction",
+    "all SHA/path refs within appropriate native scope; no client owner override",
+    "confirm_type requires catalog member other than unknown and other note when other; defer_type requires null",
+    "profile conflict requires explicit reviewed reason; proposed dispositions await product/Owner confirmation",
+    "typed publication requires valid independent Case Approval, type decision and Human display authorization; old receipts unchanged",
+    "no Excel raw value promotes evidence, proof, media rights, style or compatibility",
+    "bound notes require live Reviewer grant and current exact Case/Attempt permission plus origin companion; no actor substitution or unrelated row scan",
+    "new origin-bearing worker task cannot dispatch before canonical companion and original submission ownership are complete",
+    "old R2 bytes and dispatch_model=false remain unchanged",
+    "preflight_sha256 binds exact principal/origin/source parameters/current original qualification inputs; changed source/permission invalidates before admission; not an approval",
+    "profile conflict correction appends formal decision only; immutable raw Excel suggestions are never edited",
+    "typed withdrawal checks current original withdrawal authority and exact prior publication, not renewed source/media/type eligibility; source revocation must not prevent safe withdrawal",
+    "same withdrawal operation replays the original receipt; stale parent cannot overwrite a newer publication"
+  ],
+  "proposal_runtime_paths": {
+    "submission": "original Intake-owned case_intake_imports/<actor>/<batch>/native_submissions/<operation>/; separate append-only companion, old R2 untouched",
+    "type_catalog": "data/case_governance/type_catalogs/<catalog>/<version>.json (proposed)",
+    "type_decision": "data/case_governance/type_decisions/<case>/<attempt>/<operation>.json (proposed)",
+    "publication": "existing Shared Display owner directory, new version handled by original owner"
+  },
+  "open_product_decisions": [
+    "unknown remains null until explicitly decided",
+    "profile/type conflict dispositions proposed, not frozen"
+  ],
+  "authorization_record": {
+    "source": "latest direct user request in this chat",
+    "authorized_now": [
+      "prepare exact proposals",
+      "read-only owned candidate/My Submissions integration",
+      "isolated tests with no paid model or business authority mutation"
+    ],
+    "awaiting_independent_approval": [
+      "EX-S1 exact native admission and persistence",
+      "ME-R1 cross-principal Reviewer notes access",
+      "CC-01",
+      "CC-02"
+    ],
+    "commit": false
+  },
+  "task_admission_index_proposal": {
+    "owner": "original database migrations + task_service.submit_task",
+    "table": "case_excel_native_admissions_v1",
+    "status": "PROPOSED_NOT_CREATED",
+    "primary_key": [
+      "namespace",
+      "user_id",
+      "operation_id"
+    ],
+    "columns": {
+      "namespace": "TEXT NOT NULL",
+      "user_id": "INTEGER NOT NULL",
+      "operation_id": "TEXT NOT NULL",
+      "origin_sha256": "TEXT NOT NULL",
+      "submission_input_sha256": "TEXT NOT NULL",
+      "task_id": "TEXT NOT NULL REFERENCES tasks(task_id)",
+      "created_at": "TEXT NOT NULL"
+    },
+    "atomicity": "Native Task and admission mapping inserted/linked in the same original Task DB transaction; canonical origin intent and companion required for dispatch; no approval authority",
+    "replay": "same principal/operation and exact digest -> exact mapped Task including terminal; changed input -> conflict; no latest-source task inference",
+    "source_lock": "original upload lock before DB transaction; no reentrant HTTP call",
+    "detailed_failure_boundaries": "NATIVE_SUBMISSION_DELTA.md"
+  }
+}

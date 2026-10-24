@@ -1,5 +1,6 @@
 """Offline intake acceptance. No provider/model calls or production data."""
 from __future__ import annotations
+from review_protocol import post_review, post_historical_case_review
 
 import copy
 import hashlib
@@ -221,7 +222,7 @@ def test_smart_case_cannot_skip_classification_or_final_evidence_gate(client, se
     csrf = login_and_change_password(client)
     task = group(client, csrf).json()["items"][0]["task"]
     path = candidate(settings, task)
-    response = client.post(f"/api/cases/{ID}/review", headers={"X-CSRF-Token": csrf}, json={"decision": "approve"})
+    response = post_review(client, f"/api/cases/{ID}/review", headers={"X-CSRF-Token": csrf}, json={"decision": "approve"})
     assert response.status_code == 409
     assert response.json()["detail"]["code"] == "CASE_CLASSIFICATION_REQUIRED"
     assert json.loads(path.read_text(encoding="utf-8"))["lifecycle"]["approved"] is False
@@ -287,13 +288,23 @@ def test_confirmed_labels_still_cannot_bypass_case_approval_gates(client, settin
     csrf = login_and_change_password(client)
     task = group(client, csrf).json()["items"][0]["task"]
     path = candidate(settings, task)
+    # Model explicit human quality confirmation while preserving the original
+    # invalid source/privacy/Proof fixture. Classification must not bypass them.
+    value=json.loads(path.read_text(encoding="utf-8"))
+    privacy=path.parent/"synthetic-invalid-privacy.json"
+    privacy.write_text("{}",encoding="utf-8")
+    value["source_artifacts"]={"storyboard_v1":str(path.parents[2]/"reverse_storyboard_v1.json"),
+                               "privacy_projection_v1":str(privacy)}
+    path.write_text(json.dumps(value,ensure_ascii=False),encoding="utf-8")
     state = client.get(f"/api/cases/{ID}/classification").json()
     response = client.post(f"/api/cases/{ID}/classification", headers={"X-CSRF-Token": csrf}, json={
         "industry":"餐饮", "profile":"mix", "candidate_sha256":state["candidate_sha256"],
         "expected_confirmation_sha256":None})
     assert response.status_code == 200
     before = path.read_bytes()
-    blocked = client.post(f"/api/cases/{ID}/review", headers={"X-CSRF-Token":csrf}, json={"decision":"approve"})
+    # The frozen minimal fixture must still exercise its original Source/Proof/
+    # Privacy rejection, independently of the earlier new v1.1 Coverage Gate.
+    blocked = post_historical_case_review(client, f"/api/cases/{ID}/review", headers={"X-CSRF-Token":csrf}, json={"decision":"approve"})
     assert blocked.status_code == 409
     assert blocked.json()["detail"]["code"] == "CASE_APPROVAL_BLOCKED"
     assert path.read_bytes() == before
@@ -333,7 +344,7 @@ def test_cover_requires_bound_local_asset_and_authenticated_access(client, setti
     assert client.get(f"/api/cases/{ID}/cover").status_code == 404
 
 
-def test_colleague_recovers_shared_group_without_new_attempt(client, settings):
+def test_only_designated_reviewer_recovers_another_submitters_group_without_new_attempt(client, settings):
     csrf = login_and_change_password(client)
     batch = group(client, csrf).json()
     task = batch["items"][0]["task"]
@@ -344,6 +355,9 @@ def test_colleague_recovers_shared_group_without_new_attempt(client, settings):
         changed = colleague.post("/api/auth/change-password", headers={"X-CSRF-Token":login.json()["csrf_token"]}, json={
             "current_password":"123456", "new_password":"ReviewConsole2026!", "confirm_password":"ReviewConsole2026!"})
         assert changed.status_code == 200
+        assert colleague.get(f"/api/case-intake/groups/{batch['group_id']}").status_code==404
+        from app.case_library_access import manage_reviewer
+        manage_reviewer(settings,2,action="grant",operator="isolated-test-operator",reason="Explicit colleague reviewer")
         restored = colleague.get(f"/api/case-intake/groups/{batch['group_id']}").json()
         assert restored["items"][0]["task"]["task_id"] == task["task_id"]
         assert restored["items"][0]["classification"]["status"] == "needs_confirmation"

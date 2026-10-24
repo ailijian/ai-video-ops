@@ -1,0 +1,347 @@
+{
+  "original_matrix_sha256": "e79234e06feefcfaa9906a79805223a96e47146eb2542d9937611118057461e2",
+  "items": [
+    {
+      "id": "S01",
+      "unit": "EX-S1",
+      "trigger": "one lawful new source, original uploaded fictional video",
+      "expected": "exact same Row→Intent→Task→Attempt; no Case Approval",
+      "status": "PARTIAL_NATIVE_UNIT_HTTP_SCOPE",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": "tests/test_case_excel_native.py; actual JUnit in external evidence",
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "S02",
+      "unit": "EX-S1",
+      "trigger": "same operation/input double click and lost response",
+      "expected": "one mapping/Task; original result only",
+      "status": "PARTIAL_NATIVE_UNIT_HTTP_SCOPE",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": "tests/test_case_excel_native.py; actual JUnit in external evidence",
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "S03",
+      "unit": "EX-S1",
+      "trigger": "same operation different Row/source/parent",
+      "expected": "409; no overwrite or replacement Task",
+      "status": "PARTIAL_NATIVE_UNIT_HTTP_SCOPE",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": "tests/test_case_excel_native.py; actual JUnit in external evidence",
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "S04",
+      "unit": "EX-S1",
+      "trigger": "exit before intent / after intent / after DB commit",
+      "expected": "no Task or recover exact mapped Task; no guessed latest source",
+      "status": "PARTIAL_NATIVE_UNIT_HTTP_SCOPE",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": "tests/test_case_excel_native.py; actual JUnit in external evidence",
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "S05",
+      "unit": "EX-S1",
+      "trigger": "exit before association/submission/schedule",
+      "expected": "worker cannot execute incomplete admission; same task resumes",
+      "status": "PARTIAL_NATIVE_UNIT_HTTP_SCOPE",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": "tests/test_case_excel_native.py; actual JUnit in external evidence",
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "S06",
+      "unit": "EX-S1",
+      "trigger": "worker claimed then died, expired lease, unknown external result",
+      "expected": "original owner reconciles or unknown hold; zero automatic resend",
+      "status": "PARTIAL_NATIVE_UNIT_HTTP_SCOPE",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": "tests/test_case_excel_native.py; actual JUnit in external evidence",
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "S07",
+      "unit": "EX-S1",
+      "trigger": "ordinary legacy URL/group/reanalysis racing same new origin",
+      "expected": "global Native active-source/upload uniqueness and same limits",
+      "status": "PARTIAL_NATIVE_UNIT_HTTP_SCOPE",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": "tests/test_case_excel_native.py; actual JUnit in external evidence",
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "S08",
+      "unit": "EX-S1",
+      "trigger": "same source another user private task",
+      "expected": "generic response; no foreign Task/Case detail, ownership or notes",
+      "status": "PARTIAL_NATIVE_UNIT_HTTP_SCOPE",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": "tests/test_case_excel_native.py; actual JUnit in external evidence",
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "S09",
+      "unit": "EX-S1",
+      "trigger": "same own active task or old completed task",
+      "expected": "read exact owned state; no new primary origin or new execution",
+      "status": "PARTIAL_NATIVE_UNIT_HTTP_SCOPE",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": "tests/test_case_excel_native.py; actual JUnit in external evidence",
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "S10",
+      "unit": "EX-S1",
+      "trigger": "filename-only/text-only/unsupported platform",
+      "expected": "remain private pending evidence; zero native tasks",
+      "status": "PARTIAL_NATIVE_UNIT_HTTP_SCOPE",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": "tests/test_case_excel_native.py; actual JUnit in external evidence",
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "S11",
+      "unit": "EX-S1",
+      "trigger": "upload expired/revoked/hash changed/provider unavailable",
+      "expected": "stale preflight rejected; no silent source switch",
+      "status": "PARTIAL_NATIVE_UNIT_HTTP_SCOPE",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": "tests/test_case_excel_native.py; actual JUnit in external evidence",
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "S12",
+      "unit": "EX-S1",
+      "trigger": "cleanup races prepared intent / failed unknown task",
+      "expected": "correct validated hold; no premature deletion, no arbitrary retention file",
+      "status": "PARTIAL_NATIVE_UNIT_HTTP_SCOPE",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": "tests/test_case_excel_native.py; actual JUnit in external evidence",
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "S13",
+      "unit": "EX-S1",
+      "trigger": "backup + case + upload + DB + reviewer concurrency",
+      "expected": "documented order, no lock inside DB wait, no nested HTTP lock",
+      "status": "PARTIAL_NATIVE_UNIT_HTTP_SCOPE",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": "tests/test_case_excel_native.py; actual JUnit in external evidence",
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "S14",
+      "unit": "EX-S1",
+      "trigger": "cancel/reanalysis while original outcome unresolved",
+      "expected": "preserve original operation; block replacement analysis until settled",
+      "status": "PARTIAL_NATIVE_UNIT_HTTP_SCOPE",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": "tests/test_case_excel_native.py; actual JUnit in external evidence",
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "M01",
+      "unit": "ME-R1",
+      "trigger": "real current reviewer, exact primary-origin Attempt",
+      "expected": "read only bound minimum unverified notes",
+      "status": "PARTIAL_NATIVE_UNIT_HTTP_SCOPE",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": "tests/test_case_excel_native.py; actual JUnit in external evidence",
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "M02",
+      "unit": "ME-R1",
+      "trigger": "ordinary user/expired/revoked grant/cross namespace",
+      "expected": "deny without foreign Row disclosure",
+      "status": "PARTIAL_NATIVE_UNIT_HTTP_SCOPE",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": "tests/test_case_excel_native.py; actual JUnit in external evidence",
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "M03",
+      "unit": "ME-R1",
+      "trigger": "borrow Row/Attempt/association/SHA/old owned linked Task",
+      "expected": "deny; no arbitrary import scan",
+      "status": "PARTIAL_NATIVE_UNIT_HTTP_SCOPE",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": "tests/test_case_excel_native.py; actual JUnit in external evidence",
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "M04",
+      "unit": "ME-R1",
+      "trigger": "manual narration/seconds/license/type hint",
+      "expected": "visible unverified only; no ASR/Shot/Proof/rights writes",
+      "status": "PARTIAL_NATIVE_UNIT_HTTP_SCOPE",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": "tests/test_case_excel_native.py; actual JUnit in external evidence",
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "T01",
+      "unit": "CC-01",
+      "trigger": "explicit confirm after original approved Case",
+      "expected": "append type decision bound to Case/Receipt/Attempt/catalog/grant",
+      "status": "NOT_EXECUTED_PENDING_JC_01_CONTRACT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": null,
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "T02",
+      "unit": "CC-01",
+      "trigger": "Excel hint only / pre-approval candidate",
+      "expected": "no formal type; no automatic carry across approval SHA",
+      "status": "NOT_EXECUTED_PENDING_JC_01_CONTRACT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": null,
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "T03",
+      "unit": "CC-01",
+      "trigger": "unknown/defer/revoke and other blank/whitespace",
+      "expected": "formal null or rejection; other requires real Human note",
+      "status": "NOT_EXECUTED_PENDING_JC_01_CONTRACT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": null,
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "T04",
+      "unit": "CC-01",
+      "trigger": "profile conflict preserve/correct/defer",
+      "expected": "explicit reason/decision; no raw Row/profile mutation",
+      "status": "NOT_EXECUTED_PENDING_JC_01_CONTRACT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": null,
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "T05",
+      "unit": "CC-01",
+      "trigger": "repeat operation, changed payload, stale parent",
+      "expected": "same immutable result or409; one event; no timestamp head guessing",
+      "status": "NOT_EXECUTED_PENDING_JC_01_CONTRACT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": null,
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "T06",
+      "unit": "CC-01",
+      "trigger": "current grant revoked; historical prior grant valid",
+      "expected": "block new writes/reads, validate historical evidence without erasing decisions",
+      "status": "NOT_EXECUTED_PENDING_JC_01_CONTRACT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": null,
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "T07",
+      "unit": "CC-01",
+      "trigger": "catalog/version/source/approval change",
+      "expected": "preview stale; no silent new label; unknown versions closed",
+      "status": "NOT_EXECUTED_PENDING_JC_01_CONTRACT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": null,
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "P01",
+      "unit": "CC-02",
+      "trigger": "approved Case + effective type + explicit exact display confirmation",
+      "expected": "one typed receipt; no automatic share",
+      "status": "NOT_EXECUTED_PENDING_JC_01_CONTRACT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": null,
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "P02",
+      "unit": "CC-02",
+      "trigger": "no approval/type or unverified Excel title/rights",
+      "expected": "reject typed publish; retain legacy null semantics",
+      "status": "NOT_EXECUTED_PENDING_JC_01_CONTRACT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": null,
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "P03",
+      "unit": "CC-02",
+      "trigger": "type changed/revoked, fresh preview not confirmed",
+      "expected": "old typed projection unavailable; history unchanged, no silent rewrite",
+      "status": "NOT_EXECUTED_PENDING_JC_01_CONTRACT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": null,
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "P04",
+      "unit": "CC-02",
+      "trigger": "old v1.0/v1.1 before and after typed events",
+      "expected": "strict mixed ordered reader; old bytes unchanged; no automatic upgrade",
+      "status": "NOT_EXECUTED_PENDING_JC_01_CONTRACT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": null,
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "P05",
+      "unit": "CC-02",
+      "trigger": "receipt committed, result/response lost, repeated command",
+      "expected": "same original sequence/result, no duplicate publication",
+      "status": "NOT_EXECUTED_PENDING_JC_01_CONTRACT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": null,
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "P06",
+      "unit": "CC-02",
+      "trigger": "withdraw when media/type/approval now invalid",
+      "expected": "allow accurate authorized withdrawal, no new publish prerequisite",
+      "status": "NOT_EXECUTED_PENDING_JC_01_CONTRACT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": null,
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "P07",
+      "unit": "CC-02",
+      "trigger": "stale parent or corrupted history",
+      "expected": "reject stale writes, restore exact history; no invented repair receipt",
+      "status": "NOT_EXECUTED_PENDING_JC_01_CONTRACT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": null,
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "P08",
+      "unit": "CC-02",
+      "trigger": "private user requests shared details/cover via guessed IDs",
+      "expected": "original visibility and cover/privacy/source gates",
+      "status": "NOT_EXECUTED_PENDING_JC_01_CONTRACT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": null,
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    },
+    {
+      "id": "U01",
+      "unit": "ALL",
+      "trigger": "one fictional media entire pipeline then multiple rows/partial failure",
+      "expected": "stable identities; original Evidence/Human/Case Approval and independent sharing; Founder last unified UAT",
+      "status": "NOT_EXECUTED_PENDING_JC_01_CONTRACT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": null,
+      "remaining": "No complete real Native model-analysis/Human/type/shared thin slice. Coverage is bounded by exact test cases, not blanket scenario PASS."
+    }
+  ],
+  "joint_failure_matrix": "JOINT_REVIEW_COMMAND_DELTA.json mandatory_failure_matrix: all NOT_EXECUTED_PENDING_APPROVAL",
+  "all_34_passed": false
+}

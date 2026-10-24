@@ -1,0 +1,89 @@
+{
+  "current_workflow_status": "CASE_EXCEL_IMPORT_1_V03_B0_ARCH_REVIEW_PENDING",
+  "original_snapshot_status": "CASE_EXCEL_IMPORT_1_V03_B0_READY_FOR_ARCH_REVIEW",
+  "original_zip": "E:\\projects\\ai-video-ops\\.local\\evidence\\case-excel-import-1-v03-b0-20261024\\CASE_EXCEL_IMPORT_1_V03_B0_ARCH_REVIEW.zip",
+  "original_zip_sha256": "797a326a5792ec01ce5f52299ac4476bc2e3cb7a4925d37132a5ea623e8a9ee8",
+  "original_zip_crc_verified": true,
+  "no_repeated_field_or_source_audit": true,
+  "new_import_implementation": false,
+  "contract_sources": [
+    {
+      "path": "E:\\projects\\ai-video-ops\\.worktrees\\cxi\\docs\\deliveries\\case-excel-import-1\\IMPORT_BATCH_CONTRACT_DELTA.md",
+      "archive_member": "CASE_EXCEL_IMPORT_1_V03_B0/IMPORT_BATCH_CONTRACT_DELTA.md",
+      "sha256": "d56a81a2a9cf45ab70819f94884d908939bf7f262e6f24d3b74ae6e04821471d"
+    },
+    {
+      "path": "E:\\projects\\ai-video-ops\\.worktrees\\cxi\\docs\\deliveries\\case-excel-import-1\\MANUAL_EVIDENCE_CONTRACT_DELTA.md",
+      "archive_member": "CASE_EXCEL_IMPORT_1_V03_B0/MANUAL_EVIDENCE_CONTRACT_DELTA.md",
+      "sha256": "ca000e79ead8ae4c61e0c788a33e69753f61440dd07709f60828566cb2dbd251"
+    },
+    {
+      "path": "E:\\projects\\ai-video-ops\\.worktrees\\cxi\\docs\\deliveries\\case-excel-import-1\\CASE_CLASSIFICATION_CONTRACT_DELTA.md",
+      "archive_member": "CASE_EXCEL_IMPORT_1_V03_B0/CASE_CLASSIFICATION_CONTRACT_DELTA.md",
+      "sha256": "5d39b91abc85dee4c52eb0aed663a16bb5e13732c938e1586f7f9765a983a94c"
+    },
+    {
+      "path": "E:\\projects\\ai-video-ops\\.worktrees\\cxi\\docs\\deliveries\\case-excel-import-1\\SOURCE_OWNER_MAP.json",
+      "archive_member": "CASE_EXCEL_IMPORT_1_V03_B0/SOURCE_OWNER_MAP.json",
+      "sha256": "22c48b6ac9166f279fef72170337ec13d984aafa2071bdafc7c68822644d600f"
+    },
+    {
+      "path": "E:\\projects\\ai-video-ops\\.worktrees\\cxi\\docs\\deliveries\\case-excel-import-1\\TEMPLATE_V03_VERIFICATION.json",
+      "archive_member": "CASE_EXCEL_IMPORT_1_V03_B0/TEMPLATE_V03_VERIFICATION.json",
+      "sha256": "5b2caba1d8442bf914cbe78be3ee657e2938087e071ca6691d3d76d3ebce2f0c"
+    },
+    {
+      "path": "E:\\projects\\ai-video-ops\\.worktrees\\cxi\\docs\\deliveries\\case-excel-import-1\\ISOLATED_TEST_INPUTS.json",
+      "archive_member": "CASE_EXCEL_IMPORT_1_V03_B0/ISOLATED_TEST_INPUTS.json",
+      "sha256": "95201ac901a88566c6caee470d1f3fff09788ebb0738865d42ef8cc7f59743c8"
+    },
+    {
+      "path": "E:\\projects\\ai-video-ops\\.worktrees\\cxi\\docs\\deliveries\\case-excel-import-1\\MANIFEST.json",
+      "archive_member": "CASE_EXCEL_IMPORT_1_V03_B0/MANIFEST.json",
+      "sha256": "a170c487ad75433821bb6887e31fd2ccca9e820020a9c186582a8cce8334311e"
+    }
+  ],
+  "template_sha256": {
+    "xlsx": "d720aa257d90955a0c8209756b1d6d8da49a789d250e28cf716890ab21a8664f",
+    "json": "95463b7faf241bd090afda70bdc34a09584b386645bb0a1981673a5c1fbe1e08"
+  },
+  "minimal_review_scopes": [
+    {
+      "id": "A1",
+      "native_deltas": [
+        "IB-01",
+        "SI-01"
+      ],
+      "status": "PROPOSED_NOT_APPROVED",
+      "original_owner": "Case Intake / Source / Task / Access",
+      "decide": "Versioned private Import Batch/Row/Intent; raw and normalized cell provenance; untrusted segments/rights; canonical video/media duplicates; real actor-owned upload refs; save does not dispatch; native missing-source stop",
+      "stop": "No Native Task from save; standalone file/unknown source remains pending until original Source contract supports it; original Case approval unchanged"
+    },
+    {
+      "id": "A2",
+      "native_deltas": [
+        "ME-01"
+      ],
+      "status": "PROPOSED_NOT_APPROVED",
+      "original_owner": "Case Intake + Evidence Review / Privacy / Source",
+      "decide": "Manual observations and segments are source-bound submitter claims, not ASR/Frame/Shot/Proof; later reviewer may compare with original media and exact existing evidence IDs",
+      "stop": "No forged timing/frame/shot identity, evidence pass or permission; text-only remains pending evidence"
+    },
+    {
+      "id": "A3",
+      "native_deltas": [
+        "CC-01",
+        "CC-02"
+      ],
+      "status": "PROPOSED_NOT_APPROVED",
+      "original_owner": "Case Classification + designated Reviewer + Shared Display",
+      "decide": "Extensible type catalog, current Reviewer grant, exact Case/notes/catalog SHAs and conflict resolution; separate new Shared Display source-bound type version",
+      "stop": "Operator hint/private-label permission cannot confirm formal type; formal type grants display identity only; no Production Compatibility or Style approval"
+    }
+  ],
+  "independent_authority_receipts": [
+    "Original Case Approval Receipt",
+    "Original Shared Publication Receipt"
+  ],
+  "I1_I2_I3": "NOT_AUTHORIZED_THIS_TURN"
+}

@@ -1,0 +1,12 @@
+{
+  "schema_version": "creative-coverage-report-v1.0",
+  "fixture_only": true,
+  "source_registry_ref": {
+    "path": "data/production_profiles/production_profile_registry_v1.json",
+    "sha256": "449feefa3a0bd6ea70b480bea40a05b459d359a3c59d921ced2c188937544049"
+  },
+  "case_assessments": [],
+  "authority": {
+    "can_change_compatibility": false
+  }
+}

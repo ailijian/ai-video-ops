@@ -4,6 +4,8 @@ import argparse
 import hashlib
 import json
 import re
+import uuid
+from case_human_review_v2 import APPROVAL_VERSION, validate_quality_decision
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -38,6 +40,16 @@ def validate_deferred_evidence_review(
     case: dict[str, Any], candidate_sha256: str, receipt_path: Path | None,
     reviewer: str,
 ) -> tuple[dict[str, Any] | None, list[str]]:
+    if receipt_path is not None and receipt_path.is_file():
+        try:
+            if read_json(receipt_path).get('schema_version') == 'case-evidence-final-review-v2.0':
+                from case_evidence_revision_v1 import validate_final_review
+                receipt = validate_final_review(case,candidate_sha256,receipt_path,reviewer)
+                return receipt, []
+        except (OSError,ValueError,RuntimeError,KeyError,TypeError) as exc:
+            return None, [f'Final evidence coverage is invalid: {exc}']
+    if case.get('human_evidence_revision'):
+        return None, ['A revised candidate requires final evidence review v2; v1 downgrade is forbidden.']
     pending = case.get("review_pending") or {}
     if pending.get("requires_explicit_confirmation") is not True:
         validation = case.get("validation") or {}
@@ -254,10 +266,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--note",
-        default=(
-            "Human review passed against retained source provenance, the Douyin "
-            "original source, and Reverse Storyboard V1.1."
-        ),
+        default="",
     )
     parser.add_argument(
         "--governance-policy",
@@ -272,7 +281,19 @@ def main() -> None:
         default=None,
         help="Explicit final human confirmation bound to a provisional Case candidate and its evidence hashes.",
     )
+    parser.add_argument("--console-authority-db", help="Console entry only: trusted local authorization database")
+    parser.add_argument("--console-user-id", type=int)
+    parser.add_argument("--console-principal-namespace")
+    parser.add_argument("--quality-decision", help="JSON: explicit human final confirmation bound to candidate and evidence; required for every new approval")
+    parser.add_argument("--review-operation-id", help="Trusted Console command identity; offline execution gets its own identity")
     args = parser.parse_args()
+    console_authorization = None
+    console_fields = (args.console_authority_db, args.console_user_id, args.console_principal_namespace)
+    if any(value is not None for value in console_fields):
+        if any(value is None for value in console_fields):
+            parser.error("Console authorization context must be complete")
+        from case_console_authorization_v1 import validate_console_reviewer
+        console_authorization = validate_console_reviewer(*console_fields, reviewer=args.reviewer)
 
     case_path = Path(args.case).expanduser().resolve()
     if not case_path.exists():
@@ -283,6 +304,13 @@ def main() -> None:
     case = json.loads(original_bytes.decode("utf-8"))
 
     errors: list[str] = []
+    from case_evidence_revision_v1 import approval_attempt_errors
+    errors.extend(approval_attempt_errors(case,original_sha256,case_path))
+    try:
+        human_quality = validate_quality_decision(case_path, read_json(Path(args.quality_decision)) if args.quality_decision else None)
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        errors.append(f"CASE_QUALITY_DECISION_REQUIRED: {exc}")
+        human_quality = None
 
     lifecycle = case.get("lifecycle", {})
     validation = case.get("validation", {})
@@ -302,6 +330,19 @@ def main() -> None:
         args.reviewer,
     )
     errors.extend(evidence_errors)
+    if console_authorization is not None:
+        from case_evidence_revision_v1 import validate_console_confirmation, RevisionError
+        try:
+            validate_console_confirmation(Path(__file__).resolve().parents[1], case, original_sha256,
+                console_authorization, args.review_operation_id, evidence_receipt)
+        except RevisionError as exc:
+            errors.append(f'{exc.code}: {exc}')
+    elif args.review_operation_id:
+        errors.append('CASE_EVIDENCE_SCOPE_STALE: A Console operation requires its current authorized principal; offline approval creates its own operation identity.')
+    if evidence_receipt and evidence_receipt.get('schema_version')=='case-evidence-final-review-v2.0':
+        if (console_authorization is None or any(evidence_receipt['actor'].get(k)!=console_authorization.get(k) for k in ('namespace','user_id'))
+                or evidence_receipt.get('operation_id')!=args.review_operation_id):
+            errors.append('Final evidence review v2 requires the exact current authorized principal and operation.')
 
     if lifecycle.get("status") != "review_required":
         errors.append(
@@ -472,6 +513,9 @@ def main() -> None:
         raise SystemExit(2)
 
     approved_at = now_iso()
+    human_quality = {**human_quality, "reviewer": args.reviewer, "decided_at": approved_at,
+                     "actor": console_authorization or {"kind": "trusted_offline_operator", "reviewer": args.reviewer},
+                     "operation_id": args.review_operation_id or uuid.uuid4().hex}
 
     lifecycle["status"] = "approved"
     lifecycle["approved"] = True
@@ -482,6 +526,7 @@ def main() -> None:
     case["lifecycle"] = lifecycle
 
     case["approval"] = {
+        "contract_version": APPROVAL_VERSION, "human_quality_decision": human_quality,
         "decision": "approved",
         "reviewer": args.reviewer,
         "approved_at": approved_at,
@@ -504,11 +549,11 @@ def main() -> None:
     if evidence_receipt is not None:
         case["approval"]["evidence_review"] = {
             "receipt_sha256": sha256_file(Path(args.evidence_review_receipt)),
-            "narration_decision_count": len(evidence_receipt["narration_decisions"]),
-            "shot_decision_count": len(evidence_receipt["shot_decisions"]),
+            "narration_decision_count": len(evidence_receipt.get("narration_decisions",[d for d in evidence_receipt.get('decisions',[]) if d['item_id'].startswith('narration:')])),
+            "shot_decision_count": len(evidence_receipt.get("shot_decisions",[d for d in evidence_receipt.get('decisions',[]) if d['item_id'].startswith('shot:')])),
             "reviewed_by": evidence_receipt["reviewed_by"],
             "reviewed_at": evidence_receipt["reviewed_at"],
-            "policy": "source_asr_and_current_shot_boundaries_explicitly_confirmed",
+            "policy": evidence_receipt.get('schema_version') if evidence_receipt.get('schema_version')=='case-evidence-final-review-v2.0' else "source_asr_and_current_shot_boundaries_explicitly_confirmed",
         }
         case["review_pending"]["status"] = "confirmed_at_final_case_review"
         case.setdefault("narration_evidence", {})["manual_review_closed"] = True
@@ -529,6 +574,7 @@ def main() -> None:
     )
 
     receipt = {
+        "contract_version": APPROVAL_VERSION, "human_quality_decision": human_quality,
         "case_id": case.get("case_id"),
         "decision": "approved",
         "reviewer": args.reviewer,
@@ -553,6 +599,16 @@ def main() -> None:
 
     receipt_path = case_path.parent / "approval_receipt.json"
     write_atomic_json(receipt_path, receipt)
+    if console_authorization is not None:
+        # Additive authorization evidence; never change the existing receipt schema.
+        write_atomic_json(case_path.parent / "console_authorization_receipt_v1.json", {
+            "schema_version": "case-console-authorization-v1.0",
+            "case_id": case.get("case_id"), "candidate_sha256": original_sha256,
+            "approved_case_sha256": approved_sha256,
+            "approval_receipt_sha256": sha256_file(receipt_path),
+            "authorized_principal": console_authorization, "at": approved_at,
+            "production_media_rights_granted": False,
+        })
 
     print()
     print("CASE APPROVAL PASS")

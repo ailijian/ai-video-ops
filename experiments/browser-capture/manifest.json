@@ -1,0 +1,10 @@
+{
+  "manifest_version": 3,
+  "name": "AI Video Ops Capture — Isolated PoC",
+  "version": "0.1.0",
+  "minimum_chrome_version": "116",
+  "description": "User-started single-tab recording feasibility test. No cookies, downloads API requests to Douyin, or production connection.",
+  "permissions": ["activeTab", "scripting", "tabCapture", "offscreen", "downloads"],
+  "background": {"service_worker": "worker.js", "type": "module"},
+  "action": {"default_title": "录制当前抖音视频（仅限有权使用；再次点击取消）"}
+}

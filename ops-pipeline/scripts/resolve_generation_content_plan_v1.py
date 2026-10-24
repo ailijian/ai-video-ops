@@ -20,6 +20,8 @@ import hashlib
 import json
 import os
 import re
+from contextlib import nullcontext
+from creation_batch_contract_v1 import BatchError
 from pathlib import Path
 from typing import Any, Callable
 
@@ -48,6 +50,7 @@ from generate_mix_scripts_v1 import (
     validate_generation_inputs,
 )
 from generation_request_handoff_v1 import _business_generation_lock
+from profile_compatibility_contract_v1_1 import CompatibilityError
 from show_customer_status_v1 import AuthorityResolutionError, load_content_ledger
 
 
@@ -148,7 +151,7 @@ def verify_lineage_ref(
     return path
 
 
-def load_request_and_source_plan(
+def read_request_and_source_plan(
     pipeline_root: Path,
     request_id: str,
 ) -> tuple[Path, dict[str, Any], Path, dict[str, Any]]:
@@ -187,37 +190,14 @@ def load_request_and_source_plan(
     request = read_json(request_path)
     source_plan = read_json(source_plan_path)
 
+    from creative_style_v1 import request_schema_supported
     if (
-        request.get("schema_version") != REQUEST_SCHEMA_VERSION
+        not request_schema_supported(request)
         or str(request.get("request_id") or "") != request_id
     ):
         raise ContentPlanResolutionError(
             "GENERATION_REQUEST_LINEAGE_MISMATCH",
             "Generation Request schema or request_id is invalid.",
-        )
-
-    lifecycle = request.get("lifecycle") or {}
-    authority = request.get("authority") or {}
-    if str(lifecycle.get("status") or "") != "created":
-        raise ContentPlanResolutionError(
-            "CONTENT_PLANNING_LIFECYCLE_CLOSED",
-            "Generation Request is not in the created lifecycle state.",
-        )
-    if (
-        lifecycle.get("generation_started") is True
-        or authority.get("script_generation_performed") is True
-        or authority.get("generation_batch_created") is True
-    ):
-        raise ContentPlanResolutionError(
-            "CONTENT_PLANNING_STAGE_CLOSED",
-            "Script generation already started; Content Planning is closed.",
-        )
-
-    batch_root = pipeline_root / "data" / "generation_batches" / request_id
-    if batch_root.exists() and any(batch_root.rglob("generation_batch_v1.json")):
-        raise ContentPlanResolutionError(
-            "CONTENT_PLANNING_STAGE_CLOSED",
-            "A Generation Batch already exists for this Request.",
         )
 
     if (
@@ -253,6 +233,21 @@ def load_request_and_source_plan(
     return request_path, request, source_plan_path, source_plan
 
 
+def load_request_and_source_plan(pipeline_root: Path, request_id: str):
+    """Planning writer admission remains closed after any generation artifact."""
+    values = read_request_and_source_plan(pipeline_root, request_id)
+    request = values[1]
+    lifecycle, authority = request.get("lifecycle") or {}, request.get("authority") or {}
+    if str(lifecycle.get("status") or "") != "created":
+        raise ContentPlanResolutionError("CONTENT_PLANNING_LIFECYCLE_CLOSED", "Generation Request is not in the created lifecycle state.")
+    batch_root = pipeline_root / "data/generation_batches" / request_id
+    if (lifecycle.get("generation_started") is True or authority.get("script_generation_performed") is True
+            or authority.get("generation_batch_created") is True
+            or (batch_root.exists() and any(batch_root.rglob("generation_batch_v1.json")))):
+        raise ContentPlanResolutionError("CONTENT_PLANNING_STAGE_CLOSED", "A Generation Batch already exists or generation started; Content Planning is closed.")
+    return values
+
+
 def resolve_pattern_path(
     pipeline_root: Path,
     source_plan: dict[str, Any],
@@ -276,9 +271,12 @@ def resolve_pattern_path(
             "Selected Pattern requires pattern_id and approved_pattern_sha.",
         )
 
+    from profile_compatibility_consumers_v1_1 import released_source_paths
+    released = released_source_paths(pipeline_root, source_plan)
     pattern_root = pipeline_root / "data" / "patterns" / "approved"
+    candidates = released['pattern_ref'] if released is not None else pattern_root.rglob("pattern_v1.json")
     matches: list[Path] = []
-    for path in pattern_root.rglob("pattern_v1.json"):
+    for path in candidates:
         artifact = read_json(path)
         if str(artifact.get("pattern_id") or "") == pattern_id:
             matches.append(path)
@@ -309,6 +307,15 @@ def resolve_fingerprint_paths(
             "Generation Source Plan has no eligible Case pool.",
         )
 
+    from profile_compatibility_consumers_v1_1 import released_source_paths
+    released = released_source_paths(pipeline_root, source_plan)
+    fingerprints = {}
+    if released is not None:
+        for path in released['fingerprint_ref']:
+            case_id = str(read_json(path).get('case_id') or '')
+            if case_id in fingerprints:
+                raise ContentPlanResolutionError('CONTENT_PLAN_CASE_AUTHORITY_INVALID', 'Released Case Fingerprint identity is ambiguous.')
+            fingerprints[case_id] = path
     resolved: list[Path] = []
     seen: set[str] = set()
     for item in pool:
@@ -325,14 +332,14 @@ def resolve_fingerprint_paths(
                 "Eligible Case requires a unique case_id and fingerprint_sha.",
             )
 
-        path = (
+        path = fingerprints.get(case_id) if released is not None else (
             pipeline_root
             / "data"
             / "fingerprints"
             / case_id
             / "case_fingerprint_v1.json"
         )
-        if not path.is_file():
+        if path is None or not path.is_file():
             raise ContentPlanResolutionError(
                 "CONTENT_PLAN_CASE_AUTHORITY_MISSING",
                 f"Eligible Case Fingerprint is missing: {case_id}",
@@ -498,6 +505,7 @@ def build_context(
             pattern_path,
             fingerprint_paths,
             speaker_path,
+            **({"allow_styled_request": True} if request.get("creative_style") else {}),
         )
     except (RuntimeError, FileNotFoundError) as exc:
         raise ContentPlanResolutionError(
@@ -727,6 +735,28 @@ def validate_final_plan(
         )
 
 
+def pending_selection_snapshot(plan_root, context):
+    """Pinned contemporaneous selections, separate from communicated memory."""
+    if not context['request'].get('batch_admission_ref'):
+        return None, None
+    from content_intent_reservations_v1 import pending
+    from human_review_operations_v1 import io_path, read, write_once
+    from creative_style_v1 import artifact
+    request_path = Path(context['paths']['request'])
+    path = plan_root / 'pending_content_intents_v1.json'
+    if not io_path(path).is_file():
+        write_once(path, {'schema_version': 'pending-content-selection-snapshot-v1.0',
+            'business_id': context['request']['persona_id'], 'request_id': context['request']['request_id'],
+            'concepts': pending(request_path.parents[3], context['request']['persona_id'],
+                exclude_request_id=context['request']['request_id'])})
+    saved = read(path)
+    if (saved.get('schema_version') != 'pending-content-selection-snapshot-v1.0'
+            or saved.get('business_id') != context['request']['persona_id']
+            or saved.get('request_id') != context['request']['request_id'] or not isinstance(saved.get('concepts'), list)):
+        raise BatchError('CONTENT_RESERVATION_CONFLICT', 'Pending selection snapshot identity differs')
+    return saved['concepts'], artifact(path, 'native-content-quality-pending-selection', context['request']['request_id'], '1')
+
+
 def build_v1_1_and_v1_1_1(
     *,
     plan_root: Path,
@@ -769,6 +799,7 @@ def build_v1_1_and_v1_1_1(
     )
 
     v1_1_1_path = plan_root / "content_plan_v1_1_1.json"
+    pending_concepts, pending_ref = pending_selection_snapshot(plan_root, context)
     try:
         v1_1_1 = build_content_plan_v1_1_1(
             v1_1_plan=v1_1,
@@ -782,6 +813,7 @@ def build_v1_1_and_v1_1_1(
                 "generation_source_plan_v1": sha256_file(Path(context["paths"]["source_plan"])),
             },
             created_at=created_at,
+            pending_concepts=pending_concepts,
         )
     except Exception as exc:
         raise ContentPlanResolutionError(
@@ -789,6 +821,8 @@ def build_v1_1_and_v1_1_1(
             f"Frozen V1.1.1 closure failed: {exc}",
         ) from exc
     v1_1_1 = dict(v1_1_1)
+    if pending_ref is not None:
+        v1_1_1['pending_selection_ref'] = pending_ref
     v1_1_1["planning_runtime_contract"] = runtime_contract
     v1_1_1["source_remote_planning"] = {
         "source_content_plan_v1_sha256": sha256_file(v1_path),
@@ -800,6 +834,11 @@ def build_v1_1_and_v1_1_1(
         ),
         "model": (v1_plan.get("planning_call") or {}).get("model"),
     }
+    from content_intent_reservations_v1 import reserve_concepts
+    from creative_style_v1 import artifact
+    request_path = Path(context['paths']['request'])
+    reserve_concepts(request_path.parents[3], context['request']['persona_id'], context['request']['request_id'],
+        v1_1_1.get('selected_concepts') or [], artifact(v1_1_path, 'native-content-plan', context['request']['request_id'], '1.1'))
     v1_1_1, v1_1_1_recovered = write_or_validate_same(
         v1_1_1_path,
         v1_1_1,
@@ -879,6 +918,10 @@ def result_from_plans(
     }
 
 
+from profile_compatibility_consumers_v1_1 import guarded as compatibility_guarded
+
+
+@compatibility_guarded
 def resolve_generation_content_plan(
     *,
     pipeline_root: Path,
@@ -897,7 +940,8 @@ def resolve_generation_content_plan(
             "Generation Request persona_id is missing.",
         )
 
-    with _business_generation_lock(pipeline_root, business_id):
+    is_batch = bool(request.get('batch_admission_ref'))
+    with (nullcontext() if is_batch else _business_generation_lock(pipeline_root, business_id)):
         request_path, request, source_plan_path, source_plan = (
             load_request_and_source_plan(pipeline_root, request_id)
         )
@@ -929,9 +973,16 @@ def resolve_generation_content_plan(
         )
 
         plan_root = pipeline_root / "data" / "content_plans" / request_id
+        if is_batch:
+            from batch_provider_recovery_v1 import publication_fence
+            with publication_fence(pipeline_root, request, 'content_plan'):
+                selected_pending, _ = pending_selection_snapshot(plan_root, context)
+            context['pending_content_selection'] = selected_pending
         v1_path = plan_root / "content_plan_v1.json"
         remote_model_called = False
         v1_recovered = False
+        from batch_provider_recovery_v1 import dispatch_count
+        dispatched_before = dispatch_count(pipeline_root, request, 'content_plan')
 
         if v1_path.is_file():
             v1_plan = read_json(v1_path)
@@ -967,6 +1018,8 @@ def resolve_generation_content_plan(
                     transport=transport,
                     created_at=str(request.get("created_at") or ""),
                 )
+            except BatchError:
+                raise
             except Exception as exc:
                 raise ContentPlanResolutionError(
                     "CONTENT_PLAN_GENERATION_FAILED",
@@ -987,7 +1040,9 @@ def resolve_generation_content_plan(
                 runtime_contract=runtime_contract,
             )
             try:
-                write_new_json(v1_path, v1_plan)
+                from batch_provider_recovery_v1 import publication_fence
+                with publication_fence(pipeline_root, request, 'content_plan'):
+                    write_new_json(v1_path, v1_plan)
             except FileExistsError:
                 existing = read_json(v1_path)
                 if canonical_sha256(existing) != canonical_sha256(v1_plan):
@@ -998,24 +1053,16 @@ def resolve_generation_content_plan(
                 v1_plan = existing
                 v1_recovered = True
             else:
-                remote_model_called = True
+                remote_model_called = not is_batch or dispatch_count(pipeline_root, request, 'content_plan') > dispatched_before
 
-        (
-            v1_1_path,
-            v1_1_plan,
-            v1_1_recovered,
-            final_path,
-            final_plan,
-            final_recovered,
-        ) = build_v1_1_and_v1_1_1(
-            plan_root=plan_root,
-            v1_path=v1_path,
-            v1_plan=v1_plan,
-            context=context,
-            closure_memory=closure_memory,
-            runtime_contract=runtime_contract,
-            created_at=str(request.get("created_at") or ""),
-        )
+        from batch_provider_recovery_v1 import publication_fence
+        with publication_fence(pipeline_root, request, 'content_plan'):
+            (v1_1_path, v1_1_plan, v1_1_recovered, final_path, final_plan, final_recovered) = build_v1_1_and_v1_1_1(
+                plan_root=plan_root, v1_path=v1_path, v1_plan=v1_plan, context=context,
+                closure_memory=closure_memory, runtime_contract=runtime_contract,
+                created_at=str(request.get('created_at') or ''))
+            from batch_provider_recovery_v1 import record_native_result
+            record_native_result(pipeline_root, request, 'content_plan', final_path)
 
         return result_from_plans(
             v1_path=v1_path,
@@ -1050,7 +1097,7 @@ def main() -> None:
             pipeline_root=Path(args.pipeline_root),
             request_id=str(args.request_id).strip(),
         )
-    except ContentPlanResolutionError as exc:
+    except (ContentPlanResolutionError, CompatibilityError, __import__('creative_style_v1').CreativeStyleError, BatchError) as exc:
         print(
             json.dumps(
                 {"ok": False, "code": exc.code, "message": str(exc)},

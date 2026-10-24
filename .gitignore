@@ -10,5 +10,8 @@
 
 # Isolated verification logs, timings and short per-process temporary roots.
 /.verify/
+# Local development evidence, retained legacy directories and nested worktrees.
+/.local/
+/.worktrees/
 /**/__pycache__/
 /deploy/creative-authority/.pytest_cache/

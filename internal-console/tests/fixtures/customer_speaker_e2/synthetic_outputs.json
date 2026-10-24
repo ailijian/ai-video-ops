@@ -1,0 +1,37 @@
+{
+  "fixture_only": true,
+  "marker": "GOLDEN_CS_UAT_E1_RESTAURANT_V1",
+  "business": {
+    "model": "explicit-synthetic-golden-contract-only",
+    "facts": [
+      {"topic": "industry", "value": "餐饮", "evidence_quote": "我们提供地方菜堂食、商务聚餐与家庭聚会菜单，并承接小型主题晚餐。"},
+      {"topic": "primary_service", "value": ["地方菜堂食、商务聚餐与家庭聚会菜单", "小型主题晚餐"], "evidence_quote": "我们提供地方菜堂食、商务聚餐与家庭聚会菜单，并承接小型主题晚餐。"},
+      {"topic": "core_audience", "value": ["附近家庭在生日或团聚时安排家庭聚会，需要照顾老人和儿童的口味。"], "evidence_quote": "附近家庭在生日或团聚时安排家庭聚会，需要照顾老人和儿童的口味。"},
+      {"topic": "service_process", "value": ["聚餐菜单先确认人数、预算和忌口，再确认菜品及份量。"], "evidence_quote": "聚餐菜单先确认人数、预算和忌口，再确认菜品及份量。"}
+    ],
+    "constraints": [
+      {"constraint_type": "publication_prohibition", "scope": "claim", "evidence_quote": "不得使用“第一”“所有人都满意”“绝对最好”等无依据宣传。", "blocked_terms": ["第一", "所有人都满意", "绝对最好"], "affected_fields": [], "related_fact_refs": []},
+      {"constraint_type": "unverified_claim", "scope": "claim", "evidence_quote": "“城市餐饮奖”是否获奖及获奖主体尚未核实，不得作为已获奖事实宣传。", "blocked_terms": ["城市餐饮奖"], "affected_fields": [], "related_fact_refs": []},
+      {"constraint_type": "identity_conflict", "scope": "business", "evidence_quote": "示例合作餐厅与本品牌的名称关系需要核实，对外不能混用。", "blocked_terms": [], "affected_fields": [], "related_fact_refs": []},
+      {"constraint_type": "conditional_fact", "scope": "claim", "evidence_quote": "预约后确认菜单、人数与忌口，具体服务以当次确认为准。", "blocked_terms": ["菜单"], "affected_fields": [], "related_fact_refs": [], "condition": "具体服务以当次确认为准"}
+    ],
+    "source_coverage": [
+      {"capability_group": "business_identity", "evidence_quote": "我们提供地方菜堂食、商务聚餐与家庭聚会菜单，并承接小型主题晚餐。"},
+      {"capability_group": "customer_use_context", "evidence_quote": "附近家庭在生日或团聚时安排家庭聚会，需要照顾老人和儿童的口味。"},
+      {"capability_group": "production_bearing_facts", "evidence_quote": "聚餐菜单先确认人数、预算和忌口，再确认菜品及份量。"},
+      {"capability_group": "critical_constraints", "evidence_quote": "不得使用“第一”“所有人都满意”“绝对最好”等无依据宣传。"}
+    ]
+  },
+  "discovery": {
+    "model": "explicit-synthetic-golden-contract-only",
+    "speaker_candidates": [{"name": "示例负责人甲（虚构人物）", "public_role": "澄禾小馆创始人", "speaker_type_hint": "owner_founder", "candidate_status": "explicit_speaker", "evidence_quotes": ["姓名：示例负责人甲（虚构人物）", "和品牌的关系：澄禾小馆创始人"], "personal_material_quotes": ["我创立了本虚构餐厅，亲自安排过采购与试菜。", "我会解释为什么先确认人数和忌口。", "我只讲自己实际参与的工作，不把公司的全部成绩写成个人功劳。"], "explicit_forbidden_claims": []}]
+  },
+  "speaker": {
+    "model": "explicit-synthetic-golden-contract-only",
+    "facts": [
+      {"topic": "speaker_practice", "value": ["亲自安排采购与试菜"], "evidence_quote": "我创立了本虚构餐厅，亲自安排过采购与试菜。"},
+      {"topic": "speaker_allowed_topics", "value": ["本人如何确认人数和忌口"], "evidence_quote": "我会解释为什么先确认人数和忌口。"},
+      {"topic": "speaker_scope", "value": ["只讲本人实际参与的工作，不转用公司的全部成绩"], "evidence_quote": "我只讲自己实际参与的工作，不把公司的全部成绩写成个人功劳。"}
+    ]
+  }
+}

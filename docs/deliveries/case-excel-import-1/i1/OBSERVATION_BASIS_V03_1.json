@@ -1,0 +1,20 @@
+{
+  "version": "case-excel-observation-basis-v0.3.1",
+  "scope": "I1 normalization only; original input retained; no evidence-level upgrade",
+  "founder_excel_sha256": "d720aa257d90955a0c8209756b1d6d8da49a789d250e28cf716890ab21a8664f",
+  "source": "actual 案例清单 observation_basis dataValidation list",
+  "exact_dropdown": [
+    "本人已观看视频",
+    "未观看原视频",
+    "整理他人笔记",
+    "仅有文字资料",
+    "未知"
+  ],
+  "prose_aliases": {
+    "本人已观看": "本人已观看视频",
+    "仅链接未核对": "未观看原视频"
+  },
+  "unknown_alias_policy": "row error, preserve raw; ambiguous 整理资料 is not silently mapped to watched",
+  "original_template_modified": false,
+  "even_watched_declaration_is_not_verified_media_evidence": true
+}

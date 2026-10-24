@@ -1,0 +1,186 @@
+{
+  "sixteen_vectors": [
+    {
+      "id": "T01",
+      "actual_scope": "I1 preview only, no persistence/real media/provider",
+      "status": "EXECUTED_FOCUSED_TEST",
+      "expected": "CANDIDATE_ONLY"
+    },
+    {
+      "id": "T02",
+      "actual_scope": "I1 preview only, no persistence/real media/provider",
+      "status": "EXECUTED_FOCUSED_TEST",
+      "expected": "MANUAL_STRUCTURE_CANDIDATE"
+    },
+    {
+      "id": "T03",
+      "actual_scope": "I1 preview only, no persistence/real media/provider",
+      "status": "EXECUTED_FOCUSED_TEST",
+      "expected": "MANUAL_STRUCTURE_CANDIDATE"
+    },
+    {
+      "id": "T04",
+      "actual_scope": "I1 preview only, no persistence/real media/provider",
+      "status": "EXECUTED_FOCUSED_TEST",
+      "expected": "CANDIDATE_ONLY"
+    },
+    {
+      "id": "T05",
+      "actual_scope": "I1 preview only, no persistence/real media/provider",
+      "status": "EXECUTED_FOCUSED_TEST",
+      "expected": "CANDIDATE_ONLY"
+    },
+    {
+      "id": "T06",
+      "actual_scope": "I1 preview only, no persistence/real media/provider",
+      "status": "EXECUTED_FOCUSED_TEST",
+      "expected": "ROW_ERROR_OTHER_NOTE_REQUIRED"
+    },
+    {
+      "id": "T07",
+      "actual_scope": "I1 preview only, no persistence/real media/provider",
+      "status": "EXECUTED_FOCUSED_TEST",
+      "expected": "CANDIDATE_ONLY_UNCLASSIFIED"
+    },
+    {
+      "id": "T08",
+      "actual_scope": "I1 preview only, no persistence/real media/provider",
+      "status": "EXECUTED_FOCUSED_TEST",
+      "expected": "FLAG_HUMAN_COHERENCE"
+    },
+    {
+      "id": "T09",
+      "actual_scope": "I1 preview only, no persistence/real media/provider",
+      "status": "EXECUTED_FOCUSED_TEST",
+      "expected": "PENDING_EVIDENCE_NO_NATIVE_CASE"
+    },
+    {
+      "id": "T10",
+      "actual_scope": "I1 preview only, no persistence/real media/provider",
+      "status": "EXECUTED_FOCUSED_TEST",
+      "expected": "CANONICAL_SOURCE_DUPLICATE_T01"
+    },
+    {
+      "id": "T11",
+      "actual_scope": "I1 preview only, no persistence/real media/provider",
+      "status": "EXECUTED_FOCUSED_TEST",
+      "expected": "ROW_ERROR_MEDIA_BINDING_MISSING"
+    },
+    {
+      "id": "T12",
+      "actual_scope": "I1 preview only, no persistence/real media/provider",
+      "status": "EXECUTED_FOCUSED_TEST",
+      "expected": "ROW_ERROR_RESERVED_DEMO_KEY"
+    },
+    {
+      "id": "T13",
+      "actual_scope": "I1 preview only, no persistence/real media/provider",
+      "status": "EXECUTED_FOCUSED_TEST",
+      "expected": "ROW_ERROR_NONCONTIGUOUS_ORDER"
+    },
+    {
+      "id": "T14",
+      "actual_scope": "I1 preview only, no persistence/real media/provider",
+      "status": "EXECUTED_FOCUSED_TEST",
+      "expected": "PENDING_SOURCE_CONTRACT_AFTER_REAL_UPLOAD"
+    },
+    {
+      "id": "T15",
+      "actual_scope": "I1 preview only, no persistence/real media/provider",
+      "status": "EXECUTED_FOCUSED_TEST",
+      "expected": "CANDIDATE_WITH_UNKNOWN_RIGHTS"
+    },
+    {
+      "id": "T16",
+      "actual_scope": "I1 preview only, no persistence/real media/provider",
+      "status": "EXECUTED_FOCUSED_TEST",
+      "expected": "ROW_REVIEW_OR_ERROR_UNSUPPORTED_OBSERVATION"
+    }
+  ],
+  "additional_matrix": [
+    {
+      "id": "X01",
+      "scope": "Add nonempty rows to all five excluded sheets",
+      "status": "EXECUTED_I1_REPRESENTATIVE_MUTATIONS",
+      "limits": ""
+    },
+    {
+      "id": "X02",
+      "scope": "Swap H/I/J to V0.2 order, duplicate/missing/unknown keys",
+      "status": "EXECUTED_I1_REPRESENTATIVE_MUTATIONS",
+      "limits": ""
+    },
+    {
+      "id": "X03",
+      "scope": "Orphan segment/rights key; duplicate rights; duplicate segment order",
+      "status": "EXECUTED_I1_REPRESENTATIVE_MUTATIONS",
+      "limits": ""
+    },
+    {
+      "id": "X04",
+      "scope": "NaN/Inf/bool/negative time or end<=start or beyond real duration",
+      "status": "EXECUTED_I1_REPRESENTATIVE_MUTATIONS",
+      "limits": "no real duration verification; only declared hint consistency"
+    },
+    {
+      "id": "X05",
+      "scope": "Absolute/UNC/../device/ADS filename, duplicate basenames with different SHA",
+      "status": "EXECUTED_I1_REPRESENTATIVE_MUTATIONS",
+      "limits": "no real media upload/different-SHA receipt collision test"
+    },
+    {
+      "id": "X06",
+      "scope": "Formula/shared/array/DDE, macro renamed XLSX, external link/OLE/ActiveX",
+      "status": "EXECUTED_I1_REPRESENTATIVE_MUTATIONS",
+      "limits": ""
+    },
+    {
+      "id": "X07",
+      "scope": "CRC corruption, duplicate ZIP entry, ZIP slip/bomb/encryption, XML DTD/entity",
+      "status": "EXECUTED_I1_REPRESENTATIVE_MUTATIONS",
+      "limits": "representative CRC/duplicate/path/DTD/budget attacks; not every ZIP implementation variant"
+    },
+    {
+      "id": "X08",
+      "scope": "Missing B3/extra/hidden sheet or nonempty unsupported column",
+      "status": "EXECUTED_I1_REPRESENTATIVE_MUTATIONS",
+      "limits": ""
+    },
+    {
+      "id": "X09",
+      "scope": "No Session/invalid CSRF; upload as A/read as B; Reviewer revoke",
+      "status": "DEFERRED_I2_I3_NATIVE_CONSUMER_NOT_FEATURE_PASS",
+      "limits": ""
+    },
+    {
+      "id": "X10",
+      "scope": "Same Batch/Row/Intent lost response; changed payload same operation; crash between save/link",
+      "status": "DEFERRED_I2_I3_NATIVE_CONSUMER_NOT_FEATURE_PASS",
+      "limits": ""
+    },
+    {
+      "id": "X11",
+      "scope": "T01 legal + T11 invalid explicit partial save; cancel remaining; retry failed row",
+      "status": "DEFERRED_I2_I3_NATIVE_CONSUMER_NOT_FEATURE_PASS",
+      "limits": ""
+    },
+    {
+      "id": "X12",
+      "scope": "Candidate type confirmed by submitter; write old Approved Case/old Shared receipt",
+      "status": "DEFERRED_I2_I3_NATIVE_CONSUMER_NOT_FEATURE_PASS",
+      "limits": ""
+    },
+    {
+      "id": "X13",
+      "scope": "Try publish imported text or arbitrary notes as ASR/Frame/Shot/Proof",
+      "status": "DEFERRED_I2_I3_NATIVE_CONSUMER_NOT_FEATURE_PASS",
+      "limits": ""
+    },
+    {
+      "id": "X14",
+      "scope": "Import Cases then re-run current News preview without Business/Release changes",
+      "status": "DEFERRED_I2_I3_NATIVE_CONSUMER_NOT_FEATURE_PASS",
+      "limits": "I1 does not import Cases; original current UAT still1/0, no claim of Native import test"
+    }
+  ]
+}

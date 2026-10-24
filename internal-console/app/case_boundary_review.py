@@ -36,6 +36,10 @@ def _paths(settings: Settings, task: dict[str, Any]) -> tuple[Path, Path, Path]:
 def pending_boundary_review(settings: Settings, task: dict[str, Any]) -> dict[str, Any] | None:
     if task.get("task_type") != "case_analysis" or task.get("status") != "failed":
         return None
+    # A Human Revision has its own build execution and Coverage owner. Its
+    # task ID is not an original analysis Attempt root, even after failure.
+    if "evidence_revision" in (task.get("payload") or {}):
+        return None
     state_path, shots_path, _ = _paths(settings, task)
     if not state_path.is_file() or not shots_path.is_file():
         return None

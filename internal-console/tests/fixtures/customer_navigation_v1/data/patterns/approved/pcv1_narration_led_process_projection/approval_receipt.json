@@ -1,0 +1,15 @@
+{
+  "schema_version": "pattern-approval-receipt-v1.0",
+  "pattern_id": "pcv1_narration_led_process_projection",
+  "fixture_only": true,
+  "human_gate": true,
+  "reviewer": "fictional-reference-reviewer",
+  "decision": "approved_fixture_reference",
+  "approved_pattern": {
+    "path": "data/patterns/approved/pcv1_narration_led_process_projection/pattern_v1.json",
+    "sha256": "de2c716e04c52341419c3ddae62e65ec9e14ace0878f48e6abc8be8920a38639"
+  },
+  "compatible_profiles": [
+    "mix"
+  ]
+}

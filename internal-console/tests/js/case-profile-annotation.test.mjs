@@ -8,13 +8,15 @@ const legacy = {
   approved_case_sha256: "a".repeat(64), profile_annotation_sha256: null,
 };
 const pill = () => "已入库";
-assert.match(caseCard(legacy, pill), /行业：待分类/);
-assert.match(caseCard({ ...legacy, industry: "本地生活" }, pill), /行业：本地生活/);
+assert.match(caseCard(legacy, pill), />待分类</);
+assert.match(caseCard({ ...legacy, industry: "本地生活" }, pill), />本地生活</);
 assert.doesNotMatch(caseCard(legacy, pill), /提交标记：|人工标签：/);
 assert.match(caseReviewContent(legacy, pill), /补充结构类型/);
 for (const [hint, label] of Object.entries({ mix: "混剪型", news: "新闻体", hybrid: "混合型", uncertain: "不确定" })) {
   const annotated = { ...legacy, profile_annotation: { operator_profile_hint: hint }, observed_source_profile: "mix" };
-  for (const render of [caseCard, caseReviewContent]) {
+  assert.match(caseCard(annotated,pill),/视频类型暂未标注/);
+  assert.doesNotMatch(caseCard(annotated,pill),/系统观察：|人工标签：|提交标记：/);
+  for (const render of [caseReviewContent]) {
     const html = render(annotated, pill);
     assert.ok(html.includes(`人工标签：${label}`));
     assert.match(html, /系统观察：混剪型/);
@@ -36,10 +38,12 @@ globalThis.document = {
 const calls = [];
 let current = legacy;
 let decision = { confirmed: false };
-const app = { innerHTML: "", querySelectorAll: () => [] };
+globalThis.location={pathname:`/cases/${legacy.case_id}`,search:""};
+const app = { innerHTML: "", querySelector:()=>null, querySelectorAll: () => [] };
 const views = createCaseViews({
   app,
   api: async (url, options) => {
+    if(url.startsWith("/api/review-commands/")) return {operations:[]};
     calls.push({ url, options });
     if (options?.method === "POST") {
       const request = JSON.parse(options.body);

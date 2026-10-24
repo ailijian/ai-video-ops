@@ -1,0 +1,6 @@
+{
+  "json_parse": "PASS",
+  "local_refs_and_strict_object_keys": "PASS",
+  "external_full_JSON_Schema_validator": "NOT_RUN_NOT_INSTALLED",
+  "native_consumer_executed": false
+}

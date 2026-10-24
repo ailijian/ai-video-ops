@@ -16,6 +16,7 @@ import copy
 import json
 import os
 import re
+from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Callable
 
@@ -40,6 +41,7 @@ from generate_mix_scripts_v1 import (
     write_review_pack_for_existing_batch,
 )
 from generation_request_handoff_v1 import _business_generation_lock
+import generation_recovery_v1 as recovery
 
 
 FINAL_CONTENT_PLAN_SCHEMA = "content-plan-v1.1.1"
@@ -936,6 +938,11 @@ def augment_and_validate_batch(
             "content_ledger_unchanged": True,
         }
     )
+    from creative_style_v1 import bind_batch
+    bind_batch(batch, request, context["persona"], context.get("speaker_persona"), selected)
+    subset = recovery.accepted_subset(batch, selected_ids)
+    if subset is not None:
+        batch['accepted_subset'] = subset
     return batch
 
 
@@ -949,6 +956,8 @@ def validate_existing_batch(
     projection: dict[str, Any],
     closure_memory: dict[str, Any],
 ) -> None:
+    from creative_style_v1 import validate_batch
+    validate_batch(batch)
     if batch.get("schema_version") != GENERATION_BATCH_SCHEMA_VERSION:
         raise GenerationBatchResolutionError(
             "GENERATION_BATCH_SCHEMA_INVALID",
@@ -995,6 +1004,8 @@ def validate_existing_batch(
             "GENERATION_BATCH_CONCEPT_SUBSTITUTION",
             "Existing Generation Batch duplicates a selected Concept.",
         )
+    if batch.get('accepted_subset') is not None:
+        recovery.ready_for_review(batch, selected_ids)
 
     atom_validation = validate_material_center_preservation(
         batch=batch,
@@ -1027,6 +1038,10 @@ def candidate_cache_path(
     )
 
 
+from profile_compatibility_consumers_v1_1 import guarded as compatibility_guarded
+
+
+@compatibility_guarded
 def persist_candidate_batch(
     *,
     path: Path,
@@ -1057,7 +1072,10 @@ def persist_candidate_batch(
             )
         return
     try:
-        write_new_json(path, artifact)
+        if path.name == 'candidate.json':
+            recovery.write_once(path, artifact)
+        else:
+            write_new_json(path, artifact)
     except FileExistsError:
         existing = read_json(path)
         if canonical_sha256(existing) != canonical_sha256(artifact):
@@ -1115,11 +1133,7 @@ def result_from_batch(
         str(item.get("concept_ref") or "") for item in batch.get("contents") or []
     ]
     attempts = list(batch.get("generation_attempts") or [])
-    ready = (
-        batch.get("status") == "review_required"
-        and generated_ids == selected_concept_ids
-        and batch.get("validation", {}).get("material_centers_preserved") is True
-    )
+    ready = recovery.ready_for_review(batch, selected_concept_ids)
     return {
         "ok": True,
         "request_id": batch.get("request_id"),
@@ -1147,6 +1161,402 @@ def result_from_batch(
     }
 
 
+def generation_snapshot(pipeline_root: Path, request_id: str, *, _partial_human_admission=False) -> dict[str, Any]:
+    """Read-only native readiness. Artifact presence never grants review permission."""
+    root = Path(pipeline_root).resolve()
+    state = recovery.graph(root, request_id)
+    path = state['batch']
+    present = path.is_file()
+    batch = read_json(path) if present else {}
+    if present and (batch.get('schema_version') != GENERATION_BATCH_SCHEMA_VERSION or batch.get('request_id') != request_id):
+        raise GenerationBatchResolutionError('GENERATION_BATCH_SCHEMA_INVALID', 'Invalid Generation Batch identity')
+    ids = [str(x.get('concept_ref') or '') for x in batch.get('contents') or []]
+    contract = batch.get('script_generation_contract') or {}
+    selected = contract.get('selected_concept_ids') or []
+    ready = bool(present and recovery.ready_for_review(batch, selected))
+    execution_completed = ready
+    generation_completed = ready and batch.get('validation', {}).get('passed') is True
+    if ready:
+        final = root / 'data/content_plans' / request_id / 'content_plan_v1_1_1.json'
+        final_ref = contract.get('final_content_plan_ref') or {}
+        if not final.is_file() or final_ref.get('sha256') != sha256_file(final):
+            raise GenerationBatchResolutionError('GENERATION_BATCH_LINEAGE_MISMATCH', 'Final plan identity changed')
+        if [str(x.get('concept_id') or '') for x in read_json(final).get('selected_concepts') or []] != selected:
+            raise GenerationBatchResolutionError('GENERATION_BATCH_CONCEPT_SUBSTITUTION', 'Final selection changed')
+        # Recheck exact historical source files, without substituting today's memory
+        # for the frozen snapshot after a legitimate export has appended the Ledger.
+        def lineage_refs(value):
+            if isinstance(value, dict):
+                expected = value.get('sha256') or value.get('file_sha256')
+                if value.get('path') and expected:
+                    yield value['path'], expected
+                for child in value.values():
+                    yield from lineage_refs(child)
+            elif isinstance(value, list):
+                for child in value:
+                    yield from lineage_refs(child)
+        for name, expected in lineage_refs(batch.get('lineage') or {}):
+            source = Path(name).resolve()
+            if not source.is_relative_to(root) or not source.is_file() or sha256_file(source) != expected:
+                raise GenerationBatchResolutionError('GENERATION_BATCH_LINEAGE_MISMATCH', 'Generation source SHA changed')
+        receipt_path = recovery.request_root(root, request_id) / 'generation_batch_approval_receipt.json'
+        review_path = recovery.request_root(root, request_id) / 'generation_human_review_v2.json'
+        partial_human = review_path.is_file() and not receipt_path.is_file()
+        if partial_human:
+            # Only native Human recovery may use this source for a write. The
+            # ordinary Reader never treats a half Human bundle as approval or
+            # re-enters planning memory through incomplete Approved history.
+            human = read_json(review_path)
+            if (human.get('schema_version') != 'generation-batch-review-v2.0' or
+                    human.get('request_id') != request_id or human.get('batch_sha256') != sha256_file(path)):
+                raise GenerationBatchResolutionError('GENERATION_BATCH_LINEAGE_MISMATCH', 'Partial Human review binds another source')
+            if not _partial_human_admission:
+                ready = False
+        elif not receipt_path.is_file():
+            inputs = generation_inputs(root, request_id)
+            validate_existing_batch(batch=batch, batch_path=path, request=inputs['request'],
+                final_plan_path=inputs['final_plan_path'], final_plan=inputs['final_plan'],
+                projection=inputs['projection'], closure_memory=inputs['closure_memory'])
+        else:
+            approved_source = read_json(receipt_path).get('source_batch') or {}
+            if Path(approved_source.get('path') or '').resolve() != path.resolve() or approved_source.get('sha256') != sha256_file(path):
+                raise GenerationBatchResolutionError('GENERATION_BATCH_LINEAGE_MISMATCH', 'Human history does not bind this Batch')
+    pending = state['pending']
+    terminal = state['result']
+    if pending:
+        ready = False
+        execution_completed = False
+        generation_completed = False
+    recovery_state = ('human_receipt_pending' if present and (recovery.request_root(root, request_id) / 'generation_human_review_v2.json').is_file() and not (recovery.request_root(root, request_id) / 'generation_batch_approval_receipt.json').is_file() else 'pending' if pending else ('review_required' if ready else
+        ((terminal or {}).get('outcome') or ('retry_available' if present and recovery.transport_failure(batch) else 'not_generated' if not present else 'blocked'))))
+    review_path = path.parent / 'generation_review_pack_v1.md'
+    recover_artifacts = ready and not review_path.is_file()
+    if recover_artifacts:
+        ready = False
+        recovery_state = 'review_pack_missing'
+    if not review_path.is_file():
+        generation_completed = False
+        execution_completed = False
+    try:
+        recovery.require_unreviewed(root, request_id)
+        retry_available = bool(present and recovery.transport_failure(read_json(state['anchor'])) and not ready)
+    except recovery.RecoveryError:
+        retry_available = False
+    return {'reader_version': recovery.READER, 'artifact_present': present,
+        # Source/graph checks above establish a persisted machine result. A
+        # partial Human bundle suppresses review admission, never the already
+        # completed execution or its explicit unfilled quantity.
+        'execution_completed':execution_completed,
+        'generation_completed':generation_completed,
+        'ready_for_human_review': ready, 'recovery_state': recovery_state,
+        'batch_ref': recovery.ref(root, path) if present else None,
+        'head_ref': state['head_ref'],
+        'review_pack_ref': recovery.ref(root, review_path) if review_path.is_file() else None,
+        'pending_operation_id': pending['operation_id'] if pending else None,
+        'pending_intent_sha256': recovery.file_sha(recovery.operation_root(root, request_id, pending['operation_id']) / 'intent.json') if pending else None,
+        'can_retry': retry_available,
+        'can_recover_artifacts': recover_artifacts,
+        'batch': batch}
+
+
+def generation_inputs(pipeline_root: Path, request_id: str):
+    request_path, request, source_plan_path, source_plan = (
+        content_plan_runtime.read_request_and_source_plan(
+            pipeline_root,
+            request_id,
+        )
+    )
+    if request.get('lifecycle', {}).get('status') != 'created':
+        raise GenerationBatchResolutionError('CONTENT_PLANNING_LIFECYCLE_CLOSED', 'Request lifecycle does not admit generation')
+    quality_contract, quality_contract_source = (
+        content_plan_runtime.content_quality_contract(request)
+    )
+    base_memory, content_memory_source = (
+        content_plan_runtime.resolve_base_planning_memory(
+            pipeline_root,
+            request,
+        )
+    )
+    context = content_plan_runtime.build_context(
+        pipeline_root=pipeline_root,
+        request_path=request_path,
+        request=request,
+        source_plan_path=source_plan_path,
+        source_plan=source_plan,
+        quality_contract=quality_contract,
+    )
+    runtime_contract = content_plan_runtime.build_runtime_contract(
+        request_path=request_path,
+        source_plan_path=source_plan_path,
+        base_planning_memory=base_memory,
+        content_memory_source=content_memory_source,
+        quality_contract=quality_contract,
+        quality_contract_source=quality_contract_source,
+    )
+    closure_memory = content_plan_runtime.build_closure_memory(
+        base_memory=base_memory,
+        context=context,
+        content_memory_source=content_memory_source,
+    )
+
+    (
+        v1_path,
+        v1_plan,
+        v1_1_path,
+        _v1_1_plan,
+        final_plan_path,
+        final_plan,
+    ) = load_and_validate_final_content_plan(
+        pipeline_root=pipeline_root,
+        request_id=request_id,
+        request=request,
+        context=context,
+        closure_memory=closure_memory,
+        runtime_contract=runtime_contract,
+    )
+
+    from creative_style_v1 import validate_concept
+    for concept in final_plan.get("selected_concepts") or []:
+        validate_concept(request, concept, context.get("speaker_persona"), context.get("persona"))
+    projection = build_generation_content_plan_projection(
+        context=context,
+        source_plan=source_plan,
+        v1_plan=v1_plan,
+        final_plan=final_plan,
+        final_plan_path=final_plan_path,
+        closure_memory=closure_memory,
+        runtime_contract=runtime_contract,
+    )
+    selected_concept_ids = [
+        str(item.get("concept_id") or "")
+        for item in projection.get("selected_concepts") or []
+    ]
+
+    return locals()
+
+
+def recovery_bindings(root, inputs):
+    from show_customer_status_v1 import resolve_current_persona, resolve_speaker_persona
+    business = resolve_current_persona(root, inputs['request']['persona_id'], 'business')
+    speaker_id = inputs['request'].get('speaker_persona')
+    speaker = resolve_speaker_persona(root, business, speaker_id) if speaker_id else None
+    lineage = inputs['request'].get('lineage') or {}
+    if (business['file_sha256'] != (lineage.get('business_persona_ref') or {}).get('file_sha256')
+            or (speaker and speaker['file_sha256'] != (lineage.get('speaker_persona_ref') or {}).get('file_sha256'))):
+        raise recovery.RecoveryError('GENERATION_RECOVERY_SOURCE_CHANGED', 'Request does not bind the current approved Business/Speaker')
+    ledger = root / 'data/content_ledgers' / inputs['request']['persona_id'] / 'content_ledger_v1.json'
+    def snapshot_value(value):
+        if isinstance(value, Path):
+            return str(value.resolve())
+        if isinstance(value, dict):
+            return {key: snapshot_value(item) for key, item in value.items()}
+        if isinstance(value, (list, tuple)):
+            return [snapshot_value(item) for item in value]
+        if isinstance(value, set):
+            return sorted(snapshot_value(item) for item in value)
+        return value
+    return {'request_ref': recovery.ref(root, inputs['request_path']),
+        'source_plan_ref': recovery.ref(root, inputs['source_plan_path']),
+        'final_plan_ref': recovery.ref(root, inputs['final_plan_path']),
+        'generation_projection_sha256': canonical_sha256(inputs['projection']),
+        'content_memory_sha256': canonical_sha256(inputs['closure_memory']),
+        'source_context_sha256': canonical_sha256(snapshot_value(inputs['context'])),
+        'current_authority_sha256': canonical_sha256({'business': business['file_sha256'],
+            'speaker': speaker['file_sha256'] if speaker else None,
+            'constraints': business.get('production_constraints')}),
+        'live_content_ledger_ref': recovery.ref(root, ledger) if ledger.is_file() else None,
+        'selected_concept_ids': inputs['selected_concept_ids'],
+        'compatibility_binding_sha256': canonical_sha256(inputs['source_plan'].get('profile_compatibility_v1_1'))}
+
+
+def require_retry_scope(root, request_id, state, inputs):
+    recovery.require_unreviewed(root, request_id)
+    if not recovery.transport_failure(read_json(state['anchor'])):
+        raise recovery.RecoveryError('GENERATION_RECOVERY_SCOPE_UNSUPPORTED', 'Only zero-output transport failure may retry')
+    validate_existing_batch(batch=read_json(state['anchor']), batch_path=state['anchor'],
+        request=inputs['request'], final_plan_path=inputs['final_plan_path'], final_plan=inputs['final_plan'],
+        projection=inputs['projection'], closure_memory=inputs['closure_memory'])
+    if state['result'] and state['result']['outcome'] == 'review_required':
+        raise recovery.RecoveryError('GENERATION_RECOVERY_SCOPE_UNSUPPORTED', 'Successful generation cannot be replaced')
+
+
+@compatibility_guarded
+def preview_generation_recovery(*, pipeline_root, request_id, operation_id, actor, database_path, session_fingerprint):
+    root = Path(pipeline_root).resolve()
+    request = content_plan_runtime.read_request_and_source_plan(root, request_id)[1]
+    with _business_generation_lock(root, request['persona_id']):
+        state = recovery.graph(root, request_id)
+        inputs = generation_inputs(root, request_id)
+        require_retry_scope(root, request_id, state, inputs)
+        if state['pending']:
+            raise recovery.RecoveryError('GENERATION_RECOVERY_PENDING', 'Resume pending operation before a new retry')
+        proof = recovery.authorization(database_path, actor, session_fingerprint)
+        intent = {'schema_version': recovery.INTENT, 'request_id': request_id, 'operation_id': operation_id,
+            'parent_ref': state['head_ref'], 'anchor_ref': recovery.ref(root, state['anchor']),
+            'bindings': recovery_bindings(root, inputs), 'actor': actor, 'authorization': proof,
+            'authorization_context_digest': recovery.digest({'actor': actor, 'authorization': proof})}
+        # Preview is outside the effective attempt graph and grants no execution.
+        preview = root / 'data/generation_recovery_previews' / request_id / operation_id / 'intent.json'
+        recovery.operation_root(root, request_id, operation_id)  # validate identifiers first
+        recovery.publish(preview, intent, recovery.INTENT)
+        return {'operation_id': operation_id, 'preview_sha256': recovery.file_sha(preview), 'reader_version': recovery.READER}
+
+
+@compatibility_guarded
+def confirm_generation_recovery(*, pipeline_root, request_id, operation_id, preview_sha256, actor):
+    root = Path(pipeline_root).resolve()
+    directory = recovery.operation_root(root, request_id, operation_id)
+    preview = root / 'data/generation_recovery_previews' / request_id / operation_id / 'intent.json'
+    intent = recovery.check(recovery.read(preview), recovery.INTENT)
+    if recovery.file_sha(preview) != preview_sha256 or intent['actor'] != actor:
+        raise recovery.RecoveryError('GENERATION_RECOVERY_CONFLICT', 'Preview or caller does not match')
+    request = content_plan_runtime.read_request_and_source_plan(root, request_id)[1]
+    with _business_generation_lock(root, request['persona_id']):
+        state = recovery.graph(root, request_id)
+        if (directory / 'intent.json').exists():
+            if recovery.read(directory / 'intent.json') != intent:
+                raise recovery.RecoveryError('GENERATION_RECOVERY_CONFLICT', 'Conflicting operation payload')
+            # Exact delivery replay grants no new execution authority. The
+            # original worker independently rechecks the frozen authorization
+            # and sources, including a deny-only continuation after revocation.
+            return recovery.ref(root, directory / 'intent.json')
+        recovery.verify_authorization(intent)
+        current = recovery_bindings(root, generation_inputs(root, request_id))
+        if intent['bindings'] != current:
+            raise recovery.RecoveryError('GENERATION_RECOVERY_SOURCE_CHANGED', 'Sources changed after preview')
+        require_retry_scope(root, request_id, state, generation_inputs(root, request_id))
+        if state['pending'] or intent['parent_ref'] != state['head_ref']:
+            raise recovery.RecoveryError('GENERATION_RECOVERY_CONFLICT', 'Recovery parent changed')
+        recovery.publish(directory / 'intent.json', intent, recovery.INTENT)
+        return recovery.ref(root, directory / 'intent.json')
+
+
+def execute_generation_recovery(root, request_id, operation_id, intent_sha256, inputs, transport, model, max_attempts):
+    from contextlib import contextmanager
+    is_batch = bool(inputs['request'].get('batch_admission_ref'))
+    @contextmanager
+    def local_fence(*, recheck=True):
+        if not is_batch:
+            yield
+            return
+        from novel_news_generation_recovery_v1 import mutation_fence
+        from batch_provider_recovery_v1 import assert_current
+        with mutation_fence(root), _business_generation_lock(root, inputs['request']['persona_id']):
+            if recheck:
+                assert_current(root, inputs['request'], 'script_generation')
+                recovery.verify_authorization(intent)
+                if intent['bindings'] != recovery_bindings(root, generation_inputs(root, request_id)):
+                    raise recovery.RecoveryError('GENERATION_RECOVERY_SOURCE_CHANGED', 'Native retry source changed before local mutation')
+            yield
+    directory = recovery.operation_root(root, request_id, operation_id)
+    intent_path = directory / 'intent.json'
+    intent = recovery.check(recovery.read(intent_path), recovery.INTENT)
+    if recovery.file_sha(intent_path) != intent_sha256:
+        raise recovery.RecoveryError('GENERATION_RECOVERY_CONFLICT', 'Intent identity mismatch')
+    state = recovery.graph(root, request_id)
+    if intent['bindings'] != recovery_bindings(root, inputs):
+        raise recovery.RecoveryError('GENERATION_RECOVERY_SOURCE_CHANGED', 'Frozen generation inputs changed')
+    result_path = directory / 'result.json'
+    if result_path.is_file():
+        result = recovery.check(recovery.read(result_path), recovery.RESULT)
+        if result['outcome'] != 'review_required':
+            raise recovery.RecoveryError('GENERATION_RECOVERY_OUTCOME_UNKNOWN' if result['outcome'] == 'outcome_unknown' else 'GENERATION_BATCH_NOT_REVIEWABLE', result['outcome'])
+        path = recovery.resolve_ref(root, result['batch_ref'])
+        return result_from_batch(batch_path=path, review_path=recovery.resolve_ref(root, result['review_pack_ref']),
+            batch=read_json(path), selected_concept_ids=inputs['selected_concept_ids'], recovered=True, remote_model_called=False)
+    if not state['pending'] or state['pending'] != intent:
+        raise recovery.RecoveryError('GENERATION_RECOVERY_GRAPH_INVALID', 'Operation is not the pending head')
+    require_retry_scope(root, request_id, state, inputs)
+    candidate_path = directory / 'candidate.json'
+    batch_path, review_path = directory / 'generation_batch_v1.json', directory / 'generation_review_pack_v1.md'
+    dispatch = directory / 'dispatch.json'
+
+    def finish(outcome, ready):
+        record = {'schema_version': recovery.RESULT, 'intent_ref': recovery.ref(root, intent_path),
+            'parent_ref': intent['parent_ref'], 'outcome': outcome,
+            'candidate_ref': recovery.ref(root, candidate_path) if candidate_path.is_file() else None,
+            'batch_ref': recovery.ref(root, batch_path) if batch_path.is_file() else None,
+            'review_pack_ref': recovery.ref(root, review_path) if review_path.is_file() else None,
+            'validation': {'ready_for_human_review': ready}}
+        with local_fence(recheck=outcome in ('review_required', 'transport_failed')):
+            recovery.publish(result_path, record, recovery.RESULT)
+
+    try:
+        recovery.verify_authorization(intent)
+    except recovery.RecoveryError:
+        finish('blocked', False)
+        raise
+    candidate = load_candidate_batch(path=candidate_path, request_id=request_id,
+        final_plan_path=inputs['final_plan_path'], projection=inputs['projection'], closure_memory=inputs['closure_memory'])
+    remote_called = False
+    if candidate is None and not batch_path.is_file():
+        if dispatch.is_file():
+            recovery.check(recovery.read(dispatch), recovery.DISPATCH)
+            if recovery.read(dispatch)['intent_ref'] != recovery.ref(root, intent_path):
+                raise recovery.RecoveryError('GENERATION_RECOVERY_GRAPH_INVALID', 'Dispatch intent mismatch')
+            from batch_provider_recovery_v1 import effective_phase
+            saved_response = is_batch and bool(list(effective_phase(root, inputs['request'], 'script_generation').glob('*/response.json')))
+            if not saved_response:
+                finish('outcome_unknown', False)
+                raise recovery.RecoveryError('GENERATION_RECOVERY_OUTCOME_UNKNOWN', 'External outcome is unknown; no automatic call was made')
+        runtime_model = model
+        if transport is None:
+            api_key, env_model = load_deepseek_runtime_config()
+            os.environ['DEEPSEEK_API_KEY'], os.environ['DEEPSEEK_MODEL'] = api_key, env_model
+            runtime_model = model or env_model
+        with local_fence():
+            recovery.publish(dispatch, {'schema_version': recovery.DISPATCH, 'intent_ref': recovery.ref(root, intent_path)}, recovery.DISPATCH)
+        from batch_provider_recovery_v1 import dispatch_count
+        before = dispatch_count(root, inputs['request'], 'script_generation')
+        candidate = generate_batch(inputs['context'], model=runtime_model or 'explicit-transport-model', max_attempts=max_attempts, transport=transport,
+            content_plan=inputs['projection'], content_ledger=inputs['closure_memory'],
+            **({'native_style_mode':True} if inputs['request'].get('creative_style') else {}))
+        with local_fence():
+            persist_candidate_batch(path=candidate_path, request_id=request_id, final_plan_path=inputs['final_plan_path'],
+                projection=inputs['projection'], closure_memory=inputs['closure_memory'], batch=candidate)
+        remote_called = not is_batch or dispatch_count(root, inputs['request'], 'script_generation') > before
+    if not batch_path.is_file():
+        batch = augment_and_validate_batch(batch=candidate, context=inputs['context'], request=inputs['request'],
+            final_plan_path=inputs['final_plan_path'], final_plan=inputs['final_plan'], projection=inputs['projection'],
+            closure_memory=inputs['closure_memory'], v1_path=inputs['v1_path'], v1_1_path=inputs['v1_1_path'])
+        batch['generation_recovery_v1'] = {'reader_version': recovery.READER, 'intent_ref': recovery.ref(root, intent_path)}
+        with local_fence():
+            recovery.write_once(batch_path, batch)
+    batch = read_json(batch_path)
+    validate_existing_batch(batch=batch, batch_path=batch_path, request=inputs['request'],
+        final_plan_path=inputs['final_plan_path'], final_plan=inputs['final_plan'],
+        projection=inputs['projection'], closure_memory=inputs['closure_memory'])
+    from generate_mix_scripts_v1 import render_review_pack
+    with local_fence():
+        recovery.publish_text(review_path, render_review_pack(batch, recovery.file_sha(batch_path)))
+    result = result_from_batch(batch_path=batch_path, review_path=review_path, batch=batch,
+        selected_concept_ids=inputs['selected_concept_ids'], recovered=False, remote_model_called=remote_called)
+    try:
+        recovery.verify_authorization(intent)
+    except recovery.RecoveryError:
+        finish('blocked', False)
+        raise
+    # Re-read current inputs before publication; never activate a stale source result.
+    try:
+        unchanged = intent['bindings'] == recovery_bindings(root, generation_inputs(root, request_id))
+    except (RuntimeError, ValueError, OSError) as exc:
+        finish('blocked', False)
+        raise recovery.RecoveryError('GENERATION_RECOVERY_SOURCE_CHANGED', 'Sources could not be revalidated before publication') from exc
+    if not unchanged:
+        finish('blocked', False)
+        raise recovery.RecoveryError('GENERATION_RECOVERY_SOURCE_CHANGED', 'Sources changed before publication')
+    if not result['ready_for_human_review'] and not recovery.transport_failure(batch):
+        finish('blocked', False)
+        raise recovery.RecoveryError('GENERATION_RECOVERY_SCOPE_UNSUPPORTED', 'Retry output needs unsupported recovery')
+    if is_batch:
+        from batch_provider_recovery_v1 import record_native_result
+        with local_fence():
+            record_native_result(root, inputs['request'], 'script_generation', batch_path)
+    finish('review_required' if result['ready_for_human_review'] else 'transport_failed', result['ready_for_human_review'])
+    return result
+
+
+@compatibility_guarded
 def resolve_generation_batch(
     *,
     pipeline_root: Path,
@@ -1154,8 +1564,12 @@ def resolve_generation_batch(
     transport: Callable[[str], dict[str, Any]] | None = None,
     model: str | None = None,
     max_attempts: int = 3,
+    operation_id: str | None = None,
+    intent_sha256: str | None = None,
 ) -> dict[str, Any]:
     pipeline_root = pipeline_root.expanduser().resolve()
+    if bool(operation_id) != bool(intent_sha256):
+        raise recovery.RecoveryError('GENERATION_RECOVERY_SCHEMA_INVALID', 'Operation and immutable intent SHA must be supplied together')
     if max_attempts < 1 or max_attempts > 3:
         raise GenerationBatchResolutionError(
             "SCRIPT_GENERATION_ATTEMPTS_INVALID",
@@ -1163,7 +1577,7 @@ def resolve_generation_batch(
         )
 
     request_path, request, source_plan_path, source_plan = (
-        content_plan_runtime.load_request_and_source_plan(
+        content_plan_runtime.read_request_and_source_plan(
             pipeline_root,
             request_id,
         )
@@ -1180,77 +1594,34 @@ def resolve_generation_batch(
             "Generation Request persona_id is missing.",
         )
 
-    with _business_generation_lock(pipeline_root, business_id):
-        request_path, request, source_plan_path, source_plan = (
-            content_plan_runtime.load_request_and_source_plan(
-                pipeline_root,
-                request_id,
-            )
-        )
-        quality_contract, quality_contract_source = (
-            content_plan_runtime.content_quality_contract(request)
-        )
-        base_memory, content_memory_source = (
-            content_plan_runtime.resolve_base_planning_memory(
-                pipeline_root,
-                request,
-            )
-        )
-        context = content_plan_runtime.build_context(
-            pipeline_root=pipeline_root,
-            request_path=request_path,
-            request=request,
-            source_plan_path=source_plan_path,
-            source_plan=source_plan,
-            quality_contract=quality_contract,
-        )
-        runtime_contract = content_plan_runtime.build_runtime_contract(
-            request_path=request_path,
-            source_plan_path=source_plan_path,
-            base_planning_memory=base_memory,
-            content_memory_source=content_memory_source,
-            quality_contract=quality_contract,
-            quality_contract_source=quality_contract_source,
-        )
-        closure_memory = content_plan_runtime.build_closure_memory(
-            base_memory=base_memory,
-            context=context,
-            content_memory_source=content_memory_source,
-        )
-
-        (
-            v1_path,
-            v1_plan,
-            v1_1_path,
-            _v1_1_plan,
-            final_plan_path,
-            final_plan,
-        ) = load_and_validate_final_content_plan(
-            pipeline_root=pipeline_root,
-            request_id=request_id,
-            request=request,
-            context=context,
-            closure_memory=closure_memory,
-            runtime_contract=runtime_contract,
-        )
-
-        projection = build_generation_content_plan_projection(
-            context=context,
-            source_plan=source_plan,
-            v1_plan=v1_plan,
-            final_plan=final_plan,
-            final_plan_path=final_plan_path,
-            closure_memory=closure_memory,
-            runtime_contract=runtime_contract,
-        )
-        selected_concept_ids = [
-            str(item.get("concept_id") or "")
-            for item in projection.get("selected_concepts") or []
-        ]
+    is_batch = bool(request.get('batch_admission_ref'))
+    with (nullcontext() if is_batch else _business_generation_lock(pipeline_root, business_id)):
+        inputs = generation_inputs(pipeline_root, request_id)
+        if operation_id:
+            return execute_generation_recovery(pipeline_root, request_id, operation_id, intent_sha256,
+                inputs, transport, model, max_attempts)
+        request_path = inputs["request_path"]
+        request = inputs["request"]
+        source_plan_path = inputs["source_plan_path"]
+        source_plan = inputs["source_plan"]
+        context = inputs["context"]
+        runtime_contract = inputs["runtime_contract"]
+        closure_memory = inputs["closure_memory"]
+        v1_path = inputs["v1_path"]
+        v1_plan = inputs["v1_plan"]
+        v1_1_path = inputs["v1_1_path"]
+        final_plan_path = inputs["final_plan_path"]
+        final_plan = inputs["final_plan"]
+        projection = inputs["projection"]
+        selected_concept_ids = inputs["selected_concept_ids"]
 
         batch_root = pipeline_root / "data" / "generation_batches"
         batch_path = batch_root / request_id / "generation_batch_v1.json"
         review_path = batch_root / request_id / "generation_review_pack_v1.md"
+        selected_attempt = recovery.graph(pipeline_root, request_id)
+        if not selected_attempt['pending'] and selected_attempt['result'] and selected_attempt['result']['outcome'] in {'review_required','transport_failed'}:
+            batch_path = selected_attempt['batch']
+            review_path = batch_path.parent / 'generation_review_pack_v1.md'
 
         if batch_path.is_file():
             batch = read_json(batch_path)
@@ -1265,7 +1636,9 @@ def resolve_generation_batch(
             )
             if not review_path.is_file():
                 try:
-                    write_review_pack_for_existing_batch(batch_path, review_path)
+                    from batch_provider_recovery_v1 import publication_fence
+                    with publication_fence(pipeline_root, request, 'script_generation'):
+                        write_review_pack_for_existing_batch(batch_path, review_path)
                 except Exception as exc:
                     raise GenerationBatchResolutionError(
                         "GENERATION_REVIEW_PACK_RECOVERY_FAILED",
@@ -1299,6 +1672,8 @@ def resolve_generation_batch(
         )
         candidate_recovered = candidate_batch is not None
         remote_model_called = False
+        from batch_provider_recovery_v1 import dispatch_count
+        dispatched_before = dispatch_count(pipeline_root, request, 'script_generation')
 
         if candidate_batch is not None:
             batch = copy.deepcopy(candidate_batch)
@@ -1326,7 +1701,10 @@ def resolve_generation_batch(
                     transport=transport,
                     content_plan=projection,
                     content_ledger=closure_memory,
+                    **({"native_style_mode": True} if request.get("creative_style") else {}),
                 )
+            except __import__('creation_batch_contract_v1').BatchError:
+                raise
             except Exception as exc:
                 raise GenerationBatchResolutionError(
                     "SCRIPT_GENERATION_FAILED",
@@ -1336,15 +1714,12 @@ def resolve_generation_batch(
             # Persist the accepted/rejected remote result BEFORE wrapper-level
             # post-validation. If a later deterministic gate is too strict or
             # contains a bug, the real model output remains recoverable offline.
-            persist_candidate_batch(
-                path=candidate_path,
-                request_id=request_id,
-                final_plan_path=final_plan_path,
-                projection=projection,
-                closure_memory=closure_memory,
-                batch=batch,
-            )
-            remote_model_called = True
+            from batch_provider_recovery_v1 import publication_fence
+            with publication_fence(pipeline_root, request, 'script_generation'):
+                persist_candidate_batch(
+                    path=candidate_path, request_id=request_id, final_plan_path=final_plan_path,
+                    projection=projection, closure_memory=closure_memory, batch=batch)
+            remote_model_called = not is_batch or dispatch_count(pipeline_root, request, 'script_generation') > dispatched_before
 
         batch = augment_and_validate_batch(
             batch=batch,
@@ -1359,10 +1734,13 @@ def resolve_generation_batch(
         )
 
         try:
-            written_batch_path, written_review_path, _ = write_batch(
-                batch,
-                batch_root,
-            )
+            from batch_provider_recovery_v1 import publication_fence
+            with publication_fence(pipeline_root, request, 'script_generation'):
+                written_batch_path, written_review_path, _ = write_batch(batch, batch_root)
+                from batch_provider_recovery_v1 import record_native_result
+                record_native_result(pipeline_root, request, 'script_generation', written_batch_path)
+        except __import__('creation_batch_contract_v1').BatchError:
+            raise
         except Exception as exc:
             raise GenerationBatchResolutionError(
                 "GENERATION_BATCH_WRITE_FAILED",
@@ -1402,6 +1780,8 @@ def main() -> None:
         default=str(Path(__file__).resolve().parents[1]),
     )
     parser.add_argument("--max-attempts", type=int, default=3)
+    parser.add_argument("--operation-id")
+    parser.add_argument("--intent-sha256")
     args = parser.parse_args()
 
     try:
@@ -1409,8 +1789,13 @@ def main() -> None:
             pipeline_root=Path(args.pipeline_root),
             request_id=str(args.request_id).strip(),
             max_attempts=args.max_attempts,
+            operation_id=args.operation_id, intent_sha256=args.intent_sha256,
         )
-    except GenerationBatchResolutionError as exc:
+    except (GenerationBatchResolutionError, recovery.RecoveryError,
+            __import__('creation_batch_contract_v1').BatchError,
+            __import__('creative_style_v1').CreativeStyleError,
+            content_plan_runtime.ContentPlanResolutionError,
+            content_plan_runtime.CompatibilityError) as exc:
         print(
             json.dumps(
                 {"ok": False, "code": exc.code, "message": str(exc)},

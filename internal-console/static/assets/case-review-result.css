@@ -1,0 +1,36 @@
+.case-result-panel {
+  padding: 24px;
+  margin: 0 0 24px;
+  border: 1px solid var(--border, #E5ECE7);
+  border-radius: 16px;
+  background: var(--white, #FFFFFF);
+  color: var(--ink, #1B3029);
+}
+.case-result-heading { display: flex; align-items: center; gap: 12px; }
+.case-result-symbol { display: grid; place-items: center; flex: 0 0 40px; height: 40px; border-radius: 50%; background: #E9F3ED; color: #125A47; font-size: 24px; font-weight: 600; }
+.case-result-eyebrow { margin: 0 0 4px; color: var(--muted); font-size: 12px; }
+.case-result-heading h2 { margin: 0; font-size: 21px; line-height: 1.45; overflow-wrap: anywhere; }
+.case-result-description { margin: 16px 0; color: var(--muted); line-height: 1.8; max-width: 65ch; }
+.case-result-steps { display: flex; gap: 32px; padding: 0; margin: 0 0 20px; list-style: none; }
+.case-result-steps li { display: flex; align-items: center; gap: 12px; font-size: 13px; }
+.case-result-steps span { color: var(--muted); }
+.case-result-steps .is-complete span { color: #125A47; }
+.case-result-recovery { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.case-result-recovery .btn { min-height: 44px; }
+.case-result-recovery .form-error { flex-basis: 100%; margin: 0; line-height: 1.7; overflow-wrap: anywhere; }
+.case-result-recovery .form-error:not(.visible) { display: none; }
+.case-result-note { font-size: 12px; color: var(--muted); margin: 20px 0 0; }
+.case-review-complete .review-layout { grid-template-columns: minmax(0, 1fr); }
+.case-result-panel:focus-visible { outline: 2px solid #125A47; outline-offset: 3px; }
+.case-review-page > .review-recovery { padding: 20px; margin: 0 0 20px; }
+@media (max-width: 600px) {
+  .case-result-panel { padding: 20px; margin-bottom: 16px; border-radius: 14px; }
+  .case-result-heading { align-items: flex-start; gap: 10px; }
+  .case-result-heading h2 { font-size: 18px; }
+  .case-result-symbol { flex-basis: 32px; height: 32px; font-size: 21px; }
+  .case-result-description { font-size: 14px; margin: 14px 0; }
+  .case-result-steps { gap: 18px; flex-wrap: wrap; margin-bottom: 18px; }
+  .case-result-steps li { gap: 8px; font-size: 12px; }
+  .case-result-recovery .btn { width: 100%; }
+}
+.case-result-steps.has-type{grid-template-columns:repeat(3,minmax(0,1fr))}

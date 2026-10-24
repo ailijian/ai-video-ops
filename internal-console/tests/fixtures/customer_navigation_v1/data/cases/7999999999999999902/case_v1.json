@@ -1,0 +1,26 @@
+{
+  "schema_version": "case-v1.0",
+  "case_id": "7999999999999999902",
+  "fixture_only": true,
+  "identity": {
+    "industry": "restaurant",
+    "title": "虚构预约服务说明参考",
+    "platform": "fictional",
+    "duration_seconds": 24
+  },
+  "lifecycle": {
+    "status": "approved",
+    "approved": true,
+    "human_gate": true
+  },
+  "validation": {
+    "passed": true
+  },
+  "quality": {
+    "human_review_completed": true
+  },
+  "authority": {
+    "media_rights_established": false,
+    "facts_transferred": false
+  }
+}

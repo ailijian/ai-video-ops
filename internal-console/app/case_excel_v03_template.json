@@ -1,0 +1,421 @@
+{
+  "schema_id": "case-excel-intake-v0.3-review-candidate",
+  "status": "design_candidate_pending_current_native_case_contract_review",
+  "input_sheets": [
+    "案例清单",
+    "结构分段",
+    "来源与许可"
+  ],
+  "non_input_sheets": [
+    "使用说明",
+    "字段字典",
+    "示例-案例清单",
+    "示例-结构分段",
+    "示例-来源与许可"
+  ],
+  "exact_sheet_names_required": true,
+  "schema_identity_cell": "使用说明!B3",
+  "header_rows": {
+    "machine_keys": 3,
+    "chinese_labels": 4,
+    "data_start": 5
+  },
+  "rows": {
+    "skip_fully_empty": true,
+    "reserved_external_key_prefix": "DEMO-",
+    "external_case_key_unique_in_case_sheet": true
+  },
+  "columns": {
+    "案例清单": [
+      {
+        "key": "external_case_key",
+        "label": "案例编号 *",
+        "requirement": "所有模式必填",
+        "policy": "工作簿内唯一关联键，不是系统Case ID"
+      },
+      {
+        "key": "source_platform",
+        "label": "来源平台 *",
+        "requirement": "所有模式必填",
+        "policy": "抖音/视频号/本地文件等；纯文字可填未知；平台可解析范围由后端核验"
+      },
+      {
+        "key": "submission_mode",
+        "label": "提交方式 *",
+        "requirement": "所有模式必填",
+        "policy": "链接/视频待解析、已整理结构待核验、仅文字待补证；决定预检必填条件，不是审批权限"
+      },
+      {
+        "key": "source_url",
+        "label": "原视频链接",
+        "requirement": "前两种模式：与视频文件名二选一",
+        "policy": "仅视频来源，不得填写Excel文档或个人网盘密码；来源URL必须正式校验"
+      },
+      {
+        "key": "media_filename",
+        "label": "视频文件名",
+        "requirement": "前两种模式：与视频链接二选一",
+        "policy": "仅相对文件名；还需与同批上传的真实视频文件匹配；写文件名并不会上传视频"
+      },
+      {
+        "key": "source_title",
+        "label": "视频标题/暂定名称 *",
+        "requirement": "所有模式必填",
+        "policy": "无原标题请写【自拟】+名称；不能冒充平台原始标题"
+      },
+      {
+        "key": "industry_hint",
+        "label": "行业建议",
+        "requirement": "可选",
+        "policy": "仅投稿人的候选建议，不是正式分类"
+      },
+      {
+        "key": "profile_hint",
+        "label": "制作形态建议",
+        "requirement": "可选",
+        "policy": "可填 mix/news/hybrid/uncertain；不等于视频业务类型和兼容性批准"
+      },
+      {
+        "key": "video_content_type_hint",
+        "label": "视频内容类型建议",
+        "requirement": "可选，建议填写",
+        "accepted_labels": [
+          "新闻体",
+          "人设型",
+          "故事型",
+          "高转化型",
+          "其它",
+          "待判断"
+        ],
+        "policy": "投稿人视频业务类型建议；必须由指定审核人核对后才能作为正式Case展示类型。不是Production Profile、Pattern、Compatibility、Release或媒体使用权批准。"
+      },
+      {
+        "key": "other_type_note",
+        "label": "其它类型说明",
+        "requirement": "当video_content_type_hint=其它时必填",
+        "policy": "填写真实期望的新类型描述，供后续视频类型词典治理；不自动注册业务类型，不授予创作生产资格。"
+      },
+      {
+        "key": "duration_seconds_hint",
+        "label": "视频时长（秒）",
+        "requirement": "可选",
+        "policy": "只填数字秒数；仅核过原视频时填写；非官方时长证据"
+      },
+      {
+        "key": "topic",
+        "label": "内容主题",
+        "requirement": "人工结构/纯文字模式必填；来源待解析可选",
+        "policy": "一句话说清楚视频/笔记讲什么"
+      },
+      {
+        "key": "hook_candidate",
+        "label": "开头钩子",
+        "requirement": "可选",
+        "policy": "投稿人描述或整理的候选钩子，不冒充机器识别"
+      },
+      {
+        "key": "structure_summary",
+        "label": "结构摘要",
+        "requirement": "人工结构/纯文字模式必填；来源待解析可选",
+        "policy": "真实材料支持的结构概述；无把握则写待核实，不得虚构镜头和时间"
+      },
+      {
+        "key": "narration_excerpt",
+        "label": "口播/字幕摘录",
+        "requirement": "可选",
+        "policy": "投稿人提供的摘录，绝不当作机器Whisper ASR和逐词时间轴"
+      },
+      {
+        "key": "visual_observation",
+        "label": "画面观察（仅亲见）",
+        "requirement": "可选",
+        "policy": "只有亲自核对视频才写画面；不能用主观推测代替帧/OCR证据"
+      },
+      {
+        "key": "creative_reference",
+        "label": "可借鉴创作机制",
+        "requirement": "可选",
+        "policy": "参考的钩子/顺序/镜头角色，不抄袭原作品的具体受保护表达"
+      },
+      {
+        "key": "risk_notes",
+        "label": "待核实事实与风险",
+        "requirement": "可选，发现风险必须填",
+        "policy": "价格/功效/经营数据/人像/版权/来源疑点应如实记录"
+      },
+      {
+        "key": "observation_basis",
+        "label": "填写依据 *",
+        "requirement": "所有模式必填",
+        "policy": "本人已观看、仅链接未核对、整理他人笔记、仅有文字资料、未知"
+      },
+      {
+        "key": "display_title_hint",
+        "label": "展示标题建议",
+        "requirement": "可选",
+        "policy": "仅审核候选；最终共享展示单独有安全预览和人工权限"
+      },
+      {
+        "key": "display_structure_hint",
+        "label": "展示结构摘要建议",
+        "requirement": "可选",
+        "policy": "仅审核候选；不能自动公开原始素材/隐私数据"
+      }
+    ],
+    "结构分段": [
+      {
+        "key": "external_case_key",
+        "label": "案例编号 *",
+        "requirement": "有分段行时必填",
+        "policy": "必须在同一工作簿「案例清单」存在"
+      },
+      {
+        "key": "segment_order",
+        "label": "段落序号 *",
+        "requirement": "有分段行时必填",
+        "policy": "同一案例内从1开始连续且唯一；不是正式Shot ID"
+      },
+      {
+        "key": "start_seconds_hint",
+        "label": "开始秒（核验后）",
+        "requirement": "可选",
+        "policy": "核看视频后填写的人工参考秒数，不能成为正式候选帧切点"
+      },
+      {
+        "key": "end_seconds_hint",
+        "label": "结束秒（核验后）",
+        "requirement": "可选",
+        "policy": "大于开始秒；不超过已核验的真实时长；人工参考不替代Shot证据"
+      },
+      {
+        "key": "narrative_role_hint",
+        "label": "段落作用建议",
+        "requirement": "可选",
+        "policy": "开场/过程/信息点/证据线索/收束等，仅为候选结构"
+      },
+      {
+        "key": "narration_excerpt",
+        "label": "口播/字幕节选",
+        "requirement": "可选",
+        "policy": "只能来自真实资料或明确来源的文字，非正式ASR证据"
+      },
+      {
+        "key": "visual_or_ocr_observation",
+        "label": "画面或画面文字（仅亲见）",
+        "requirement": "可选",
+        "policy": "未看视频严禁填写；并非正式视觉模型/OCR证据"
+      },
+      {
+        "key": "structural_value",
+        "label": "为何值得借鉴",
+        "requirement": "可选",
+        "policy": "该段的结构目的/节奏与参考价值"
+      },
+      {
+        "key": "evidence_locator",
+        "label": "证据定位（人工参考）",
+        "requirement": "可选",
+        "policy": "例如人工记录的秒数或资料页码；不是系统Frame ID"
+      },
+      {
+        "key": "segment_basis",
+        "label": "段落依据",
+        "requirement": "可选，推荐填写",
+        "policy": "本人观看/整理资料/他人转述/未知；不等于审核许可"
+      }
+    ],
+    "来源与许可": [
+      {
+        "key": "external_case_key",
+        "label": "案例编号 *",
+        "requirement": "有许可行时必填",
+        "policy": "关联案例清单；每个案例至多一行申报"
+      },
+      {
+        "key": "source_verification",
+        "label": "来源核验现状",
+        "requirement": "可选",
+        "policy": "投稿人自述，不能授来源真实有效的系统权限"
+      },
+      {
+        "key": "provider_reference",
+        "label": "素材提供方信息",
+        "requirement": "可选",
+        "policy": "仅非敏感来源机构/凭证编号，勿写个人电话/身份证等"
+      },
+      {
+        "key": "text_display_rights_claim",
+        "label": "展示文字许可声明",
+        "requirement": "可选，默认未确认",
+        "policy": "投稿人声称的状态；不是共享发布权限"
+      },
+      {
+        "key": "cover_rights_claim",
+        "label": "封面展示许可声明",
+        "requirement": "可选，默认未确认",
+        "policy": "单独声明；即便文字可展示，封面仍可能禁止"
+      },
+      {
+        "key": "media_reuse_claim",
+        "label": "原视频素材复用状态",
+        "requirement": "可选，默认未确认",
+        "policy": "不等于案例收录或平台共享；生产复用必须独立权利"
+      },
+      {
+        "key": "privacy_risk_claim",
+        "label": "可能涉及敏感信息",
+        "requirement": "可选，默认未知",
+        "policy": "未知/可能有/未发现（投稿人自述）；正式Privacy仍独立审查"
+      },
+      {
+        "key": "rights_risk_notes",
+        "label": "隐私与权利备注",
+        "requirement": "可选",
+        "policy": "人像、品牌、第三方内容、合作/授权不确定性"
+      },
+      {
+        "key": "supporting_document_ref",
+        "label": "其他凭证编号",
+        "requirement": "可选",
+        "policy": "仅填凭证编号/引用；凭证需通过独立安全渠道上传"
+      }
+    ]
+  },
+  "submission_modes": {
+    "链接/视频待解析": {
+      "always_required": [
+        "external_case_key",
+        "source_platform",
+        "submission_mode",
+        "source_title",
+        "observation_basis"
+      ],
+      "one_of_required": [
+        [
+          "source_url",
+          "media_filename"
+        ]
+      ],
+      "conditionally_optional": [
+        "topic",
+        "structure_summary"
+      ],
+      "import_decision": "SAVE_CANDIDATE_FOR_SOURCE_ANALYSIS_NOT_AUTO_MODEL_CALL"
+    },
+    "已整理结构待核验": {
+      "always_required": [
+        "external_case_key",
+        "source_platform",
+        "submission_mode",
+        "source_title",
+        "observation_basis",
+        "topic",
+        "structure_summary"
+      ],
+      "one_of_required": [
+        [
+          "source_url",
+          "media_filename"
+        ]
+      ],
+      "import_decision": "SAVE_MANUAL_STRUCTURE_CANDIDATE_PENDING_EVIDENCE_REVIEW"
+    },
+    "仅文字待补证": {
+      "always_required": [
+        "external_case_key",
+        "source_platform",
+        "submission_mode",
+        "source_title",
+        "observation_basis",
+        "topic",
+        "structure_summary"
+      ],
+      "source_url_or_media_optional": true,
+      "allow_unknown_platform": true,
+      "import_decision": "SAVE_TEXT_ONLY_INTAKE_CANDIDATE_NEVER_AUTO_APPROVED_CASE"
+    }
+  },
+  "cross_sheet_rules": {
+    "segments_key_must_exist_in_case_sheet": true,
+    "segments_order_per_case": "unique_contiguous_start_at_1",
+    "segment_time_hint": "optional_numeric_seconds_nonnegative_end_gt_start_no_fake_machine_frame_identity",
+    "rights_key_must_exist_in_case_sheet": true,
+    "rights_rows_max_per_case": 1,
+    "missing_rights_state": "unknown_not_granted",
+    "media_filename": "must_bind_to_verified_real_upload_not_absolute_or_parent_path",
+    "unsupported_source_platform": "candidate_pending_source_check_no_fake_success",
+    "case_content_type_source": "两个建议字段随每行Candidate保留原输入与SHA，不能由标签自动产生Approved分类或Production Compatibility",
+    "other_type_note_required": true,
+    "profile_type_mismatch": "requires_human_review_no_auto_fix"
+  },
+  "hard_security_boundaries": [
+    "reject_formulas_macros_external_links_unexpected_sheets",
+    "no_demo_data_as_real_cases",
+    "no_imported_text_promoted_to_ASR_OCR_FRAME_SHOT_PROOF",
+    "no_auto_approval_or_publication",
+    "no_auto_pattern_or_compatibility_authority",
+    "no_auto_media_or_cover_rights",
+    "no_paid_model_invocation_on_upload",
+    "preserve_row_file_source_and_review_SHA_idempotently",
+    "imported_style_hint_not_approved_case_display_type_or_native_creation_authority"
+  ],
+  "examples": {
+    "reserved_keys": [
+      "DEMO-MIX-001",
+      "DEMO-NEWS-002",
+      "DEMO-TEXT-003",
+      "DEMO-PERSONA-004",
+      "DEMO-STORY-005",
+      "DEMO-CONVERSION-006"
+    ],
+    "examples_have_no_real_video_or_usage_permission": true,
+    "never_parse_demo_sheets": true
+  },
+  "author_note": "V0.3 新增业务视频类型投稿建议及'其它'补充说明；必须在Case当前机器合同和人工分类权属核验后才可开发正式导入。样例仍纯虚构，不作为权利或批准。",
+  "video_content_type_suggestion_policy": {
+    "level": "untrusted_import_candidate",
+    "profile_hint_allowed": [
+      "mix",
+      "news",
+      "hybrid",
+      "uncertain"
+    ],
+    "candidate_labels_to_stable_ids": {
+      "新闻体": "news",
+      "人设型": "persona",
+      "故事型": "story",
+      "高转化型": "conversion",
+      "其它": "other",
+      "待判断": "unknown"
+    },
+    "recommended_profile_coherence": {
+      "news": [
+        "新闻体",
+        "待判断"
+      ],
+      "mix": [
+        "人设型",
+        "故事型",
+        "高转化型",
+        "其它",
+        "待判断"
+      ],
+      "hybrid": [
+        "待判断"
+      ],
+      "uncertain": [
+        "待判断"
+      ]
+    },
+    "mismatch_handling": "flag_for_human_classification_review; do_not_auto_correct_or_approve",
+    "other_note_required_when": "video_content_type_hint == 其它",
+    "primary_type_only_v1": true,
+    "display_rules": {
+      "before_classification_confirmation": "仅显示'投稿建议类型：{label}（待核对）'给有权读该投稿的用户；不得作为已批准的共享案例类型",
+      "after_formal_human_confirmation": "仅由已有或经批准扩展的Case正式分类Owner提供受审查的有效类型；合法共享投影才能展示该类型",
+      "unknown_or_other": "显示'待判断'或'其它·待分类'；不得因此自动匹配Mix Style、Pattern、Compatibility"
+    },
+    "production_rules": "Case classification/display type is independent of production_style_approval, Pattern, Compatibility, Creative Authority Release and media rights",
+    "future_catalog_extension": "使用受版本控制的视频类型字典；允许新标签由人审与词典治理新增，不在导入解析器里写死永久四类"
+  }
+}

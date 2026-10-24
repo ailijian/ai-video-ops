@@ -132,7 +132,7 @@ def persona_approval_actor(
 
 
 def operator_activity(
-    database_path: Path, pipeline_root: Path, user_id: int | None = None
+    database_path: Path, pipeline_root: Path, user_id: int | None = None, *, case_access=None
 ) -> dict[str, Any]:
     connection = connect(database_path)
     try:
@@ -158,7 +158,10 @@ def operator_activity(
         actor: dict[str, Any] | None,
         status: str,
         source: str,
+        case_attempt: str | None = None,
     ) -> None:
+        if kind in {"提交案例","确认案例分类","批准案例","案例审核"} and case_access is not None and not case_access(subject,case_attempt):
+            return
         if user_id is not None and (actor or {}).get("user_id") != user_id:
             return
         events.append(
@@ -208,6 +211,7 @@ def operator_activity(
                 _actor(row),
                 row["status"],
                 row["task_id"],
+                row["task_id"] if row["task_type"]=="case_analysis" else None,
             )
 
     data = pipeline_root / "data"
@@ -219,7 +223,7 @@ def operator_activity(
             add("确认案例分类", str(record.get("case_id") or path.parent.parent.name),
                 choice.get("confirmed_at"),
                 {"user_id": choice.get("confirmed_by_user_id"), "phone": choice.get("confirmed_by_phone")},
-                "confirmed", path.name)
+                "confirmed", path.name, str(record.get("attempt_id") or path.parent.name))
     for folder, filename, kind in (
         ("generation_requests", "generation_request_v1.json", "创建 Mix 内容"),
         ("news_deliveries", "news_delivery_request_v1.json", "创建 News 内容"),

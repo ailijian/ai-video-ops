@@ -1,0 +1,79 @@
+{
+  "status": "MINIMAL_COMMAND_DELTA_PENDING_INDEPENDENT_APPROVAL",
+  "id": "JC-01",
+  "proposed_command_version": "human-review-command-v1.6",
+  "current_versions_preserved": [
+    "human-review-command-v1.0",
+    "human-review-command-v1.1",
+    "human-review-command-v1.2"
+  ],
+  "proven_blocker": {
+    "issue": "Case confirmation currently rejected; confirmation belongs only to Business/Speaker; JOINT_CASE_VERSION v1.2 accepts only original sharing bundle and two-stage result",
+    "sources": [
+      "internal-console/app/review_commands.py:96",
+      "internal-console/app/review_commands.py:142",
+      "internal-console/app/review_commands.py:211",
+      "internal-console/app/review_commands.py:253",
+      "internal-console/app/case_shared_display.py:377"
+    ]
+  },
+  "precise_extension": {
+    "signed_confirmation": [
+      "current actor/node/operation",
+      "exact candidate/Attempt/evidence scope",
+      "original Human quality and evidence review",
+      "current Reviewer grant",
+      "catalog integer version and SHA",
+      "explicit chosen confirmable type or null, private other note and profile-conflict reason",
+      "safe display five fields and original source/privacy/cover state",
+      "exact original publication parent and preview digest"
+    ],
+    "client_action": "one final approve-and-safe-share confirmation; no mandatory second/third confirmation",
+    "commit_sequence": [
+      "Original Case Approval and original command commit together",
+      "Read actually persisted Case and Approval Receipt SHA; validate original candidate transition",
+      "Write exactly one independent type decision (or explicitly selected null/defer record)",
+      "Original Shared Owner writes exactly one independent publication using confirmed scope"
+    ],
+    "failure_recovery": [
+      "Current authenticated Reviewer + durable original command only",
+      "Preserve completed Case Approval and TypeDecision",
+      "Retry only missing step against exact committed predecessor",
+      "Do not predict post-approval SHA or change confirmed display/type",
+      "If source/type/grant/display parent changes, stop affected continuation and show saved stage",
+      "Unknown operation results reconcile exact original history, never repeat Approval/Publication",
+      "Existing latest legitimate publication decides visibility; withdrawal never revives older typed/legacy projection"
+    ],
+    "null_type": "Explicitly previewed null allowed; not an Excel-hint fallback",
+    "legacy": "Old command and v1.0/v1.1 publication strict readers remain byte-compatible; historical type/share changes keep independent operations"
+  },
+  "owner_consumers": [
+    "review_commands.issue/snapshot/begin/stage_case_approval_commit/committed_case_result/complete_joint/validate_joint_result/pending",
+    "case_classification type owner",
+    "case_shared_display preview/history/publish/withdraw",
+    "main reviewed_action and final CaseReviewRequest",
+    "case detail/review UI"
+  ],
+  "mandatory_failure_matrix": [
+    "before Approval",
+    "Approval persisted before result",
+    "type write before response",
+    "type completed before publication",
+    "publication receipt written before result",
+    "response lost/relogin",
+    "changed catalog/type/Case SHA/parent/grant",
+    "explicit unknown/null",
+    "cover permission absent",
+    "typed withdraw then earlier legacy receipt",
+    "double-click different type with same operation"
+  ],
+  "no_business_approval_created": true,
+  "execution": "STOP joint typed seam until exact approval; do not add required extra Human buttons",
+  "proposed_type_record_version": "case-content-type-decision-v1.1-joint-proposal",
+  "stable_operation_mapping": {
+    "human_command": "original 32-hex operation ID",
+    "type_operation": "type_<same 32-hex operation ID>",
+    "type_decision_human_command_ref": "exact durable v1.6 intent SourceRef; current and decision-time grants checked by original Owners",
+    "publication": "original Human operation identity; receipt and display companion independently reference the same command"
+  }
+}

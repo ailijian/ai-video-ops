@@ -1,0 +1,41 @@
+{
+  "files": [
+    {
+      "path": "AUTHORIZATION_PROVENANCE.json",
+      "sha256": "b5f8d7c96dc7ce776c0d68b22ef46c9db8649f82a00ef82a9e39fa0bd84fe0d4"
+    },
+    {
+      "path": "BROWSER_AND_FOUNDER_UAT.md",
+      "sha256": "8d99df0904d8378122e2721cb06661a68d384d1b0b1190458dbcce4dbe9ae48a"
+    },
+    {
+      "path": "EXS2_CONTRACT_AND_RECOVERY.md",
+      "sha256": "fd5ecc579e48734a6f1cf72b7a42e2b9ccf9cfb9e76cc459dcc1d9cb5c81d006"
+    },
+    {
+      "path": "EXS2_SCHEMA_EXPORT.json",
+      "sha256": "5a5e9b81adf2ff6e569885354e3bd05440e0ee8c0fbe3345c55bdafc52818598"
+    },
+    {
+      "path": "JC01_CONTRACT_AND_RECOVERY.md",
+      "sha256": "c2b02853ed57a44c46dd52a41d24f46caa905ca8a69deceecbc1460e7b5ed23b"
+    },
+    {
+      "path": "README.md",
+      "sha256": "f872e973a57548889fceb626035586ce1e5b7656028134a1bc67c071d9a8cd89"
+    },
+    {
+      "path": "SOURCE_OWNER_MAP.json",
+      "sha256": "12bd5113f83376d7891578441bd9077f3d0fd74236d2a9edb3f6c8a97784fb29"
+    },
+    {
+      "path": "TEST_AND_ACCEPTANCE_MAP.json",
+      "sha256": "ca58f4687335a7227fe9cb1147128436c15d63213035b087d67c1b04dcc4ef8f"
+    },
+    {
+      "path": "VERIFICATION_AND_PROTECTION.md",
+      "sha256": "83db30a56f6faf0d1a14436fcf13eed9d442cde698b284b54409fcb2f6d567a9"
+    }
+  ],
+  "coverage": "All durable R4 delivery docs excluding self; runtime schema exports reference their unique source Owner. Final ZIP manifest additionally covers receipts and source."
+}

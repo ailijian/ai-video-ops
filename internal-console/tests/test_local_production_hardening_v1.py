@@ -1,4 +1,5 @@
 from __future__ import annotations
+from app import persona_review_gateway
 
 import json
 import os
@@ -504,20 +505,26 @@ def test_console_authority_routes_return_409_for_simultaneous_same_entity(
     calls: list[str] = []
 
     if entity == "persona":
-        def fake_persona(settings, *, business_id, reviewer, note):
+        def fake_persona(settings, command, kind, identity, business_id, reviewer, note):
             calls.append(reviewer)
             entered.set()
             release.wait(timeout=2)
             return {"business_id": business_id, "approved": True}
 
-        monkeypatch.setattr(main_module, "approve_business_persona", fake_persona)
+        monkeypatch.setattr(persona_review_gateway, "approve", fake_persona)
+        monkeypatch.setattr(main_module, "get_customer_detail", lambda *a: {"business_id":"fixture_business","status":"approved"})
         route = "/api/customers/fixture_business/persona/approve"
         body = {"note": "approve"}
     else:
-        def fake_case(settings, case_id, *, reviewer, note):
+        def fake_case(settings, case_id, *, reviewer, note, approval_principal, expected_target, review_command, quality_decision):
+            assert approval_principal == {"user_id": 1, "namespace": approval_principal["namespace"]}
             calls.append(reviewer)
             entered.set()
             release.wait(timeout=2)
+            receipt=settings.pipeline_root / "data/cases" / case_id / "approval_receipt.json"
+            receipt.parent.mkdir(parents=True,exist_ok=True)
+            receipt.write_text(json.dumps({"case_id":case_id,"synthetic_lock_test_stub":True}),encoding="utf-8")
+            assert review_command["context"]["snapshot"]==expected_target
             return {"case_id": case_id, "review": {"approved": True}}
 
         monkeypatch.setattr(main_module, "approve_case_candidate", fake_case)
@@ -527,11 +534,18 @@ def test_console_authority_routes_return_409_for_simultaneous_same_entity(
     with TestClient(app) as first_client, TestClient(app) as second_client:
         provision_user(settings.database_path, "13800000000")
         first_csrf = login_and_change_password(first_client)
+        if entity == "case":
+            from app.case_library_access import manage_reviewer
+            manage_reviewer(settings, 1, action="grant", operator="fixture", reason="Explicit lock-test reviewer")
         second_login = second_client.post(
             "/api/auth/login",
             json={"phone": "13800000000", "password": "ReviewConsole2026!"},
         )
         second_csrf = second_login.json()["csrf_token"]
+        from app import review_commands
+        from review_protocol import case_command_fixture
+        body["review_context"] = (case_command_fixture(settings,"7999999999999999966") if entity=="case"
+            else review_commands.issue(settings,"business","fixture_business",1)["token"])
         first_response: list[Any] = []
 
         thread = threading.Thread(
@@ -695,7 +709,7 @@ def test_secure_cookie_and_authenticated_task_actor_cannot_be_spoofed(
         assert response.json()["task"]["created_by"]["user_id"] != 999999
 
 
-def test_three_fake_users_can_submit_and_read_shared_tasks_without_db_lock(
+def test_three_fake_users_can_submit_and_read_own_case_tasks_without_db_lock(
     settings: Settings,
 ):
     app = main_module.build_app(settings)
@@ -736,8 +750,15 @@ def test_three_fake_users_can_submit_and_read_shared_tasks_without_db_lock(
             statuses = list(executor.map(submit, range(3)))
         assert statuses == [200, 200, 200]
         tasks = client.get("/api/tasks").json()["tasks"]
-        assert len(tasks) == 3
-        assert {item["created_by"]["phone"] for item in tasks} == set(phones)
+        assert len(tasks) == 1
+        assert {item["created_by"]["phone"] for item in tasks} == {phones[-1]}
+        own_task = tasks[0]["task_id"]
+        for phone in phones[:-1]:
+            assert client.post("/api/auth/login", json={"phone": phone, "password": f"Hardening-{phone}!"}).status_code == 200
+            scoped = client.get("/api/tasks").json()["tasks"]
+            assert len(scoped) == 1
+            assert scoped[0]["created_by"]["phone"] == phone
+            assert client.get(f"/api/tasks/{own_task}").status_code == 404
 
 
 def test_production_templates_never_trust_forwarded_wildcard():

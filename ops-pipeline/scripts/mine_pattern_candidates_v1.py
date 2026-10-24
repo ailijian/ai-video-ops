@@ -796,6 +796,9 @@ def validate_news_candidate_inputs(
         approval,
         expected_comparison_sha256=sha256_file(comparison_path),
     )
+    if approval.get('schema_version') == 'news-research-human-approval-v1.1':
+        from news_pattern_authority_v1_1 import research_projection
+        _, approval = research_projection(approval,sha256_file(comparison_path))
     if approval.get("research_direction") != comparison.get("research_direction"):
         raise RuntimeError("Comparison and Human Approval directions differ.")
     if comparison.get("case_count") != 3:

@@ -1,0 +1,308 @@
+{
+  "base_head": "4287234e5aa7f711751d7ec06dd0935ad6acbab2",
+  "branch": "codex/case-excel-import-1-v03-b0",
+  "git_status": " M docs/deliveries/README.md\n?? docs/deliveries/case-excel-import-1-review-handoff/\n?? docs/deliveries/case-excel-import-1/\n?? internal-console/app/case_excel_preview.py\n?? internal-console/app/case_excel_v03_template.json\n?? internal-console/ops-pipeline/\n?? internal-console/tests/test_case_excel_preview_v03.py\n",
+  "working_source_files": [
+    {
+      "path": "internal-console/app/case_excel_preview.py",
+      "sha256": "216e0ce58407a69bf0134a7d06f1e1c82cb9c34e7cad885c6fa6ba0bdb2bfa9b"
+    },
+    {
+      "path": "internal-console/app/case_excel_v03_template.json",
+      "sha256": "95463b7faf241bd090afda70bdc34a09584b386645bb0a1981673a5c1fbe1e08"
+    },
+    {
+      "path": "internal-console/tests/test_case_excel_preview_v03.py",
+      "sha256": "b3eb956fb2b920adbff91b06d220463b348e16b26ce788ffbf8b7209e486ff2e"
+    }
+  ],
+  "source_delta_identity": "base HEAD + exact uncommitted file hashes and source/WORKING_TREE.diff; not attributed to HEAD alone",
+  "verification": {
+    "path": "E:\\projects\\ai-video-ops\\.worktrees\\cxi\\.verify\\4f25f227\\summary.json",
+    "sha256": "9db9cab517254da67a4b0229b58be91d773474ab887e2eefdc38ec2d1c83cdce",
+    "status": "failed",
+    "mode": "full-fallback",
+    "base": "4287234e5aa7f711751d7ec06dd0935ad6acbab2",
+    "seconds": 903.302,
+    "state_unchanged": true,
+    "tested_tree_fingerprint": "a84d7c4e3eadbc8fdb0f79bdf5a4bfb98676187b363f2d3bec84d98528a26e3a",
+    "open_full_regression_gate": true,
+    "results": [
+      {
+        "target": "pipeline",
+        "status": "passed",
+        "exit_code": 0,
+        "error": null,
+        "counts": {
+          "tests": 740,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "skip_reasons": [],
+          "passed": 740
+        },
+        "junit": "E:\\projects\\ai-video-ops\\.worktrees\\cxi\\.verify\\4f25f227\\0-pipeline.xml",
+        "seconds": 63.977
+      },
+      {
+        "target": "authority-release",
+        "status": "passed",
+        "exit_code": 0,
+        "error": null,
+        "counts": {
+          "tests": 12,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "skip_reasons": [],
+          "passed": 12
+        },
+        "junit": "E:\\projects\\ai-video-ops\\.worktrees\\cxi\\.verify\\4f25f227\\4-authority-release.xml",
+        "seconds": 6.377
+      },
+      {
+        "target": "frp-guard",
+        "status": "passed",
+        "exit_code": 0,
+        "error": null,
+        "counts": {
+          "tests": 30,
+          "passed": 30,
+          "skipped": 0
+        },
+        "junit": null,
+        "seconds": 3.692
+      },
+      {
+        "target": "verification",
+        "status": "passed",
+        "exit_code": 0,
+        "error": null,
+        "counts": {
+          "tests": 27,
+          "passed": 27,
+          "skipped": 0
+        },
+        "junit": null,
+        "seconds": 10.905
+      },
+      {
+        "target": "console",
+        "status": "failed",
+        "exit_code": 124,
+        "error": "Missing/invalid JUnit evidence: [Errno 2] No such file or directory: 'E:\\\\projects\\\\ai-video-ops\\\\.worktrees\\\\cxi\\\\.verify\\\\4f25f227\\\\2-console.xml'",
+        "counts": {},
+        "junit": null,
+        "seconds": 900.431
+      },
+      {
+        "target": "console",
+        "status": "failed",
+        "exit_code": 124,
+        "error": "Missing/invalid JUnit evidence: [Errno 2] No such file or directory: 'E:\\\\projects\\\\ai-video-ops\\\\.worktrees\\\\cxi\\\\.verify\\\\4f25f227\\\\1-console.xml'",
+        "counts": {},
+        "junit": null,
+        "seconds": 900.423
+      },
+      {
+        "target": "console",
+        "status": "failed",
+        "exit_code": 124,
+        "error": "Missing/invalid JUnit evidence: [Errno 2] No such file or directory: 'E:\\\\projects\\\\ai-video-ops\\\\.worktrees\\\\cxi\\\\.verify\\\\4f25f227\\\\3-console.xml'",
+        "counts": {},
+        "junit": null,
+        "seconds": 900.405
+      }
+    ]
+  },
+  "other_scope_verification": {
+    "path": "E:\\projects\\ai-video-ops\\.worktrees\\cc2\\.verify\\2f6a1fa9\\summary.json",
+    "sha256": "583c11ad2f659846294ba19ecf0c259bed9d3f3f2961987e0faf92daaec73aa0",
+    "status": "failed",
+    "mode": "full-fallback",
+    "base": "4287234e5aa7f711751d7ec06dd0935ad6acbab2",
+    "seconds": 902.013,
+    "state_unchanged": true,
+    "tested_tree_fingerprint": "4893f71434ff5907247308ed18266e27faa66e4f32aacd30862ec048fc037740",
+    "open_full_regression_gate": true,
+    "results": [
+      {
+        "target": "pipeline",
+        "status": "passed",
+        "exit_code": 0,
+        "error": null,
+        "counts": {
+          "tests": 751,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "skip_reasons": [],
+          "passed": 751
+        },
+        "junit": "E:\\projects\\ai-video-ops\\.worktrees\\cc2\\.verify\\2f6a1fa9\\0-pipeline.xml",
+        "seconds": 68.193
+      },
+      {
+        "target": "authority-release",
+        "status": "passed",
+        "exit_code": 0,
+        "error": null,
+        "counts": {
+          "tests": 12,
+          "failures": 0,
+          "errors": 0,
+          "skipped": 0,
+          "skip_reasons": [],
+          "passed": 12
+        },
+        "junit": "E:\\projects\\ai-video-ops\\.worktrees\\cc2\\.verify\\2f6a1fa9\\3-authority-release.xml",
+        "seconds": 6.424
+      },
+      {
+        "target": "frp-guard",
+        "status": "passed",
+        "exit_code": 0,
+        "error": null,
+        "counts": {
+          "tests": 30,
+          "passed": 30,
+          "skipped": 0
+        },
+        "junit": null,
+        "seconds": 3.918
+      },
+      {
+        "target": "verification",
+        "status": "passed",
+        "exit_code": 0,
+        "error": null,
+        "counts": {
+          "tests": 27,
+          "passed": 27,
+          "skipped": 0
+        },
+        "junit": null,
+        "seconds": 11.379
+      },
+      {
+        "target": "console",
+        "status": "failed",
+        "exit_code": 124,
+        "error": "Missing/invalid JUnit evidence: [Errno 2] No such file or directory: 'E:\\\\projects\\\\ai-video-ops\\\\.worktrees\\\\cc2\\\\.verify\\\\2f6a1fa9\\\\1-console.xml'",
+        "counts": {},
+        "junit": null,
+        "seconds": 900.365
+      },
+      {
+        "target": "console",
+        "status": "failed",
+        "exit_code": 124,
+        "error": "Missing/invalid JUnit evidence: [Errno 2] No such file or directory: 'E:\\\\projects\\\\ai-video-ops\\\\.worktrees\\\\cc2\\\\.verify\\\\2f6a1fa9\\\\2-console.xml'",
+        "counts": {},
+        "junit": null,
+        "seconds": 900.369
+      }
+    ]
+  },
+  "readiness_scope": "limited implementation/shadow review with disclosed regression timeout gates, not production acceptance or complete regression PASS",
+  "post_verification_changes": "review documents/evidence/manifest only; no subsequent implementation changes",
+  "source_anchors": [
+    {
+      "path": "ops-pipeline/scripts/novel_news_opportunity_v1.py",
+      "function": "project_novel_news_opportunities",
+      "line": 83,
+      "end_line": 163,
+      "file_sha256": "9f00ee2d9905c6f7e370f7f9d5601cac765fec5e231f670fac7c7bfb69530ca2"
+    },
+    {
+      "path": "ops-pipeline/scripts/novel_news_opportunity_v1.py",
+      "function": "price_novelty_status",
+      "line": 66,
+      "end_line": 80,
+      "file_sha256": "9f00ee2d9905c6f7e370f7f9d5601cac765fec5e231f670fac7c7bfb69530ca2"
+    },
+    {
+      "path": "ops-pipeline/scripts/content_intent_reservations_v1.py",
+      "function": "pending",
+      "line": 340,
+      "end_line": 403,
+      "file_sha256": "f18250e000138bd154d7dde6b7aaceb1e33eb9add776861a6e0ea3709a0cba97"
+    },
+    {
+      "path": "ops-pipeline/scripts/news_delivery_v1.py",
+      "function": "preview_news_delivery",
+      "line": 980,
+      "end_line": 1261,
+      "file_sha256": "5769cb0c9262e87803a19be9df9965af2700ba541b601f1b2c961abe09038be1"
+    },
+    {
+      "path": "ops-pipeline/scripts/creative_style_v1.py",
+      "function": "catalog_snapshot",
+      "line": 81,
+      "end_line": 123,
+      "file_sha256": "5db8a8d63cbcc649f4337899f5666c24e593cf9daaf3a61da60e92c8dfc3b828"
+    },
+    {
+      "path": "ops-pipeline/scripts/news_runtime_v1_2.py",
+      "function": "current",
+      "line": 15,
+      "end_line": 31,
+      "file_sha256": "cb45d02ed5199b15d8f70a09785de530135bf3e9fe35ff5f27381d3089107c08"
+    },
+    {
+      "path": "ops-pipeline/scripts/creative_capacity_read_v1.py",
+      "function": "read_inventory",
+      "line": 83,
+      "end_line": 186,
+      "file_sha256": "58c294c11a04595074f3bc3fd3452f3945392ee9d49edafad13aed1d9daaf8ea"
+    },
+    {
+      "path": "internal-console/app/creative_capacity.py",
+      "function": "projection",
+      "line": 19,
+      "end_line": 32,
+      "file_sha256": "6b24366f57fecd849680d967ff415f15cb35d60f3578c2264d398bda3837460b"
+    },
+    {
+      "workspace": "cxi",
+      "path": "internal-console/app/case_excel_preview.py",
+      "function": "package",
+      "line": 73,
+      "end_line": 119,
+      "file_sha256": "216e0ce58407a69bf0134a7d06f1e1c82cb9c34e7cad885c6fa6ba0bdb2bfa9b"
+    },
+    {
+      "workspace": "cxi",
+      "path": "internal-console/app/case_excel_preview.py",
+      "function": "sheets",
+      "line": 122,
+      "end_line": 179,
+      "file_sha256": "216e0ce58407a69bf0134a7d06f1e1c82cb9c34e7cad885c6fa6ba0bdb2bfa9b"
+    },
+    {
+      "workspace": "cxi",
+      "path": "internal-console/app/case_excel_preview.py",
+      "function": "read_rows",
+      "line": 189,
+      "end_line": 204,
+      "file_sha256": "216e0ce58407a69bf0134a7d06f1e1c82cb9c34e7cad885c6fa6ba0bdb2bfa9b"
+    },
+    {
+      "workspace": "cxi",
+      "path": "internal-console/app/case_excel_preview.py",
+      "function": "source_identity",
+      "line": 216,
+      "end_line": 238,
+      "file_sha256": "216e0ce58407a69bf0134a7d06f1e1c82cb9c34e7cad885c6fa6ba0bdb2bfa9b"
+    },
+    {
+      "workspace": "cxi",
+      "path": "internal-console/app/case_excel_preview.py",
+      "function": "preview_workbook",
+      "line": 241,
+      "end_line": 348,
+      "file_sha256": "216e0ce58407a69bf0134a7d06f1e1c82cb9c34e7cad885c6fa6ba0bdb2bfa9b"
+    }
+  ],
+  "independent_code_acceptance": "PENDING; self-inspection and automated checks are not independent approval"
+}

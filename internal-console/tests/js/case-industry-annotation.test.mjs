@@ -8,14 +8,14 @@ const legacy = {
   approved_case_sha256: "a".repeat(64), industry_annotation_sha256: null,
 };
 const pill = () => "已入库";
-assert.match(caseCard(legacy, pill), /行业：待分类/);
+assert.match(caseCard(legacy, pill), />待分类</);
 assert.match(caseReviewContent(legacy, pill), /补充行业/);
 const supplemented = { ...legacy, industry_annotation: { industry: "餐饮" } };
-assert.match(caseCard(supplemented, pill), /行业（历史补充）：餐饮/);
+assert.match(caseCard(supplemented, pill), />餐饮</);
 assert.match(caseReviewContent(supplemented, pill), /行业（历史补充）：餐饮/);
 assert.equal(supplemented.industry, "待分类", "the canonical field stays unchanged");
 const submitted = { ...supplemented, industry: "零售", can_annotate_industry: false, industry_annotation: null };
-assert.match(caseCard(submitted, pill), /行业：零售/);
+assert.match(caseCard(submitted, pill), />零售</);
 assert.doesNotMatch(caseReviewContent(submitted, pill), /data-industry-annotation/);
 
 let handler;
@@ -27,10 +27,12 @@ globalThis.document = {
 const calls = [];
 let current = legacy;
 let decision = { confirmed: false };
-const app = { innerHTML: "", querySelectorAll: () => [] };
+globalThis.location={pathname:`/cases/${legacy.case_id}`,search:""};
+const app = { innerHTML: "", querySelector:()=>null, querySelectorAll: () => [] };
 const views = createCaseViews({
   app,
   api: async (url, options) => {
+    if(url.startsWith("/api/review-commands/")) return {operations:[]};
     calls.push({ url, options });
     if (options?.method === "POST") {
       const request = JSON.parse(options.body);

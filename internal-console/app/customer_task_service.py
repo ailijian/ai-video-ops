@@ -30,6 +30,8 @@ from .task_service import (
 def find_active_customer_task(
     database_path: Path,
     business_id: str,
+    *,
+    include_awaiting_review: bool = True,
 ) -> dict[str, Any] | None:
     from .database import connect
 
@@ -61,6 +63,8 @@ def find_active_customer_task(
         )
         if task is None:
             continue
+        if task["status"] == "awaiting_review" and not include_awaiting_review:
+            continue
         if task["status"] == "awaiting_review" and (
             _customer_task_artifact_status(task) == "completed"
         ):
@@ -82,6 +86,17 @@ def find_active_customer_task(
 def _customer_task_artifact_status(
     task: dict[str, Any],
 ) -> str | None:
+    preparation = (task.get('payload') or {}).get('speaker_preparation_request')
+    if preparation:
+        from human_review_operations_v1 import io_path
+        return 'completed' if io_path(Path(preparation).parent/'prepared.json').is_file() else None
+    retry_path = (task.get("payload") or {}).get("discovery_retry_request")
+    if retry_path:
+        artifact = Path(retry_path).parent / "speaker_discovery_candidates_v1.json"
+        if artifact.is_file():
+            result = json.loads(artifact.read_text(encoding="utf-8"))
+            return "completed" if result.get("speaker_discovery_status") != "failed" else None
+        return None
     request_path = Path(str((task.get("payload") or {}).get("request_path") or ""))
     root = request_path.parent
     review_path = root / "customer_fact_review_v1.json"
@@ -92,6 +107,7 @@ def _customer_task_artifact_status(
             review = None
         if isinstance(review, dict) and review.get("status") in {
             "completed_persona_blocked",
+            "completed_no_new_facts",
             "completed_persona_review_required",
         }:
             return "completed"
@@ -109,6 +125,8 @@ def create_customer_task(
     industry: str,
     created_by_user_id: int | None = None,
     queue_max: int = 20,
+    discovery_retry_request: str | None = None,
+    speaker_preparation_request: str | None = None,
 ) -> dict[str, Any]:
     # Important:
     # raw Customer Materials are intentionally NOT
@@ -121,6 +139,12 @@ def create_customer_task(
         "industry": industry,
     }
 
+    if discovery_retry_request:
+        payload["discovery_retry_request"] = discovery_retry_request
+    if speaker_preparation_request:
+        payload['speaker_preparation_request'] = speaker_preparation_request
+        from human_review_operations_v1 import digest
+        payload['review_operation_id'] = 'speaker-preparation-' + digest(speaker_preparation_request)
     return submit_task(
         database_path,
         task_id_prefix=f"customer-{business_id}",
@@ -133,7 +157,9 @@ def create_customer_task(
         created_by_user_id=created_by_user_id,
         queue_max=queue_max,
         gpu_pending_per_user_max=1,
-        include_awaiting_review=True,
+        # Independent discovery recovery can run while facts await Human review.
+        # The same operation identity still prevents two running extractors.
+        include_awaiting_review=not bool(discovery_retry_request or speaker_preparation_request),
     )
 
 
@@ -180,7 +206,7 @@ def _parse_failure(
         ):
             return (
                 str(value.get("code") or ("CUSTOMER_ANALYSIS_" "FAILED")),
-                str(value.get("message") or ("客户信息分析没有完成。")),
+                "客户信息分析没有完成，可从已保存的资料继续分析。",
             )
 
     return (
@@ -368,11 +394,16 @@ class CustomerTaskRunner:
                     / ("customer_onboarding_" "analysis_v1.py")
                 ),
                 "--request",
-                str(request_path.resolve()),
+                str(Path(payload.get("discovery_retry_request") or request_path).resolve()),
                 "--pipeline-root",
                 str(self.settings.pipeline_root),
             ]
 
+            if payload.get("discovery_retry_request"):
+                command.append("--discovery-retry")
+            if payload.get('speaker_preparation_request'):
+                command[1] = str(self.settings.pipeline_root/'scripts/speaker_review_preparation_v1.py')
+                command[3] = str(Path(payload['speaker_preparation_request']).resolve())
             child_env = pipeline_subprocess_env(needs_deepseek=True)
 
             process = subprocess.Popen(
@@ -388,10 +419,10 @@ class CustomerTaskRunner:
             )
 
             while process.poll() is None:
-                self._sync_progress(
-                    task_id,
-                    request_path,
-                )
+                if payload.get('speaker_preparation_request'):
+                    update_task(self.settings.database_path,task_id,progress=60,stage='整理出镜人待审资料')
+                else:
+                    self._sync_progress(task_id,request_path)
 
                 time.sleep(0.5)
 
@@ -427,6 +458,7 @@ class CustomerTaskRunner:
                 ),
                 progress=100,
                 stage=(
+                    '出镜人待审资料整理完成' if payload.get('speaker_preparation_request') else
                     "客户事实审核完成"
                     if artifact_status == "completed"
                     else "等待客户事实审核"

@@ -33,6 +33,42 @@ from speech_evidence_v1 import (
 
 
 SCHEMA_VERSION = "reverse-storyboard-v1.1-draft"
+
+
+def news_micro_beat_projection(board):
+    """Pre-approval structural projection of the same frozen shot evidence.
+
+    No model times, invented text, new source facts, Proof or Human decision.
+    A later Case Human Gate freezes the complete resulting storyboard SHA.
+    """
+    import re
+    result=copy.deepcopy(board);shots=result.get('shots') or []
+    duration=sum(float(s['duration']) for s in shots)
+    speech=sum(float(s['end'])-float(s['start']) for s in result.get('narration_track') or [])
+    if not shots or duration<=0 or speech/duration>=0.5:
+        raise RuntimeError('News structural projection requires text/visual states without dominant continuous narration')
+    beats=[]
+    for i,shot in enumerate(shots):
+        evidence=shot.get('evidence') or {}
+        texts=evidence.get('onscreen_text_safe_verbatim') or []
+        scenes=evidence.get('observable_scene_safe_verbatim') or []
+        if isinstance(texts,str):texts=[texts]
+        if isinstance(scenes,str):scenes=[scenes]
+        text='；'.join(dict.fromkeys(t for t in texts if isinstance(t,str) and t.strip()))
+        scene='；'.join(dict.fromkeys(t for t in scenes if isinstance(t,str) and t.strip()))
+        frames=evidence.get('visual_frame_refs') or []
+        if not text or not scene or not frames:
+            raise RuntimeError('Every News micro-information state requires actual safe text, visual state and source frames')
+        role='price_or_offer_anchor' if i==0 and re.search(r'(?:元|价格|团购|优惠|资费|offer|price)',text,re.I) else 'context_information'
+        beats.append({'beat_id':f'B{i+1:03d}','semantic_role':role,'text_or_narration':text,
+            'visual_state':scene,'start_seconds':shot['start'],'end_seconds':shot['end'],
+            'evidence_refs':frames,'source_shot_ref':shot['shot_id'],
+            'interpretation_status':'candidate_requires_human_review'})
+    result.update(schema_version='reverse-storyboard-v1.2-news-micro-beat',production_profile='news',
+        storyboard_type='reverse_micro_beat_sequence',micro_beat_sequence=beats,
+        semantic_carrier={'carrier_type':'on_screen_text_plus_visual_information_state','continuous_narration_required':False})
+    result.setdefault('authority',{})['micro_beats_are_human_approval']=False
+    return result
 INTERPRETATION_PROMPT_VERSION = "reverse-storyboard-v1.1-interpretation"
 GLOBAL_UNDERSTANDING_PROMPT_VERSION = (
     "reverse-storyboard-v1.1-global-understanding-v1.1"
@@ -1583,6 +1619,8 @@ def main() -> None:
         help="Build a provisional storyboard; unresolved narration uses source ASR and must be confirmed before Case approval.",
     )
     parser.add_argument("--model", default="deepseek-v4-flash")
+    parser.add_argument('--source-profile',choices=['news'],default=None,
+                        help='Derive review-required News states from existing shot evidence; grants no eligibility')
     parser.add_argument(
         "--interpretation-chunk-size",
         type=int,
@@ -1937,6 +1975,8 @@ def main() -> None:
         },
     }
 
+    if args.source_profile == 'news':
+        result=news_micro_beat_projection(result)
     json_path = output_dir / "reverse_storyboard_v1.json"
     if not args.dry_run:
         json_path.write_text(

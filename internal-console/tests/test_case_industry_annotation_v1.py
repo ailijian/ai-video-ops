@@ -79,8 +79,8 @@ def test_legacy_industry_annotation_is_attributed_and_does_not_edit_approved_art
         "fingerprint_modified": False,
     }
     assert detail["industry"] == "待分类"
-    listed = next(item for item in client.get("/api/cases").json()["cases"] if item["case_id"] == CASE_ID)
-    assert listed["industry"] == "待分类"
+    listed = next(item for item in client.get("/api/cases?view=review").json()["cases"] if item["case_id"] == CASE_ID)
+    assert listed["industry"] == "餐饮"  # Safe card label; canonical detail remains unchanged.
     assert listed["industry_annotation"] == saved
     for path, original in before.items():
         assert path.read_bytes() == original

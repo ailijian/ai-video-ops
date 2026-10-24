@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterable
 from xml.etree import ElementTree
+from human_review_operations_v1 import io_path
 
 
 REGISTRY_SCHEMA_VERSION = "production-profile-registry-v1.0"
@@ -68,11 +69,68 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def preview_compatibility_v1_1(root, database_path, actor, operation_id, decisions):
+    """Native v1.1 entry; legacy v1.0 approval interpretation remains unchanged."""
+    from profile_compatibility_decisions_v1_1 import preview
+    return preview(root, database_path, actor, operation_id, decisions)
+
+
+def decide_compatibility_v1_1(root, database_path, actor, operation_id, preview_sha256):
+    from profile_compatibility_decisions_v1_1 import decide
+    return decide(root, database_path, actor, operation_id, preview_sha256)
+
+
+def resolve_compatibility_v1_1(root, **kwargs):
+    from profile_compatibility_release_v1_1 import effective_runtime
+    return effective_runtime(root, **kwargs)
+
+
+def declared_mix_profile_v1_1(template_path, template_sha256):
+    """Pure frozen Profile definition; no readiness or Human authority."""
+    return {
+        'profile_id': 'mix', 'profile_version': '1.1', 'status': 'definition_only',
+        'script_contract': {'shape': 'title_and_narration', 'required_fields': ['title', 'narration'],
+                            'narration_is_primary_semantic_spine': True},
+        'storyboard_contract': {'profile_field_required': True, 'shape': 'narration_to_visual_many_to_many',
+            'many_to_many_audio_visual_mapping': True,
+            'required_fields': ['narration_segment', 'visual_shots', 'hero_shot_role',
+                                'supporting_shot_roles', 'visual_anchor', 'avoid_recent_visual_anchor']},
+        'export_contract': {'implementation_version': 'current_v1', 'template_path': template_path,
+            'template_sha256': template_sha256, 'sheet': 'Sheet1', 'header_row': 4,
+            'headers': ['视频制作标题', '视频制作口播内容'], 'first_data_row': 5, 'contract_changed': False},
+        'case_compatibility_policy': {'approved_compatibility_required_for_new_matching': True,
+                                    'case_facts_transfer_permitted': False},
+        'pattern_compatibility_policy': {'approved_pattern_required': True,
+            'profile_compatibility_must_be_explicit': True, 'cross_profile_compatibility_is_automatic': False},
+        'validation_policy': {'profile_compatible_case_required': True,
+            'profile_compatible_pattern_required': True, 'privacy_gate_before_remote_call': True},
+    }
+
+
+def bootstrap_mix_profile_v1_1(root, mix_template_path):
+    """Acyclic definition only; creates neither compatibility nor readiness."""
+    from profile_compatibility_contract_v1_1 import RULES
+    from profile_compatibility_decisions_v1_1 import DOMAIN, digest, ref, write_once
+    root, template = Path(root).resolve(), Path(mix_template_path).resolve()
+    headers = _xlsx_first_sheet_row(template, 4, 2)
+    if headers != ['视频制作标题', '视频制作口播内容']:
+        raise RuntimeError('Mix export template contract changed')
+    profile = declared_mix_profile_v1_1(str(template), sha256_file(template))
+    path = root / DOMAIN / 'definitions' / digest(profile) / 'profile.json'
+    write_once(path, profile)
+    rules = {'schema_version': RULES, 'target_profile': 'mix', 'profile_sha256': sha256_file(path),
+             'pattern_scope_required': True, 'rule_version': '1.1', 'automatic_approval': False}
+    rules_path = root / DOMAIN / 'definitions' / digest(rules) / 'rules.json'
+    write_once(rules_path, rules)
+    return {'profile_ref': ref(root, path), 'rules_ref': ref(root, rules_path)}
+
+
 def read_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+    return json.loads(io_path(path).read_text(encoding="utf-8"))
 
 
 def sha256_file(path: Path) -> str:
+    path = io_path(path)
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
@@ -161,6 +219,14 @@ def validate_target_profile(registry: dict[str, Any], target_profile: str) -> di
 
 
 def validate_registry(registry: dict[str, Any]) -> None:
+    if registry.get('schema_version')=='production-profile-registry-v1.2':
+        from profile_compatibility_contract_v1_2 import validate_contract,REGISTRY
+        validate_contract(registry,REGISTRY)
+        return
+    if registry.get('schema_version') == 'production-profile-registry-v1.1':
+        from profile_compatibility_contract_v1_1 import REGISTRY, validate_contract
+        validate_contract(registry, REGISTRY)
+        return
     if registry.get("schema_version") != REGISTRY_SCHEMA_VERSION:
         raise ValueError("Production Profile Registry schema is invalid.")
     if set((registry.get("profiles") or {}).keys()) != TARGET_PROFILES:
@@ -535,7 +601,7 @@ def audit_case_profile_compatibility_v1(
         storyboard_path.expanduser().resolve(),
     ]
     for path in paths:
-        if not path.is_file():
+        if not io_path(path).is_file():
             raise FileNotFoundError(path)
     case_path, case_approval_receipt_path, fingerprint_path, storyboard_path = paths
     case = read_json(case_path)
@@ -2907,3 +2973,65 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+def declared_news_profile_v1_2(template_ref):
+    """Pure definition; this is neither Compatibility nor runtime eligibility."""
+    from profile_compatibility_contract_v1_2 import PROFILE, validate_contract
+    value = {'schema_version': PROFILE, 'profile_id':'news', 'profile_version':'1.2',
+        'status':'definition_only', 'script_contract': {'shape':'micro_information_beats',
+            'minimum_beats':4,'maximum_beats':8,
+            'required_fields':['semantic_role','text','visual_anchor','order','duration_guidance','evidence_lineage']},
+        'storyboard_contract':{'shape':'micro_beat_sequence','narration_many_to_many_required':False},
+        'ordinary_scope':'price_offer_led_only','export_contract':{'writer':'export_dynamic_news_xlsx',
+            'template_ref':template_ref,'header_row':4,'first_data_row':5,'headers':'标题1..标题N',
+            'minimum_titles':4,'maximum_titles':8},'allowed_purposes':['isolated-validation'],
+        'automatic_production_promotion':False}
+    return validate_contract(value, PROFILE)
+
+
+def initialize_news_profile_v1_2(root, template_path):
+    from profile_compatibility_contract_v1_2 import RULES, STAGES, validate_contract
+    from profile_compatibility_decisions_v1_1 import DOMAIN, digest, ref, write_once
+    from pathlib import Path
+    root=Path(root).resolve()
+    profile=declared_news_profile_v1_2(ref(root,template_path))
+    directory=root/DOMAIN/'definitions'/digest(profile)
+    profile_path=directory/'profile.json';write_once(profile_path,profile)
+    rules={'schema_version':RULES,'target_profile':'news','profile_sha256':ref(root,profile_path)['sha256'],
+        'pattern_scope_required':True,'rule_version':'1.2','automatic_approval':False,
+        'ordinary_pattern_ids':['pcv1_news_price_offer_led_micro_information'],
+        'scope_limitation':'price_offer_led_only','allowed_purposes':['isolated-validation'],
+        'eligibility_stages':STAGES,'automatic_production_promotion':False}
+    rules_path=directory/'rules.json';write_once(rules_path,validate_contract(rules,RULES))
+    return {'profile_ref':ref(root,profile_path),'rules_ref':ref(root,rules_path)}
+
+
+def build_news_research_bundle_v1_2(root, case_ids):
+    """Derived input for the original deterministic Comparison owner."""
+    from pathlib import Path
+    from profile_compatibility_decisions_v1_1 import read,ref,resolve_ref
+    from build_case_fingerprint_v1 import build_news_fingerprint_v1_2
+    if len(case_ids)!=3 or len(set(case_ids))!=3:
+        raise RuntimeError('Three distinct Native Approved News Cases are required')
+    root=Path(root).resolve();cases=[]
+    for index,cid in enumerate(case_ids):
+        path=root/'data/cases'/cid/'case_v1.json';case=read(path)
+        fp_path=root/'data/fingerprints'/cid/'case_fingerprint_v1.json'
+        if read(fp_path)!=build_news_fingerprint_v1_2(path):
+            raise RuntimeError('Native News Fingerprint changed')
+        board=Path(case['storyboard']['artifact']['path']);value=read(board)
+        if value.get('schema_version')!='reverse-storyboard-v1.2-news-micro-beat':
+            raise RuntimeError('New News research requires native review-required Micro-beat extraction')
+        cases.append({'case_id':cid,'canonical_case_status':'approved','observed_source_profile':'news',
+            'research_ingestion_eligibility':'eligible_for_internal_research',
+            'research_role':'seed_evidence' if index==0 else 'core_evidence' if index==1 else 'variant_evidence',
+            'case_ref':{'path':str(path),'sha256':ref(root,path)['sha256']},
+            'fingerprint_ref':{'path':str(fp_path),'sha256':ref(root,fp_path)['sha256']},
+            'storyboard_ref':{'path':str(board),'sha256':ref(root,board)['sha256']},
+            'semantic_carrier':value['semantic_carrier'],'micro_beat_structure':value['micro_beat_sequence'],
+            'surface_characteristics':{'industry':case['identity']['industry'],
+                'surface_description':value['micro_beat_sequence'][0]['visual_state']},
+            'timing':{'duration_seconds':case['identity']['duration_seconds']}})
+    return {'schema_version':'news-cross-case-research-bundle-v1.2','status':'cross_case_research_ready',
+        'production_profile':'news','research_direction':'price_offer_led_micro_information',
+        'comparison_executed':False,'pattern_candidate_created':False,'canonical_approved_case_count':3,'cases':cases,
+        'authority':{'compatibility_approved':False,'pattern_approved':False,'customer_facts_transferred':False}}

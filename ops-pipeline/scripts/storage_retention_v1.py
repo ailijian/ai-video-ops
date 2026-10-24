@@ -234,8 +234,9 @@ def _transient_targets(
     unsafe: list[str] = []
 
     uploaded_video = None
+    native_review_hold = False
     if acquisition.get("mode") == "operator_uploaded_file":
-        from case_source_upload_v1 import read_upload
+        from case_source_upload_v1 import read_upload,native_review_reservation
         try:
             _, uploaded_video = read_upload(
                 attempt_root.parents[3], str(acquisition.get("upload_id") or ""),
@@ -245,6 +246,10 @@ def _transient_targets(
             )
         except (OSError, ValueError, TypeError):
             unsafe.append("source_video:invalid_upload_receipt")
+        if uploaded_video is not None:
+            # A damaged Native reservation aborts cleanup; it is never an
+            # excuse to delete the associated Human-review media.
+            native_review_hold=native_review_reservation(attempt_root.parents[3],attempt_root,acquisition)
 
     for category, key in (
         ("source_video", "video"),
@@ -255,6 +260,8 @@ def _transient_targets(
         if not raw:
             continue
         path = Path(raw).expanduser()
+        if key=='video' and native_review_hold:
+            continue  # Exact original Upload hold; Human evidence Gate is unchanged.
         provider_media_root = attempt_root / "source_media"
         provider_video = (
             acquisition.get("mode") == "qiyun_resolved_media"

@@ -1,0 +1,183 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "novel-news-generation-dispatch-v1.0"
+        },
+        "operation_id": {
+          "type": "string",
+          "pattern": "[a-f0-9]{32}"
+        },
+        "request_id": {
+          "type": "string",
+          "pattern": "gen_[a-zA-Z0-9]+"
+        },
+        "intent_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "dispatched_at": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "schema_version",
+        "operation_id",
+        "request_id",
+        "intent_sha256",
+        "dispatched_at"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "novel-news-generation-response-v1.0"
+        },
+        "operation_id": {
+          "type": "string",
+          "pattern": "[a-f0-9]{32}"
+        },
+        "request_id": {
+          "type": "string",
+          "pattern": "gen_[a-zA-Z0-9]+"
+        },
+        "intent_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "received_at": {
+          "type": "string",
+          "minLength": 1
+        },
+        "response": {
+          "type": "object",
+          "properties": {
+            "payload": {
+              "type": "object"
+            },
+            "response_sha256": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "minLength": 1
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "usage": {
+              "type": "object"
+            },
+            "transport_mode": {
+              "enum": [
+                "native-remote",
+                "explicit-transport-boundary"
+              ]
+            }
+          },
+          "required": [
+            "payload",
+            "response_sha256",
+            "usage",
+            "transport_mode"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "schema_version",
+        "operation_id",
+        "request_id",
+        "intent_sha256",
+        "received_at",
+        "response"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "novel-news-generation-result-v1.0"
+        },
+        "operation_id": {
+          "type": "string",
+          "pattern": "[a-f0-9]{32}"
+        },
+        "request_id": {
+          "type": "string",
+          "pattern": "gen_[a-zA-Z0-9]+"
+        },
+        "intent_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "outcome": {
+          "const": "review_required"
+        },
+        "plan_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "prepared_response_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      },
+      "required": [
+        "schema_version",
+        "operation_id",
+        "request_id",
+        "intent_sha256",
+        "outcome",
+        "plan_sha256",
+        "prepared_response_sha256"
+      ],
+      "additionalProperties": false
+    },
+    {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "novel-news-generation-task-v1.0"
+        },
+        "operation_id": {
+          "type": "string",
+          "pattern": "[a-f0-9]{32}"
+        },
+        "request_id": {
+          "type": "string",
+          "pattern": "gen_[a-zA-Z0-9]+"
+        },
+        "intent_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "task_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "task_operation_identity": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "schema_version",
+        "operation_id",
+        "request_id",
+        "intent_sha256",
+        "task_id",
+        "task_operation_identity"
+      ],
+      "additionalProperties": false
+    }
+  ]
+}

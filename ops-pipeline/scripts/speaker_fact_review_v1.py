@@ -560,7 +560,9 @@ def ensure_or_build_persona(
 ]:
     output_root = pipeline_root / "data" / "personas"
 
-    expected = output_root / speaker_id / "revision_0001" / "persona_v1.json"
+    from persona_review_lifecycle_v1 import candidate_path
+    source = read_json(input_path)
+    expected = candidate_path(output_root, source)
 
     if expected.is_file():
         persona = read_json(expected)
@@ -596,6 +598,7 @@ def ensure_or_build_persona(
             output_root,
             created_at=created_at,
             business_persona_path=(business_persona_path),
+            previous_persona_path=Path(source["previous_approved_persona_path"]) if source.get("previous_approved_persona_path") else None,
         )
     except Exception as exc:
         raise SpeakerFactReviewError(
@@ -735,6 +738,9 @@ def review_speaker_facts(
         request["speaker_id"],
     )
 
+    from persona_review_lifecycle_v1 import effective_sources, apply_revision_input
+    reviewed_sources = effective_sources(reviewed_sources, speaker=True)
+
     persona_input = build_speaker_persona_input(
         business_id=request["business_id"],
         speaker_id=request["speaker_id"],
@@ -744,6 +750,7 @@ def review_speaker_facts(
         reviewed_path=(reviewed_path),
         reviewed_sources=reviewed_sources,
     )
+    apply_revision_input(pipeline_root, "speaker", request["speaker_id"], root, persona_input, reviewed)
 
     blockers = speaker_blockers(persona_input)
 
@@ -928,6 +935,68 @@ def recheck_speaker_readiness(
     return result
 
 
+def revalidate_speaker_business(*, request: dict[str, Any], pipeline_root: Path) -> dict[str, Any]:
+    """Human revalidation of unchanged personal evidence against new Business.
+
+    Builds an unapproved revision using existing builder/lineage, never copies
+    Business facts or changes any historical Persona/receipt/request.
+    """
+    from show_customer_status_v1 import resolve_current_persona
+    business_id = str(request.get("business_id") or "")
+    speaker_id = str(request.get("speaker_id") or "")
+    if request.get("confirmed") is not True or not str(request.get("reviewer") or "").strip():
+        raise SpeakerFactReviewError("HUMAN_REVALIDATION_REQUIRED", "Explicit Human confirmation is required.")
+    business = resolve_current_persona(pipeline_root, business_id, "business")
+    speaker = resolve_current_persona(pipeline_root, speaker_id, "speaker")
+    if business["file_sha256"] != request.get("business_sha256"):
+        raise SpeakerFactReviewError("BUSINESS_REVISION_CHANGED", "Refresh and review the current approved Business.")
+    root = pipeline_root / "data/speaker_revalidations" / speaker_id / f"business_revision_{business['revision']:04d}"
+    review_path = root / "speaker_revalidation_review_v1.json"
+    if review_path.exists():
+        previous_review = read_json(review_path)
+        if previous_review.get("business_sha256") != business["file_sha256"] or previous_review.get("speaker_sha256") != request.get("speaker_sha256"):
+            raise SpeakerFactReviewError("REVALIDATION_CONFLICT", "Revalidation already exists for different evidence.")
+        review = previous_review
+    else:
+        reference = speaker["artifact"].get("business_persona_ref") or {}
+        if reference.get("persona_id") != business_id or int(reference.get("revision") or 0) >= business["revision"]:
+            raise SpeakerFactReviewError("REVALIDATION_NOT_REQUIRED", "Speaker does not require this Business revalidation.")
+        if speaker["file_sha256"] != request.get("speaker_sha256"):
+            raise SpeakerFactReviewError("SPEAKER_REVISION_CHANGED", "Refresh and review current personal evidence.")
+        review = {**request, "schema_version": "speaker-business-revalidation-v1.0",
+            "reviewed_at": datetime.now(timezone.utc).isoformat(), "status": "completed_persona_review_required",
+            "previous_speaker_path": str(speaker["path"]),
+            "business_path": str(business["path"]),
+            "speaker_revision": speaker["revision"] + 1,
+            "authority": {"human_review": True, "persona_approved": False,
+                "business_facts_copied": False, "personal_claim_scope_expanded": False},
+            "next_action": "REVIEW_SPEAKER_PERSONA"}
+        write_new_or_same(review_path, review)
+    old_path = Path(review["previous_speaker_path"])
+    old = read_json(old_path)
+    if sha256_file(old_path) != review["speaker_sha256"]:
+        raise SpeakerFactReviewError("REVALIDATION_SOURCE_CHANGED", "Approved personal evidence changed.")
+    source = {"persona_id": speaker_id, "revision": review["speaker_revision"],
+        "persona_scope": "speaker", "speaker_type": old["speaker_type"],
+        "source_type": "human_business_revision_revalidation",
+        "source_file": str(review_path.resolve()), "source_ref": str(review_path.resolve()),
+        "facts": copy.deepcopy(old["facts"]),
+        "business_persona_ref": {"persona_id": business_id}}
+    if old.get("persona_control_layer") is not None:
+        source["persona_control_layer"] = copy.deepcopy(old["persona_control_layer"])
+    input_path = root / "speaker_persona_input_v1.json"
+    write_new_or_same(input_path, source)
+    output = pipeline_root / "data/personas" / speaker_id / f"revision_{source['revision']:04d}" / "persona_v1.json"
+    if output.exists():
+        existing = read_json(output)
+        if existing.get("provenance", {}).get("input_sha256") != sha256_file(input_path):
+            raise SpeakerFactReviewError("SPEAKER_PERSONA_REVISION_CONFLICT", "A different Speaker revision is pending.")
+    else:
+        build_persona(input_path, pipeline_root / "data/personas", previous_persona_path=old_path,
+            created_at=review["reviewed_at"], business_persona_path=business["path"])
+    return review
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description=(
@@ -941,6 +1010,7 @@ def main() -> None:
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("--review")
     source.add_argument("--recheck")
+    source.add_argument("--revalidate")
 
     parser.add_argument(
         "--pipeline-root",
@@ -955,10 +1025,10 @@ def main() -> None:
         else Path(__file__).resolve().parents[1]
     )
 
-    request = read_json(Path(args.review or args.recheck).expanduser().resolve())
+    request = read_json(Path(args.review or args.recheck or args.revalidate).expanduser().resolve())
 
     try:
-        result = (
+        result = revalidate_speaker_business(request=request, pipeline_root=pipeline_root) if args.revalidate else (
             review_speaker_facts(request=request, pipeline_root=pipeline_root)
             if args.review
             else recheck_speaker_readiness(

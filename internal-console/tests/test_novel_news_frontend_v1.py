@@ -18,6 +18,12 @@ def test_news_dual_mode_ui_and_novel_review_contract() -> None:
     assert "当前结构暂不支持" in novel
     assert "data-confirm-novel" in novel
     assert "审核新闻体" in novel and "查看来源事实" in novel
-    assert "data-novel-revised" in novel and "data-submit-novel-review" in novel
+    assert "ContentReviewItem" in novel and "ContentReviewList" in novel
+    assert "bindContentReviewControls" in novel
+    assert "[data-revised-title]" in novel and "data-submit-novel-review disabled" in novel
+    assert "data-novel-approve-all" not in novel and "data-novel-review-progress" in novel
+    shared = (ROOT / "creation-components.js").read_text(encoding="utf-8")
+    assert 'value="approved" checked data-content-decision' in shared
+    assert "当前选择：通过" in shared and "已处理" not in shared
     assert "导出新闻体 Excel" in novel
     assert "repeat(5, minmax(0, 1fr))" in styles

@@ -1,0 +1,60 @@
+{
+  "verified_at_utc": "2026-10-23T18:04:01.746090+00:00",
+  "primary_head": "4287234e5aa7f711751d7ec06dd0935ad6acbab2",
+  "audit_head": "4287234e5aa7f711751d7ec06dd0935ad6acbab2",
+  "primary_branch": "codex/checkpoint-creation-batch-ux1-uat-20261024",
+  "audit_branch": "codex/case-excel-import-1-v03-b0",
+  "primary_status_before": "?? docs/template/\n",
+  "primary_status_after": "?? docs/template/\n",
+  "primary_tracked_changes": [],
+  "audit_tracked_changes": [
+    "docs/deliveries/README.md"
+  ],
+  "staged_changes": [],
+  "audit_untracked_status": " M docs/deliveries/README.md\n?? docs/deliveries/case-excel-import-1/\n?? internal-console/ops-pipeline/\n",
+  "worktrees": "worktree E:/projects/ai-video-ops\nHEAD 4287234e5aa7f711751d7ec06dd0935ad6acbab2\nbranch refs/heads/codex/checkpoint-creation-batch-ux1-uat-20261024\n\nworktree E:/projects/ai-video-ops/.worktrees/cxi\nHEAD 4287234e5aa7f711751d7ec06dd0935ad6acbab2\nbranch refs/heads/codex/case-excel-import-1-v03-b0\n\n",
+  "old_checkpoint_branch_tag_and_durable_refs_unchanged": true,
+  "app_managed_transient_ref_changes_observed": [
+    {
+      "ref": "refs/codex/turn-diffs/captures/1792772887666/968ccabc-cea4-4193-b3bd-1d451cbf62f3/base",
+      "prior_checkpoint_sha": "e7bebf654b93e9d22e966530a60f244b71df1f3f",
+      "current_sha": null,
+      "scope": "App-managed transient turn-diff capture; not a branch/tag/approved history ref. No git update-ref/delete issued by this audit."
+    }
+  ],
+  "new_audit_branch_only_intentional_control_change": true,
+  "protected_frozen_batch_docs": {
+    "BASELINE.md": "13844cf74cd3eaf3a80e104fad26fbf56aa4548204c26597ab2e9623625fd0c3",
+    "PLAN.md": "f1ebd4283dc0e341aca7675c245e2c515cbab1e314af8843eee3e426831e07bb"
+  },
+  "uat_native_before_manifest_sha256": "eae1ad49c7422a93231507cb79860d74b98472b3d278db7a034542d6c8f4c013",
+  "uat_native_after_manifest_sha256": "eae1ad49c7422a93231507cb79860d74b98472b3d278db7a034542d6c8f4c013",
+  "uat_native_json_jsonl_xlsx_files_unchanged": 616,
+  "uat_native_files_added": [],
+  "prior_checkpoint_protected_files_unchanged": 1530,
+  "prior_checkpoint_diff": [],
+  "uat_tasks_current": {
+    "count": 24,
+    "sha256": "16ad57f900cf0f998f44b3f44d8d541f1f5258050be8dc2ce120d545490da7e1"
+  },
+  "task_comparison_reference": "Prior Checkpoint PREPARED.json, not a fabricated B0-start database snapshot",
+  "actual_authority_or_models_written": false,
+  "no_new_commit_push_merge_or_deployment": true,
+  "source_anchor_working_and_primary_SHA_separately_recorded": 33,
+  "source_anchor_content_matches_primary_after_Git_CRLF_LF_checkout_conversion": 33,
+  "source_anchor_content_matches_HEAD_after_Git_CRLF_LF_checkout_conversion": 33,
+  "source_anchor_git_blob_SHA_separately_recorded": true,
+  "dependency_only_links": [
+    {
+      "path": "E:\\projects\\ai-video-ops\\.worktrees\\cxi\\ops-pipeline\\.venv",
+      "target": "E:\\projects\\ai-video-ops\\ops-pipeline\\.venv",
+      "purpose": "Existing tests require repository-local Python path; no environment package/source modification"
+    },
+    {
+      "path": "E:\\projects\\ai-video-ops\\.worktrees\\cxi\\internal-console\\ops-pipeline\\.venv",
+      "target": "E:\\projects\\ai-video-ops\\ops-pipeline\\.venv",
+      "purpose": "Initially created under wrong working directory; retained, not staged/packaged; local dependency junction only, no copied business data"
+    }
+  ],
+  "commit_whitelist_warning": "Do not stage local dependency junctions or .verify artifacts. This B0 authorizes no commits; only intended tracked edit is Delivery navigation plus new audit documentation."
+}

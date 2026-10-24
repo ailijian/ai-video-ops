@@ -1679,6 +1679,8 @@ def append_ledger_file(
     new_entries: list[dict[str, Any]],
 ) -> tuple[dict[str, Any], str]:
     path = path.expanduser().resolve()
+    from ledger_history_v1 import prohibit_unversioned_ledger_write
+    prohibit_unversioned_ledger_write(path)
     if read_json(path) != expected_current:
         raise RuntimeError("Content Ledger changed before append.")
     updated = append_ledger_entries(expected_current, new_entries)
@@ -1797,8 +1799,24 @@ def replace_ledger_after_export(
     path: Path,
     expected_current: dict[str, Any],
     replacement: dict[str, Any],
+    *, news_export_intent_ref: dict[str, Any] | None = None, history_context: dict | None = None,
 ) -> str:
     """Atomically persist one validated append-only export closure."""
+    if history_context is not None:
+        from ledger_history_v1 import transition, bytes_for
+        c=history_context
+        with transition(c['root'],c['business'],c['request_id'],c['kind'],expected_current,replacement,
+                exported_at=c['exported_at'],after_bytes=bytes_for(replacement)):
+            return _replace_ledger_after_export_native(path,expected_current,replacement,
+                news_export_intent_ref=news_export_intent_ref)
+    if path.name=='content_ledger_v1.json' and path.parent.parent.name=='content_ledgers':
+        from ledger_history_v1 import home,LedgerHistoryError
+        if home(path.parents[3],expected_current['business_id']).is_dir():
+            raise LedgerHistoryError('NATIVE_WRITER_REQUIRED')
+    return _replace_ledger_after_export_native(path,expected_current,replacement,news_export_intent_ref=news_export_intent_ref)
+
+
+def _replace_ledger_after_export_native(path,expected_current,replacement,*,news_export_intent_ref=None):
     path = path.expanduser().resolve()
     if read_json(path) != expected_current:
         raise RuntimeError("Content Ledger changed before exported-content append.")
@@ -1820,11 +1838,26 @@ def replace_ledger_after_export(
     payload = json.dumps(replacement, ensure_ascii=False, indent=2).encode("utf-8")
     temporary = path.with_suffix(path.suffix + ".export.tmp")
     if temporary.exists():
-        raise RuntimeError("Content Ledger export temporary path already exists.")
-    with temporary.open("xb") as handle:
-        handle.write(payload)
+        if news_export_intent_ref is None or temporary.read_bytes()!=payload:
+            raise RuntimeError("Content Ledger export temporary path already exists.")
+        from news_export_recovery_v1 import ledger_intent
+        appended=replacement['entries'][len(expected_current.get('entries') or []):]
+        if len(appended)!=1:
+            raise RuntimeError('News recovery must bind exactly one original semantic item')
+        item=appended[0]
+        ledger_intent(path.parents[3],news_export_intent_ref,business_id=replacement['business_id'],
+            request_id=item['batch_ref'],titles=[b['text'] for b in item['micro_information_beats']],
+            approved_sha256=item['approved_review_ref']['sha256'],
+            output_sha256=read_json(Path(item['export_receipt_ref']['path']))['output_sha256'])
+    else:
+        with temporary.open("xb") as handle:
+            handle.write(payload)
+            handle.flush()
+            import os
+            os.fsync(handle.fileno())
     if read_json(path) != expected_current:
-        temporary.unlink(missing_ok=True)
+        if news_export_intent_ref is None:
+            temporary.unlink(missing_ok=True)
         raise RuntimeError("Content Ledger changed during exported-content append.")
     temporary.replace(path)
     return hashlib.sha256(payload).hexdigest()
@@ -2018,6 +2051,9 @@ def build_fact_atom_catalog(
     persona_sha256: str,
     allowed_fact_fields: set[str] | None = None,
 ) -> list[dict[str, Any]]:
+    if persona.get("persona_scope", "business") == "business":
+        from customer_constraints_v1 import truth_projection
+        persona = truth_projection(persona)
     atoms: list[dict[str, Any]] = []
     for field in sorted(persona.get("facts") or {}):
         if allowed_fact_fields is not None and field not in allowed_fact_fields:
@@ -2207,6 +2243,8 @@ def replace_ledger_with_communicated_information(
     replacement: dict[str, Any],
 ) -> str:
     path = path.expanduser().resolve()
+    from ledger_history_v1 import prohibit_unversioned_ledger_write
+    prohibit_unversioned_ledger_write(path)
     if read_json(path) != expected_current:
         raise RuntimeError("Content Ledger changed before V1.1 backfill.")
     payload = json.dumps(replacement, ensure_ascii=False, indent=2).encode("utf-8")
@@ -3320,6 +3358,7 @@ def build_content_plan_v1_1_1(
     request: dict[str, Any],
     source_artifact_hashes: dict[str, str],
     created_at: str | None = None,
+    pending_concepts: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     minimum_score = float(
         (request.get("content_quality_v1") or {}).get(
@@ -3359,6 +3398,18 @@ def build_content_plan_v1_1_1(
             decision = "editorial_quality_rejected"
         else:
             decision = "high_quality_novel"
+        if decision == 'high_quality_novel' and pending_concepts:
+            # Pending selections are not communicated/Strong Ledger memory.
+            # Use the same Native semantic rule plus the material atom fence
+            # as the reservation owner before choosing the next K contents.
+            scoped = dict(candidate)
+            scoped['primary_fact_atom_refs'] = list(material.get('primary_fact_atom_refs') or [])
+            novelty = novelty_evaluation(scoped, [], pending_concepts)
+            atoms = set(scoped['primary_fact_atom_refs'])
+            collision = any(atoms & set(v.get('primary_fact_atom_refs') or v.get('source_fact_atom_refs') or [])
+                for v in pending_concepts)
+            if novelty.get('hard_duplicate') or collision:
+                decision = 'pending_intent_reserved'
         candidate["v1_1_1_gate_decision"] = decision
         evaluated.append(candidate)
 
@@ -3916,6 +3967,12 @@ def approved_persona_ref(
         raise RuntimeError("Persona approval receipt identity mismatch.")
     if receipt.get("persona_sha256_after_approval") != persona_sha:
         raise RuntimeError("Approved Persona SHA does not match its approval receipt.")
+    if expected_scope == "business":
+        from customer_constraints_v1 import assert_production_allowed, truth_projection
+        rules = assert_production_allowed(persona, persona_path)
+        if rules["derived_authority_constraints"]:
+            persona["_production_constraints"] = rules["derived_authority_constraints"]
+            persona = truth_projection(persona, path=persona_path)
     return persona, {
         "persona_id": persona.get("persona_id"),
         "revision": persona.get("revision"),

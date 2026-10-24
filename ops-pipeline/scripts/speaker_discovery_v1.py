@@ -157,6 +157,8 @@ def _validate_candidate(
     )
     if personal is None:
         personal = []
+    from speaker_onboarding_analysis_v1 import personal_quote_has_foreign_owner
+    personal = [quote for quote in personal if not personal_quote_has_foreign_owner(quote)]
 
     forbidden = _quote_list(
         raw.get("explicit_forbidden_claims") or [],

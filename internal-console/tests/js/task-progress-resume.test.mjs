@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import test from "node:test";
 import { startTaskPolling } from "../../static/assets/task-progress.js";
 import { progressPanel } from "../../static/assets/case-components.js";
 import { caseTaskResumeDestination } from "../../static/assets/case-submit-state.mjs";
@@ -84,3 +85,21 @@ assert.equal(caseTaskResumeDestination({ ...caseTask, status: "failed", current_
 assert.equal(caseTaskResumeDestination({ ...caseTask, status: "failed", current_case_status: "approved" }), `/cases/${caseTask.subject_ref}`);
 
 console.log("task polling resume and case completion actions PASS");
+
+test("failed revision resumes its own task and exact Attempt, without resubmission", () => {
+  const revision = { ...caseTask, task_id: "case-revision-abc123456789", status: "failed",
+    current_active_task_id: "original-analysis", payload: { evidence_revision: { attempt_id: caseTask.task_id } } };
+  assert.equal(caseTaskResumeDestination(revision), `/tasks/${revision.task_id}`);
+  const html = progressPanel(revision);
+  assert.match(html, /修订校验未完成/);
+  assert.match(html, /data-retry-revision/);
+  assert.match(html, new RegExp(`attempt_id=${caseTask.task_id}`));
+  assert.doesNotMatch(html, /返回添加案例|retry_task=|\/tasks\/original-analysis|获取视频|分镜需要确认/);
+});
+
+test("revision execution completion does not claim Case Approval", () => {
+  const html = progressPanel({ ...caseTask, status: "completed", payload: { evidence_revision: { attempt_id: caseTask.task_id } } });
+  assert.match(html, /修订校验已完成/);
+  assert.match(html, /校验完成不等于批准入库/);
+  assert.doesNotMatch(html, /data-retry-revision|案例已入库|返回添加案例/);
+});

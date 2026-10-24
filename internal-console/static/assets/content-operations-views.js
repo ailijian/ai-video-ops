@@ -1,4 +1,5 @@
-import { escapeHtml } from "./case-components.js?v=productized-stage1-5";
+import { escapeHtml } from "./case-components.js?v=flow-closure-2";
+import { batchHistoryMarkup } from './creation-batch-view.mjs?v=cbux1-b234-3';
 
 const INTERNAL_LANGUAGE = /(?:authority|canonical|artifact|request id|content ledger|semantic ledger|historical exposure|presentation history|projection|[A-Z][A-Z0-9_]{3,})/;
 
@@ -162,6 +163,13 @@ export function ContentOperationsPanel(data = {}) {
     </div>`;
 }
 
+export function CreationRecordsPanel(data = {}) {
+  const rows = data.records || [];
+  return `<section class="work-surface content-management-section"><div class="section-head content-management-heading"><div><h2>作品与创作记录</h2><p>按原始创作请求记录，包含未完成、待审核、已结束及已导出内容。</p></div><span class="content-count-pill">${data.total ?? "—"} 条记录</span></div>${rows.length
+    ? `<div class="content-work-list">${rows.map(row => `<article class="content-work-row"><span class="content-type-label">${profileLabel(row.profile)}</span><div><strong>${escapeHtml(row.label)}</strong><p>${escapeHtml(row.updated_at ? row.updated_at.slice(0,10) : "更新时间暂无")}</p></div><a class="btn btn-secondary btn-compact" href="${escapeHtml(row.url)}" data-route>查看原创作</a></article>`).join("")}</div>`
+    : '<div class="content-management-empty neutral"><div><strong>还没有创作记录</strong><span>从该客户开始创作后，请求和后续成果会保留在这里。</span></div></div>'}</section>`;
+}
+
 export function createContentOperationsViews({
   app,
   api,
@@ -171,14 +179,21 @@ export function createContentOperationsViews({
   skeletonPage,
   renderLoadError,
 }) {
+  let generation = 0;
   async function renderContentOperations(businessId) {
+    const version = ++generation, route = window.location.href;
+    const current = () => version === generation && window.location.href === route;
     skeletonPage("内容管理");
     try {
-      const data = await api(`/api/customers/${encodeURIComponent(businessId)}/content-operations`);
-      const customer = data.customer || {};
-      const createAction = data.actions?.create_url
-        ? `<a class="btn btn-primary" href="${escapeHtml(data.actions.create_url)}" data-route>开始创作</a>`
-        : "";
+      const page = Math.max(1, Number(new URLSearchParams(window.location.search).get("page")) || 1);
+      const [records, data, batches] = await Promise.all([
+        api(`/api/customers/${encodeURIComponent(businessId)}/creation-records?page=${page}`),
+        api(`/api/customers/${encodeURIComponent(businessId)}/content-operations`).catch(() => null),
+        api(`/api/create/batches?business_id=${encodeURIComponent(businessId)}`).catch(() => null),
+      ]);
+      if (!current()) return;
+      const customer = records.customer || {};
+      const createAction = `<a class="btn btn-primary" href="/create/config?business_id=${encodeURIComponent(businessId)}" data-route>开始创作</a>`;
       const description = [customer.display_name || businessId, customer.industry || ""]
         .filter(Boolean)
         .join(" · ");
@@ -190,11 +205,15 @@ export function createContentOperationsViews({
             <a class="back-link" href="/customers/${encodeURIComponent(businessId)}#content" data-route>← 返回客户</a>
           </div>
           ${pageHeading("", "内容管理", description, createAction)}
-          ${ContentOperationsPanel(data)}
+            ${batchHistoryMarkup(batches)}
+            ${CreationRecordsPanel(records)}
+          <nav class="customer-list-pagination" aria-label="创作记录分页">${page > 1 ? `<a class="btn btn-secondary" href="/customers/${encodeURIComponent(businessId)}/content?page=${page-1}" data-route>上一页</a>` : ""}<span>第 ${page} 页</span>${page * records.page_size < records.total ? `<a class="btn btn-secondary" href="/customers/${encodeURIComponent(businessId)}/content?page=${page+1}" data-route>下一页</a>` : ""}</nav>
+          ${data ? ContentOperationsPanel(data) : '<p class="field-hint">内容概览暂时无法可靠读取；已有创作记录仍可查看。</p>'}
         </main>`,
       );
       bindCommonActions();
     } catch (error) {
+      if (!current()) return;
       renderLoadError("内容管理暂时无法读取", error);
     }
   }

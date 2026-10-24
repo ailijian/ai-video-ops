@@ -1,0 +1,198 @@
+{
+  "head": "61efbc477ea28b9aee9a492d3ee96324718ef592",
+  "anchors": [
+    {
+      "path": "internal-console/app/case_excel_native.py",
+      "function": "preview",
+      "line": 113,
+      "end_line": 138,
+      "file_sha256": "0eec4fc0f2bc23431a439cec8a24e2b8e93dd8dab9e50321f9b24798fa28b926",
+      "scope": "CURRENT_CODE_OR_APPROVED_DELEGATION"
+    },
+    {
+      "path": "internal-console/app/case_excel_native.py",
+      "function": "submit",
+      "line": 169,
+      "end_line": 280,
+      "file_sha256": "0eec4fc0f2bc23431a439cec8a24e2b8e93dd8dab9e50321f9b24798fa28b926",
+      "scope": "CURRENT_CODE_OR_APPROVED_DELEGATION"
+    },
+    {
+      "path": "internal-console/app/case_excel_native.py",
+      "function": "validate_primary_origin",
+      "line": 283,
+      "end_line": 322,
+      "file_sha256": "0eec4fc0f2bc23431a439cec8a24e2b8e93dd8dab9e50321f9b24798fa28b926",
+      "scope": "CURRENT_CODE_OR_APPROVED_DELEGATION"
+    },
+    {
+      "path": "internal-console/app/case_excel_native.py",
+      "function": "reviewer_notes",
+      "line": 383,
+      "end_line": 417,
+      "file_sha256": "0eec4fc0f2bc23431a439cec8a24e2b8e93dd8dab9e50321f9b24798fa28b926",
+      "scope": "CURRENT_CODE_OR_APPROVED_DELEGATION"
+    },
+    {
+      "path": "internal-console/app/case_excel_native.py",
+      "function": "upload_is_reserved",
+      "line": 354,
+      "end_line": 380,
+      "file_sha256": "0eec4fc0f2bc23431a439cec8a24e2b8e93dd8dab9e50321f9b24798fa28b926",
+      "scope": "CURRENT_CODE_OR_APPROVED_DELEGATION"
+    },
+    {
+      "path": "internal-console/app/case_excel_native.py",
+      "function": "read_submission",
+      "line": 325,
+      "end_line": 340,
+      "file_sha256": "0eec4fc0f2bc23431a439cec8a24e2b8e93dd8dab9e50321f9b24798fa28b926",
+      "scope": "CURRENT_CODE_OR_APPROVED_DELEGATION"
+    },
+    {
+      "path": "internal-console/app/case_excel_native.py",
+      "function": "owned_row_submissions",
+      "line": 343,
+      "end_line": 351,
+      "file_sha256": "0eec4fc0f2bc23431a439cec8a24e2b8e93dd8dab9e50321f9b24798fa28b926",
+      "scope": "CURRENT_CODE_OR_APPROVED_DELEGATION"
+    },
+    {
+      "path": "internal-console/app/case_intake_service.py",
+      "function": "preview_excel_native",
+      "line": 16,
+      "end_line": 18,
+      "file_sha256": "d0188083ff04a043e692af0ac9ededae3abd7ad52b368756659d758dbb03198e",
+      "scope": "CURRENT_CODE_OR_APPROVED_DELEGATION"
+    },
+    {
+      "path": "internal-console/app/case_intake_service.py",
+      "function": "submit_excel_native",
+      "line": 21,
+      "end_line": 23,
+      "file_sha256": "d0188083ff04a043e692af0ac9ededae3abd7ad52b368756659d758dbb03198e",
+      "scope": "CURRENT_CODE_OR_APPROVED_DELEGATION"
+    },
+    {
+      "path": "internal-console/app/case_intake_service.py",
+      "function": "read_excel_native",
+      "line": 26,
+      "end_line": 28,
+      "file_sha256": "d0188083ff04a043e692af0ac9ededae3abd7ad52b368756659d758dbb03198e",
+      "scope": "CURRENT_CODE_OR_APPROVED_DELEGATION"
+    },
+    {
+      "path": "internal-console/app/task_service.py",
+      "function": "create_case_task",
+      "line": 255,
+      "end_line": 310,
+      "file_sha256": "28906580fd2fa0220519dfada5ccfcfcc4b85d001f6e24f0ecd7149b97a9f66e",
+      "scope": "CURRENT_CODE_OR_APPROVED_DELEGATION"
+    },
+    {
+      "path": "internal-console/app/task_service.py",
+      "function": "submit_task",
+      "line": 475,
+      "end_line": 613,
+      "file_sha256": "28906580fd2fa0220519dfada5ccfcfcc4b85d001f6e24f0ecd7149b97a9f66e",
+      "scope": "CURRENT_CODE_OR_APPROVED_DELEGATION"
+    },
+    {
+      "path": "internal-console/app/task_service.py",
+      "function": "claim_task",
+      "line": 832,
+      "end_line": 874,
+      "file_sha256": "28906580fd2fa0220519dfada5ccfcfcc4b85d001f6e24f0ecd7149b97a9f66e",
+      "scope": "CURRENT_CODE_OR_APPROVED_DELEGATION"
+    },
+    {
+      "path": "internal-console/app/task_service.py",
+      "function": "recover_expired_tasks",
+      "line": 877,
+      "end_line": 929,
+      "file_sha256": "28906580fd2fa0220519dfada5ccfcfcc4b85d001f6e24f0ecd7149b97a9f66e",
+      "scope": "CURRENT_CODE_OR_APPROVED_DELEGATION"
+    },
+    {
+      "path": "internal-console/app/case_excel_import.py",
+      "function": "validate_session",
+      "line": 267,
+      "end_line": 273,
+      "file_sha256": "85eb1cdde5ca756a67bfece0a3dcc24c963434bf97e7eab98fd636e69f2bd4b8",
+      "scope": "CURRENT_CODE_OR_APPROVED_DELEGATION"
+    },
+    {
+      "path": "internal-console/app/case_excel_import.py",
+      "function": "save",
+      "line": 497,
+      "end_line": 631,
+      "file_sha256": "85eb1cdde5ca756a67bfece0a3dcc24c963434bf97e7eab98fd636e69f2bd4b8",
+      "scope": "CURRENT_CODE_OR_APPROVED_DELEGATION"
+    },
+    {
+      "path": "internal-console/app/case_uploads.py",
+      "function": "cleanup_unused_uploads",
+      "line": 183,
+      "end_line": 224,
+      "file_sha256": "e652eab9e01592ff112898d20903b0e99e63104667e99c703b1cdb80a76298ee",
+      "scope": "CURRENT_CODE_OR_APPROVED_DELEGATION"
+    },
+    {
+      "path": "internal-console/app/review_commands.py",
+      "function": "issue",
+      "line": 96,
+      "end_line": 120,
+      "file_sha256": "f8205a83ad5bb01ee401c6040b8c01ebb105c5c1d69becea76a3953411314186",
+      "scope": "UNCHANGED_CURRENT_COMMAND_LIMIT; JC-01 implementation STOPPED"
+    },
+    {
+      "path": "internal-console/app/review_commands.py",
+      "function": "begin",
+      "line": 142,
+      "end_line": 203,
+      "file_sha256": "f8205a83ad5bb01ee401c6040b8c01ebb105c5c1d69becea76a3953411314186",
+      "scope": "UNCHANGED_CURRENT_COMMAND_LIMIT; JC-01 implementation STOPPED"
+    },
+    {
+      "path": "internal-console/app/review_commands.py",
+      "function": "complete_joint",
+      "line": 211,
+      "end_line": 240,
+      "file_sha256": "f8205a83ad5bb01ee401c6040b8c01ebb105c5c1d69becea76a3953411314186",
+      "scope": "UNCHANGED_CURRENT_COMMAND_LIMIT; JC-01 implementation STOPPED"
+    },
+    {
+      "path": "internal-console/app/review_commands.py",
+      "function": "validate_joint_result",
+      "line": 253,
+      "end_line": 279,
+      "file_sha256": "f8205a83ad5bb01ee401c6040b8c01ebb105c5c1d69becea76a3953411314186",
+      "scope": "UNCHANGED_CURRENT_COMMAND_LIMIT; JC-01 implementation STOPPED"
+    },
+    {
+      "path": "internal-console/app/case_shared_display.py",
+      "function": "_history",
+      "line": 338,
+      "end_line": 369,
+      "file_sha256": "c4e26040bba1ec3e1f1501b2d716bf12d2c918d9287cc98517ef677689bf1957",
+      "scope": "UNCHANGED_CURRENT_COMMAND_LIMIT; JC-01 implementation STOPPED"
+    },
+    {
+      "path": "internal-console/app/case_shared_display.py",
+      "function": "publish_joint",
+      "line": 256,
+      "end_line": 304,
+      "file_sha256": "c4e26040bba1ec3e1f1501b2d716bf12d2c918d9287cc98517ef677689bf1957",
+      "scope": "UNCHANGED_CURRENT_COMMAND_LIMIT; JC-01 implementation STOPPED"
+    },
+    {
+      "path": "internal-console/app/case_shared_display.py",
+      "function": "shared_projection",
+      "line": 480,
+      "end_line": 496,
+      "file_sha256": "c4e26040bba1ec3e1f1501b2d716bf12d2c918d9287cc98517ef677689bf1957",
+      "scope": "UNCHANGED_CURRENT_COMMAND_LIMIT; JC-01 implementation STOPPED"
+    }
+  ],
+  "original_owners_preserved": true
+}

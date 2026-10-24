@@ -15,6 +15,7 @@ from generation_feasibility_v1 import (
 from production_profile_v1 import (
     validate_registry,
 )
+from human_review_operations_v1 import io_path
 from show_customer_status_v1 import (
     AuthorityResolutionError,
     load_content_ledger,
@@ -25,7 +26,7 @@ from show_customer_status_v1 import (
     resolve_current_persona,
     resolve_recorded_path,
     resolve_speaker_persona,
-    sha256_file,
+    sha256_file as _artifact_sha,
     validate_approved_batch,
 )
 
@@ -36,6 +37,10 @@ SUPPORTED_PROFILES = {
     "mix",
     "news",
 }
+
+
+def sha256_file(path):
+    return _artifact_sha(io_path(path))
 
 
 class ContentCreationEntryError(RuntimeError):
@@ -56,7 +61,7 @@ def read_json(
     path: Path,
 ) -> dict[str, Any]:
     try:
-        value = json.loads(path.read_text(encoding="utf-8"))
+        value = json.loads(io_path(path).read_text(encoding="utf-8"))
     except (
         OSError,
         json.JSONDecodeError,
@@ -101,8 +106,14 @@ def load_profile_registry(
         / "production_profiles"
         / "production_profile_registry_v1.json"
     )
+    from profile_compatibility_release_v1_1 import CONFIG, effective_runtime
+    if (pipeline_root / CONFIG).is_file():
+        try:
+            path = effective_runtime(pipeline_root)['registry_path']
+        except RuntimeError as exc:
+            raise ContentCreationEntryError('PRODUCTION_PROFILE_REGISTRY_INVALID', str(exc)) from exc
 
-    if not path.is_file():
+    if not io_path(path).is_file():
         raise ContentCreationEntryError(
             "PRODUCTION_PROFILE_REGISTRY_NOT_FOUND",
             ("Production Profile Registry " "is required before content creation."),
@@ -135,6 +146,8 @@ def load_profile_registry(
         status = str(profile.get("status") or "unknown")
 
         available = status == "production_ready"
+        if registry.get('schema_version')=='production-profile-registry-v1.2':
+            available=available or (profile_id=='news' and registry['eligibility']['purpose']=='isolated-validation')
 
         profiles[profile_id] = {
             "profile_id": profile_id,
@@ -492,6 +505,11 @@ def build_content_creation_entry(
             business_id,
             "business",
         )
+        from customer_constraints_v1 import assert_production_allowed
+        try:
+            assert_production_allowed(business["artifact"], business["path"], consumer="mix" if profile == "mix" else "news")
+        except RuntimeError as exc:
+            raise ContentCreationEntryError("BUSINESS_CONSTRAINT_BLOCKED", str(exc)) from exc
 
         speaker = resolve_speaker_persona(
             pipeline_root,
@@ -740,6 +758,8 @@ def main() -> None:
         default=str(Path(__file__).resolve().parents[1]),
     )
 
+    parser.add_argument('--creative-style-id')
+    parser.add_argument('--configuration-file')
     args = parser.parse_args()
 
     try:
@@ -751,7 +771,14 @@ def main() -> None:
             requested_quantity=(args.quantity),
         )
 
-    except ContentCreationEntryError as exc:
+        if args.creative_style_id is not None:
+            import creative_style_v1 as style
+            if args.profile!='mix' or args.quantity!=1:
+                raise style.CreativeStyleError('CREATIVE_STYLE_SINGLE_ONLY','B1 supports one Mix Style video only')
+            config=read_json(Path(args.configuration_file)) if args.configuration_file else None
+            entry['creative_style_preflight']=style.admission_preflight(Path(args.pipeline_root),args.business_id,
+                args.speaker_id,args.creative_style_id,config,entry)
+    except (ContentCreationEntryError,__import__('creative_style_v1').CreativeStyleError,AuthorityResolutionError) as exc:
         print(
             json.dumps(
                 {
