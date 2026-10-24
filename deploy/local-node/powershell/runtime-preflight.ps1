@@ -87,6 +87,30 @@ Write-Output "INFO: Git HEAD=$head"
 Write-Output "INFO: Internal Console Python=$consoleVersion ($consolePython)"
 Write-Output "INFO: ops-pipeline Python=$pipelineVersion ($pipelinePython)"
 
+# Pipeline checks do not establish that the Console's late-loaded contracts run.
+$consoleDependencyProbe = @'
+import importlib
+import importlib.metadata as metadata
+import json
+
+versions = {}
+for package in ('fastapi', 'uvicorn', 'jsonschema'):
+    importlib.import_module(package)
+    versions[package] = metadata.version(package)
+from jsonschema import Draft202012Validator
+schema = {'type': 'object', 'required': ['version'], 'properties': {'version': {'type': 'integer'}}, 'additionalProperties': False}
+Draft202012Validator.check_schema(schema)
+validator = Draft202012Validator(schema)
+if not validator.is_valid({'version': 1}) or any(validator.is_valid(value) for value in (
+    {'version': '1'}, {'version': True}, {'version': 1, 'extra': True}
+)):
+    raise RuntimeError('Strict Draft 2020-12 validation failed')
+print(json.dumps({'console_runtime_packages': versions, 'draft_2020_12': 'PASS'}, sort_keys=True))
+'@
+$consoleDependencies = Invoke-CapturedNative $consolePython @("-c", $consoleDependencyProbe) "Internal Console dependencies missing or invalid; synchronize internal-console/pyproject.toml in the Console venv"
+Write-Output "PASS: Internal Console dependency imports and strict Draft 2020-12 validation."
+Write-Output "INFO: $consoleDependencies"
+
 foreach ($package in @("faster-whisper", "ctranslate2", "httpx", "ollama", "openai", "opencv-python", "openpyxl", "scenedetect")) {
     $version = Invoke-CapturedNative $pipelinePython @(
         "-c",

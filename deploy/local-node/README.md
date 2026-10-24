@@ -52,6 +52,11 @@ installs only repository-declared dependencies, and runs `pip check`. Omit
 dependencies are wanted. It does not migrate Production data or change the
 host configuration.
 
+After a source update, synchronize the Console venv from its current
+`internal-console/pyproject.toml`; a Git Bundle does not carry Python packages.
+Runtime preflight imports the Console dependencies and exercises strict Draft
+2020-12 validation separately from the Pipeline checks.
+
 A fresh Production node does not require legacy Customer, Persona, or Ledger
 data. Creative production does require a separately verified Shared Creative
 Authority release (approved Cases/Fingerprints/Patterns, Registry, Coverage,
