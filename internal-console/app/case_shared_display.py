@@ -21,6 +21,9 @@ KEYS = {'schema_version','case_id','audience','sequence','parent_sha256','action
 JOINT_VERSION = 'case-shared-display-v1.1'
 PREVIEW_VERSION = 'case-shared-display-preview-v1.0'
 DECISION_VERSION = 'case-human-display-decision-v1.0'
+TYPED_VERSION = 'case-shared-display-v1.2'
+TYPED_STANDALONE_VERSION = 'case-shared-display-v1.3'
+TYPED_PREVIEW_VERSION = 'case-shared-display-preview-v1.1'
 
 
 def _share_error(message, code='CASE_SHARE_PREVIEW_STALE'):
@@ -100,6 +103,9 @@ def _build_share_preview(settings, case_id, actor, *, title=None, structure_summ
     metadata = _read_json(settings.repo_root/refs['source_metadata_ref']['path'])
     default_title = str(metadata.get('desc') or metadata.get('title') or '').strip()[:120]
     shots = (case.get('storyboard') or {}).get('shots') or []
+    structural_title=not default_title and case.get('source_provenance',{}).get('acquisition_mode')=='operator_uploaded_file' and bool(shots)
+    if structural_title:
+        default_title='视频结构参考'
     default_summary = f'通过 {len(shots)} 个镜头呈现视频结构，供创作拆解参考。' if shots else ''
     display_title = default_title if title is None else title.strip()
     summary = default_summary if structure_summary is None else structure_summary.strip()
@@ -134,7 +140,8 @@ def _build_share_preview(settings, case_id, actor, *, title=None, structure_summ
     history = _history(settings, case_id)
     candidate_ref = {'path':str(target.candidate.relative_to(settings.pipeline_root)), 'sha256':_sha256(target.candidate)}
     sources = {
-        'title':{'kind':'human_confirmed_source_display_title', 'ref':refs['source_metadata_ref'], 'candidate_ref':candidate_ref},
+        'title':{'kind':'validated_structure_title' if structural_title else 'human_confirmed_source_display_title',
+            'ref':refs['storyboard_v1'] if structural_title else refs['source_metadata_ref'], 'candidate_ref':candidate_ref},
         'industry':{'kind':'classification_confirmation' if industry else 'not_confirmed', 'ref':classification_ref},
         'video_type':{'kind':'no_formal_taxonomy'},
         'duration_seconds':{'kind':'validated_media_identity', 'candidate_ref':candidate_ref, 'evidence_refs':refs},
@@ -189,6 +196,8 @@ def validate_preview(settings, bundle, actor, *, committed=False):
 
 
 def validate_sharing_decision(settings, command, submission, *, committed=False):
+    if command['context']['version']=='human-review-command-v1.6':
+        return validate_typed_sharing_decision(settings,command,submission,committed=committed)
     from human_review_operations_v1 import digest
     context = command['context']
     bundle = context.get('sharing')
@@ -255,6 +264,8 @@ def _validate_joint_record(settings, record):
 
 def publish_joint(settings, command):
     """Stage B only. Caller holds Case lock; never calls the Approval writer."""
+    if command['context']['version']=='human-review-command-v1.6':
+        return publish_typed_joint(settings,command)
     from . import review_commands
     from human_review_operations_v1 import read, write_once
     context=command['context'];case_id=context['identity'];actor=context['actor']
@@ -304,6 +315,157 @@ def publish_joint(settings, command):
         return review_commands._ref(settings,path)
 
 
+def typed_share_preview(settings,case_id,actor,confirmation,*,title=None,structure_summary=None):
+    from copy import deepcopy
+    from .case_classification import type_source,validate_type_confirmation
+    from human_review_operations_v1 import digest
+    source=type_source(settings,case_id)
+    validate_type_confirmation(settings,confirmation,source)
+    bundle=deepcopy(share_preview(settings,case_id,actor,title=title,structure_summary=structure_summary))
+    p=bundle['preview'];p['schema_version']=TYPED_PREVIEW_VERSION
+    p['type_source']=source;p['type_confirmation']=confirmation
+    p['display']['video_type']=confirmation['type_id']
+    p['sources']['video_type']={'kind':'pending_human_type_decision','catalog':confirmation['catalog']}
+    bundle['preview_sha256']=digest(p)
+    return bundle
+
+
+def validate_typed_preview(settings,bundle,actor,*,committed=False):
+    from copy import deepcopy
+    from human_review_operations_v1 import digest
+    from .case_classification import validate_type_confirmation,type_source
+    p=bundle['preview']
+    if (p.get('schema_version')!=TYPED_PREVIEW_VERSION or digest(p)!=bundle['preview_sha256']
+            or p['display']['video_type']!=p['type_confirmation']['type_id']
+            or p['sources']['video_type']!={'kind':'pending_human_type_decision','catalog':p['type_confirmation']['catalog']}):
+        raise _share_error('类型与展示预览无法核对。')
+    validate_type_confirmation(settings,p['type_confirmation'],p['type_source'])
+    current=type_source(settings,p['case_id'])
+    # A completed type write legitimately advances only the type parent.
+    if {k:v for k,v in current.items() if k!='parent_decision_sha256'}!={k:v for k,v in p['type_source'].items() if k!='parent_decision_sha256'}:
+        raise _share_error('投稿建议或原制作方式已变化。')
+    if not committed and current!=p['type_source']:raise _share_error('原类型版本已变化。')
+    legacy=deepcopy(bundle);q=legacy['preview']
+    q['schema_version']=PREVIEW_VERSION;q.pop('type_source');q.pop('type_confirmation')
+    q['display']['video_type']=None;q['sources']['video_type']={'kind':'no_formal_taxonomy'}
+    legacy['preview_sha256']=digest(q)
+    validate_preview(settings,legacy,actor,committed=committed)
+    return p
+
+
+def validate_typed_sharing_decision(settings,command,submission,*,committed=False):
+    from human_review_operations_v1 import digest
+    c=command['context'];bundle=c['sharing'];p=bundle['preview']
+    expected={'schema_version':DECISION_VERSION,'decision':'publish_exact_preview' if bundle['mode']=='approve_and_share' else 'approve_only',
+        'preview_sha256':bundle['preview_sha256'],'preview':p,'blocker_sha256':bundle['blocker_sha256'],'origin':'human_joint_final_confirmation'}
+    if submission!=expected or c['type_confirmation']!=p['type_confirmation']:
+        raise _share_error('请一次明确确认当前类型与安全展示范围。')
+    target=c['snapshot']
+    for key in ('attempt_id','scope_sha256','revision_ref','revision_validation_ref'):
+        if target[key]!=p[key]:raise _share_error('类型预览不属于当前审核范围。')
+    if (p['case_id']!=c['identity'] or p['candidate_ref']!={'path':target['artifact'],'sha256':target['artifact_sha256']}
+            or target['share_preview_sha256']!=digest(p) or target['reviewer_grant_ref']!=p['reviewer_grant_ref']
+            or target['sharing_mode']!=bundle['mode'] or target['share_blocker_sha256']!=bundle['blocker_sha256']):
+        raise _share_error('展示与原操作绑定不一致。')
+    return validate_typed_preview(settings,bundle,c['actor'],committed=committed)
+
+
+def _validate_typed_record(settings,record):
+    from .case_classification import type_history,type_checked
+    type_checked(record,'TypedPublication')
+    from .path_safety import resolve_within
+    from human_review_operations_v1 import digest
+    decision=record['human_display_decision'];path=resolve_within(settings.pipeline_root,decision['intent_ref']['path'])
+    saved=_read_json(path);c=saved['context'];bundle=c['sharing'];p=bundle['preview']
+    types=[(r,ref) for r,ref in type_history(settings,record['case_id']) if ref==record['type_decision_ref']]
+    if len(types)!=1:raise _blocked('正式类型收据缺失。')
+    t,ref=types[0]
+    expected_source={**p['sources'],'video_type':{'kind':'human_type_decision','ref':ref}}
+    expected_decision={k:p[k] for k in ('case_id','attempt_id','candidate_ref','evidence_sha256','revision_ref','revision_validation_ref','scope_sha256')}
+    expected_decision.update(schema_version=DECISION_VERSION,decision='publish_exact_preview',origin='human_joint_final_confirmation',
+        operation_id=c['operation_id'],intent_ref={'path':str(path.relative_to(settings.pipeline_root)),'sha256':_sha256(path)},
+        preview_sha256=digest(p),actor=record['actor'],decided_at=saved['at'])
+    if (c['version']!='human-review-command-v1.6' or c['identity']!=record['case_id'] or c['operation_id']!=t['human_operation_id']
+            or path!=settings.pipeline_root/'data/review_operations/case'/record['case_id']/c['operation_id']/'intent.json'
+            or _sha256(path)!=decision['intent_ref']['sha256'] or decision!=expected_decision
+            or c['actor']!={k:record['actor'][k] for k in ('namespace','user_id')}
+            or p['reviewer_grant_ref']!=_grant_ref(record['actor']) or t['actor']!=record['actor']
+            or record['case_sha256']!=t['case_source']['sha256'] or record['approval_receipt_sha256']!=t['case_approval']['sha256']
+            or record['display']!=p['display'] or record['display']['video_type']!=t['confirmed_type_id']
+            or record['sources']!=expected_source or record['allowed_fields']!=p['allowed_fields'] or record['cover_clearance'] is not None
+            or bundle['mode']!='approve_and_share' or bundle['preview_sha256']!=digest(p)
+            or saved['intent']['payload']['type_confirmation']!=p['type_confirmation']):
+        raise _blocked('共享、类型与原人工确认不一致。')
+    return p
+
+
+def _validate_standalone_typed_record(settings,record):
+    from .case_classification import type_history,type_checked
+    type_checked(record,'TypedPublication')
+    matches=[v for v,ref in type_history(settings,record['case_id']) if ref==record['type_decision_ref']]
+    if len(matches)!=1:raise _blocked('正式类型收据无法核对。')
+    t=matches[0]
+    if (t['action']=='revoke_type' or t['confirmed_type_id']!=record['display']['video_type']
+            or t['case_source']['sha256']!=record['case_sha256'] or t['case_approval']['sha256']!=record['approval_receipt_sha256']
+            or record['sources']['video_type']!={'kind':'human_type_decision','ref':record['type_decision_ref']}):
+        raise _blocked('独立展示与正式类型不一致。')
+
+
+def typed_sources_current(settings,case):
+    """Live derived display check; never rewrite the historical approval."""
+    from .path_safety import resolve_within
+    try:
+        provenance=case['source_provenance']
+        for name in ('source_acquisition_ref','source_metadata_ref'):
+            ref=provenance[name]
+            if _sha256(resolve_within(settings.pipeline_root,ref['path']))!=ref['sha256']:return False
+        video=(case.get('source_evidence') or {}).get('video') or {}
+        if video.get('path'):
+            path=resolve_within(settings.repo_root,video['path'])
+            if path.exists() and _sha256(path)!=(video.get('sha256') or provenance.get('recorded_source_media_sha256')):return False
+        return True
+    except (CanonicalOperationError,OSError,ValueError,KeyError,TypeError):return False
+
+
+def publish_typed_joint(settings,command):
+    from .case_classification import current_type,type_history
+    from . import review_commands
+    from human_review_operations_v1 import write_once
+    c=command['context'];case_id=c['identity'];actor=c['actor'];p=c['sharing']['preview']
+    with reviewer_lock(settings,actor):
+        authorization=reviewer_authorization(settings,actor)
+        if _grant_ref(authorization)!=p['reviewer_grant_ref']:raise _share_error('原审核权限已变化。')
+        saved=review_commands._case_intent(settings,command)
+        history=_history(settings,case_id)
+        existing=[(r,sha) for r,sha in history if r.get('human_display_decision',{}).get('operation_id')==c['operation_id']]
+        if len(existing)>1:raise _blocked()
+        if existing:
+            r,sha=existing[0];_validate_typed_record(settings,r)
+            return {'path':str((_root(settings,case_id)/f"receipt_{r['sequence']:06}.json").relative_to(settings.pipeline_root)),'sha256':sha}
+        validate_typed_sharing_decision(settings,command,saved['intent']['payload'].get('sharing_decision'),committed=True)
+        current=current_type(settings,case_id)
+        if not current or current['record']['human_operation_id']!=c['operation_id']:
+            raise _share_error('类型决定已变化，不能继续旧共享确认。')
+        case,case_sha,receipt_sha=_base(settings,case_id)
+        if (current['record']['case_source']['sha256']!=case_sha or current['record']['case_approval']['sha256']!=receipt_sha
+                or (case.get('approval') or {}).get('human_quality_decision',{}).get('operation_id')!=c['operation_id']):
+            raise _blocked()
+        parent=history[-1][1] if history else None
+        if parent!=p['expected_publication_head_sha256']:raise _share_error('共享状态已变化。')
+        decision={k:p[k] for k in ('case_id','attempt_id','candidate_ref','evidence_sha256','revision_ref','revision_validation_ref','scope_sha256')}
+        decision.update(schema_version=DECISION_VERSION,decision='publish_exact_preview',origin='human_joint_final_confirmation',
+            operation_id=c['operation_id'],intent_ref=review_commands._ref(settings,command['directory']/'intent.json'),
+            preview_sha256=c['sharing']['preview_sha256'],actor=authorization,decided_at=command['at'])
+        record={'schema_version':TYPED_VERSION,'case_id':case_id,'audience':'eligible_platform_users','sequence':len(history)+1,
+            'parent_sha256':parent,'action':'publish','at':datetime.now(timezone.utc).isoformat(),'actor':authorization,
+            'case_sha256':case_sha,'approval_receipt_sha256':receipt_sha,'allowed_fields':p['allowed_fields'],'display':p['display'],
+            'sources':{**p['sources'],'video_type':{'kind':'human_type_decision','ref':current['ref']}},'cover_clearance':None,
+            'human_display_decision':decision,'type_decision_ref':current['ref']}
+        _validate_typed_record(settings,record)
+        path=_root(settings,case_id)/f"receipt_{record['sequence']:06}.json";write_once(path,record)
+        return review_commands._ref(settings,path)
+
+
 def _blocked(message='共享展示记录无法核对。'):
     return CanonicalOperationError('CASE_DISPLAY_CONFLICT',message,'请刷新案例并重新核对。')
 
@@ -341,8 +503,11 @@ def _history(settings,case_id):
     for sequence,path in enumerate(sorted(_root(settings,case_id).glob('receipt_*.json')),1):
         value = _read_json(path)
         joint = value.get('schema_version') == JOINT_VERSION
-        if (path.name != f'receipt_{sequence:06}.json' or set(value) != (KEYS | {'human_display_decision'} if joint else KEYS)
-                or value['schema_version'] not in {VERSION,JOINT_VERSION} or value['case_id'] != case_id
+        typed = value.get('schema_version') == TYPED_VERSION
+        standalone = value.get('schema_version') == TYPED_STANDALONE_VERSION
+        expected_keys=KEYS | {'type_decision_ref','publication_operation_id'} if standalone else KEYS | {'human_display_decision','type_decision_ref'} if typed else KEYS | {'human_display_decision'} if joint else KEYS
+        if (path.name != f'receipt_{sequence:06}.json' or set(value) != expected_keys
+                or value['schema_version'] not in {VERSION,JOINT_VERSION,TYPED_VERSION,TYPED_STANDALONE_VERSION} or value['case_id'] != case_id
                 or value['audience'] != 'eligible_platform_users'
                 or value['sequence'] != sequence or value['parent_sha256'] != previous
                 or value['action'] not in {'publish','withdraw'}
@@ -357,24 +522,28 @@ def _history(settings,case_id):
             if (value['allowed_fields'] != list(FIELDS) or set(value['display']) != set(FIELDS)
                     or set(value['sources']) != set(FIELDS)):
                 raise _blocked()
-            _validate_display(value['display'])
-            if joint:
+            _validate_display(value['display'],typed=typed or standalone)
+            if standalone:
+                _validate_standalone_typed_record(settings,value)
+            elif typed:
+                _validate_typed_record(settings,value)
+            elif joint:
                 _validate_joint_record(settings, value)
         elif value['allowed_fields'] or value['display'] or value['sources'] or value['cover_clearance']:
             raise _blocked()
-        elif joint:
+        elif joint or typed or standalone:
             raise _blocked()  # Existing explicit withdraw uses its frozen v1.0 contract.
         previous = _sha256(path)
         records.append((value,previous))
     return records
 
 
-def _validate_display(display):
+def _validate_display(display,*,typed=False):
     if not isinstance(display['title'],str) or not display['title'].strip() or len(display['title']) > 120:
         raise _blocked('请提供已人工核对的展示标题。')
     if display['industry'] is not None and (not isinstance(display['industry'],str) or len(display['industry']) > 30):
         raise _blocked()
-    if display['video_type'] is not None:  # No formal type taxonomy exists in the current contract.
+    if display['video_type'] is not None and (not typed or not isinstance(display['video_type'],str) or not re.fullmatch(r'[a-z][a-z0-9_-]{1,127}',display['video_type'])):
         raise _blocked('当前尚无正式视频类型合同。')
     duration=display['duration_seconds']
     if duration is not None and (isinstance(duration,bool) or not isinstance(duration,(int,float)) or not math.isfinite(duration) or duration <= 0):
@@ -409,27 +578,61 @@ def _confirmed_industry(settings,case_id,case_sha):
 
 def publication_context(settings,case_id):
     try:
-        _,case_sha,receipt_sha=_base(settings,case_id)
+        case,case_sha,receipt_sha=_base(settings,case_id)
         history=_history(settings,case_id)
         return {'available':True,'approved_case_sha256':case_sha,'approval_receipt_sha256':receipt_sha,
                 'cover_available':case_cover_path(settings,case_id) is not None,
                 'display_receipt_sha256':history[-1][1] if history else None,
                 'published':bool(history and history[-1][0]['action']=='publish' and shared_projection(settings,case_id))}
     except (CanonicalOperationError,OSError,ValueError,TypeError,KeyError) as exc:
-        return {'available':False,'published':False,'blocker':{
+        result={'available':False,'published':False,'blocker':{
             'code':getattr(exc,'code','CASE_DISPLAY_EVIDENCE_UNAVAILABLE'),
             'message':'案例的来源、隐私或批准收据证据尚未完整通过共享校验。',
             'next_action':'请由指定审核或运维人员核对原来源与批准证据。保留历史审核；补证完成前不能共享。'}}
+        try:
+            history=_history(settings,case_id)
+            if history and history[-1][0]['action']=='publish':
+                last,head=history[-1]
+                result['withdraw_context']={'approved_case_sha256':last['case_sha256'],'approval_receipt_sha256':last['approval_receipt_sha256'],
+                    'display_receipt_sha256':head}
+        except (CanonicalOperationError,OSError,ValueError,TypeError,KeyError):pass
+        return result
 
 
 def change_publication(settings,case_id,*,actor,action,title='',structure_summary='',cover_evidence=None,
-                       approved_case_sha256,approval_receipt_sha256,expected_display_receipt_sha256=None):
+                       approved_case_sha256,approval_receipt_sha256,expected_display_receipt_sha256=None,
+                       publication_operation_id=None,expected_type_decision_sha256=None):
     if action not in {'publish','withdraw'}: raise _blocked()
     with reviewer_lock(settings,actor):
         authorization=reviewer_authorization(settings,actor)
+        if action=='withdraw':
+            # Removing access does not require renewed publication eligibility.
+            history=_history(settings,case_id)
+            if not history or history[-1][1]!=expected_display_receipt_sha256:
+                raise _blocked('共享历史已变化。')
+            last,parent=history[-1]
+            if last['action']!='publish' or (approved_case_sha256,approval_receipt_sha256)!=(last['case_sha256'],last['approval_receipt_sha256']):
+                raise _blocked('撤回必须绑定当前正式发布。')
+            record={'schema_version':VERSION,'case_id':case_id,'audience':'eligible_platform_users','sequence':len(history)+1,
+                'parent_sha256':parent,'action':'withdraw','at':datetime.now(timezone.utc).isoformat(),'actor':authorization,
+                'case_sha256':last['case_sha256'],'approval_receipt_sha256':last['approval_receipt_sha256'],
+                'allowed_fields':[],'display':{},'sources':{},'cover_clearance':None}
+            from human_review_operations_v1 import write_once
+            write_once(_root(settings,case_id)/f"receipt_{record['sequence']:06}.json",record)
+            return publication_context(settings,case_id)
         case,case_sha,receipt_sha=_base(settings,case_id)
         history=_history(settings,case_id)
         parent=history[-1][1] if history else None
+        if publication_operation_id is not None:
+            if not re.fullmatch(r'pub_[a-f0-9]{32}',publication_operation_id):raise _blocked('展示操作编号无效。')
+            existing=[r for r,_ in history if r.get('publication_operation_id')==publication_operation_id]
+            if existing:
+                r=existing[0]
+                if (r['display']['title']!=title.strip() or r['display']['structure_summary']!=structure_summary.strip()
+                        or r['type_decision_ref']['sha256']!=expected_type_decision_sha256 or r['case_sha256']!=approved_case_sha256
+                        or r['approval_receipt_sha256']!=approval_receipt_sha256
+                        or {k:r['actor'][k] for k in actor}!=actor or (r['cover_clearance'] or {}).get('evidence')!=cover_evidence):raise _blocked('原展示操作已绑定不同范围。')
+                return publication_context(settings,case_id)
         if case_sha!=approved_case_sha256 or receipt_sha!=approval_receipt_sha256 or parent!=expected_display_receipt_sha256:
             raise _blocked('案例或共享决定已经变化。')
         display,sources,clearance={},{},None
@@ -467,6 +670,14 @@ def change_publication(settings,case_id,*,actor,action,title='',structure_summar
                 'actor':authorization,'case_sha256':case_sha,'approval_receipt_sha256':receipt_sha,
                 'allowed_fields':list(FIELDS) if action=='publish' else [],'display':display,'sources':sources,
                 'cover_clearance':clearance}
+        if publication_operation_id is not None:
+            from .case_classification import current_type
+            current=current_type(settings,case_id)
+            if not current or current['ref']['sha256']!=expected_type_decision_sha256:raise _blocked('正式类型已变化，不能使用旧预览。')
+            record.update(schema_version=TYPED_STANDALONE_VERSION,publication_operation_id=publication_operation_id,type_decision_ref=current['ref'])
+            record['display']['video_type']=current['record']['confirmed_type_id']
+            record['sources']['video_type']={'kind':'human_type_decision','ref':current['ref']}
+            _validate_standalone_typed_record(settings,record)
         root=_root(settings,case_id)
         root.mkdir(parents=True,exist_ok=True)
         target=root/f"receipt_{record['sequence']:06}.json"
@@ -479,12 +690,18 @@ def change_publication(settings,case_id,*,actor,action,title='',structure_summar
 
 def shared_projection(settings,case_id):
     try:
-        _,case_sha,receipt_sha=_base(settings,case_id)
+        case,case_sha,receipt_sha=_base(settings,case_id)
         history=_history(settings,case_id)
         if not history: return None
         record,record_sha=history[-1]
         if record['action']!='publish' or record['case_sha256']!=case_sha or record['approval_receipt_sha256']!=receipt_sha:
             return None
+        if record['schema_version'] in {TYPED_VERSION,TYPED_STANDALONE_VERSION}:
+            from .case_classification import current_type
+            current=current_type(settings,case_id)
+            if not current or current['ref']!=record['type_decision_ref'] or current['record']['confirmed_type_id']!=record['display']['video_type']:
+                return None
+            if not typed_sources_current(settings,case):return None
         industry,source=_confirmed_industry(settings,case_id,case_sha)
         if record['display']['industry']!=industry or (record['schema_version']==VERSION and record['sources']['industry']!=source):
             return None
@@ -544,7 +761,7 @@ def sharing_status(settings, case_id):
         from .path_safety import resolve_within
         binding=_read_json(binding_path);context=binding['context']
         intent_path=resolve_within(settings.pipeline_root,binding['intent_ref']['path'])
-        if (context['version']!='human-review-command-v1.2' or context['identity']!=case_id
+        if (context['version'] not in {'human-review-command-v1.2','human-review-command-v1.6'} or context['identity']!=case_id
                 or _sha256(intent_path)!=binding['intent_ref']['sha256']):return result
         terminal=intent_path.with_name('result.json')
         if not terminal.exists():

@@ -1,0 +1,23 @@
+{
+  "record_type": "engineering_authorization_provenance_not_business_approval",
+  "source": "direct user architecture verdict in this chat",
+  "review_zip_sha256": "d4942ebe6820cb4335b685111602a9d199289dde193f90b8be09154160ae8701",
+  "scope_binding_sha256": "4f19ff4dfc02b5f4246350f6a3d11e928e8cf853ec312689d0b2087ec12a224b",
+  "authorized": [
+    "EX-S1 isolated implementation",
+    "ME-R1 isolated implementation"
+  ],
+  "conditional": [
+    "CC-01/CC-02 after single-confirmation contract compatibility"
+  ],
+  "excluded": [
+    "business approvals",
+    "real models",
+    "production",
+    "commits",
+    "push",
+    "merge",
+    "deploy",
+    "AUTH/OIDC"
+  ]
+}

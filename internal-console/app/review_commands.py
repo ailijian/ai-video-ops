@@ -20,6 +20,7 @@ _KEY = secrets.token_bytes(32)
 VERSION = "human-review-command-v1.0"
 CASE_VERSION = "human-review-command-v1.1"
 JOINT_CASE_VERSION = "human-review-command-v1.2"
+TYPED_CASE_VERSION = "human-review-command-v1.6"
 BUSINESS_VERSION = "human-review-command-v1.3"
 CUSTOMER_SPEAKER_VERSION = "human-review-command-v1.4"
 SPEAKER_VERSION = "human-review-command-v1.5"
@@ -58,7 +59,7 @@ def snapshot(settings, kind, identity, *, business_id=None, version=None):
         result = {"artifact": str(path.relative_to(root)), "artifact_sha256": file_sha(path),
             "attempt_id": (attempt or {}).get("attempt_id") or (value.get("analysis_lineage") or {}).get("attempt_id"),
             "state_sha256": digest({str(p.relative_to(root)): file_sha(p) for p in sources})}
-        if version in {CASE_VERSION, JOINT_CASE_VERSION}:
+        if version in {CASE_VERSION, JOINT_CASE_VERSION,TYPED_CASE_VERSION}:
             from case_evidence_revision_v1 import resolve_target, review_scope
             result.update(revision_ref=None, revision_validation_ref=None, scope_sha256=None)
             try:
@@ -95,7 +96,7 @@ def snapshot(settings, kind, identity, *, business_id=None, version=None):
 
 def issue(settings, kind, identity, user_id, *, business_id=None, sharing=None, joint=False, confirmation=None):
     import json
-    version = BUSINESS_VERSION if confirmation is not None else JOINT_CASE_VERSION if joint else CASE_VERSION if kind == 'case' else VERSION
+    version = TYPED_CASE_VERSION if kind=='case' and confirmation is not None else BUSINESS_VERSION if confirmation is not None else JOINT_CASE_VERSION if joint else CASE_VERSION if kind == 'case' else VERSION
     if confirmation and confirmation.get('schema_version')=='customer-final-confirmation-v1.1':
         version=CUSTOMER_SPEAKER_VERSION
     if confirmation and confirmation.get('schema_version')=='speaker-final-confirmation-v1.0':
@@ -106,9 +107,14 @@ def issue(settings, kind, identity, user_id, *, business_id=None, sharing=None, 
         "node": _node(settings), "operation_id": secrets.token_hex(16),
         "snapshot": snapshot(settings, kind, identity, business_id=business_id, version=version)}
     if confirmation is not None:
-        if kind != 'business' and version != SPEAKER_VERSION:
+        if version==TYPED_CASE_VERSION:
+            from .case_classification import type_checked
+            type_checked(confirmation,'TypeConfirmation')
+            context['type_confirmation']=confirmation
+        elif kind != 'business' and version != SPEAKER_VERSION:
             raise blocked('INVALID_REVIEW_CONTEXT')
-        context['confirmation'] = confirmation
+        else:
+            context['confirmation'] = confirmation
     if joint:
         context['sharing'] = sharing
         context['snapshot'].update(sharing_mode=sharing['mode'] if sharing else 'unavailable',
@@ -148,7 +154,7 @@ def begin(settings, kind, identity, user_id, token, intent, *, business_id=None,
     try:
         body, signature = token.split(".")
         context = json.loads(base64.urlsafe_b64decode(body))
-        if (context["version"] not in ({VERSION,CASE_VERSION,JOINT_CASE_VERSION} if kind=='case' else {VERSION,BUSINESS_VERSION,CUSTOMER_SPEAKER_VERSION} if kind=='business' else {VERSION,SPEAKER_VERSION}) or context["kind"] != kind or context["identity"] != identity
+        if (context["version"] not in ({VERSION,CASE_VERSION,JOINT_CASE_VERSION,TYPED_CASE_VERSION} if kind=='case' else {VERSION,BUSINESS_VERSION,CUSTOMER_SPEAKER_VERSION} if kind=='business' else {VERSION,SPEAKER_VERSION}) or context["kind"] != kind or context["identity"] != identity
                 or context["business_id"] != business_id or context["node"] != _node(settings)
                 or not re.fullmatch(r"[a-f0-9]{32}", context["operation_id"])):
             raise ValueError()
@@ -156,6 +162,10 @@ def begin(settings, kind, identity, user_id, token, intent, *, business_id=None,
         raise blocked("INVALID_REVIEW_CONTEXT", "审核上下文无效。") from exc
     if context["actor"] != principal(settings, user_id):
         raise blocked("REVIEW_ACTOR_MISMATCH", "不能提交其他账号的审核操作。")
+    if kind=='case' and intent.get('payload',{}).get('decision')=='approve':
+        confirmation=intent['payload'].get('type_confirmation')
+        if (context['version']==TYPED_CASE_VERSION)!=(confirmation is not None) or (confirmation is not None and confirmation!=context.get('type_confirmation')):
+            raise blocked('CASE_TYPE_CONFIRMATION_REQUIRED','类型确认必须绑定原签名审核意图。')
     if context['version'] in {BUSINESS_VERSION,CUSTOMER_SPEAKER_VERSION} and intent.get('request_path') != f'/api/customers/{identity}/confirm':
         raise blocked('INVALID_REVIEW_CONTEXT', '新版客户确认不能降级到旧审核入口。')
     if kind=='speaker':
@@ -183,11 +193,11 @@ def begin(settings, kind, identity, user_id, token, intent, *, business_id=None,
         if not hmac.compare_digest(signature, hmac.new(_KEY, body.encode(), "sha256").hexdigest()):
             raise blocked("INVALID_REVIEW_CONTEXT")
         current = snapshot(settings, kind, identity, business_id=business_id, version=context['version'])
-        if context['version'] == JOINT_CASE_VERSION:
+        if context['version'] in {JOINT_CASE_VERSION,TYPED_CASE_VERSION}:
             sharing=context.get('sharing')
             if sharing:
-                from .case_shared_display import validate_preview
-                validate_preview(settings, sharing, context['actor'])
+                from .case_shared_display import validate_preview,validate_typed_preview
+                (validate_typed_preview if context['version']==TYPED_CASE_VERSION else validate_preview)(settings, sharing, context['actor'])
             current.update(sharing_mode=sharing['mode'] if sharing else 'unavailable',
                 share_preview_sha256=sharing['preview_sha256'] if sharing else None,
                 share_blocker_sha256=sharing['blocker_sha256'] if sharing else None,
@@ -210,6 +220,8 @@ def finish(command, result):
 
 def complete_joint(settings, command, approved):
     """Close a two-stage execution only after A is proven; B cannot undo A."""
+    if command['context']['version']==TYPED_CASE_VERSION:
+        return complete_typed_joint(settings,command,approved)
     from .case_shared_display import publish_joint, _share_error
     context=command['context'];bundle=context.get('sharing')
     if not bundle:
@@ -240,6 +252,68 @@ def complete_joint(settings, command, approved):
     return finish(command,result)
 
 
+def _typed_ref(settings,command):
+    from .case_classification import type_history
+    matches=[ref for value,ref in type_history(settings,command['context']['identity'])
+        if value['human_operation_id']==command['context']['operation_id']]
+    if len(matches)>1:raise blocked('REVIEW_COMMIT_CONFLICT')
+    return matches[0] if matches else None
+
+
+def complete_typed_joint(settings,command,approved):
+    from .case_classification import apply_joint_type,type_checked
+    from .case_shared_display import publish_joint
+    context=command['context'];type_ref=None;publication=None;blocker=None
+    completion='approved_only'
+    try:
+        type_ref=apply_joint_type(settings,command)
+        if context['sharing']['mode']=='approve_and_share':
+            publication=publish_joint(settings,command);completion='approved_shared'
+        elif context['sharing']['mode']!='approve_only':raise blocked('REVIEW_COMMIT_CONFLICT')
+    except CanonicalOperationError as exc:
+        if exc.code not in {'CASE_TYPE_CONFLICT','CASE_TYPE_CONFIRMATION_REQUIRED','CASE_TYPE_CATALOG_INVALID','CASE_SHARE_PREVIEW_STALE','CASE_DISPLAY_CONFLICT'}:raise
+        type_ref=_typed_ref(settings,command)
+        completion='approval_kept_share_reconfirmation_required' if type_ref else 'approval_kept_type_reconfirmation_required'
+        blocker={'code':exc.code,'message':exc.message,'next_action':exc.next_action}
+    except (OSError,ValueError,KeyError,TypeError) as exc:
+        import logging
+        logging.getLogger(__name__).exception('Case joint continuation pending after committed approval')
+        saved_type=_typed_ref(settings,command)
+        raise CanonicalOperationError('CASE_JOINT_CONTINUATION_PENDING','案例已收录，类型或共享尚未完成。',
+            '请继续原审核操作；不会重新批准案例。',details={'saved_stage':'type_confirmed' if saved_type else 'case_approved','recoverable':True}) from exc
+    canonical=settings.pipeline_root/'data/cases'/context['identity']
+    result=type_checked({'schema_version':'case-review-share-result-v1.1','operation_id':context['operation_id'],
+        'case_id':context['identity'],'attempt_id':context['snapshot']['attempt_id'],
+        'intent_ref':_ref(settings,command['directory']/'intent.json'),'approved_case_ref':_ref(settings,canonical/'case_v1.json'),
+        'approval_receipt_ref':approved['approval_receipt_ref'],'type_decision_ref':type_ref,'publication_receipt_ref':publication,
+        'completion':completion,'completed_at':datetime.now(timezone.utc).isoformat(),'blocker':blocker},'JointCaseResult')
+    validate_typed_result(settings,{**command,'result':result},approved)
+    return finish(command,result)
+
+
+def validate_typed_result(settings,command,approved):
+    from .case_classification import type_checked,_type_read_ref
+    from .case_shared_display import _history,_root
+    r=type_checked(command['result'],'JointCaseResult');c=command['context'];canonical=settings.pipeline_root/'data/cases'/c['identity']
+    if (not approved or r['operation_id']!=c['operation_id'] or r['case_id']!=c['identity'] or r['attempt_id']!=c['snapshot']['attempt_id']
+            or r['intent_ref']!=_ref(settings,command['directory']/'intent.json') or r['approved_case_ref']!=_ref(settings,canonical/'case_v1.json')
+            or r['approval_receipt_ref']!=approved['approval_receipt_ref'] or r['type_decision_ref']!=_typed_ref(settings,command)):
+        raise blocked('REVIEW_COMMIT_CONFLICT','联合操作缺少准确批准或类型收据。')
+    if r['type_decision_ref']:
+        t=_type_read_ref(settings,r['type_decision_ref'])
+        if t['case_source']['sha256']!=r['approved_case_ref']['sha256'] or t['case_approval']['sha256']!=r['approval_receipt_ref']['sha256']:
+            raise blocked('REVIEW_COMMIT_CONFLICT')
+    matches=[(v,h) for v,h in _history(settings,c['identity']) if v.get('human_display_decision',{}).get('operation_id')==c['operation_id']]
+    if r['completion']=='approved_shared':
+        if c['sharing']['mode']!='approve_and_share' or len(matches)!=1:raise blocked('REVIEW_COMMIT_CONFLICT')
+        record,sha=matches[0]
+        expected={'path':str((_root(settings,c['identity'])/f"receipt_{record['sequence']:06}.json").relative_to(settings.pipeline_root)),'sha256':sha}
+        if r['publication_receipt_ref']!=expected or record['type_decision_ref']!=r['type_decision_ref']:raise blocked('REVIEW_COMMIT_CONFLICT')
+    elif matches or r['publication_receipt_ref'] is not None or r['completion']=='approved_only' and c['sharing']['mode']!='approve_only':
+        raise blocked('REVIEW_COMMIT_CONFLICT')
+    return r
+
+
 def present_joint(settings, result):
     """An immutable execution result never substitutes for current publication."""
     from .case_shared_display import shared_projection, sharing_status
@@ -251,6 +325,8 @@ def present_joint(settings, result):
 
 
 def validate_joint_result(settings,command,approved):
+    if command['context']['version']==TYPED_CASE_VERSION:
+        return validate_typed_result(settings,command,approved)
     result=command['result'];context=command['context']
     keys={'schema_version','operation_id','case_id','attempt_id','intent_ref','approved_case_ref',
           'approval_receipt_ref','publication_receipt_ref','completion','completed_at','blocker'}
@@ -428,7 +504,7 @@ def committed_case_result(settings, command):
                         raise blocked("REVIEW_COMMIT_CONFLICT")
             result = {"decision": "approved", "case": get_case_detail(settings, context["identity"]),
                       "approval_receipt_ref": artifacts["approval_receipt.json"]}
-            if command["result"] is not None and context['version'] != JOINT_CASE_VERSION:
+            if command["result"] is not None and context['version'] not in {JOINT_CASE_VERSION,TYPED_CASE_VERSION}:
                 stored = command["result"]
                 if (stored.get("decision") != "approved" or stored.get("approval_receipt_ref") != result["approval_receipt_ref"]
                         or stored.get("case", {}).get("approved_case_sha256") != result["case"].get("approved_case_sha256")):
@@ -449,7 +525,7 @@ def validate_target(settings, command, *, approved_ok=False):
     path = settings.pipeline_root / target["artifact"]
     if not path.resolve().is_relative_to(settings.pipeline_root.resolve()):
         raise blocked()
-    if command['context']['kind']=='case' and command['context']['version'] in {CASE_VERSION,JOINT_CASE_VERSION}:
+    if command['context']['kind']=='case' and command['context']['version'] in {CASE_VERSION,JOINT_CASE_VERSION,TYPED_CASE_VERSION}:
         from case_evidence_revision_v1 import resolve_target
         current=resolve_target(settings.pipeline_root,command['context']['identity'],target['attempt_id'])
         if current.revision_ref != target.get('revision_ref') or current.validation_ref != target.get('revision_validation_ref'):
@@ -477,6 +553,18 @@ def _pending_case_progress(settings, directory, saved):
     page must not finish a command, publish, or repair a partial transaction.
     """
     context = saved['context']
+    if context.get('version')==TYPED_CASE_VERSION:
+        command={'context':context,'directory':directory,'result':None}
+        try:
+            approved=committed_case_result(settings,command)
+            if approved is None:return {'attempt_id':context['snapshot']['attempt_id'],'stage':'review_pending'}
+            from .case_shared_display import _history
+            publications=[v for v,_ in _history(settings,context['identity']) if v.get('human_display_decision',{}).get('operation_id')==context['operation_id']]
+            from .case_shared_display import sharing_status
+            return {'attempt_id':context['snapshot']['attempt_id'],'sharing_state':sharing_status(settings,context['identity'])['sharing_state'],
+                'stage':'result_pending' if publications else 'publication_pending' if _typed_ref(settings,command) else 'type_pending'}
+        except (CanonicalOperationError,OSError,ValueError,KeyError,TypeError,RuntimeError):
+            return {'attempt_id':context['snapshot']['attempt_id'],'stage':'recheck_required'}
     if context.get('version') != JOINT_CASE_VERSION or saved['intent']['payload'].get('decision') != 'approve':
         return None  # Frozen older workflows keep their original recovery UI.
     progress = {'attempt_id': context['snapshot']['attempt_id'], 'stage': 'review_pending'}

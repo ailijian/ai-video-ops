@@ -1,0 +1,46 @@
+{
+  "record_type": "DIRECT_USER_ENGINEERING_AUTHORIZATION_NOT_BUSINESS_APPROVAL",
+  "user_verdict": [
+    "EX_S1_ME_R1_ISOLATED_ARCH_PASS",
+    "JC_01_ARCHITECTURE_APPROVED_WITH_REQUIRED_SCHEMA_CORRECTIONS",
+    "EX_S2_FINITE_ORCHESTRATION_APPROVED_WITH_GUARDS"
+  ],
+  "conditions": [
+    "J1-J5 strict contracts before Native consumers",
+    "single lawful Native case and major recovery before EX-S2",
+    "one final Human confirmation; three independent records",
+    "finite explicit per-operation Row set; original Intake/Task owners"
+  ],
+  "base_head": "61efbc477ea28b9aee9a492d3ee96324718ef592",
+  "r3_source_state": {
+    "head": "61efbc477ea28b9aee9a492d3ee96324718ef592",
+    "status": " M docs/deliveries/README.md\u0000 M docs/deliveries/case-excel-import-1/i2/README.md\u0000 M docs/operations/README.md\u0000 M internal-console/app/case_excel_import.py\u0000 M internal-console/app/case_excel_import_http.py\u0000 M internal-console/app/case_intake_service.py\u0000 M internal-console/app/case_list_projection.py\u0000 M internal-console/app/case_uploads.py\u0000 M internal-console/app/main.py\u0000 M internal-console/app/task_service.py\u0000 M internal-console/pyproject.toml\u0000 M internal-console/static/assets/app.js\u0000 M internal-console/static/assets/case-excel-import-session.mjs\u0000 M internal-console/static/assets/case-excel-preview-view.mjs\u0000 M internal-console/static/assets/case-excel-preview.css\u0000 M internal-console/static/assets/case-views.js\u0000 M internal-console/static/assets/list-ui.mjs\u0000 M internal-console/static/assets/routes.js\u0000 M internal-console/static/index.html\u0000 M internal-console/tests/js/brand-list-ui.test.mjs\u0000 M internal-console/tests/js/case-excel-import-navigation.test.mjs\u0000 M internal-console/tests/js/case-excel-import-session.test.mjs\u0000 M internal-console/tests/js/case-excel-preview-view.test.mjs\u0000 M internal-console/tests/test_case_excel_import.py\u0000 M internal-console/tests/test_content_creation_visual_polish_v1.py\u0000 M internal-console/tests/test_generation_export_anchor_v1.py\u0000 M tools/README.md\u0000 M tools/tests/test_verify.py\u0000 M tools/verify.py\u0000?? docs/deliveries/case-excel-import-1-review-handoff/\u0000?? docs/deliveries/case-excel-import-1/continuation-r1/\u0000?? docs/deliveries/case-excel-import-1/native-i3-review-r2/\u0000?? docs/deliveries/case-excel-import-1/native-implementation-r3/\u0000?? internal-console/app/case_excel_native.py\u0000?? internal-console/app/case_excel_native_http.py\u0000?? internal-console/app/case_excel_native_schemas.json\u0000?? internal-console/migrations/009_case_excel_native_admissions.sql\u0000?? internal-console/ops-pipeline/\u0000?? internal-console/static/assets/case-excel-native.mjs\u0000?? internal-console/tests/js/case-excel-native.test.mjs\u0000?? internal-console/tests/test_case_excel_native.py\u0000?? internal-console/tests/test_case_excel_submissions.py\u0000",
+    "fingerprint": "7a41ee3ec28a537b5e2e75d197fc1aa465c2fa0753b54bbe5bb4d56a87d88c7f"
+  },
+  "r3_review_archives": {
+    "implementation_review": {
+      "path": "E:\\projects\\ai-video-ops\\.local\\evidence\\case-native-r3-20261024\\CASE_EXCEL_EX_S1_ME_R1_R3_FINAL_REVIEW.zip",
+      "sha256": "83534d244a52dbff9e3576905d2a3ca1dedf344d005e7f55dc9bceb6387d2205",
+      "bytes": 801721,
+      "members": 123,
+      "manifest_verified": 121,
+      "sums_verified": 122,
+      "crc": "PASS"
+    },
+    "pending_contract_review": {
+      "path": "E:\\projects\\ai-video-ops\\.local\\evidence\\case-native-r3-20261024\\CASE_EXCEL_R3_JC01_EXS2_EXACT_REVIEW.zip",
+      "sha256": "2da1d74292daa57bd876948e5dd452a362b39bb3944a8f0be5746589e29e8a56",
+      "bytes": 14074,
+      "members": 9,
+      "manifest_verified": 7,
+      "sums_verified": 8,
+      "crc": "PASS"
+    },
+    "pending_scope_binding_sha256": "09b39fc538b09f2bbd5225184a1e558bc2cd84d5fafbae2d04806d067a170754",
+    "source_unchanged": true,
+    "original_archives_and_test_receipts_retained": true
+  },
+  "scope": "Local engineering and fictional isolated validation only. No production grant, real model call, commit, push, merge or deployment.",
+  "signatures_created": false,
+  "founder_final_uat": "NOT_EXECUTED_FOR_R4"
+}

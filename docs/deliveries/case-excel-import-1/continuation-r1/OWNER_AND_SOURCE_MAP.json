@@ -1,0 +1,149 @@
+{
+  "kind": "pre-change exact anchors; not new approval",
+  "anchors": [
+    {
+      "path": "internal-console/app/case_excel_import.py",
+      "name": "_authorized",
+      "line": 259,
+      "end_line": 268,
+      "source_sha256_before": "4d8a1fae88519f1dfec3cae767f2c5c3dd0473e9cc2326f0e1e3e32f3f853907",
+      "code_commit": "61efbc477ea28b9aee9a492d3ee96324718ef592"
+    },
+    {
+      "path": "internal-console/app/case_excel_import.py",
+      "name": "_head",
+      "line": 277,
+      "end_line": 302,
+      "source_sha256_before": "4d8a1fae88519f1dfec3cae767f2c5c3dd0473e9cc2326f0e1e3e32f3f853907",
+      "code_commit": "61efbc477ea28b9aee9a492d3ee96324718ef592"
+    },
+    {
+      "path": "internal-console/app/case_excel_import.py",
+      "name": "save",
+      "line": 492,
+      "end_line": 626,
+      "source_sha256_before": "4d8a1fae88519f1dfec3cae767f2c5c3dd0473e9cc2326f0e1e3e32f3f853907",
+      "code_commit": "61efbc477ea28b9aee9a492d3ee96324718ef592"
+    },
+    {
+      "path": "internal-console/app/case_excel_import.py",
+      "name": "detail",
+      "line": 629,
+      "end_line": 663,
+      "source_sha256_before": "4d8a1fae88519f1dfec3cae767f2c5c3dd0473e9cc2326f0e1e3e32f3f853907",
+      "code_commit": "61efbc477ea28b9aee9a492d3ee96324718ef592"
+    },
+    {
+      "path": "internal-console/app/case_excel_import.py",
+      "name": "list_owned",
+      "line": 666,
+      "end_line": 677,
+      "source_sha256_before": "4d8a1fae88519f1dfec3cae767f2c5c3dd0473e9cc2326f0e1e3e32f3f853907",
+      "code_commit": "61efbc477ea28b9aee9a492d3ee96324718ef592"
+    },
+    {
+      "path": "internal-console/app/case_list_projection.py",
+      "name": "my_submissions",
+      "line": 13,
+      "end_line": 71,
+      "source_sha256_before": "5e75d51a1fd12ef578bf97b9b4e23daa1af5d2eb20906af7ffbb4d95aeb8bb80",
+      "code_commit": "61efbc477ea28b9aee9a492d3ee96324718ef592"
+    },
+    {
+      "path": "internal-console/app/case_list_projection.py",
+      "name": "case_cards",
+      "line": 74,
+      "end_line": 113,
+      "source_sha256_before": "5e75d51a1fd12ef578bf97b9b4e23daa1af5d2eb20906af7ffbb4d95aeb8bb80",
+      "code_commit": "61efbc477ea28b9aee9a492d3ee96324718ef592"
+    },
+    {
+      "path": "internal-console/app/main.py",
+      "name": "CaseAnalysisRequest",
+      "line": 272,
+      "end_line": 278,
+      "source_sha256_before": "37b685d166f112d9bfd740f5c2dd6f497721ba6f6b94b2f2186b96be73f1c1a2",
+      "code_commit": "61efbc477ea28b9aee9a492d3ee96324718ef592"
+    },
+    {
+      "path": "internal-console/app/main.py",
+      "name": "cases",
+      "line": 3420,
+      "end_line": 3431,
+      "source_sha256_before": "37b685d166f112d9bfd740f5c2dd6f497721ba6f6b94b2f2186b96be73f1c1a2",
+      "code_commit": "61efbc477ea28b9aee9a492d3ee96324718ef592"
+    },
+    {
+      "path": "internal-console/app/main.py",
+      "name": "analyze_case",
+      "line": 3479,
+      "end_line": 3493,
+      "source_sha256_before": "37b685d166f112d9bfd740f5c2dd6f497721ba6f6b94b2f2186b96be73f1c1a2",
+      "code_commit": "61efbc477ea28b9aee9a492d3ee96324718ef592"
+    },
+    {
+      "path": "internal-console/app/main.py",
+      "name": "submit_case_analysis",
+      "line": 3495,
+      "end_line": 3695,
+      "source_sha256_before": "37b685d166f112d9bfd740f5c2dd6f497721ba6f6b94b2f2186b96be73f1c1a2",
+      "code_commit": "61efbc477ea28b9aee9a492d3ee96324718ef592"
+    },
+    {
+      "path": "internal-console/app/task_service.py",
+      "name": "create_case_task",
+      "line": 251,
+      "end_line": 301,
+      "source_sha256_before": "ac3af586b97ca7fa6aa1e0a992dcbdd383f24a218c90c9bd467fbf96cfcbb408",
+      "code_commit": "61efbc477ea28b9aee9a492d3ee96324718ef592"
+    },
+    {
+      "path": "internal-console/app/task_service.py",
+      "name": "submit_task",
+      "line": 466,
+      "end_line": 586,
+      "source_sha256_before": "ac3af586b97ca7fa6aa1e0a992dcbdd383f24a218c90c9bd467fbf96cfcbb408",
+      "code_commit": "61efbc477ea28b9aee9a492d3ee96324718ef592"
+    },
+    {
+      "path": "internal-console/app/case_library_access.py",
+      "name": "reviewer_authorization",
+      "line": 38,
+      "end_line": 43,
+      "source_sha256_before": "e1fc8bfe5759b76dfe414f78fbdc8aaa3ffd379c457aa17cb24e48096ba11ee8",
+      "code_commit": "61efbc477ea28b9aee9a492d3ee96324718ef592"
+    },
+    {
+      "path": "internal-console/app/case_library_access.py",
+      "name": "can_read_private_case",
+      "line": 144,
+      "end_line": 154,
+      "source_sha256_before": "e1fc8bfe5759b76dfe414f78fbdc8aaa3ffd379c457aa17cb24e48096ba11ee8",
+      "code_commit": "61efbc477ea28b9aee9a492d3ee96324718ef592"
+    },
+    {
+      "path": "internal-console/app/case_classification.py",
+      "name": "classification_summary",
+      "line": 154,
+      "end_line": 159,
+      "source_sha256_before": "2cc04d366b9ce05c8889cd2e845f9124bf9581314deeca53163ba0bdfbc025ea",
+      "code_commit": "61efbc477ea28b9aee9a492d3ee96324718ef592"
+    },
+    {
+      "path": "internal-console/app/case_shared_display.py",
+      "name": "share_preview",
+      "line": 59,
+      "end_line": 65,
+      "source_sha256_before": "c4e26040bba1ec3e1f1501b2d716bf12d2c918d9287cc98517ef677689bf1957",
+      "code_commit": "61efbc477ea28b9aee9a492d3ee96324718ef592"
+    },
+    {
+      "path": "internal-console/app/case_shared_display.py",
+      "name": "change_publication",
+      "line": 425,
+      "end_line": 477,
+      "source_sha256_before": "c4e26040bba1ec3e1f1501b2d716bf12d2c918d9287cc98517ef677689bf1957",
+      "code_commit": "61efbc477ea28b9aee9a492d3ee96324718ef592"
+    }
+  ]
+}

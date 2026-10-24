@@ -15,6 +15,12 @@ HEADERS = {'Cache-Control': 'private, no-store'}
 
 def failure(exc):
     messages = {
+        'EXCEL_NATIVE_MEDIA_REQUIRED': '请先在导入记录中绑定与来源对应的有效视频，或恢复原获取方式。',
+        'EXCEL_NATIVE_SUPPORTED_SOURCE_REQUIRED': '这条投稿缺少当前支持的原视频来源，请补充合法来源后再解析。',
+        'EXCEL_NATIVE_PREVIEW_CHANGED': '来源、资格或原保存状态已变化，请重新核对解析内容。',
+        'EXCEL_NATIVE_INTENT_CONFLICT': '同一解析操作已绑定其他内容，请保留并查回原操作。',
+        'EXCEL_NATIVE_RECOVERY_REQUIRED': '解析提交尚未完成，请继续原操作；不会创建第二个任务。',
+        'CASE_EXTERNAL_RESULT_UNKNOWN': '原分析结果未知，请核对原任务，不能重新派发模型。',
         'IMPORT_UPLOAD_REBIND_REQUIRED': '视频上传已过期、被使用或与此行来源不符，请明确重新绑定后核对。',
         'IMPORT_HEAD_CHANGED': '保存状态已变化，请重新读取并核对保存内容。',
         'IMPORT_INTENT_CONFLICT': '同一保存编号已用于不同内容，请保留原操作并重新核对。',

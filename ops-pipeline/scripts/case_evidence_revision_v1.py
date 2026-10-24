@@ -656,7 +656,7 @@ def require_confirmation_contract(context, submission):
     """Command version, never a nullable scope, selects the frozen contract."""
     if context is None or context.get('version') == 'human-review-command-v1.0':
         return  # Trusted offline or genuine historical context; existing v1 Gates still apply.
-    if context.get('version') not in {'human-review-command-v1.1','human-review-command-v1.2'}:
+    if context.get('version') not in {'human-review-command-v1.1','human-review-command-v1.2','human-review-command-v1.6'}:
         fail('CASE_EVIDENCE_SCOPE_STALE', '审核上下文版本不受支持，请重新打开页面。')
     snapshot = context.get('snapshot') or {}
     scope_sha = snapshot.get('scope_sha256')
@@ -687,7 +687,7 @@ def validate_console_confirmation(pipeline_root, case, candidate_sha256, authori
             fail('CASE_EVIDENCE_SCOPE_STALE', '审核操作与当前候选或审核人不一致。')
         submission = receipt.get('submission') if isinstance(receipt, dict) else None
         require_confirmation_contract(context, submission)
-        if context['version'] in {'human-review-command-v1.1','human-review-command-v1.2'} and submission != intent['payload'].get('evidence_review'):
+        if context['version'] in {'human-review-command-v1.1','human-review-command-v1.2','human-review-command-v1.6'} and submission != intent['payload'].get('evidence_review'):
             fail('CASE_EVIDENCE_SCOPE_STALE', '最终确认与原操作提交的审核范围不一致。')
     except RevisionError:
         raise

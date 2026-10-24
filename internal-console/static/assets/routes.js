@@ -119,7 +119,29 @@ export function safeExcelReturn(value){
     const path=url.pathname.replace(/\/+$/,'');const result=matchWorkflowRoute(path)?.name==='excel-import-result';
     if(!result && !['/cases/excel-preview','/cases/excel-imports'].includes(path))return null;
     const query=new URLSearchParams();
-    if(result){const op=url.searchParams.get('operation');if(op && /^[a-z][a-z0-9_-]{1,127}$/.test(op))query.set('operation',op);if(url.searchParams.get('view')==='cases')query.set('view','cases');}
+    if(path==='/cases/excel-preview' && url.searchParams.has('supplement')){
+      const batch=url.searchParams.get('supplement');if(!/^import_[a-f0-9]{32}$/.test(batch || ''))return null;
+      query.set('supplement',batch);
+    }
+    if(result){
+      const op=url.searchParams.get('operation');if(op && /^[a-z][a-z0-9_-]{1,127}$/.test(op))query.set('operation',op);
+      if(url.searchParams.get('view')==='cases')query.set('view','cases');
+      if(url.searchParams.has('row')){
+        const row=url.searchParams.get('row');
+        if(!query.has('operation') || query.get('view')!=='cases' || !/^row_[a-z0-9]{1,64}$/.test(row || ''))return null;
+        query.set('row',row);
+      }
+      if(url.searchParams.has('analysis_operation')){
+        const analysis=url.searchParams.get('analysis_operation');
+        if(!query.has('row') || !/^[a-z][a-z0-9_-]{1,127}$/.test(analysis || ''))return null;
+        query.set('analysis_operation',analysis);
+      }
+      if(url.searchParams.has('orchestration')){
+        const orchestration=url.searchParams.get('orchestration');
+        if(query.has('row') || !query.has('operation') || query.get('view')!=='cases' || !/^orch_[a-f0-9]{32}$/.test(orchestration || ''))return null;
+        query.set('orchestration',orchestration);
+      }
+    }
     if(path==='/cases/excel-imports' && /^[1-9][0-9]{0,5}$/.test(url.searchParams.get('page') || ''))query.set('page',url.searchParams.get('page'));
     return path+(query.size?'?'+query:'');
   }catch{return null;}

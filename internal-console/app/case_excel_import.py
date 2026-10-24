@@ -260,12 +260,17 @@ def _authorized(settings, session):
     # Brief existing SQLite transaction: revocation cannot commit between this
     # principal check and the corresponding canonical publication.
     with transaction(settings.database_path, immediate=True) as db:
-        row = db.execute('SELECT u.status,u.must_change_password,s.expires_at,s.csrf_token FROM users u JOIN sessions s ON s.user_id=u.id WHERE u.id=? AND s.token_hash=?',
-                         (session.user['id'], session.token_hash)).fetchone()
-        if (row is None or row['status'] != 'active' or row['must_change_password']
-                or row['expires_at'] <= iso_utc() or row['csrf_token'] != session.csrf_token):
-            raise ImportError('IMPORT_ACCESS_CHANGED', 403)
+        validate_session(db, session)
         yield
+
+
+def validate_session(db, session):
+    """Same current-session check inside an already-owned admission transaction."""
+    row = db.execute('SELECT u.status,u.must_change_password,s.expires_at,s.csrf_token FROM users u JOIN sessions s ON s.user_id=u.id WHERE u.id=? AND s.token_hash=?',
+                     (session.user['id'], session.token_hash)).fetchone()
+    if (row is None or row['status'] != 'active' or row['must_change_password']
+            or row['expires_at'] <= iso_utc() or row['csrf_token'] != session.csrf_token):
+        raise ImportError('IMPORT_ACCESS_CHANGED', 403)
 
 
 def _batch_dir(settings, user, batch_id):
@@ -675,6 +680,56 @@ def list_owned(settings, session):
         result.append({'batch_id': batch['batch_id'], 'file_sha256': batch['file_sha256'], 'row_count': len(batch['row_refs'])})
     with _authorized(settings, session):
         return {'batches': result}
+
+
+def submission_cards(settings, session):
+    """Owned R2 rows projected into My Submissions; no Native Case admission."""
+    from urllib.parse import urlencode
+
+    cards = []
+    for summary in list_owned(settings, session)['batches']:
+        record = detail(settings, session, summary['batch_id'])
+        rows = {row['row_id']: row for row in record['rows']}
+        operations = {item['intent_sha256']: item for item in record['operations']}
+        head, seen = record['head_sha256'], set()
+        while head is not None:
+            operation = operations[head]
+            intent, result = operation['intent'], operation['result']
+            results = {item['row_id']: item for item in result['row_results']} if result else {}
+            bindings = {item['row_id']: item for item in operation['current_bindings']}
+            for ref in intent['selected_rows']:
+                row_id = ref['row_id']
+                if row_id in seen:
+                    continue
+                seen.add(row_id)
+                row = rows.get(row_id)
+                if row is None:
+                    continue  # A planned/cancelled row without a candidate is not a submission.
+                outcome = results.get(row_id)
+                if outcome and outcome['state'] in {'invalid', 'cancelled'}:
+                    raise ImportError('IMPORT_HISTORY_INVALID')
+                saved = bool(outcome and outcome['candidate_ref_sha256'])
+                available = bindings.get(row_id, {}).get('current_media_state') == 'checked_unverified_upload'
+                status = ('import_save_unconfirmed' if not saved else
+                          'import_saved_unverified' if available else 'import_source_pending')
+                query = urlencode({'operation': intent['operation_id'], 'view': 'cases', 'row': row_id})
+                cards.append({
+                    'submission_id': f"excel:{intent['batch_id']}:{row_id}",
+                    'source_kind': 'excel_import', 'case_id': None, 'task_id': None,
+                    'title': row['raw_case']['source_title'], 'industry': None,
+                    'video_type': None, 'video_type_hint': row['raw_case']['video_content_type_hint'],
+                    'duration_seconds': None, 'cover_url': None, 'status': status,
+                    'visibility': 'mine', 'href': f"/cases/excel-imports/{intent['batch_id']}?{query}",
+                    'submitted_at': None, 'updated_at': None,
+                    'next_action': '核对原保存结果' if not saved else '查看导入详情与下一步',
+                    'import_ref': {'batch_id': intent['batch_id'], 'row_id': row_id,
+                                   'row_sha256': ref['row_sha256'], 'operation_id': intent['operation_id'],
+                                   'intent_sha256': operation['intent_sha256']},
+                    'authority': {'can_dispatch': False, 'can_approve': False, 'can_share': False},
+                })
+            head = intent['expected_head_sha256']
+    with _authorized(settings, session):
+        return cards
 
 
 def recover(settings, session, batch_id, payload):

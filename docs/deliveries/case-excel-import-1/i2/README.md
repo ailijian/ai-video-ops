@@ -1,5 +1,7 @@
 # Excel I2 私有未核候选保存
 
+当前后续接缝与本轮准确状态见[JC-01 / EX-S2 R4](../native-implementation-r4/README.md)：原生解析、一次审核三份记录和有限多行提交已在受限工程范围实施，精确结果以R4最终证据为准，尚待独立审查及Founder最终验收。下方保留原I2验收身份与当时授权边界，不能据此替代R4验收。
+
 状态：`I2_LIMITED_LOCAL_IMPLEMENTATION / LIMITED_FOUNDER_UAT_CONFIRMED`。
 
 Founder 直接确认“批准该 I2 受限开发范围，最后统一验收”。[授权来源](SCOPE_AUTHORIZATION.json)仅记录工程范围，不是 Case Approval、Reviewer grant 或独立验收收据。准确 R2 SHA-256：`b483223d796fb7d2c233c436dfda100d2cdfe6a5ca6b7b21f33483824f4b58dd`；[原文件](../closeout-r1/I2_EXACT_WRITE_CONTRACT_R2_PROPOSAL.json)及其 Draft 字节保留。消费者保留其中 `v0.2-proposal` 的准确机器版本字符串，不表示正式 Case 已批准。

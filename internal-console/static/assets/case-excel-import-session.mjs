@@ -2,10 +2,23 @@ import { uploadCaseFile, validateCaseFile } from './case-file-upload.mjs?v=sourc
 import { fileBase64 } from './case-excel-import-view.mjs?v=excel-flow-2';
 
 const idPattern=/^[a-z][a-z0-9_-]{1,127}$/;
-export function importResultPath(batchId, operationId=null, cases=false) {
+export function importResultPath(batchId, operationId=null, cases=false, rowId=null) {
   if(!idPattern.test(batchId) || (operationId && !idPattern.test(operationId)))throw Error('投稿记录身份无效。');
   const query=new URLSearchParams();if(operationId)query.set('operation',operationId);if(cases)query.set('view','cases');
+  if(rowId!==null && rowId!==undefined){if(!cases || !operationId || typeof rowId!=='string' || !/^row_[a-z0-9]{1,64}$/.test(rowId))throw Error('投稿行身份无效。');query.set('row',rowId);}
   return `/cases/excel-imports/${encodeURIComponent(batchId)}${query.size?'?'+query:''}`;
+}
+export function supplementImportPath(batchId){
+  if(!/^import_[a-f0-9]{32}$/.test(batchId))throw Error('原投稿身份无效，请从我的投稿重新进入。');
+  return '/cases/excel-preview?supplement='+encodeURIComponent(batchId);
+}
+
+export function selectImportRows(model, rowId=null){
+  if(rowId===null || rowId===undefined)return model.rows;
+  if(typeof rowId!=='string' || !/^row_[a-z0-9]{1,64}$/.test(rowId))throw Error('这条投稿不在当前保存记录中，请返回我的投稿重新查看。');
+  const rows=model.rows.filter(item=>item.ref.row_id===rowId);
+  if(rows.length!==1)throw Error('这条投稿不在当前保存记录中，请返回我的投稿重新查看。');
+  return rows;
 }
 export function validatePreview(preview) {
   if(preview?.schema_version!=='case-excel-preview-v0.3' || !Array.isArray(preview.rows) || !Array.isArray(preview.issues) ||
@@ -21,7 +34,7 @@ export function validatePrivateResult(result) {
 const canonical=value=>JSON.stringify(value,(_key,item)=>item && typeof item==='object' && !Array.isArray(item)?Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])):item);
 
 // This is ephemeral interaction state. Native readers/writers remain authoritative.
-export function createExcelImportSession({api,onChange=()=>{},onPrepared=()=>{},onSaved=()=>{},upload=uploadCaseFile}) {
+export function createExcelImportSession({api,onChange=()=>{},onPrepared=()=>{},onSaved=()=>{},upload=uploadCaseFile,expectedFileSha256=null,requireVideo=false}) {
   let revision=0,controller=null;
   let value={phase:'choose',file:null,preview:null,selected:[],message:'',identity:null};
   const uploads=new Map();
@@ -39,7 +52,9 @@ export function createExcelImportSession({api,onChange=()=>{},onPrepared=()=>{},
     try{
       const response=await api('/api/case-excel/preview',{method:'POST',headers:{'Content-Type':'application/octet-stream'},body:file,signal:controller.signal});
       if(token!==revision)return;
-      value.preview=validatePreview(response.preview);value.selected=value.preview.rows.filter(row=>row.status!=='invalid').map(row=>row.row);value.phase='review';notify();
+      value.preview=validatePreview(response.preview);
+      if(expectedFileSha256 && value.preview.file_sha256!==expectedFileSha256)throw Error('这不是原投稿使用的Excel。请重新选择原文件，已有投稿不会被覆盖。');
+      value.selected=value.preview.rows.filter(row=>row.status!=='invalid').map(row=>row.row);value.phase='review';notify();
     }catch(error){if(token===revision){value.phase='choose';value.message=error.message || '表格检查失败，请重新选择。';notify();}}
   }
   function select(rowNumber,checked){
@@ -54,6 +69,7 @@ export function createExcelImportSession({api,onChange=()=>{},onPrepared=()=>{},
     value.phase='saving';value.message='正在核对来源并保存所选投稿……';notify();
     try{
       const selectedMedia=media.filter(item=>selected.includes(item.sourceRow) && item.file);
+      if(requireVideo && !selectedMedia.length)throw Error('请先为至少一条带链接的投稿选择对应视频，并确认上传权限和来源。');
       for(const item of selectedMedia){
         const row=value.preview.rows.find(row=>row.row===item.sourceRow);
         if(!row?.canonical_source_key)throw Error('此行缺少可绑定的视频来源，请先核对原文件。');

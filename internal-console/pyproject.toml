@@ -10,6 +10,7 @@ requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115,<1",
   "uvicorn>=0.30,<1",
+  "jsonschema>=4.23,<5",
 ]
 
 [project.optional-dependencies]
@@ -20,6 +21,9 @@ dev = [
 
 [tool.setuptools.packages.find]
 include = ["app*"]
+
+[tool.setuptools.package-data]
+app = ["*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

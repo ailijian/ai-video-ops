@@ -327,6 +327,7 @@ class CaseSharePreviewRequest(BaseModel):
     model_config = {"extra":"forbid"}
     title: str | None = Field(default=None,max_length=120)
     structure_summary: str | None = Field(default=None,max_length=1000)
+    type_confirmation: dict[str,Any] | None = None
 
 
 class CaseReviewRequest(BaseModel):
@@ -340,6 +341,7 @@ class CaseReviewRequest(BaseModel):
     evidence_review: CaseFinalEvidenceReviewRequest | CaseEvidenceReviewRequest | None = None
     quality_decision: dict[str, Any] | None = None
     sharing_decision: CaseSharingDecision | None = None
+    type_confirmation: dict[str,Any] | None = None
 
 
 class CaseProfileAnnotationRequest(BaseModel):
@@ -356,6 +358,7 @@ class CaseCoverClearanceRequest(BaseModel):
 
 
 class CasePublicationRequest(BaseModel):
+    model_config = {'extra':'forbid'}
     action: Literal["publish","withdraw"]
     title: str = Field(default="",max_length=120)
     structure_summary: str = Field(default="",max_length=1000)
@@ -363,6 +366,8 @@ class CasePublicationRequest(BaseModel):
     approval_receipt_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     expected_display_receipt_sha256: str | None = Field(default=None,pattern=r"^[a-f0-9]{64}$")
     cover_evidence: CaseCoverClearanceRequest | None = None
+    publication_operation_id: str | None = Field(default=None,pattern=r'^pub_[a-f0-9]{32}$')
+    expected_type_decision_sha256: str | None = Field(default=None,pattern=r'^[a-f0-9]{64}$')
 
 
 class CaseIndustryAnnotationRequest(BaseModel):
@@ -1036,6 +1041,10 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             status_code = 503 if exc.code in {'PUBLISH_COPY_DISABLED','PUBLISH_COPY_OPERATION_UNAVAILABLE'} else 409
         if exc.code.startswith('CREATIVE_STYLE_'):
             status_code = 409
+        if exc.code in {'CASE_TYPE_CONFLICT','CASE_TYPE_CONFIRMATION_REQUIRED'}:
+            status_code = 409
+        if exc.code == 'CASE_TYPE_CONTRACT_INVALID':
+            status_code = 422
         if exc.code.startswith(('CREATION_BATCH_', 'CONTENT_INTENT_', 'CONTENT_RESERVATION_')):
             status_code = 409
         detail = error_detail(exc.code, exc.message, exc.next_action)
@@ -1143,11 +1152,13 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             intent_payload['expected_revision_sha256']=payload.expected_revision_sha256
         if getattr(payload,'sharing_decision',None) is not None:
             intent_payload['sharing_decision']=payload.sharing_decision.model_dump()
+        if getattr(payload,'type_confirmation',None) is not None:
+            intent_payload['type_confirmation']=payload.type_confirmation
         def perform():
             command = review_commands.begin(settings, kind, identity, int(session.user["id"]),
                 payload.review_context, {"request_path": request_path,
                     "payload": intent_payload}, business_id=business_id, validate_only=preflight is not None)
-            joint=kind=='case' and command['context']['version']==review_commands.JOINT_CASE_VERSION and intent_payload.get('decision')=='approve'
+            joint=kind=='case' and command['context']['version'] in {review_commands.JOINT_CASE_VERSION,review_commands.TYPED_CASE_VERSION} and intent_payload.get('decision')=='approve'
             if joint and command['result'] is not None:
                 reviewer_authorization(settings,case_principal(settings,int(session.user['id'])))
                 approved=review_commands.committed_case_result(settings,command)
@@ -3416,6 +3427,101 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         except ImportError as exc:
             return failure(exc)
 
+    @app.post('/api/case-excel/imports/{batch_id}/rows/{row_id}/native-preview')
+    async def preview_excel_native_row(batch_id: str,row_id: str,request: Request,
+            session: SessionContext = Depends(require_console_access),
+            x_csrf_token: str | None = Header(default=None,alias='X-CSRF-Token')):
+        require_csrf(session,x_csrf_token)
+        from .case_excel_native_http import execute
+        return await execute(request,settings,session,batch_id,row_id)
+
+    @app.post('/api/case-excel/imports/{batch_id}/rows/{row_id}/native-submissions')
+    async def submit_excel_native_row(batch_id: str,row_id: str,request: Request,
+            session: SessionContext = Depends(require_console_access),
+            x_csrf_token: str | None = Header(default=None,alias='X-CSRF-Token')):
+        require_csrf(session,x_csrf_token)
+        from .case_excel_native_http import execute
+        return await execute(request,settings,session,batch_id,row_id,task_runner.schedule)
+
+    @app.get('/api/case-excel/imports/{batch_id}/rows/{row_id}/native-submissions/{operation_id}')
+    def read_excel_native_row(batch_id: str,row_id: str,operation_id: str,
+            session: SessionContext = Depends(require_console_access)):
+        from .case_intake_service import read_excel_native
+        from .case_excel_import_http import HEADERS,failure
+        from .case_excel_import import ImportError
+        try:return JSONResponse(read_excel_native(settings,session,batch_id,row_id,operation_id),headers=HEADERS)
+        except ImportError as exc:return failure(exc)
+
+    @app.post('/api/case-excel/imports/{batch_id}/orchestration-preview')
+    async def preview_excel_orchestration(batch_id: str,request: Request,
+            session: SessionContext = Depends(require_console_access),x_csrf_token: str | None=Header(default=None,alias='X-CSRF-Token')):
+        require_csrf(session,x_csrf_token)
+        from .case_excel_import_http import body,failure,HEADERS
+        from .case_excel_import import ImportError
+        from .case_excel_orchestration import PrepareInput
+        try:
+            from starlette.concurrency import run_in_threadpool
+            from .case_intake_service import prepare_excel_orchestration
+            value=await body(request,PrepareInput)
+            return JSONResponse(await run_in_threadpool(prepare_excel_orchestration,settings,session,batch_id,value.model_dump()),headers=HEADERS)
+        except ImportError as exc:return failure(exc)
+
+    @app.post('/api/case-excel/imports/{batch_id}/orchestrations')
+    async def submit_excel_orchestration(batch_id: str,request: Request,
+            session: SessionContext = Depends(require_console_access),x_csrf_token: str | None=Header(default=None,alias='X-CSRF-Token')):
+        require_csrf(session,x_csrf_token)
+        from .case_excel_import_http import body,failure,HEADERS
+        from .case_excel_import import ImportError
+        from .case_excel_orchestration import SubmitInput
+        from .case_intake_service import submit_excel_orchestration
+        from starlette.concurrency import run_in_threadpool
+        try:
+            value=await body(request,SubmitInput)
+            return JSONResponse(await run_in_threadpool(submit_excel_orchestration,settings,session,batch_id,value.model_dump(),task_runner.schedule),headers=HEADERS)
+        except ImportError as exc:return failure(exc)
+        except OSError:return failure(ImportError('EXCEL_ORCHESTRATION_RECOVERY_REQUIRED',503))
+
+    @app.get('/api/case-excel/imports/{batch_id}/orchestrations/{operation_id}')
+    def read_excel_orchestration(batch_id: str,operation_id: str,session: SessionContext=Depends(require_console_access)):
+        from .case_excel_orchestration import result_projection
+        from .case_excel_import_http import failure,HEADERS
+        from .case_excel_import import ImportError
+        try:return JSONResponse(result_projection(settings,session,batch_id,operation_id),headers=HEADERS)
+        except ImportError as exc:return failure(exc)
+
+    @app.post('/api/case-excel/imports/{batch_id}/orchestrations/{operation_id}/advance')
+    def advance_excel_orchestration(batch_id: str,operation_id: str,
+            session: SessionContext=Depends(require_console_access),x_csrf_token: str | None=Header(default=None,alias='X-CSRF-Token')):
+        require_csrf(session,x_csrf_token)
+        from .case_excel_orchestration import advance
+        from .case_excel_import_http import failure,HEADERS
+        from .case_excel_import import ImportError
+        try:return JSONResponse(advance(settings,session,batch_id,operation_id,task_runner.schedule),headers=HEADERS)
+        except ImportError as exc:return failure(exc)
+        except OSError:return failure(ImportError('EXCEL_ORCHESTRATION_RECOVERY_REQUIRED',503))
+
+    @app.post('/api/case-excel/imports/{batch_id}/orchestrations/{operation_id}/control')
+    async def control_excel_orchestration(batch_id: str,operation_id: str,request: Request,
+            session: SessionContext=Depends(require_console_access),x_csrf_token: str | None=Header(default=None,alias='X-CSRF-Token')):
+        require_csrf(session,x_csrf_token)
+        from .case_excel_orchestration import control,ControlInput
+        from .case_excel_import_http import body,failure,HEADERS
+        from .case_excel_import import ImportError
+        from starlette.concurrency import run_in_threadpool
+        try:
+            value=await body(request,ControlInput)
+            return JSONResponse(await run_in_threadpool(control,settings,session,batch_id,operation_id,value.model_dump()),headers=HEADERS)
+        except ImportError as exc:return failure(exc)
+
+    @app.get('/api/cases/{case_id}/attempts/{attempt_id}/excel-notes')
+    def read_excel_reviewer_notes(case_id: str,attempt_id: str,
+            session: SessionContext = Depends(require_console_access)):
+        from .case_excel_native import reviewer_notes
+        from .case_excel_import_http import HEADERS,failure
+        from .case_excel_import import ImportError
+        try:return JSONResponse(reviewer_notes(settings,session,case_id,attempt_id),headers=HEADERS)
+        except ImportError as exc:return failure(exc)
+
     @app.get("/api/cases")
     def cases(
         session: SessionContext = Depends(require_console_access),
@@ -3427,8 +3533,14 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         page: int = Query(1,ge=1),
         page_size: int = Query(20,ge=1,le=50),
     ) -> dict[str, Any]:
-        return {**case_cards(settings,int(session.user["id"]),view=view,search=search,industry=industry,
-            video_type=video_type,status=status,page=page,page_size=page_size),"analysis":case_capability()}
+        from .case_excel_import import ImportError as ExcelImportError
+        from .case_excel_import_http import failure, HEADERS
+        try:
+            result = case_cards(settings,int(session.user["id"]),view=view,search=search,industry=industry,
+                video_type=video_type,status=status,page=page,page_size=page_size,session=session)
+        except ExcelImportError as exc:
+            return failure(exc)
+        return JSONResponse({**result,"analysis":case_capability()}, headers=HEADERS)
 
     @app.get("/api/case-library/{case_id}")
     def shared_case_detail(case_id: str, _: SessionContext = Depends(require_console_access)):
@@ -3808,6 +3920,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         detail["classification_required"] = bool(intake_task and not intake_task["payload"].get("operator_profile_hint")
             and not intake_task["payload"].get("profile") and not detail["review"].get("approved") and not detail["review"].get("decision"))
         reviewer=is_reviewer(settings,user_id)
+        detail['excel_notes_available']=bool(reviewer and intake_task and intake_task['payload'].get('excel_native_origin'))
         detail["review"]["can_review"] = detail["review"]["can_review"] and reviewer
         detail["can_annotate_profile"] = bool(detail.get("can_annotate_profile") and reviewer)
         detail["can_annotate_industry"] = bool(detail.get("can_annotate_industry") and reviewer)
@@ -3834,6 +3947,13 @@ def build_app(settings: Settings | None = None) -> FastAPI:
             except (OSError,ValueError,RuntimeError,TypeError,KeyError):
                 detail['share_preview_error']={'message':'安全展示预览暂不可核对，请恢复来源或重新分析。','next_action':'原修订和审核记录保留，暂不能批准。'}
         detail['share_preview']=sharing
+        if reviewer:
+            from .case_classification import type_catalog,type_source,current_type
+            try:
+                detail['video_type_context']={'catalog':type_catalog(settings),'source':type_source(settings,case_id),
+                    'current':current_type(settings,case_id) if detail['review']['approved'] else None}
+            except (OSError,ValueError,KeyError,RuntimeError,TypeError):
+                detail['video_type_context']=None
         detail["approval_context"] = review_commands.issue(settings, "case", case_id, user_id,sharing=sharing,joint=True) if detail["review"]["can_review"] else None
         if detail["approval_context"] and not detail["review"].get("approval_recovery_required"):
             from case_human_review_v2 import quality_context
@@ -3858,10 +3978,21 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         require_private_case(settings,actor['user_id'],case_id)
         def prepare():
             require_case_classification(case_id)
-            from .case_shared_display import share_preview
-            sharing=share_preview(settings,case_id,actor,**payload.model_dump())
-            return {'share_preview':sharing,'approval_context':review_commands.issue(settings,'case',case_id,actor['user_id'],sharing=sharing,joint=True)}
+            from .case_shared_display import share_preview,typed_share_preview
+            values=payload.model_dump();confirmation=values.pop('type_confirmation')
+            sharing=typed_share_preview(settings,case_id,actor,confirmation,**values) if confirmation is not None else share_preview(settings,case_id,actor,**values)
+            return {'share_preview':sharing,'approval_context':review_commands.issue(settings,'case',case_id,actor['user_id'],sharing=sharing,joint=True,confirmation=confirmation)}
         return locked_authority_call('case',case_id,prepare)
+
+    @app.post('/api/cases/{case_id}/type-decisions')
+    def change_case_video_type(case_id: str,payload: dict[str,Any],
+            x_csrf_token: str | None = Header(default=None,alias='X-CSRF-Token'),
+            session: SessionContext = Depends(require_console_access)):
+        require_csrf(session,x_csrf_token)
+        actor=case_principal(settings,int(session.user['id']))
+        reviewer_authorization(settings,actor);require_private_case(settings,actor['user_id'],case_id)
+        from .case_classification import change_type
+        return locked_authority_call('case',case_id,change_type,settings,case_id,actor,payload)
 
     @app.get("/api/cases/{case_id}/media")
     def case_media(
@@ -3941,7 +4072,7 @@ def build_app(settings: Settings | None = None) -> FastAPI:
 
         def preflight(_command):
             nonlocal upload_cache
-            if payload.decision=='approve' and _command['context']['version']==review_commands.JOINT_CASE_VERSION:
+            if payload.decision=='approve' and _command['context']['version'] in {review_commands.JOINT_CASE_VERSION,review_commands.TYPED_CASE_VERSION}:
                 require_case_classification(case_id)
                 from case_evidence_revision_v1 import require_confirmation_contract, RevisionError
                 try:

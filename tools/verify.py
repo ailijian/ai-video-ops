@@ -278,6 +278,10 @@ def execute(root: Path, run: Path, job: Job, timeout: int, windows_short_temp: b
         toolchain = python_toolchain(python, child_environment(work))
         command = [str(python), "-m", "pytest", *job.modules, "--basetemp", str(work / "t"),
                    "--junitxml", str(junit), "-o", f"cache_dir={work / 'cache'}", "--durations=10", "-ra"]
+        if job.target == "console":
+            # The native lifecycle tests can run for several minutes. Identify
+            # the active test even when a shard cannot reach its final JUnit.
+            command.append("-vv")
         if windows_short_temp:
             # Only this repository-owned storage plugin is explicitly loaded.
             # External plugin/addopts/PYTHONPATH remain excluded above.
@@ -317,7 +321,9 @@ def execute(root: Path, run: Path, job: Job, timeout: int, windows_short_temp: b
             if not counts["tests"] or counts["errors"] or counts["failures"]:
                 code = code or 1
         except (OSError, ET.ParseError) as exc:
-            code, error = code or 1, f"Missing/invalid JUnit evidence: {exc}"
+            evidence_error = f"Missing/invalid JUnit evidence: {exc}"
+            code = code or 1
+            error = f"{error}; {evidence_error}" if error else evidence_error
     elif job.target == "frp-guard":
         match = re.search(r"FRP_GUARD_TESTS_PASS: (\d+);", output)
         if not match or not int(match[1]):

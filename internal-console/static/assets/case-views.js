@@ -1,9 +1,11 @@
 import { mountRecovery } from "./review-workflow-ui.mjs?v=case-recovery-ui1";
-import { caseRecovery } from "./case-review-result.mjs?v=case-recovery-ui1";
-import { shareConfirmation, shareResultMessage, sharePreviewCard } from "./case-share-confirmation.mjs?v=case-share-ui1";
+import { caseRecovery } from "./case-review-result.mjs?v=case-joint-1";
+import { nativeNotesMarkup } from './case-excel-native.mjs?v=excel-native-1';
+import { makeTypeConfirmation,typeConfirmationMarkup,typeLabel } from './case-type-confirmation.mjs?v=case-joint-1';
+import { shareConfirmation, shareResultMessage, sharePreviewCard } from "./case-share-confirmation.mjs?v=case-joint-1";
 import { bindEvidenceWorkspace, reviewWorkspace } from "./case-evidence-workspace.mjs?v=case-review-ux1";
 import { formatConsoleTime } from "./ui-format.mjs?v=ui-1";
-import { boundaryReviewPanel, caseCard, caseReviewContent, escapeHtml, progressPanel } from "./case-components.js?v=case-recovery-ui1";
+import { boundaryReviewPanel, caseCard, caseReviewContent, escapeHtml, progressPanel } from "./case-components.js?v=case-joint-1";
 import { bindCaseMediaPreview } from "./case-media-preview.mjs?v=case-media-fit-1";
 import { caseTaskResumeDestination } from "./case-submit-state.mjs?v=mobile-reliability-2";
 import { startTaskPolling } from "./task-progress.js?v=mobile-reliability-1";
@@ -11,7 +13,7 @@ import { detectCaseSourceInput, extractCaseSourceUrls } from "./case-source-dete
 import { uploadCaseFile, validateCaseFile } from "./case-file-upload.mjs?v=source-upload-ui-2";
 import { intakeCounts, intakeItemState, intakeStage, UNCERTAIN_INDUSTRY, classificationDraft, classificationSubmittable, classificationDiffers, batchConfirmableItems, confirmedClassificationLabel } from "./case-batch-submit.mjs?v=flow-closure-2";
 import { CASE_INDUSTRIES, industryOptions, industryValue, syncCustomIndustry } from "./case-industry.mjs?v=industry-2";
-import { caseListCard, caseStateLabels, formatCaseDuration, listEmpty, listSkeleton, searchIcon } from "./list-ui.mjs?v=case-share-ux2";
+import { caseListCard, caseStateLabels, formatCaseDuration, listEmpty, listSkeleton, searchIcon } from "./list-ui.mjs?v=case-joint-1";
 
 export function caseAcquisitionWarning(acquisition, { hasFile = false, unavailable = false } = {}) {
   if (hasFile || (acquisition?.mode === "qiyun" && acquisition.configured)) return "";
@@ -52,9 +54,9 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       const returnPath = `/cases?${query}`;
       const views = [["shared", "共享案例库"], ["mine", "我的投稿"], ...(data.capabilities?.case_library_reviewer ? [["review", "审核工作"]] : [])];
       const tabs = `<nav class="list-view-tabs" aria-label="案例视图">${views.map(([value,label])=>`<a href="/cases?view=${value}" data-route class="${value===view?"active":""}" ${value===view?'aria-current="page"':""}>${label}</a>`).join("")}</nav>`;
-      const search = query.get("search"), industry = query.get("industry"), status = query.get("status");
+      const search = query.get("search"), industry = query.get("industry"), status = query.get("status"), videoType=query.get('video_type');
       const filters = view === "shared"
-        ? `<label class="list-select-label">行业<select id="case-industry-filter" aria-label="行业"><option value="">全部行业</option>${(data.industries || []).map(value=>`<option ${value===industry?"selected":""} value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join("")}</select></label>${data.video_types?.length ? `<label class="list-select-label">视频类型<select id="case-type-filter" aria-label="视频类型"><option value="">全部类型</option>${data.video_types.map(value=>`<option>${escapeHtml(value)}</option>`).join("")}</select></label>` : ""}`
+        ? `<label class="list-select-label">行业<select id="case-industry-filter" aria-label="行业"><option value="">全部行业</option>${(data.industries || []).map(value=>`<option ${value===industry?"selected":""} value="${escapeHtml(value)}">${escapeHtml(value)}</option>`).join("")}</select></label>${data.video_types?.length ? `<label class="list-select-label">视频类型<select id="case-type-filter" aria-label="视频类型"><option value="">全部类型</option>${data.video_types.map(value=>`<option value="${escapeHtml(value)}" ${value===videoType?'selected':''}>${escapeHtml(typeLabel(value))}</option>`).join("")}</select></label>` : ""}`
         : `<label class="list-select-label">状态<select id="case-status-filter" aria-label="状态"><option value="">全部状态</option>${Object.keys(data.status_counts || {}).map(value=>`<option value="${escapeHtml(value)}" ${value===status?"selected":""}>${caseStateLabels[value] || "待处理"}</option>`).join("")}</select></label>`;
       const toolbar = `<form class="list-toolbar" id="case-search-form"><div class="list-search">${searchIcon}<label class="sr-only" for="case-search">搜索视频标题</label><input id="case-search" type="search" maxlength="120" placeholder="搜索视频标题" value="${escapeHtml(search)}"><button class="btn btn-secondary btn-compact" type="submit">搜索</button></div>${filters}</form>`;
       const emptyTitle = search || industry || status ? "没有找到符合条件的视频" : view === "shared" ? "优秀案例，等待下一次分享" : view === "mine" ? "从第一条视频投稿开始" : "暂时没有待处理案例";
@@ -93,9 +95,11 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
   function publicationPanel(detail) {
     const context=detail.publication_context;
     if(!detail.permissions?.can_publish) return "";
-    if(!context?.available)return `<section class="work-surface"><h2>共享展示暂不可发布</h2><p>${escapeHtml(context?.blocker?.message || "原批准的来源、隐私或收据证据尚未完整核对。")}</p><p>${escapeHtml(context?.blocker?.next_action || "请由审核或运维人员按原来源补证；历史批准记录保留，不会自动公开。")}</p></section>`;
-    return `<details class="publication-panel"><summary>共享展示管理 <span>${context.published?"当前已共享":"尚未共享"}</span></summary><form id="case-publication-form">
+    const typePanel=detail.video_type_context && context?.available?`<details class="publication-panel" id="case-type-management"><summary>视频类型管理 <span>${escapeHtml(typeLabel(detail.video_type_context.current?.record.confirmed_type_id))}</span></summary>${typeConfirmationMarkup(detail.video_type_context,escapeHtml)}<p>历史案例的类型变更不会重新批准案例，也不会自动重新共享。</p><button type="button" class="btn btn-secondary" data-type-action="change">保存类型核对</button>${detail.video_type_context.current?'<button type="button" class="btn btn-ghost" data-type-action="withdraw">撤回当前类型</button>':''}</details>`:'';
+    if(!context?.available)return `${typePanel}<section class="work-surface"><h2>共享展示暂不可发布</h2><p>${escapeHtml(context?.blocker?.message || "原批准的来源、隐私或收据证据尚未完整核对。")}</p><p>${escapeHtml(context?.blocker?.next_action || "请由审核或运维人员按原来源补证；历史批准记录保留，不会自动公开。")}</p>${context?.withdraw_context?'<button type="button" class="btn btn-secondary" data-withdraw-unavailable-display>撤回现有共享</button>':''}</section>`;
+    return `${typePanel}<details class="publication-panel"><summary>共享展示管理 <span>${context.published?"当前已共享":"尚未共享"}</span></summary><form id="case-publication-form">
       <p>案例收录与共享展示分别确认。仅发布下列已核对的展示内容。</p>
+      <p>本次展示类型：${escapeHtml(typeLabel(detail.video_type_context?.current?.record.confirmed_type_id))}</p>
       <div class="field"><label for="display-title">共享标题</label><input id="display-title" maxlength="120" required value="${escapeHtml(detail.shared_display?.title || detail.title)}"></div>
       <div class="field"><label for="display-summary">结构参考（选填）</label><textarea id="display-summary" maxlength="1000" rows="3" placeholder="只整理合法的结构启发，不包含私人转写或客户资料。">${escapeHtml(detail.shared_display?.structure_summary || "")}</textarea></div>
       ${context.cover_available ? '<label class="publication-check"><input id="share-cover" type="checkbox">同时展示已有封面，单独确认展示许可</label><div class="publication-cover-fields" hidden><div class="field"><label for="cover-reference">展示许可证据</label><input id="cover-reference" maxlength="1000" placeholder="对应原案例与封面的授权证据引用"></div><div class="field"><label for="cover-statement">许可范围说明</label><textarea id="cover-statement" maxlength="1000" rows="2"></textarea></div></div>' : '<p class="field-hint">暂无可核对的封面，共享卡片会显示统一占位。</p>'}
@@ -105,7 +109,37 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
   }
 
   function bindPublication(detail,caseId) {
+    let pendingTypeOperation=null;
+    app.querySelectorAll('[data-type-action]').forEach(button=>button.addEventListener('click',async()=>{
+      const type=detail.video_type_context;const withdraw=button.dataset.typeAction==='withdraw';
+      try{
+        const confirmation=withdraw?null:makeTypeConfirmation(type,{typeId:app.querySelector('#case-video-type').value,
+          otherNote:app.querySelector('#case-other-type').value,reason:app.querySelector('#case-type-reason').value});
+        if(pendingTypeOperation && pendingTypeOperation.withdraw!==withdraw){showToast('请先核对上次类型保存结果。');return;}
+        if(!pendingTypeOperation){
+          const answer=await openModal({title:withdraw?'撤回当前类型？':'保存历史案例的类型核对？',description:'原案例收录保持。类型变化后，旧类型的共享展示停止；再次共享需明确核对。',confirmLabel:withdraw?'撤回类型':'保存类型核对'});
+          if(!answer.confirmed)return;
+        }
+        button.disabled=true;
+        const context=detail.publication_context;
+        pendingTypeOperation ||= {withdraw,payload:{
+          operation_id:'type_'+(withdraw?'withdraw_':'')+crypto.randomUUID().replaceAll('-',''),action:withdraw?'revoke_type':confirmation.type_id==null?'defer_type':'confirm_type',
+          confirmation,approved_case_sha256:context.approved_case_sha256,approval_receipt_sha256:context.approval_receipt_sha256,
+          expected_parent_sha256:type.source.parent_decision_sha256}};
+        await api(`/api/cases/${encodeURIComponent(caseId)}/type-decisions`,{method:'POST',body:JSON.stringify(pendingTypeOperation.payload)});
+        showToast(withdraw?'类型已撤回':'类型核对已保存；共享需另行确认');await renderCaseDetail(caseId);
+      }catch(error){showToast(error.message);button.disabled=false;if(error.status===422)pendingTypeOperation=null;else button.textContent='继续原类型保存';}
+    }));
+    app.querySelector('[data-withdraw-unavailable-display]')?.addEventListener('click',async()=>{
+      const answer=await openModal({title:'撤回现有共享？',description:'停止对外展示，原收录与历史收据保留。',confirmLabel:'撤回共享'});
+      if(!answer.confirmed)return;
+      const context=detail.publication_context.withdraw_context;
+      try{await api(`/api/cases/${encodeURIComponent(caseId)}/publication`,{method:'POST',body:JSON.stringify({action:'withdraw',
+        approved_case_sha256:context.approved_case_sha256,approval_receipt_sha256:context.approval_receipt_sha256,
+        expected_display_receipt_sha256:context.display_receipt_sha256})});await renderCaseDetail(caseId);}catch(error){showToast(error.message);}
+    });
     const form=app.querySelector("#case-publication-form");if(!form)return;
+    let publicationOperation=null;
     const cover=app.querySelector("#share-cover");
     cover?.addEventListener("change",()=>{app.querySelector(".publication-cover-fields").hidden=!cover.checked;});
     const submit=async(action)=>{
@@ -113,6 +147,10 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       const payload={action,title:app.querySelector("#display-title").value,structure_summary:app.querySelector("#display-summary").value,
         approved_case_sha256:context.approved_case_sha256,approval_receipt_sha256:context.approval_receipt_sha256,
         expected_display_receipt_sha256:context.display_receipt_sha256};
+      if(action==='publish' && detail.video_type_context?.current){
+        publicationOperation ||= 'pub_'+crypto.randomUUID().replaceAll('-','');
+        payload.publication_operation_id=publicationOperation;payload.expected_type_decision_sha256=detail.video_type_context.current.ref.sha256;
+      }
       if(action==="publish" && cover?.checked)payload.cover_evidence={reference:app.querySelector("#cover-reference").value,statement:app.querySelector("#cover-statement").value,display_rights_confirmed:true};
       form.querySelectorAll("button").forEach(button=>button.disabled=true);
       try{await api(`/api/cases/${encodeURIComponent(caseId)}/publication`,{method:"POST",body:JSON.stringify(payload)});showToast(action==="publish"?"共享展示已发布":"共享展示已撤回");await renderCaseDetail(caseId);}
@@ -374,6 +412,13 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
       bindPublication(detail,caseId);
       bindCaseReviewNavigation(app);
       bindEvidenceWorkspace(app,detail,{api,reload:()=>renderCaseDetail(caseId),toast:showToast});
+      if(detail.excel_notes_available && detail.review?.attempt_id){
+        const notes=document.createElement('section');notes.className='card excel-private-notes';notes.setAttribute('aria-label','投稿人补充说明');
+        notes.textContent='正在核对当前投稿人的未核说明…';app.querySelector('main')?.append(notes);
+        api(`/api/cases/${encodeURIComponent(caseId)}/attempts/${encodeURIComponent(detail.review.attempt_id)}/excel-notes`).then(value=>{
+          if(version===renderVersion)notes.innerHTML=nativeNotesMarkup(value,escapeHtml);
+        }).catch(()=>{if(version===renderVersion)notes.textContent='投稿补充说明暂时无法核对，请以当前原始媒体证据为准。';});
+      }
       document.querySelector("[data-profile-annotation]")?.addEventListener("click", async (event) => {
         const button = event.currentTarget;
         const decision = await openModal({
@@ -436,6 +481,9 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
         }
       });
       let sharePreviewDirty = false;
+      app.querySelector('#case-video-type')?.addEventListener('change',event=>{
+        const field=app.querySelector('[data-other-type-field]');if(field)field.hidden=event.target.value!=='other';
+      });
       const previewSave=app.querySelector('[data-save-share-preview]');
       const previewFeedback=app.querySelector('[data-share-preview-feedback]');
       const previewPanel=app.querySelector('.case-share-preview');
@@ -487,6 +535,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
         let evidenceReview = null;
         let qualityDecision = null;
         let sharingDecision = null;
+        let typeConfirmation = null;
         if (action === "approve") {
           if(sharePreviewDirty){showToast('请先核对修改后的展示预览。');return;}
           const workspace=reviewWorkspace(detail);
@@ -513,6 +562,18 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
           }
           const recovery = detail.review?.approval_recovery_required === true;
           const summary=workspace?.scope?.summary;
+          if(detail.video_type_context && !recovery){
+            try{
+              typeConfirmation=makeTypeConfirmation(detail.video_type_context,{typeId:app.querySelector('#case-video-type').value,
+                otherNote:app.querySelector('#case-other-type').value,reason:app.querySelector('#case-type-reason').value});
+              button.disabled=true;
+              const updated=await api(`/api/cases/${encodeURIComponent(caseId)}/share-preview`,{method:'POST',body:JSON.stringify({
+                title:detail.share_preview.preview.display.title,structure_summary:detail.share_preview.preview.display.structure_summary,
+                type_confirmation:typeConfirmation})});
+              detail.share_preview=updated.share_preview;detail.approval_context=updated.approval_context;
+              app.querySelector('[data-share-preview-card]').innerHTML=sharePreviewCard(updated.share_preview);
+            }catch(error){showToast(error.message);button.disabled=false;return;}
+          }
           const sharing=shareConfirmation(detail.share_preview);
           if(detail.approval_context?.version==='human-review-command-v1.2' && !sharing){showToast('安全展示预览尚未核对，请恢复来源或重新分析。');return;}
           const decision = await openModal({
@@ -522,7 +583,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
               : `${summary ? `保留原识别 ${summary.keep_original} 项，采用人工口播修正 ${summary.corrected_narration} 项，调整分镜 ${summary.adjusted_boundaries} 项，未处理问题 ${summary.blocked} 项。` : ""}${sharing?.description || "请确认你已核对案例来源、视频内容和分析结果，并认为本案例具有值得借鉴的创作参考价值。批准不会授予原视频素材使用权。"}`,
             confirmLabel: recovery ? "完成批准" : sharing?.confirmLabel || "确认符合收录标准并批准入库",
           });
-          if (!decision.confirmed) return;
+          if (!decision.confirmed) {button.disabled=false;return;}
           qualityDecision = { ...detail.quality_context, decision: "suitable", origin: "human_final_confirmation" };
           sharingDecision = sharing?.decision || null;
         } else {
@@ -542,7 +603,7 @@ export function createCaseViews({ app, api, navigate, shell, bindCommonActions, 
         }
         document.querySelectorAll("[data-review-action]").forEach((item) => { item.disabled = true; });
         try {
-          const result = await api(`/api/cases/${encodeURIComponent(caseId)}/review`, { method: "POST", body: JSON.stringify({ review_context: detail.approval_context.token, decision: action, reason, operator_profile_hint: profileHint, evidence_review: evidenceReview, quality_decision: qualityDecision, sharing_decision:sharingDecision }) });
+          const result = await api(`/api/cases/${encodeURIComponent(caseId)}/review`, { method: "POST", body: JSON.stringify({ review_context: detail.approval_context.token, decision: action, reason, operator_profile_hint: profileHint, evidence_review: evidenceReview, quality_decision: qualityDecision, sharing_decision:sharingDecision, type_confirmation:typeConfirmation }) });
           if (action === "approve") { showToast(shareResultMessage(result)); return renderCaseDetail(caseId); }
           if (action === "reanalyze") { showToast("已退回重新分析"); return navigate(`/tasks/${result.task.task_id}`); }
           showToast("已记录为不收录"); navigate(caseReturnPath() === "/cases" ? "/cases?view=review" : caseReturnPath());

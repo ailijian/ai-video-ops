@@ -1,0 +1,36 @@
+{
+  "schema_version": "case-content-type-catalog-v1.0",
+  "version": 1,
+  "entries": [
+    {
+      "type_id": "news",
+      "label": "新闻体",
+      "confirmable": true
+    },
+    {
+      "type_id": "persona",
+      "label": "人设型",
+      "confirmable": true
+    },
+    {
+      "type_id": "story",
+      "label": "故事型",
+      "confirmable": true
+    },
+    {
+      "type_id": "conversion",
+      "label": "高转化型",
+      "confirmable": true
+    },
+    {
+      "type_id": "other",
+      "label": "其它",
+      "confirmable": true
+    },
+    {
+      "type_id": "unknown",
+      "label": "暂不确定",
+      "confirmable": false
+    }
+  ]
+}

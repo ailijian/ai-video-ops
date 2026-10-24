@@ -33,3 +33,4 @@
   .case-result-steps li { gap: 8px; font-size: 12px; }
   .case-result-recovery .btn { width: 100%; }
 }
+.case-result-steps.has-type{grid-template-columns:repeat(3,minmax(0,1fr))}

@@ -1,0 +1,452 @@
+{
+  "original_matrix_sha256": "e79234e06feefcfaa9906a79805223a96e47146eb2542d9937611118057461e2",
+  "items": [
+    {
+      "id": "S01",
+      "unit": "EX-S1",
+      "trigger": "one lawful new source, original uploaded fictional video",
+      "expected": "exact same Row→Intent→Task→Attempt; no Case Approval",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_excel_joint_native_v1.py::test_excel_uploaded_native_analysis_one_review_typed_share_and_withdraw"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "S02",
+      "unit": "EX-S1",
+      "trigger": "same operation/input double click and lost response",
+      "expected": "one mapping/Task; original result only",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_excel_native.py::test_exact_task_and_atomic_mapping_replay_and_reader",
+        "internal-console/tests/test_case_excel_orchestration_v1.py::test_orchestration_response_loss_replays_same_native_tasks"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "S03",
+      "unit": "EX-S1",
+      "trigger": "same operation different Row/source/parent",
+      "expected": "409; no overwrite or replacement Task",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_excel_native.py::test_changed_inputs_and_authorization_fail_closed"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "S04",
+      "unit": "EX-S1",
+      "trigger": "exit before intent / after intent / after DB commit",
+      "expected": "no Task or recover exact mapped Task; no guessed latest source",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_excel_native.py::test_failure_windows_keep_one_task_and_exact_intent"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "S05",
+      "unit": "EX-S1",
+      "trigger": "exit before association/submission/schedule",
+      "expected": "worker cannot execute incomplete admission; same task resumes",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_excel_native.py::test_failure_windows_keep_one_task_and_exact_intent",
+        "internal-console/tests/test_case_excel_native.py::test_worker_does_not_claim_before_companions"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "S06",
+      "unit": "EX-S1",
+      "trigger": "worker claimed then died, expired lease, unknown external result",
+      "expected": "original owner reconciles or unknown hold; zero automatic resend",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_excel_native.py::test_claim_and_unknown_fence_cover_old_url_task_entry",
+        "internal-console/tests/test_case_excel_orchestration_v1.py::test_unknown_native_result_never_requeues_or_recounts_on_finite_replay"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "S07",
+      "unit": "EX-S1",
+      "trigger": "ordinary legacy URL/group/reanalysis racing same new origin",
+      "expected": "global Native active-source/upload uniqueness and same limits",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_excel_native.py::test_concurrent_confirmation_and_legacy_entry_share_original_task"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "S08",
+      "unit": "EX-S1",
+      "trigger": "same source another user private task",
+      "expected": "generic response; no foreign Task/Case detail, ownership or notes",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_excel_native.py::test_second_account_private_duplicate_gets_no_task_or_notes"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "S09",
+      "unit": "EX-S1",
+      "trigger": "same own active task or old completed task",
+      "expected": "read exact owned state; no new primary origin or new execution",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_excel_native.py::test_owned_existing_task_links_without_new_primary_origin",
+        "internal-console/tests/test_case_excel_orchestration_v1.py::test_fifteen_rows_two_native_human_shared_cases_and_real_media_duplicate_failure"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "S10",
+      "unit": "EX-S1",
+      "trigger": "filename-only/text-only/unsupported platform",
+      "expected": "remain private pending evidence; zero native tasks",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_excel_native.py::test_unsupported_sources_remain_private_without_invented_native_identity",
+        "internal-console/tests/test_case_excel_orchestration_v1.py::test_fifteen_finite_rows_respect_original_capacity_and_never_create_text_tasks"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "S11",
+      "unit": "EX-S1",
+      "trigger": "upload expired/revoked/hash changed/provider unavailable",
+      "expected": "stale preflight rejected; no silent source switch",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_excel_native.py::test_changed_inputs_and_authorization_fail_closed",
+        "internal-console/tests/test_case_excel_orchestration_v1.py::test_terminal_stale_source_failure_finishes_row_without_blocking_other_rows"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "S12",
+      "unit": "EX-S1",
+      "trigger": "cleanup races prepared intent / failed unknown task",
+      "expected": "correct validated hold; no premature deletion, no arbitrary retention file",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_excel_native.py::test_pending_upload_hold_blocks_original_cleanup",
+        "internal-console/tests/test_case_excel_joint_native_v1.py::test_excel_uploaded_native_analysis_one_review_typed_share_and_withdraw"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "S13",
+      "unit": "EX-S1",
+      "trigger": "backup + case + upload + DB + reviewer concurrency",
+      "expected": "documented order, no lock inside DB wait, no nested HTTP lock",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_excel_native.py::test_concurrent_confirmation_and_legacy_entry_share_original_task",
+        "internal-console/tests/test_case_excel_orchestration_v1.py::test_finite_admission_honors_original_backup_barrier"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "S14",
+      "unit": "EX-S1",
+      "trigger": "cancel/reanalysis while original outcome unresolved",
+      "expected": "preserve original operation; block replacement analysis until settled",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_excel_native.py::test_claim_and_unknown_fence_cover_old_url_task_entry",
+        "internal-console/tests/test_case_excel_orchestration_v1.py::test_cancel_only_unadmitted_and_direct_exs1_cannot_bypass_finite_cancellation"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "M01",
+      "unit": "ME-R1",
+      "trigger": "real current reviewer, exact primary-origin Attempt",
+      "expected": "read only bound minimum unverified notes",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_excel_joint_native_v1.py::test_excel_uploaded_native_analysis_one_review_typed_share_and_withdraw",
+        "internal-console/tests/test_case_excel_native.py::test_reviewer_notes_only_exact_primary_origin_fixture"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "M02",
+      "unit": "ME-R1",
+      "trigger": "ordinary user/expired/revoked grant/cross namespace",
+      "expected": "deny without foreign Row disclosure",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_excel_native.py::test_reviewer_notes_only_exact_primary_origin_fixture",
+        "internal-console/tests/test_case_excel_native.py::test_second_account_private_duplicate_gets_no_task_or_notes"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "M03",
+      "unit": "ME-R1",
+      "trigger": "borrow Row/Attempt/association/SHA/old owned linked Task",
+      "expected": "deny; no arbitrary import scan",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_excel_native.py::test_reviewer_notes_only_exact_primary_origin_fixture"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "M04",
+      "unit": "ME-R1",
+      "trigger": "manual narration/seconds/license/type hint",
+      "expected": "visible unverified only; no ASR/Shot/Proof/rights writes",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_excel_joint_native_v1.py::test_excel_uploaded_native_analysis_one_review_typed_share_and_withdraw",
+        "internal-console/tests/test_case_excel_native.py::test_reviewer_notes_only_exact_primary_origin_fixture"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "T01",
+      "unit": "CC-01",
+      "trigger": "explicit confirm after original approved Case",
+      "expected": "append type decision bound to Case/Receipt/Attempt/catalog/grant",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_joint_type_v1.py::test_one_final_operation_three_real_records_and_safe_shared_type"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "T02",
+      "unit": "CC-01",
+      "trigger": "Excel hint only / pre-approval candidate",
+      "expected": "no formal type; no automatic carry across approval SHA",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_joint_type_v1.py::test_type_preview_rejects_unconfirmed_or_stale_choices_without_any_approval",
+        "internal-console/tests/js/case-type-confirmation.test.mjs"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "T03",
+      "unit": "CC-01",
+      "trigger": "unknown/defer/revoke and other blank/whitespace",
+      "expected": "formal null or rejection; other requires real Human note",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_joint_type_v1.py::test_one_final_operation_three_real_records_and_safe_shared_type",
+        "internal-console/tests/test_case_joint_type_v1.py::test_type_preview_rejects_unconfirmed_or_stale_choices_without_any_approval",
+        "internal-console/tests/test_case_joint_type_v1.py::test_type_withdraw_hides_typed_projection_without_reviving_legacy"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "T04",
+      "unit": "CC-01",
+      "trigger": "profile conflict preserve/correct/defer",
+      "expected": "explicit reason/decision; no raw Row/profile mutation",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_joint_type_v1.py::test_one_final_operation_three_real_records_and_safe_shared_type",
+        "internal-console/tests/test_case_excel_joint_native_v1.py::test_excel_uploaded_native_analysis_one_review_typed_share_and_withdraw"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "T05",
+      "unit": "CC-01",
+      "trigger": "repeat operation, changed payload, stale parent",
+      "expected": "same immutable result or409; one event; no timestamp head guessing",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_joint_type_v1.py::test_standalone_type_payload_conflict_stale_parent_and_private_permissions"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "T06",
+      "unit": "CC-01",
+      "trigger": "current grant revoked; historical prior grant valid",
+      "expected": "block new writes/reads, validate historical evidence without erasing decisions",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_joint_type_v1.py::test_reviewer_revocation_after_approval_preserves_case_without_type_or_share"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "T07",
+      "unit": "CC-01",
+      "trigger": "catalog/version/source/approval change",
+      "expected": "preview stale; no silent new label; unknown versions closed",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_joint_type_v1.py::test_type_preview_rejects_unconfirmed_or_stale_choices_without_any_approval",
+        "internal-console/tests/test_case_joint_type_v1.py::test_case_source_change_blocks_continuation_and_failed_eligibility_does_not_block_withdraw"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "P01",
+      "unit": "CC-02",
+      "trigger": "approved Case + effective type + explicit exact display confirmation",
+      "expected": "one typed receipt; no automatic share",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_excel_joint_native_v1.py::test_excel_uploaded_native_analysis_one_review_typed_share_and_withdraw",
+        "internal-console/tests/test_case_joint_type_v1.py::test_one_final_operation_three_real_records_and_safe_shared_type"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "P02",
+      "unit": "CC-02",
+      "trigger": "no approval/type or unverified Excel title/rights",
+      "expected": "reject typed publish; retain legacy null semantics",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_joint_type_v1.py::test_type_preview_rejects_unconfirmed_or_stale_choices_without_any_approval",
+        "internal-console/tests/test_case_excel_joint_native_v1.py::test_excel_uploaded_native_analysis_one_review_typed_share_and_withdraw"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "P03",
+      "unit": "CC-02",
+      "trigger": "type changed/revoked, fresh preview not confirmed",
+      "expected": "old typed projection unavailable; history unchanged, no silent rewrite",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_joint_type_v1.py::test_type_withdraw_hides_typed_projection_without_reviving_legacy",
+        "internal-console/tests/test_case_joint_type_v1.py::test_historical_type_change_needs_independent_publication_and_replay_never_revives"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "P04",
+      "unit": "CC-02",
+      "trigger": "old v1.0/v1.1 before and after typed events",
+      "expected": "strict mixed ordered reader; old bytes unchanged; no automatic upgrade",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_joint_type_v1.py::test_legacy_publication_bytes_survive_typed_change_and_withdrawal"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "P05",
+      "unit": "CC-02",
+      "trigger": "receipt committed, result/response lost, repeated command",
+      "expected": "same original sequence/result, no duplicate publication",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_joint_type_v1.py::test_joint_failure_recovers_only_missing_stage"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "P06",
+      "unit": "CC-02",
+      "trigger": "withdraw when media/type/approval now invalid",
+      "expected": "allow accurate authorized withdrawal, no new publish prerequisite",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_joint_type_v1.py::test_case_source_change_blocks_continuation_and_failed_eligibility_does_not_block_withdraw"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "P07",
+      "unit": "CC-02",
+      "trigger": "stale parent or corrupted history",
+      "expected": "reject stale writes, restore exact history; no invented repair receipt",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_joint_type_v1.py::test_standalone_type_payload_conflict_stale_parent_and_private_permissions",
+        "internal-console/tests/test_case_joint_type_v1.py::test_corrupted_typed_history_never_falls_back_to_a_legacy_projection"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "P08",
+      "unit": "CC-02",
+      "trigger": "private user requests shared details/cover via guessed IDs",
+      "expected": "original visibility and cover/privacy/source gates",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_excel_joint_native_v1.py::test_excel_uploaded_native_analysis_one_review_typed_share_and_withdraw",
+        "internal-console/tests/test_case_library_security_v1.py::test_publish_clearance_withdraw_and_immutable_case"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    },
+    {
+      "id": "U01",
+      "unit": "ALL",
+      "trigger": "one fictional media entire pipeline then multiple rows/partial failure",
+      "expected": "stable identities; original Evidence/Human/Case Approval and independent sharing; Founder last unified UAT",
+      "status": "EXECUTABLE_ISOLATED_COVERAGE_RESULT_IN_FINAL_JUNIT",
+      "layer": "Native Owner + HTTP/JS where applicable",
+      "evidence": [
+        "internal-console/tests/test_case_excel_joint_native_v1.py::test_excel_uploaded_native_analysis_one_review_typed_share_and_withdraw",
+        "internal-console/tests/test_case_excel_orchestration_v1.py::test_fifteen_rows_two_native_human_shared_cases_and_real_media_duplicate_failure"
+      ],
+      "remaining": "Real model quality, production and Founder final UAT remain unverified. Trigger subvariants are bounded by exact executed test parameters; this mapping alone is not PASS."
+    }
+  ],
+  "joint_failure_parameters": [
+    "type_before",
+    "type_after",
+    "publication_before",
+    "publication_after",
+    "result"
+  ],
+  "final_pass_claim_source": "External FINAL_SCENARIO_RESULT.json matches actual final JUnit test names, SHA and source state",
+  "new_scenarios": [
+    "internal-console/tests/test_case_excel_orchestration_v1.py::test_terminal_stale_source_failure_finishes_row_without_blocking_other_rows",
+    "internal-console/tests/test_case_excel_orchestration_v1.py::test_pause_and_resume_preserve_exact_finite_intent",
+    "internal-console/tests/test_case_excel_orchestration_v1.py::test_unknown_native_result_never_requeues_or_recounts_on_finite_replay",
+    "internal-console/tests/test_case_excel_orchestration_v1.py::test_fifteen_finite_rows_respect_original_capacity_and_never_create_text_tasks"
+  ],
+  "founder_final_uat": "NOT_EXECUTED_FOR_R4",
+  "real_models": "NOT_EXECUTED"
+}

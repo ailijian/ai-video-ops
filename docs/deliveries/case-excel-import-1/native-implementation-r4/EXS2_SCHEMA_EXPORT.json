@@ -1,0 +1,950 @@
+{
+  "role": "Exact review export from executable strict Pydantic models; not a second machine Owner",
+  "dialect": "https://json-schema.org/draft/2020-12/schema",
+  "models": {
+    "PrepareInput": {
+      "$defs": {
+        "RowRef": {
+          "additionalProperties": false,
+          "properties": {
+            "row_id": {
+              "pattern": "^[a-z][a-z0-9_-]{1,127}$",
+              "title": "Row Id",
+              "type": "string"
+            },
+            "row_sha256": {
+              "pattern": "^[a-f0-9]{64}$",
+              "title": "Row Sha256",
+              "type": "string"
+            }
+          },
+          "required": [
+            "row_id",
+            "row_sha256"
+          ],
+          "title": "RowRef",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "operation_id": {
+          "pattern": "^orch_[a-f0-9]{32}$",
+          "title": "Operation Id",
+          "type": "string"
+        },
+        "import_operation_id": {
+          "pattern": "^[a-z][a-z0-9_-]{1,127}$",
+          "title": "Import Operation Id",
+          "type": "string"
+        },
+        "expected_import_head_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Expected Import Head Sha256",
+          "type": "string"
+        },
+        "selected_rows": {
+          "items": {
+            "$ref": "#/$defs/RowRef"
+          },
+          "maxItems": 2000,
+          "minItems": 1,
+          "title": "Selected Rows",
+          "type": "array"
+        }
+      },
+      "required": [
+        "operation_id",
+        "import_operation_id",
+        "expected_import_head_sha256",
+        "selected_rows"
+      ],
+      "title": "PrepareInput",
+      "type": "object"
+    },
+    "ItemPreview": {
+      "$defs": {
+        "RowRef": {
+          "additionalProperties": false,
+          "properties": {
+            "row_id": {
+              "pattern": "^[a-z][a-z0-9_-]{1,127}$",
+              "title": "Row Id",
+              "type": "string"
+            },
+            "row_sha256": {
+              "pattern": "^[a-f0-9]{64}$",
+              "title": "Row Sha256",
+              "type": "string"
+            }
+          },
+          "required": [
+            "row_id",
+            "row_sha256"
+          ],
+          "title": "RowRef",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "row": {
+          "$ref": "#/$defs/RowRef"
+        },
+        "native_prepare": {
+          "additionalProperties": true,
+          "title": "Native Prepare",
+          "type": "object"
+        },
+        "native_preview": {
+          "additionalProperties": true,
+          "title": "Native Preview",
+          "type": "object"
+        },
+        "submission_operation_id": {
+          "pattern": "^[a-z][a-z0-9_-]{1,127}$",
+          "title": "Submission Operation Id",
+          "type": "string"
+        },
+        "relation": {
+          "enum": [
+            "new_task",
+            "linked_owned_task",
+            "duplicate",
+            "pending_source"
+          ],
+          "title": "Relation",
+          "type": "string"
+        }
+      },
+      "required": [
+        "row",
+        "native_prepare",
+        "native_preview",
+        "submission_operation_id",
+        "relation"
+      ],
+      "title": "ItemPreview",
+      "type": "object"
+    },
+    "Preview": {
+      "$defs": {
+        "ItemPreview": {
+          "additionalProperties": false,
+          "properties": {
+            "row": {
+              "$ref": "#/$defs/RowRef"
+            },
+            "native_prepare": {
+              "additionalProperties": true,
+              "title": "Native Prepare",
+              "type": "object"
+            },
+            "native_preview": {
+              "additionalProperties": true,
+              "title": "Native Preview",
+              "type": "object"
+            },
+            "submission_operation_id": {
+              "pattern": "^[a-z][a-z0-9_-]{1,127}$",
+              "title": "Submission Operation Id",
+              "type": "string"
+            },
+            "relation": {
+              "enum": [
+                "new_task",
+                "linked_owned_task",
+                "duplicate",
+                "pending_source"
+              ],
+              "title": "Relation",
+              "type": "string"
+            }
+          },
+          "required": [
+            "row",
+            "native_prepare",
+            "native_preview",
+            "submission_operation_id",
+            "relation"
+          ],
+          "title": "ItemPreview",
+          "type": "object"
+        },
+        "PrepareInput": {
+          "additionalProperties": false,
+          "properties": {
+            "operation_id": {
+              "pattern": "^orch_[a-f0-9]{32}$",
+              "title": "Operation Id",
+              "type": "string"
+            },
+            "import_operation_id": {
+              "pattern": "^[a-z][a-z0-9_-]{1,127}$",
+              "title": "Import Operation Id",
+              "type": "string"
+            },
+            "expected_import_head_sha256": {
+              "pattern": "^[a-f0-9]{64}$",
+              "title": "Expected Import Head Sha256",
+              "type": "string"
+            },
+            "selected_rows": {
+              "items": {
+                "$ref": "#/$defs/RowRef"
+              },
+              "maxItems": 2000,
+              "minItems": 1,
+              "title": "Selected Rows",
+              "type": "array"
+            }
+          },
+          "required": [
+            "operation_id",
+            "import_operation_id",
+            "expected_import_head_sha256",
+            "selected_rows"
+          ],
+          "title": "PrepareInput",
+          "type": "object"
+        },
+        "RowRef": {
+          "additionalProperties": false,
+          "properties": {
+            "row_id": {
+              "pattern": "^[a-z][a-z0-9_-]{1,127}$",
+              "title": "Row Id",
+              "type": "string"
+            },
+            "row_sha256": {
+              "pattern": "^[a-f0-9]{64}$",
+              "title": "Row Sha256",
+              "type": "string"
+            }
+          },
+          "required": [
+            "row_id",
+            "row_sha256"
+          ],
+          "title": "RowRef",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "case-excel-orchestration-preview-v1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "principal": {
+          "additionalProperties": true,
+          "title": "Principal",
+          "type": "object"
+        },
+        "input": {
+          "$ref": "#/$defs/PrepareInput"
+        },
+        "batch_id": {
+          "pattern": "^[a-z][a-z0-9_-]{1,127}$",
+          "title": "Batch Id",
+          "type": "string"
+        },
+        "batch_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Batch Sha256",
+          "type": "string"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/$defs/ItemPreview"
+          },
+          "maxItems": 2000,
+          "minItems": 1,
+          "title": "Items",
+          "type": "array"
+        },
+        "new_task_count": {
+          "minimum": 0,
+          "title": "New Task Count",
+          "type": "integer"
+        },
+        "preview_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Preview Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "principal",
+        "input",
+        "batch_id",
+        "batch_sha256",
+        "items",
+        "new_task_count",
+        "preview_sha256"
+      ],
+      "title": "Preview",
+      "type": "object"
+    },
+    "SubmitInput": {
+      "$defs": {
+        "ItemPreview": {
+          "additionalProperties": false,
+          "properties": {
+            "row": {
+              "$ref": "#/$defs/RowRef"
+            },
+            "native_prepare": {
+              "additionalProperties": true,
+              "title": "Native Prepare",
+              "type": "object"
+            },
+            "native_preview": {
+              "additionalProperties": true,
+              "title": "Native Preview",
+              "type": "object"
+            },
+            "submission_operation_id": {
+              "pattern": "^[a-z][a-z0-9_-]{1,127}$",
+              "title": "Submission Operation Id",
+              "type": "string"
+            },
+            "relation": {
+              "enum": [
+                "new_task",
+                "linked_owned_task",
+                "duplicate",
+                "pending_source"
+              ],
+              "title": "Relation",
+              "type": "string"
+            }
+          },
+          "required": [
+            "row",
+            "native_prepare",
+            "native_preview",
+            "submission_operation_id",
+            "relation"
+          ],
+          "title": "ItemPreview",
+          "type": "object"
+        },
+        "PrepareInput": {
+          "additionalProperties": false,
+          "properties": {
+            "operation_id": {
+              "pattern": "^orch_[a-f0-9]{32}$",
+              "title": "Operation Id",
+              "type": "string"
+            },
+            "import_operation_id": {
+              "pattern": "^[a-z][a-z0-9_-]{1,127}$",
+              "title": "Import Operation Id",
+              "type": "string"
+            },
+            "expected_import_head_sha256": {
+              "pattern": "^[a-f0-9]{64}$",
+              "title": "Expected Import Head Sha256",
+              "type": "string"
+            },
+            "selected_rows": {
+              "items": {
+                "$ref": "#/$defs/RowRef"
+              },
+              "maxItems": 2000,
+              "minItems": 1,
+              "title": "Selected Rows",
+              "type": "array"
+            }
+          },
+          "required": [
+            "operation_id",
+            "import_operation_id",
+            "expected_import_head_sha256",
+            "selected_rows"
+          ],
+          "title": "PrepareInput",
+          "type": "object"
+        },
+        "Preview": {
+          "additionalProperties": false,
+          "properties": {
+            "schema_version": {
+              "const": "case-excel-orchestration-preview-v1.0",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "principal": {
+              "additionalProperties": true,
+              "title": "Principal",
+              "type": "object"
+            },
+            "input": {
+              "$ref": "#/$defs/PrepareInput"
+            },
+            "batch_id": {
+              "pattern": "^[a-z][a-z0-9_-]{1,127}$",
+              "title": "Batch Id",
+              "type": "string"
+            },
+            "batch_sha256": {
+              "pattern": "^[a-f0-9]{64}$",
+              "title": "Batch Sha256",
+              "type": "string"
+            },
+            "items": {
+              "items": {
+                "$ref": "#/$defs/ItemPreview"
+              },
+              "maxItems": 2000,
+              "minItems": 1,
+              "title": "Items",
+              "type": "array"
+            },
+            "new_task_count": {
+              "minimum": 0,
+              "title": "New Task Count",
+              "type": "integer"
+            },
+            "preview_sha256": {
+              "pattern": "^[a-f0-9]{64}$",
+              "title": "Preview Sha256",
+              "type": "string"
+            }
+          },
+          "required": [
+            "schema_version",
+            "principal",
+            "input",
+            "batch_id",
+            "batch_sha256",
+            "items",
+            "new_task_count",
+            "preview_sha256"
+          ],
+          "title": "Preview",
+          "type": "object"
+        },
+        "RowRef": {
+          "additionalProperties": false,
+          "properties": {
+            "row_id": {
+              "pattern": "^[a-z][a-z0-9_-]{1,127}$",
+              "title": "Row Id",
+              "type": "string"
+            },
+            "row_sha256": {
+              "pattern": "^[a-f0-9]{64}$",
+              "title": "Row Sha256",
+              "type": "string"
+            }
+          },
+          "required": [
+            "row_id",
+            "row_sha256"
+          ],
+          "title": "RowRef",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "case-excel-orchestration-submit-v1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "preview": {
+          "$ref": "#/$defs/Preview"
+        },
+        "confirmed_submit_analysis": {
+          "const": true,
+          "title": "Confirmed Submit Analysis",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "schema_version",
+        "preview",
+        "confirmed_submit_analysis"
+      ],
+      "title": "SubmitInput",
+      "type": "object"
+    },
+    "Intent": {
+      "$defs": {
+        "ItemPreview": {
+          "additionalProperties": false,
+          "properties": {
+            "row": {
+              "$ref": "#/$defs/RowRef"
+            },
+            "native_prepare": {
+              "additionalProperties": true,
+              "title": "Native Prepare",
+              "type": "object"
+            },
+            "native_preview": {
+              "additionalProperties": true,
+              "title": "Native Preview",
+              "type": "object"
+            },
+            "submission_operation_id": {
+              "pattern": "^[a-z][a-z0-9_-]{1,127}$",
+              "title": "Submission Operation Id",
+              "type": "string"
+            },
+            "relation": {
+              "enum": [
+                "new_task",
+                "linked_owned_task",
+                "duplicate",
+                "pending_source"
+              ],
+              "title": "Relation",
+              "type": "string"
+            }
+          },
+          "required": [
+            "row",
+            "native_prepare",
+            "native_preview",
+            "submission_operation_id",
+            "relation"
+          ],
+          "title": "ItemPreview",
+          "type": "object"
+        },
+        "PrepareInput": {
+          "additionalProperties": false,
+          "properties": {
+            "operation_id": {
+              "pattern": "^orch_[a-f0-9]{32}$",
+              "title": "Operation Id",
+              "type": "string"
+            },
+            "import_operation_id": {
+              "pattern": "^[a-z][a-z0-9_-]{1,127}$",
+              "title": "Import Operation Id",
+              "type": "string"
+            },
+            "expected_import_head_sha256": {
+              "pattern": "^[a-f0-9]{64}$",
+              "title": "Expected Import Head Sha256",
+              "type": "string"
+            },
+            "selected_rows": {
+              "items": {
+                "$ref": "#/$defs/RowRef"
+              },
+              "maxItems": 2000,
+              "minItems": 1,
+              "title": "Selected Rows",
+              "type": "array"
+            }
+          },
+          "required": [
+            "operation_id",
+            "import_operation_id",
+            "expected_import_head_sha256",
+            "selected_rows"
+          ],
+          "title": "PrepareInput",
+          "type": "object"
+        },
+        "Preview": {
+          "additionalProperties": false,
+          "properties": {
+            "schema_version": {
+              "const": "case-excel-orchestration-preview-v1.0",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "principal": {
+              "additionalProperties": true,
+              "title": "Principal",
+              "type": "object"
+            },
+            "input": {
+              "$ref": "#/$defs/PrepareInput"
+            },
+            "batch_id": {
+              "pattern": "^[a-z][a-z0-9_-]{1,127}$",
+              "title": "Batch Id",
+              "type": "string"
+            },
+            "batch_sha256": {
+              "pattern": "^[a-f0-9]{64}$",
+              "title": "Batch Sha256",
+              "type": "string"
+            },
+            "items": {
+              "items": {
+                "$ref": "#/$defs/ItemPreview"
+              },
+              "maxItems": 2000,
+              "minItems": 1,
+              "title": "Items",
+              "type": "array"
+            },
+            "new_task_count": {
+              "minimum": 0,
+              "title": "New Task Count",
+              "type": "integer"
+            },
+            "preview_sha256": {
+              "pattern": "^[a-f0-9]{64}$",
+              "title": "Preview Sha256",
+              "type": "string"
+            }
+          },
+          "required": [
+            "schema_version",
+            "principal",
+            "input",
+            "batch_id",
+            "batch_sha256",
+            "items",
+            "new_task_count",
+            "preview_sha256"
+          ],
+          "title": "Preview",
+          "type": "object"
+        },
+        "RowRef": {
+          "additionalProperties": false,
+          "properties": {
+            "row_id": {
+              "pattern": "^[a-z][a-z0-9_-]{1,127}$",
+              "title": "Row Id",
+              "type": "string"
+            },
+            "row_sha256": {
+              "pattern": "^[a-f0-9]{64}$",
+              "title": "Row Sha256",
+              "type": "string"
+            }
+          },
+          "required": [
+            "row_id",
+            "row_sha256"
+          ],
+          "title": "RowRef",
+          "type": "object"
+        },
+        "SubmitInput": {
+          "additionalProperties": false,
+          "properties": {
+            "schema_version": {
+              "const": "case-excel-orchestration-submit-v1.0",
+              "title": "Schema Version",
+              "type": "string"
+            },
+            "preview": {
+              "$ref": "#/$defs/Preview"
+            },
+            "confirmed_submit_analysis": {
+              "const": true,
+              "title": "Confirmed Submit Analysis",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "schema_version",
+            "preview",
+            "confirmed_submit_analysis"
+          ],
+          "title": "SubmitInput",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "case-excel-orchestration-intent-v1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "principal": {
+          "additionalProperties": true,
+          "title": "Principal",
+          "type": "object"
+        },
+        "input": {
+          "$ref": "#/$defs/SubmitInput"
+        },
+        "input_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Input Sha256",
+          "type": "string"
+        },
+        "created_at": {
+          "title": "Created At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "principal",
+        "input",
+        "input_sha256",
+        "created_at"
+      ],
+      "title": "Intent",
+      "type": "object"
+    },
+    "ControlInput": {
+      "additionalProperties": false,
+      "properties": {
+        "operation_id": {
+          "pattern": "^control_[a-f0-9]{32}$",
+          "title": "Operation Id",
+          "type": "string"
+        },
+        "action": {
+          "enum": [
+            "pause",
+            "resume",
+            "cancel"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "expected_parent_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Expected Parent Sha256"
+        }
+      },
+      "required": [
+        "operation_id",
+        "action",
+        "expected_parent_sha256"
+      ],
+      "title": "ControlInput",
+      "type": "object"
+    },
+    "Control": {
+      "$defs": {
+        "ControlInput": {
+          "additionalProperties": false,
+          "properties": {
+            "operation_id": {
+              "pattern": "^control_[a-f0-9]{32}$",
+              "title": "Operation Id",
+              "type": "string"
+            },
+            "action": {
+              "enum": [
+                "pause",
+                "resume",
+                "cancel"
+              ],
+              "title": "Action",
+              "type": "string"
+            },
+            "expected_parent_sha256": {
+              "anyOf": [
+                {
+                  "pattern": "^[a-f0-9]{64}$",
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Expected Parent Sha256"
+            }
+          },
+          "required": [
+            "operation_id",
+            "action",
+            "expected_parent_sha256"
+          ],
+          "title": "ControlInput",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "case-excel-orchestration-control-v1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "principal": {
+          "additionalProperties": true,
+          "title": "Principal",
+          "type": "object"
+        },
+        "input": {
+          "$ref": "#/$defs/ControlInput"
+        },
+        "parent_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Parent Sha256"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "principal",
+        "input",
+        "parent_sha256",
+        "at"
+      ],
+      "title": "Control",
+      "type": "object"
+    },
+    "RowResult": {
+      "$defs": {
+        "RowRef": {
+          "additionalProperties": false,
+          "properties": {
+            "row_id": {
+              "pattern": "^[a-z][a-z0-9_-]{1,127}$",
+              "title": "Row Id",
+              "type": "string"
+            },
+            "row_sha256": {
+              "pattern": "^[a-f0-9]{64}$",
+              "title": "Row Sha256",
+              "type": "string"
+            }
+          },
+          "required": [
+            "row_id",
+            "row_sha256"
+          ],
+          "title": "RowRef",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "case-excel-orchestration-row-result-v1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "row": {
+          "$ref": "#/$defs/RowRef"
+        },
+        "state": {
+          "enum": [
+            "submitted",
+            "linked",
+            "duplicate",
+            "pending_source",
+            "cancelled"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "native_submission": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Native Submission"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "row",
+        "state",
+        "native_submission",
+        "at"
+      ],
+      "title": "RowResult",
+      "type": "object"
+    },
+    "Failure": {
+      "$defs": {
+        "RowRef": {
+          "additionalProperties": false,
+          "properties": {
+            "row_id": {
+              "pattern": "^[a-z][a-z0-9_-]{1,127}$",
+              "title": "Row Id",
+              "type": "string"
+            },
+            "row_sha256": {
+              "pattern": "^[a-f0-9]{64}$",
+              "title": "Row Sha256",
+              "type": "string"
+            }
+          },
+          "required": [
+            "row_id",
+            "row_sha256"
+          ],
+          "title": "RowRef",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "case-excel-orchestration-row-failure-v1.0",
+          "title": "Schema Version",
+          "type": "string"
+        },
+        "row": {
+          "$ref": "#/$defs/RowRef"
+        },
+        "error_code": {
+          "title": "Error Code",
+          "type": "string"
+        },
+        "retryable": {
+          "title": "Retryable",
+          "type": "boolean"
+        },
+        "at": {
+          "title": "At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "schema_version",
+        "row",
+        "error_code",
+        "retryable",
+        "at"
+      ],
+      "title": "Failure",
+      "type": "object"
+    }
+  }
+}

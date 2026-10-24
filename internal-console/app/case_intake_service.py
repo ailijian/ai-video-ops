@@ -13,6 +13,31 @@ from .douyin_source_input import ALLOWED_HOSTS, URL_RE, SourceInputError
 from .task_service import get_task
 
 
+def preview_excel_native(*args):
+    from .case_excel_native import preview
+    return preview(*args)
+
+
+def submit_excel_native(*args):
+    from .case_excel_native import submit
+    return submit(*args)
+
+
+def read_excel_native(*args):
+    from .case_excel_native import read_submission
+    return read_submission(*args)
+
+
+def prepare_excel_orchestration(*args):
+    from .case_excel_orchestration import preview
+    return preview(*args)
+
+
+def submit_excel_orchestration(*args):
+    from .case_excel_orchestration import submit
+    return submit(*args)
+
+
 def prepare_items(raw: str, resolve) -> list[dict]:
     candidates = [m.group(0).rstrip(",.，。；;：:！!？?、\"'」》】") for m in URL_RE.finditer(raw)]
     if not candidates:
@@ -143,6 +168,7 @@ from .case_excel_import import (  # noqa: E402
     save as save_excel_import,
     detail as get_excel_import,
     list_owned as list_excel_imports,
+    submission_cards as list_excel_submission_cards,
     recover as recover_excel_import,
     cancel_remaining as cancel_excel_import,
 )

@@ -1,0 +1,114 @@
+{
+  "items": [
+    {
+      "id": "R01",
+      "requirement": "owned rows appear, foreign owner hidden",
+      "contract": "EX-R1",
+      "status": "PASS_ISOLATED_SCOPE",
+      "evidence": "affected-focused.xml; repair-focused.xml; javascript.log; BROWSER_EVIDENCE.json"
+    },
+    {
+      "id": "R02",
+      "requirement": "no Task/group/Case/approval/shared write from list or refresh",
+      "contract": "EX-R1",
+      "status": "PASS_ISOLATED_SCOPE",
+      "evidence": "affected-focused.xml; repair-focused.xml; javascript.log; BROWSER_EVIDENCE.json"
+    },
+    {
+      "id": "R03",
+      "requirement": "head-chain row selection and same operation replay never duplicate cards",
+      "contract": "EX-R1",
+      "status": "PASS_ISOLATED_SCOPE",
+      "evidence": "affected-focused.xml; repair-focused.xml; javascript.log; BROWSER_EVIDENCE.json"
+    },
+    {
+      "id": "R04",
+      "requirement": "partial/incomplete/cancelled persistence never falsely reports saved",
+      "contract": "EX-R1",
+      "status": "PASS_ISOLATED_SCOPE",
+      "evidence": "affected-focused.xml; repair-focused.xml; javascript.log; BROWSER_EVIDENCE.json"
+    },
+    {
+      "id": "R05",
+      "requirement": "SHA/version tamper rejects read; no silent empty fallback",
+      "contract": "EX-R1",
+      "status": "PASS_ISOLATED_SCOPE",
+      "evidence": "affected-focused.xml; repair-focused.xml; javascript.log; BROWSER_EVIDENCE.json"
+    },
+    {
+      "id": "R06",
+      "requirement": "session expiry/revocation during read and actor mismatch denied",
+      "contract": "EX-R1",
+      "status": "PASS_ISOLATED_SCOPE",
+      "evidence": "affected-focused.xml; repair-focused.xml; javascript.log; BROWSER_EVIDENCE.json"
+    },
+    {
+      "id": "R07",
+      "requirement": "current upload expiry re-read; no fake task readiness",
+      "contract": "EX-R1",
+      "status": "PASS_ISOLATED_SCOPE",
+      "evidence": "affected-focused.xml; repair-focused.xml; javascript.log; BROWSER_EVIDENCE.json"
+    },
+    {
+      "id": "R08",
+      "requirement": "title/notes/rights XSS escaped; types remain suggestions/null",
+      "contract": "EX-R1",
+      "status": "PASS_ISOLATED_SCOPE",
+      "evidence": "affected-focused.xml; repair-focused.xml; javascript.log; BROWSER_EVIDENCE.json"
+    },
+    {
+      "id": "R09",
+      "requirement": "exact row query retained on refresh/login; wrong row not substituted",
+      "contract": "EX-R1",
+      "status": "PASS_ISOLATED_SCOPE",
+      "evidence": "affected-focused.xml; repair-focused.xml; javascript.log; BROWSER_EVIDENCE.json",
+      "limit": "Login destination validation is JS-tested; no browser logout/relogin in this round"
+    },
+    {
+      "id": "R10",
+      "requirement": "existing My Submissions/shared/reviewer isolation unchanged",
+      "contract": "EX-R1",
+      "status": "PASS_ISOLATED_SCOPE",
+      "evidence": "affected-focused.xml; repair-focused.xml; javascript.log; BROWSER_EVIDENCE.json"
+    },
+    {
+      "id": "R11",
+      "requirement": "1440/390/320 real list/detail/back/refresh clicks",
+      "contract": "EX-R1",
+      "status": "PASS_ISOLATED_SCOPE",
+      "evidence": "BROWSER_EVIDENCE.json; mine/detail 1440/390/320 screenshots",
+      "limit": "Viewport simulation only; no physical phone or Founder full-chain UAT"
+    },
+    {
+      "id": "S01",
+      "requirement": "Task creation/companion/response loss recovery exact operation",
+      "contract": "EX-S1",
+      "status": "NOT_EXECUTED_PENDING_APPROVAL"
+    },
+    {
+      "id": "S02",
+      "requirement": "late worker, duplicate cross-user, source expiry and reanalysis",
+      "contract": "EX-S1",
+      "status": "NOT_EXECUTED_PENDING_APPROVAL"
+    },
+    {
+      "id": "M01",
+      "requirement": "Reviewer can read only exact permitted bound notes; no raw promotion",
+      "contract": "ME-R1",
+      "status": "NOT_EXECUTED_PENDING_APPROVAL"
+    },
+    {
+      "id": "T01",
+      "requirement": "unknown/profile conflict/revocation/type decision replay",
+      "contract": "CC-01",
+      "status": "NOT_EXECUTED_PENDING_APPROVAL"
+    },
+    {
+      "id": "T02",
+      "requirement": "old shared receipt compatibility, stale preview, independent publication",
+      "contract": "CC-02",
+      "status": "NOT_EXECUTED_PENDING_APPROVAL"
+    }
+  ],
+  "overall": "LOCAL_READ_SCOPE_ONLY; full Console final receipt is separate; EX-S1/ME-R1/CC-01/CC-02 unexecuted pending approval"
+}

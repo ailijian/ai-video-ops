@@ -1,14 +1,14 @@
 import { dashboardMarkup, dashboardSkeleton } from "./dashboard-view.mjs?v=dash-1";
 import { taskListRows, taskSourceResults, taskReadFailure, taskActivityRows } from "./task-list-view.mjs?v=ui-1";
 import { createApiClient } from "./api-client.js?v=customer-speaker-v1";
-import { createCaseViews } from "./case-views.js?v=excel-flow-4";
+import { createCaseViews } from "./case-views.js?v=case-excel-full-r4";
 import { createCustomerViews } from "./customer-views.js?v=cbux1-b234-3";
-import { progressPanel } from "./case-components.js?v=case-share-ui1";
+import { progressPanel } from "./case-components.js?v=case-joint-1";
 import { startTaskPolling } from "./task-progress.js?v=mobile-reliability-1";
 import { CUSTOM_INDUSTRY, industryOptions, industryValue as readIndustryValue, setIndustryValue, syncCustomIndustry } from "./case-industry.mjs?v=industry-2";
-import { matchWorkflowRoute, safeExcelReturn, excelLoginPath } from "./routes.js?v=excel-flow-4";
+import { matchWorkflowRoute, safeExcelReturn, excelLoginPath } from "./routes.js?v=excel-source-help-3";
 import { createCreationConfigViews } from "./creation-config-view.mjs?v=qualification-alert-1";
-import { createExcelPreviewViews } from "./case-excel-preview-view.mjs?v=excel-flow-4";
+import { createExcelPreviewViews } from "./case-excel-preview-view.mjs?v=excel-upload-status-2";
 import { createCreationBatchViews } from "./creation-batch-view.mjs?v=batch-state-read-2";
 import {
   createSpeakerViews,

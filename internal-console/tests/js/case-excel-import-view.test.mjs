@@ -8,7 +8,8 @@ test('selection excludes invalid rows and never preconfirms media rights',()=>{
  const html=importSelectionMarkup(preview);
  assert(html.includes('data-import-row="5" disabled') && html.includes('data-import-row="6" checked'));
  assert(!html.includes('<script>') && html.includes('&lt;script&gt;'));
- assert(html.includes('data-import-rights="6">') && !html.includes('data-import-rights="6" checked'));
+ const consent=html.match(/<input\b[^>]*data-import-rights="6"[^>]*>/)?.[0];
+ assert(consent);assert.doesNotMatch(consent,/\schecked(?:\s|>|=)/);assert.match(consent,/\sdisabled(?:\s|>|=)/);
  assert(html.includes('不授予生产复用权') && html.includes('不开始分析或共享'));
 });
 

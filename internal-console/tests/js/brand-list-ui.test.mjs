@@ -17,3 +17,12 @@ html=customerCard({business_id:"fictional",display_name:"很长的虚构客户�
 assert.doesNotMatch(html,/customer-operation-metrics|<dd>|>0</);
 assert.match(html,/暂无创作记录/);assert.match(html,/\/create\/config\?business_id=fictional/);
 console.log("BRAND_LIST_RENDERING_CONTRACT_PASS");
+
+const imported={source_kind:'excel_import',visibility:'mine',status:'import_source_pending',
+ title:'<script>private title</script>',video_type:null,video_type_hint:'<img>故事型',
+ href:'/cases/excel-imports/import_owned?operation=op_saved&view=cases&row=row_1',next_action:'查看导入详情与下一步'};
+html=caseListCard(imported);
+assert.match(html,/Excel 导入 · 私有未核/);assert.match(html,/来源待核对/);
+assert.match(html,/投稿建议：&lt;img&gt;故事型/);assert.match(html,/视频类型暂未标注/);
+assert.doesNotMatch(html,/<script>|<img>|已收录|待审核|已共享/);
+assert.match(html,/operation=op_saved&amp;view=cases&amp;row=row_1/);

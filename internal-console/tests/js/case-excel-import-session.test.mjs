@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createExcelImportSession, projectImportRecord, validatePrivateResult, importResultPath } from '../../static/assets/case-excel-import-session.mjs';
+import { createExcelImportSession, selectImportRows, projectImportRecord, validatePrivateResult, importResultPath } from '../../static/assets/case-excel-import-session.mjs';
 import { matchWorkflowRoute, safeExcelReturn, excelLoginPath } from '../../static/assets/routes.js';
 
 const batchId='import_'+'1'.repeat(32),intentSha='b'.repeat(64);
@@ -16,9 +16,9 @@ function context(input,p=preview()){
 }
 const result=(op='import_one',rows=[5,6])=>({schema_version:'case-excel-import-result-v0.2-proposal',operation_id:op,intent_sha256:intentSha,state:'saved',model_dispatched:false,case_approved:false,shared_published:false,
  row_results:rows.map(n=>({row_id:'row_'+n,state:'pending_source',candidate_ref_sha256:'e'.repeat(64)}))});
-function harness({prepare=p=>context(p),save=p=>({batch_id:batchId,result:result(p.operation_id,p.selected_rows)}),previewRead=()=>preview(),upload}={}){
+function harness({prepare=p=>context(p),save=p=>({batch_id:batchId,result:result(p.operation_id,p.selected_rows)}),previewRead=()=>preview(),upload,expectedFileSha256=null,requireVideo=false}={}){
  const calls=[],prepared=[],saved=[];
- const session=createExcelImportSession({api:async(path,options)=>{const input=path.endsWith('/preview')?null:JSON.parse(options.body);calls.push({path,input});
+  const session=createExcelImportSession({expectedFileSha256,requireVideo,api:async(path,options)=>{const input=path.endsWith('/preview')?null:JSON.parse(options.body);calls.push({path,input});
   if(path.endsWith('/preview'))return {preview:await previewRead()};
   if(path.endsWith('/prepare'))return prepare(input);
   if(path.endsWith('/save'))return save(input);
@@ -36,6 +36,22 @@ test('selecting a file auto-checks only; one explicit save pins the exact select
  assert.equal(h.calls[1].input.operation_id,h.calls[2].input.operation_id);assert.equal(h.calls[2].input.intent_sha256,intentSha);
  assert.deepEqual(h.prepared,h.saved);assert.equal(h.session.snapshot().phase,'saved');
  await h.session.save();assert.equal(h.calls.length,3,'completed state has no replay/save action');
+});
+
+test('supplement rejects another workbook before any upload or candidate write',async()=>{
+ const h=harness({expectedFileSha256:'f'.repeat(64),requireVideo:true});
+ await h.session.choose(file);
+ assert.equal(h.session.snapshot().phase,'choose');assert.match(h.session.snapshot().message,/不是原投稿/);
+ await h.session.save([]);assert.equal(h.calls.length,1);assert.match(h.calls[0].path,/\/preview$/);
+ h.session.dispose();
+});
+
+test('supplement requires a selected video; ordinary private pending-source save remains allowed',async()=>{
+ const h=harness({expectedFileSha256:'a'.repeat(64),requireVideo:true});await h.session.choose(file);await h.session.save([]);
+ assert.equal(h.session.snapshot().phase,'review');assert.match(h.session.snapshot().message,/至少一条/);
+ assert.equal(h.calls.length,1);assert.equal(h.saved.length,0);h.session.dispose();
+ const ordinary=harness();await ordinary.session.choose(file);await ordinary.session.save([]);
+ assert.equal(ordinary.saved.length,1);ordinary.session.dispose();
 });
 
 test('zero selection and invalid rows cannot start persistence',async()=>{
@@ -110,4 +126,31 @@ test('independent result routes and login return preserve only validated local E
  for(const value of ['//evil.test','https://evil.test','/\\evil.test','/cases/1234567890','/cases/excel-imports/not-a-batch','/cases/excel-preview/../../workbench'])assert.equal(safeExcelReturn(value),null);
  assert.equal(safeExcelReturn('/cases/excel-imports?page=2&next=https://evil.test'),'/cases/excel-imports?page=2');
  assert.equal(excelLoginPath('/workbench'),'/login');
+});
+
+test('one owned submission keeps its exact row through refresh and login without falling back to another row',()=>{
+ const path=importResultPath(batchId,'import_one',true,'row_5');
+ assert.equal(safeExcelReturn(path),path);
+ assert.equal(decodeURIComponent(excelLoginPath(path).split('return_to=')[1]),path);
+ const model=projectImportRecord(record(),'import_one');
+ assert.equal(selectImportRows(model,'row_5').length,1);
+ assert.equal(selectImportRows(model,'row_5')[0].row.raw_case.source_title,'case 5');
+ assert.throws(()=>selectImportRows(model,'row_foreign'),/不在当前保存记录/);
+ assert.throws(()=>selectImportRows(model,'../row_5'));
+ assert.throws(()=>importResultPath(batchId,null,true,'row_5'));
+ for(const value of [`/cases/excel-imports/${batchId}?row=row_5`,
+   `/cases/excel-imports/${batchId}?operation=import_one&view=cases&row=../row_5`])assert.equal(safeExcelReturn(value),null);
+});
+
+test('an explicit empty or malformed row selector never widens a single submission into the batch',()=>{
+ const model=projectImportRecord(record(),'import_one');
+ assert.equal(selectImportRows(model).length,2);
+ assert.equal(selectImportRows(model,null).length,2);
+ assert.equal(selectImportRows(model,'row_5').length,1);
+ for(const row of ['', ' ', false, 0, ['row_5'], {}]){
+  assert.throws(()=>selectImportRows(model,row),/不在当前保存记录/);
+  assert.throws(()=>importResultPath(batchId,'import_one',true,row),/投稿行身份无效/);
+ }
+ assert.equal(new URLSearchParams('row=').get('row'),'');
+ assert.throws(()=>selectImportRows(model,new URLSearchParams('row=').get('row')));
 });

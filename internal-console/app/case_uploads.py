@@ -201,6 +201,9 @@ def cleanup_unused_uploads(settings: Settings) -> None:
                     connection.close()
                 if directory.name in _pending_review_uploads(settings):
                     continue
+                from .case_excel_native import upload_is_reserved
+                if upload_is_reserved(settings,directory.name):
+                    continue
                 if task and task["status"] != "failed":
                     continue  # successful attempts use validated canonical retention
                 threshold = (datetime.fromisoformat(task["updated_at"].replace("Z", "+00:00")) if task

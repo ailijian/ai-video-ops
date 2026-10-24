@@ -4,6 +4,7 @@ export function caseRecovery(detail, operations = []) {
   const attempt = detail.review?.attempt_id;
   return operations.filter(item => !item.progress || item.progress.attempt_id === attempt).map(item => {
     const stage = item.progress?.stage;
+    if(detail.review?.approved && stage==='type_pending')return {...item,label:'继续类型与共享',busyLabel:'正在继续原操作…'};
     const stateMatches = item.progress?.sharing_state === detail.sharing_state;
     if (detail.review?.approved && stateMatches && stage === 'publication_pending' && detail.sharing_state === 'approved_only') {
       return {...item, label:'重试共享', busyLabel:'正在重试共享…'};
@@ -42,11 +43,14 @@ export function caseResultPanel(detail, operations, escape, unavailable = false)
   }
   if (unavailable) description += ' 操作状态暂时无法读取，请刷新页面后再试。';
   const shared = state === 'approved_shared';
+  const typeRequired=Boolean(detail.video_type_context?.source?.parent_decision_sha256 || operations.some(item=>item.progress?.stage==='type_pending'));
+  const typeDone=Boolean(detail.video_type_context?.current);
   return `<section class="case-result-panel ${shared ? 'is-shared' : ''}" aria-labelledby="case-result-title" tabindex="-1">
     <div class="case-result-heading"><span class="case-result-symbol" aria-hidden="true">${shared ? '✓' : '·'}</span>
       <div><p class="case-result-eyebrow">审核结果</p><h2 id="case-result-title">${escape(title)}</h2></div></div>
     <p class="case-result-description">${escape(description)}</p>
-    <ol class="case-result-steps" aria-label="案例处理进度"><li class="is-complete">正式收录<span>已完成</span></li>
+    <ol class="case-result-steps${typeRequired?' has-type':''}" aria-label="案例处理进度"><li class="is-complete">正式收录<span>已完成</span></li>
+      ${typeRequired?`<li${typeDone?' class="is-complete"':''}>视频类型<span>${typeDone?(detail.video_type_context.current.record.confirmed_type_id==null?'已明确暂缓':'已确认'):'待核对'}</span></li>`:''}
       <li${shared ? ' class="is-complete"' : ''}>安全共享<span>${shared ? '已完成' : state === 'approved_withdrawn' ? '已撤回' : state === 'approved_reconfirm' || recheck ? '需重新核对' : '尚未完成'}</span></li></ol>
     <div data-case-recovery-slot></div>
     ${unavailable ? '<button class="btn btn-secondary" type="button" data-refresh-case-result>刷新操作状态</button>' : ''}

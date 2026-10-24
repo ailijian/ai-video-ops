@@ -1,3 +1,4 @@
+import { typeLabel } from './case-type-confirmation.mjs?v=case-joint-1';
 export function escapeHtml(value) {
   return String(value ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;")
     .replaceAll(">", "&gt;").replaceAll('"', "&quot;").replaceAll("'", "&#039;");
@@ -25,6 +26,7 @@ export function formatCaseDuration(value) {
 export const caseStateLabels = {
   queued:"待解析", running:"解析中", needs_confirmation:"待分类核对", awaiting_review:"待审核",
   approved:"已收录", rejected:"未收录", failed:"解析失败", completed:"本次处理已结束", submitted:"投稿已记录", archived:"历史记录",
+  import_source_pending:"来源待核对", import_saved_unverified:"已保存 · 待核验", import_save_unconfirmed:"保存待确认",
 };
 
 export function caseListCard(item, _statusPill, returnPath = "") {
@@ -33,11 +35,12 @@ export function caseListCard(item, _statusPill, returnPath = "") {
   const destination = href + (returnPath ? `${href.includes("?") ? "&" : "?"}return=${encodeURIComponent(returnPath)}` : "");
   const duration = formatCaseDuration(item.duration_seconds);
   const state = item.sharing_label || caseStateLabels[item.status] || "待处理";
+  const imported = !shared && item.source_kind === "excel_import";
   const cover = item.cover_url ? `<img src="${escapeHtml(item.cover_url)}" alt="" loading="lazy" decoding="async">` : "";
   return `<a class="case-library-card" href="${escapeHtml(destination)}" data-route data-case-status="${escapeHtml(item.status)}" data-case-id="${escapeHtml(item.case_id || "")}">
     <span class="case-card-cover">${cover}<span class="case-cover-placeholder" ${cover ? "hidden" : ""}>${videoIcon}<small>暂无封面</small></span>${duration ? `<span class="case-card-duration">${duration}</span>` : ""}</span>
     <span class="case-card-content"><span class="case-card-heading"><strong title="${escapeHtml(item.title)}">${escapeHtml(item.title)}</strong>${shared ? "" : `<span class="list-status ${item.status === "failed" || item.status === "rejected" ? "list-status-attention" : ""}">${state}</span>`}</span>
-      <span class="case-card-tags"><span>${escapeHtml(item.industry || "行业待确认")}</span><span class="case-type-label">${escapeHtml(item.video_type || "视频类型暂未标注")}</span></span>
+      <span class="case-card-tags"><span>${imported ? item.status==='approved'?'Excel 导入 · 已收录':"Excel 导入 · 私有未核" : escapeHtml(item.industry || "行业待确认")}</span><span class="case-type-label">${escapeHtml(item.video_type ? typeLabel(item.video_type) : "视频类型暂未标注")}</span>${imported && item.video_type_hint && item.status!=='approved' ? `<span>投稿建议：${escapeHtml(item.video_type_hint)}</span>` : ""}</span>
       ${shared ? '<span class="case-card-hint">结构参考</span>' : `<span class="case-card-hint">${escapeHtml(item.failure_reason || item.review_reason || item.next_action || "查看案例")}</span>`}
     </span><span class="case-card-entry" aria-hidden="true">›</span>
   </a>`;

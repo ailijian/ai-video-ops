@@ -1,0 +1,19 @@
+{
+  "package": "CASE_EXCEL_IMPORT_1_V03_B0_ARCH_REVIEW_HANDOFF",
+  "code_head": "4287234e5aa7f711751d7ec06dd0935ad6acbab2",
+  "created_at_utc": "2026-10-23T18:26:08.472638+00:00",
+  "hash_algorithm": "SHA-256",
+  "files": [
+    {
+      "path": "B0_ARCH_REVIEW_HANDOFF.json",
+      "bytes": 4865,
+      "sha256": "cc7575b8257407868adbb2d7e11e04e662a62030c7076f9581b90bf0f2c9fcf7"
+    },
+    {
+      "path": "B0_ARCH_REVIEW_HANDOFF.md",
+      "bytes": 3350,
+      "sha256": "078eb30888538deeeaeb199a48a13920e53126cc21f7045ebac81f68e1d363b2"
+    }
+  ],
+  "self_reference_policy": "Manifest excludes itself/SHA256SUMS; sums cover all payload plus Manifest. Archive identity external to ZIP."
+}

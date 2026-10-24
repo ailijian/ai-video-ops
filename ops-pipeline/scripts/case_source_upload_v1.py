@@ -100,6 +100,48 @@ def inspect_video(path: Path) -> dict:
                 "video_codec": video.codec_context.name}
 
 
+def native_review_reservation(pipeline_root: Path, attempt_root: Path, acquisition: dict) -> bool:
+    """Honor the existing exact EX-S1 upload hold while Human review is pending.
+
+    This grants no media rights or review permission. It prevents the pipeline
+    cleanup caller from deleting the very upload still required by Human scope.
+    Legacy attempts without a Native companion retain their original policy.
+    """
+    from human_review_operations_v1 import read,file_sha,digest,io_path
+    state=read(attempt_root/'case_analysis_attempt_v1.json')
+    if state.get('status')!='awaiting_review' or acquisition.get('mode')!='operator_uploaded_file':return False
+    upload_id=acquisition.get('upload_id');held=False
+    for path in (pipeline_root/'data/case_intake_imports').glob('*/*/native_submissions/*/source_upload_reservation.json'):
+        reservation=read(path)
+        if reservation.get('source',{}).get('source_upload_id')!=upload_id:continue
+        origin=reservation.get('submission_intent') or {};intent_path=pipeline_root/str(origin.get('path') or '')
+        if (not intent_path.resolve().is_relative_to(pipeline_root.resolve()) or file_sha(intent_path)!=origin.get('sha256')
+                or io_path(intent_path.parent)!=io_path(path.parent)):
+            raise ValueError('Native upload reservation intent mismatch')
+        intent=read(intent_path);source=intent['source'];input=intent['input'];actor=intent['principal']
+        association_path=path.parent/'association.json'
+        if not association_path.is_file():raise ValueError('Native upload association incomplete; retain media')
+        association=read(association_path)
+        if association.get('task_id')!=attempt_root.name or association.get('relation_kind')!='new_origin_task':continue
+        receipt,media=read_upload(pipeline_root,upload_id,source_url=acquisition['source_url'],
+            receipt_sha256=acquisition['upload_receipt_sha256'],user_id=actor['user_id'])
+        if (reservation.get('schema_version')!='case-excel-native-upload-reservation-v1.0-proposal'
+                or intent.get('schema_version')!='case-excel-native-submission-intent-v1.0-proposal'
+                or association.get('schema_version')!='case-excel-native-submission-v1.0-proposal'
+                or reservation['principal']!=actor or reservation['source']!=source
+                or reservation['submission_input_sha256']!=digest(input) or intent['input_sha256']!=digest(input)
+                or input['submission_operation_id']!=path.parent.name
+                or association['principal']!=actor or association['origin']!=input['origin']
+                or association['intent_sha256']!=file_sha(intent_path) or association['input_digest']!=digest(input)
+                or source['case_id']!=state.get('case_id') or source['canonical_url']!=acquisition['source_url']
+                or source['upload_receipt_sha256']!=acquisition['upload_receipt_sha256']
+                or source['media_sha256']!=receipt['source_video_sha256'] or media.resolve()!=Path(acquisition['video']).resolve()
+                or reservation.get('grants_media_production_rights') is not False):
+            raise ValueError('Native upload reservation/source mismatch')
+        held=True
+    return held
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Inspect local uploaded media without model calls")
     parser.add_argument("--inspect", type=Path, required=True)

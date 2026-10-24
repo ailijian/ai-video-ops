@@ -124,8 +124,9 @@ def test_each_atomic_boundary_recovers_same_intent_without_duplicate(client, set
 
 def test_changed_operation_or_stale_head_is_rejected(client):
     csrf = login_and_change_password(client)
-    request, _ = prepared(client, payload(), csrf)
-    stale, _ = prepared(client, payload(op='op_other'), csrf)
+    data = payload()
+    request, _ = prepared(client, data, csrf)
+    stale, _ = prepared(client, {**data, 'operation_id': 'op_other'}, csrf)
     assert post(client, 'save', request, csrf).status_code == 200
     assert post(client, 'save', {**request, 'selected_rows': [5]}, csrf).status_code == 409
     assert post(client, 'save', stale, csrf).json()['detail']['code'] == 'IMPORT_HEAD_CHANGED'
@@ -151,14 +152,17 @@ def test_same_source_new_excel_key_retains_notes_links_private_candidate(client,
 
 def test_cancel_remaining_after_partial_publication_preserves_saved_row(client, settings, monkeypatch):
     csrf = login_and_change_password(client)
-    request, context = prepared(client, payload(), csrf)
+    # Replay/cancel must keep the exact original file bytes. Regenerating XLSX
+    # can change ZIP timestamps (and hence the legitimate Native Batch SHA).
+    data = payload()
+    request, context = prepared(client, data, csrf)
     def interrupt(here):
         if here == 'source_index':
             raise OSError('interrupt after first saved row before its result')
     monkeypatch.setattr(imports, '_checkpoint', interrupt)
     assert post(client, 'save', request, csrf).json()['result']['state'] == 'recovery_required'
     monkeypatch.setattr(imports, '_checkpoint', lambda _: None)
-    cancel = {**payload(op='op_cancel_1'), 'action': 'cancel_uncommitted_rows'}
+    cancel = {**data, 'operation_id': 'op_cancel_1', 'action': 'cancel_uncommitted_rows'}
     cancelled, _ = prepared(client, cancel, csrf)
     result = post(client, 'save', cancelled, csrf)
     assert result.status_code == 200, result.text
@@ -168,7 +172,7 @@ def test_cancel_remaining_after_partial_publication_preserves_saved_row(client, 
     assert resumed.json()['result']['state'] == 'cancelled_remaining'
     assert [r['state'] for r in resumed.json()['result']['row_results']] == ['pending_source', 'cancelled']
     assert len(list((settings.pipeline_root / 'data/case_intake_imports').glob('*/import_*/rows/*.json'))) == 1
-    new_request, _ = prepared(client, payload(op='op_new_after_cancel'), csrf)
+    new_request, _ = prepared(client, {**data, 'operation_id': 'op_new_after_cancel'}, csrf)
     new_result = post(client, 'save', new_request, csrf)
     assert new_result.status_code == 200, new_result.text
     assert new_result.json()['result']['row_results'][1]['state'] == 'pending_source'

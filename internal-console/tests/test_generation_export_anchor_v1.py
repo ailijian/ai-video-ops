@@ -49,15 +49,55 @@ def hostile_copy(root,number):
     # extended paths for the byte copy, without rewriting artifact references.
     extended=lambda p:'\\\\?\\'+str(p) if os.name=='nt' else str(p)
     shutil.copytree(extended(root),extended(clone),ignore=shutil.ignore_patterns('__pycache__'))
-    root.rename(retained)
+    rename_fixture_directory(root,retained)
     try:
-        clone.rename(root)
+        rename_fixture_directory(clone,root)
         assert root.is_dir() and not root.is_junction()
         yield root
     finally:
-        if root.exists():root.rename(clone)
+        if root.exists():rename_fixture_directory(root,clone)
         assert not root.exists() and retained.is_dir() and clone.is_dir()
-        retained.rename(root)
+        rename_fixture_directory(retained,root)
+
+
+def rename_fixture_directory(source,target):
+    """A sharing denial on a disposable Windows clone is not a Ledger verdict.
+
+    Retry the exact same rename only; permanent access errors still fail. Never
+    rewrite artifacts, change namespace, delete a directory or suppress asserts.
+    """
+    for attempt in range(8):
+        try:
+            return source.rename(target)
+        except PermissionError as exc:
+            if getattr(exc,'winerror',None) not in {5,32,33} or attempt==7:
+                raise
+            time.sleep(.1*(attempt+1))
+
+
+@pytest.mark.parametrize('persistent',[False,True])
+def test_hostile_fixture_restores_original_after_windows_clone_swap_denial(tmp_path,monkeypatch,persistent):
+    root=tmp_path/'repo'/'ops-pipeline';(root/'data').mkdir(parents=True)
+    original=b'{"fictional_fixture":"immutable-original"}'
+    (root/'data'/'record.json').write_bytes(original)
+    rename=Path.rename;attempts=[]
+    def denied_once(source,target):
+        if source.name.endswith('-hostile-0') and target==root and (persistent or not attempts):
+            attempts.append(source)
+            exc=PermissionError('isolated Windows sharing denial');exc.winerror=5;raise exc
+        return rename(source,target)
+    monkeypatch.setattr(Path,'rename',denied_once)
+    if persistent:
+        with pytest.raises(PermissionError):
+            with hostile_copy(root,0):pytest.fail('Persistent namespace swap denial must not pass')
+        assert len(attempts)>1
+    else:
+        with hostile_copy(root,0):
+            assert (root/'data'/'record.json').read_bytes()==original
+            (root/'data'/'record.json').write_bytes(b'corrupt-only-the-disposable-copy')
+        assert attempts
+    assert (root/'data'/'record.json').read_bytes()==original
+    assert not root.with_name(root.name+'-protected-original').exists()
 
 def test_native_anchor_memory_unknown_and_full_history_negatives(node):
     runtime,business,_,_,_=native_news_runtime(node,mixed=True)

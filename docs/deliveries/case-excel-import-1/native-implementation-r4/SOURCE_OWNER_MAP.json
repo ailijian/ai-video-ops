@@ -1,0 +1,438 @@
+{
+  "head": "61efbc477ea28b9aee9a492d3ee96324718ef592",
+  "anchors": [
+    {
+      "path": "internal-console/app/review_commands.py",
+      "function": "issue",
+      "line": 97,
+      "end_line": 126,
+      "sha256": "ee4c58e497e55b1509c6221a3d3160cd446fc951f00632fc7bd27817f764b817",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/review_commands.py",
+      "function": "begin",
+      "line": 148,
+      "end_line": 213,
+      "sha256": "ee4c58e497e55b1509c6221a3d3160cd446fc951f00632fc7bd27817f764b817",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/review_commands.py",
+      "function": "complete_typed_joint",
+      "line": 263,
+      "end_line": 291,
+      "sha256": "ee4c58e497e55b1509c6221a3d3160cd446fc951f00632fc7bd27817f764b817",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/review_commands.py",
+      "function": "validate_typed_result",
+      "line": 294,
+      "end_line": 314,
+      "sha256": "ee4c58e497e55b1509c6221a3d3160cd446fc951f00632fc7bd27817f764b817",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/review_commands.py",
+      "function": "pending",
+      "line": 600,
+      "end_line": 620,
+      "sha256": "ee4c58e497e55b1509c6221a3d3160cd446fc951f00632fc7bd27817f764b817",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_classification.py",
+      "function": "type_catalog",
+      "line": 206,
+      "end_line": 214,
+      "sha256": "d4ada82819e4e5821e4c3b94e25a912301a88d3ec5fe68913c57a7bebda3770c",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_classification.py",
+      "function": "type_history",
+      "line": 236,
+      "end_line": 281,
+      "sha256": "d4ada82819e4e5821e4c3b94e25a912301a88d3ec5fe68913c57a7bebda3770c",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_classification.py",
+      "function": "type_source",
+      "line": 284,
+      "end_line": 299,
+      "sha256": "d4ada82819e4e5821e4c3b94e25a912301a88d3ec5fe68913c57a7bebda3770c",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_classification.py",
+      "function": "validate_type_confirmation",
+      "line": 302,
+      "end_line": 318,
+      "sha256": "d4ada82819e4e5821e4c3b94e25a912301a88d3ec5fe68913c57a7bebda3770c",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_classification.py",
+      "function": "current_type",
+      "line": 321,
+      "end_line": 332,
+      "sha256": "d4ada82819e4e5821e4c3b94e25a912301a88d3ec5fe68913c57a7bebda3770c",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_classification.py",
+      "function": "write_type_decision",
+      "line": 335,
+      "end_line": 376,
+      "sha256": "d4ada82819e4e5821e4c3b94e25a912301a88d3ec5fe68913c57a7bebda3770c",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_classification.py",
+      "function": "apply_joint_type",
+      "line": 398,
+      "end_line": 410,
+      "sha256": "d4ada82819e4e5821e4c3b94e25a912301a88d3ec5fe68913c57a7bebda3770c",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_classification.py",
+      "function": "change_type",
+      "line": 413,
+      "end_line": 425,
+      "sha256": "d4ada82819e4e5821e4c3b94e25a912301a88d3ec5fe68913c57a7bebda3770c",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_shared_display.py",
+      "function": "typed_share_preview",
+      "line": 318,
+      "end_line": 330,
+      "sha256": "06c88fe8520ee6fed990a00c3bfcab98f50b224acb05f2c6c45529dd7799b1b8",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_shared_display.py",
+      "function": "validate_typed_preview",
+      "line": 333,
+      "end_line": 353,
+      "sha256": "06c88fe8520ee6fed990a00c3bfcab98f50b224acb05f2c6c45529dd7799b1b8",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_shared_display.py",
+      "function": "typed_sources_current",
+      "line": 414,
+      "end_line": 427,
+      "sha256": "06c88fe8520ee6fed990a00c3bfcab98f50b224acb05f2c6c45529dd7799b1b8",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_shared_display.py",
+      "function": "publish_typed_joint",
+      "line": 430,
+      "end_line": 466,
+      "sha256": "06c88fe8520ee6fed990a00c3bfcab98f50b224acb05f2c6c45529dd7799b1b8",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_shared_display.py",
+      "function": "_history",
+      "line": 500,
+      "end_line": 538,
+      "sha256": "06c88fe8520ee6fed990a00c3bfcab98f50b224acb05f2c6c45529dd7799b1b8",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_shared_display.py",
+      "function": "change_publication",
+      "line": 602,
+      "end_line": 688,
+      "sha256": "06c88fe8520ee6fed990a00c3bfcab98f50b224acb05f2c6c45529dd7799b1b8",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_shared_display.py",
+      "function": "shared_projection",
+      "line": 691,
+      "end_line": 713,
+      "sha256": "06c88fe8520ee6fed990a00c3bfcab98f50b224acb05f2c6c45529dd7799b1b8",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_excel_orchestration.py",
+      "function": "checkpoint",
+      "line": 101,
+      "end_line": 101,
+      "sha256": "4b45987d0d1ad744c7155308038f4f55b23522c0d3fc9b5bdd9a902ecc3e102f",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_excel_orchestration.py",
+      "function": "now",
+      "line": 102,
+      "end_line": 102,
+      "sha256": "4b45987d0d1ad744c7155308038f4f55b23522c0d3fc9b5bdd9a902ecc3e102f",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_excel_orchestration.py",
+      "function": "dump",
+      "line": 103,
+      "end_line": 103,
+      "sha256": "4b45987d0d1ad744c7155308038f4f55b23522c0d3fc9b5bdd9a902ecc3e102f",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_excel_orchestration.py",
+      "function": "load",
+      "line": 104,
+      "end_line": 106,
+      "sha256": "4b45987d0d1ad744c7155308038f4f55b23522c0d3fc9b5bdd9a902ecc3e102f",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_excel_orchestration.py",
+      "function": "directory",
+      "line": 109,
+      "end_line": 112,
+      "sha256": "4b45987d0d1ad744c7155308038f4f55b23522c0d3fc9b5bdd9a902ecc3e102f",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_excel_orchestration.py",
+      "function": "native_input",
+      "line": 115,
+      "end_line": 119,
+      "sha256": "4b45987d0d1ad744c7155308038f4f55b23522c0d3fc9b5bdd9a902ecc3e102f",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_excel_orchestration.py",
+      "function": "preview",
+      "line": 122,
+      "end_line": 155,
+      "sha256": "4b45987d0d1ad744c7155308038f4f55b23522c0d3fc9b5bdd9a902ecc3e102f",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_excel_orchestration.py",
+      "function": "intent",
+      "line": 158,
+      "end_line": 165,
+      "sha256": "4b45987d0d1ad744c7155308038f4f55b23522c0d3fc9b5bdd9a902ecc3e102f",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_excel_orchestration.py",
+      "function": "controls",
+      "line": 168,
+      "end_line": 176,
+      "sha256": "4b45987d0d1ad744c7155308038f4f55b23522c0d3fc9b5bdd9a902ecc3e102f",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_excel_orchestration.py",
+      "function": "admission_guard",
+      "line": 179,
+      "end_line": 190,
+      "sha256": "4b45987d0d1ad744c7155308038f4f55b23522c0d3fc9b5bdd9a902ecc3e102f",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_excel_orchestration.py",
+      "function": "submit",
+      "line": 193,
+      "end_line": 206,
+      "sha256": "4b45987d0d1ad744c7155308038f4f55b23522c0d3fc9b5bdd9a902ecc3e102f",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_excel_orchestration.py",
+      "function": "advance",
+      "line": 209,
+      "end_line": 246,
+      "sha256": "4b45987d0d1ad744c7155308038f4f55b23522c0d3fc9b5bdd9a902ecc3e102f",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_excel_orchestration.py",
+      "function": "_failure",
+      "line": 249,
+      "end_line": 253,
+      "sha256": "4b45987d0d1ad744c7155308038f4f55b23522c0d3fc9b5bdd9a902ecc3e102f",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_excel_orchestration.py",
+      "function": "control",
+      "line": 256,
+      "end_line": 267,
+      "sha256": "4b45987d0d1ad744c7155308038f4f55b23522c0d3fc9b5bdd9a902ecc3e102f",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_excel_orchestration.py",
+      "function": "result_projection",
+      "line": 270,
+      "end_line": 316,
+      "sha256": "4b45987d0d1ad744c7155308038f4f55b23522c0d3fc9b5bdd9a902ecc3e102f",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_excel_orchestration.py",
+      "function": "_project_owned_task",
+      "line": 319,
+      "end_line": 330,
+      "sha256": "4b45987d0d1ad744c7155308038f4f55b23522c0d3fc9b5bdd9a902ecc3e102f",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_excel_native.py",
+      "function": "preview",
+      "line": 113,
+      "end_line": 138,
+      "sha256": "67ad359449244c7390277b652b9df63ebc993ea55fcd4a8b719c2bc8b11bc70d",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_excel_native.py",
+      "function": "submit",
+      "line": 169,
+      "end_line": 282,
+      "sha256": "67ad359449244c7390277b652b9df63ebc993ea55fcd4a8b719c2bc8b11bc70d",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_excel_native.py",
+      "function": "validate_primary_origin",
+      "line": 285,
+      "end_line": 324,
+      "sha256": "67ad359449244c7390277b652b9df63ebc993ea55fcd4a8b719c2bc8b11bc70d",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_excel_native.py",
+      "function": "upload_is_reserved",
+      "line": 356,
+      "end_line": 382,
+      "sha256": "67ad359449244c7390277b652b9df63ebc993ea55fcd4a8b719c2bc8b11bc70d",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/case_excel_native.py",
+      "function": "reviewer_notes",
+      "line": 385,
+      "end_line": 419,
+      "sha256": "67ad359449244c7390277b652b9df63ebc993ea55fcd4a8b719c2bc8b11bc70d",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/task_service.py",
+      "function": "create_case_task",
+      "line": 255,
+      "end_line": 310,
+      "sha256": "28906580fd2fa0220519dfada5ccfcfcc4b85d001f6e24f0ecd7149b97a9f66e",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/task_service.py",
+      "function": "claim_task",
+      "line": 832,
+      "end_line": 874,
+      "sha256": "28906580fd2fa0220519dfada5ccfcfcc4b85d001f6e24f0ecd7149b97a9f66e",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "internal-console/app/task_service.py",
+      "function": "recover_expired_tasks",
+      "line": 877,
+      "end_line": 929,
+      "sha256": "28906580fd2fa0220519dfada5ccfcfcc4b85d001f6e24f0ecd7149b97a9f66e",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "ops-pipeline/scripts/case_source_upload_v1.py",
+      "function": "native_review_reservation",
+      "line": 103,
+      "end_line": 142,
+      "sha256": "d5d3eb98960129e218e15abd787c9f1d54c6f599cda85b9b4f990341478902e6",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "ops-pipeline/scripts/storage_retention_v1.py",
+      "function": "_transient_targets",
+      "line": 224,
+      "end_line": 320,
+      "sha256": "b8e726229ba780f1ece8a815313e936dfcf50426baf50cdc6c78f5ab5ad81725",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "ops-pipeline/scripts/storage_retention_v1.py",
+      "function": "cleanup_successful_attempt",
+      "line": 523,
+      "end_line": 538,
+      "sha256": "b8e726229ba780f1ece8a815313e936dfcf50426baf50cdc6c78f5ab5ad81725",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    },
+    {
+      "path": "ops-pipeline/scripts/case_evidence_revision_v1.py",
+      "function": "review_scope",
+      "line": 564,
+      "end_line": 652,
+      "sha256": "f1a657beb483b43bb72691eb6134a732ce47f79422bf858ecd2a83550f9fa9a4",
+      "classification": "CODE_PROVEN",
+      "authority_boundary": "Original Owner or delegated read/execution coordination; no production permission implied"
+    }
+  ],
+  "immutable_baseline": "Original R3 source SHA in external BEFORE.json"
+}

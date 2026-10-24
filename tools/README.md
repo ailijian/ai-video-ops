@@ -65,9 +65,19 @@ python tools/verify.py --mode affected --base HEAD --list
 # Explicit package feedback; this is reported as targeted verification.
 python tools/verify.py --target console
 
+# Complete Console lifecycle regression on Windows (all Console modules).
+# Native generation/review/delivery and recovery checks can exceed 20 minutes
+# per shard. Keep only one heavy suite active; set an explicit measured budget.
+python tools/verify.py --target console --jobs 4 --timeout 3600 --windows-short-temp
+
 # Serial reference execution for diagnosis or performance comparison.
 python tools/verify.py --jobs 1
 ```
+
+Console logs identify each test as it executes. A timeout remains a failed run;
+the summary retains both the execution deadline and any missing JUnit evidence.
+Increasing the process budget does not remove tests or extend Native operation
+deadlines. Use completed JUnit durations to reassess the budget on each host.
 
 ## Scope and selection
 

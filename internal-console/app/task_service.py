@@ -8,6 +8,7 @@ import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import nullcontext
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
@@ -112,6 +113,9 @@ def _row_to_task(row: Any) -> dict[str, Any]:
         elif task_type == "case_analysis" and payload.get("evidence_revision"):
             public_error = ("修订隐私检查没有通过，已保存的修改仍然保留。"
                             if "privacy" in lowered else "修订校验没有完成，已保存的修改仍然保留。")
+
+        elif row["error_code"] == "CASE_EXTERNAL_RESULT_UNKNOWN":
+            public_error = "原分析已开始，但结果尚未核清。请恢复原操作，不要重新发起分析。"
 
         elif row["error_code"] == "SOURCE_PROVIDER_RATE_LIMITED":
             public_error = "视频解析请求较多，请稍后重新分析；也可以上传本地视频。"
@@ -264,6 +268,8 @@ def create_case_task(
     queue_max: int = 20,
     gpu_pending_per_user_max: int = 3,
     review_operation_id: str | None = None,
+    excel_native_origin: dict | None = None,
+    _connection=None,
 ) -> dict[str, Any]:
     if operator_profile_hint is not None and operator_profile_hint not in {"mix", "news", "hybrid", "uncertain"}:
         raise ValueError("Invalid Case operator_profile_hint")
@@ -278,6 +284,8 @@ def create_case_task(
     }
     if review_operation_id:
         payload["review_operation_id"] = review_operation_id
+    if excel_native_origin is not None:
+        payload['excel_native_origin'] = excel_native_origin
     if operator_profile_hint is not None:
         payload["operator_profile_hint"] = operator_profile_hint
     if source_upload is not None:
@@ -298,6 +306,7 @@ def create_case_task(
         gpu_pending_per_user_max=gpu_pending_per_user_max,
         include_awaiting_review=True,
         allow_existing=(not reanalyze),
+        _connection=_connection,
     )
 
 
@@ -478,12 +487,27 @@ def submit_task(
     gpu_pending_per_user_max: int,
     include_awaiting_review: bool = False,
     allow_existing: bool = True,
+    _connection=None,
 ) -> dict[str, Any]:
     statuses = "'queued', 'running', 'awaiting_review'" if include_awaiting_review else "'queued', 'running'"
     timestamp = iso_utc()
     task_id = f"{task_id_prefix}-{uuid.uuid4().hex[:12]}"
 
-    with transaction(database_path, immediate=True) as connection:
+    with (nullcontext(_connection) if _connection is not None else transaction(database_path, immediate=True)) as connection:
+        if task_type == 'case_analysis':
+            # All legacy URL/upload/group callers share this fence. A fresh
+            # operation ID must not wash an unknown Excel-origin execution.
+            has_admissions = connection.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='case_excel_native_admissions_v1'").fetchone()
+            if not has_admissions and (payload.get('excel_native_origin') or connection.execute(
+                    "SELECT 1 FROM tasks WHERE task_type='case_analysis' AND json_type(payload_json,'$.excel_native_origin') IS NOT NULL LIMIT 1").fetchone()):
+                # Pre-009 legacy DBs contain no Excel Native origins. Missing
+                # metadata on a DB that DOES contain one is a corrupt/downgraded
+                # store, never permission to drop its execution fence.
+                raise TaskSubmissionError('EXCEL_NATIVE_MIGRATION_REQUIRED','原生导入调度身份缺失，请先恢复准确迁移。')
+            held = connection.execute("SELECT 1 FROM tasks t JOIN case_excel_native_admissions_v1 a ON a.task_id=t.task_id "
+                "WHERE t.subject_ref=? AND a.execution_claimed=1 AND t.error_code='CASE_EXTERNAL_RESULT_UNKNOWN' LIMIT 1",(subject_ref,)).fetchone() if has_admissions else None
+            if held:
+                raise TaskSubmissionError('CASE_EXTERNAL_RESULT_UNKNOWN','原分析结果未知，不能重新派发。')
         review_operation = payload.get("review_operation_id")
         recovered = connection.execute(
             "SELECT task_id FROM tasks WHERE task_type=? AND subject_ref=? AND json_extract(payload_json,'$.review_operation_id')=?",
@@ -581,6 +605,9 @@ def submit_task(
                     raise
                 existing_id = str(conflict["task_id"])
 
+        if _connection is not None:
+            row = connection.execute(f'SELECT {TASK_COLUMNS} FROM tasks t LEFT JOIN users u ON u.id=t.created_by_user_id WHERE t.task_id=?',(existing_id,)).fetchone()
+            return _row_to_task(row)
     task = get_task(database_path, existing_id)
     assert task is not None
     return task
@@ -810,9 +837,18 @@ def claim_task(
     lease_seconds: int,
     stage: str,
     task_type: str | None = None,
+    excel_native_ready: bool = False,
 ) -> bool:
     now = datetime.now(timezone.utc)
     with transaction(database_path, immediate=True) as connection:
+        original = connection.execute('SELECT payload_json,status,task_type FROM tasks WHERE task_id=?',(task_id,)).fetchone()
+        if original and json.loads(original['payload_json']).get('excel_native_origin'):
+            if not excel_native_ready or original['status'] != 'queued' or (task_type and original['task_type']!=task_type):
+                return False
+            claimed = connection.execute("UPDATE case_excel_native_admissions_v1 SET execution_claimed=1 "
+                "WHERE task_id=? AND relation_kind='new_origin_task' AND execution_claimed=0",(task_id,))
+            if claimed.rowcount != 1:
+                return False
         task_type_clause = " AND task_type = ?" if task_type else ""
         values: list[Any] = [
             stage,
@@ -872,6 +908,12 @@ def recover_expired_tasks(
             )
             continue
         with transaction(database_path, immediate=True) as transaction_connection:
+            original = transaction_connection.execute('SELECT payload_json FROM tasks WHERE task_id=?',(task_id,)).fetchone()
+            if original and json.loads(original['payload_json']).get('excel_native_origin'):
+                transaction_connection.execute("UPDATE tasks SET status='failed',stage='原分析结果待核对',error_code='CASE_EXTERNAL_RESULT_UNKNOWN',"
+                    "error_message='原执行已开始，结果未知；不能自动重发。',updated_at=? WHERE task_id=? AND status='running' "
+                    "AND (lease_expires_at IS NULL OR lease_expires_at<=?)",(iso_utc(),task_id,iso_utc()))
+                continue
             result = transaction_connection.execute(
                 """
                 UPDATE tasks
@@ -966,6 +1008,8 @@ class CaseTaskRunner:
             # when this case has an older approved canonical artifact.
             return None
         canonical = self.settings.pipeline_root / "data" / "cases" / case_id / "case_v1.json"
+        if task['payload'].get('excel_native_origin'):
+            return None  # Another Attempt's old Case cannot reconcile this execution.
         return "completed" if canonical.is_file() else None
 
     def start(self) -> None:
@@ -1066,6 +1110,15 @@ class CaseTaskRunner:
 
     def _run(self, task_id: str) -> None:
         try:
+            original = get_task(self.settings.database_path,task_id)
+            excel_ready = False
+            if original and original['payload'].get('excel_native_origin'):
+                from .case_excel_native import validate_primary_origin
+                try:
+                    validate_primary_origin(self.settings,original,for_dispatch=True)
+                    excel_ready = True
+                except (OSError,ValueError,RuntimeError):
+                    return  # Admission recovery must finish exact companions first.
             if not claim_task(
                 self.settings.database_path,
                 task_id,
@@ -1073,6 +1126,7 @@ class CaseTaskRunner:
                 lease_seconds=self.settings.task_lease_seconds,
                 stage="获取视频",
                 task_type="case_analysis",
+                excel_native_ready=excel_ready,
             ):
                 return
             task = get_task(self.settings.database_path, task_id)
@@ -1172,6 +1226,9 @@ class CaseTaskRunner:
 
                 elif stderr.strip() or stdout.strip():
                     message = (stderr.strip() or stdout.strip()).splitlines()[-1]
+                if payload.get('excel_native_origin') and not state_path.is_file():
+                    code='CASE_EXTERNAL_RESULT_UNKNOWN'
+                    message='原执行已开始，未取得可核对结果；不能自动重发。'
                 update_task(
                     self.settings.database_path,
                     task_id,
@@ -1189,12 +1246,14 @@ class CaseTaskRunner:
                 stage="修订校验完成" if revision else "等待人工审核",
             )
         except Exception as exc:
+            original=get_task(self.settings.database_path,task_id)
+            uncertain=bool(original and original['payload'].get('excel_native_origin') and original['status']=='running')
             update_task(
                 self.settings.database_path,
                 task_id,
                 status="failed",
                 stage="分析失败",
-                error_code="CASE_ANALYSIS_WORKER_FAILED",
+                error_code="CASE_EXTERNAL_RESULT_UNKNOWN" if uncertain else "CASE_ANALYSIS_WORKER_FAILED",
                 error_message=str(exc),
             )
         finally:

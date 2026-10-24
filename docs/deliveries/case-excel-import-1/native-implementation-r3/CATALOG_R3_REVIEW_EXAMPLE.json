@@ -1,0 +1,60 @@
+{
+  "fixture_kind": "ALL_FICTIONAL_REVIEW_EXAMPLE_NOT_APPROVAL",
+  "candidate": {
+    "schema_version": "case-content-type-catalog-v1.0-proposal",
+    "catalog_id": "case_content_types",
+    "version": 1,
+    "entries": [
+      {
+        "id": "news",
+        "label": "新闻体",
+        "description": "案例业务内容分类；不授予 News 生产资格",
+        "confirmable": true,
+        "requires_note": false
+      },
+      {
+        "id": "persona",
+        "label": "人设型",
+        "description": "人物观点与表达；不授予人物事实或 Style",
+        "confirmable": true,
+        "requires_note": false
+      },
+      {
+        "id": "story",
+        "label": "故事型",
+        "description": "事件叙事；不证明客户经历或事实",
+        "confirmable": true,
+        "requires_note": false
+      },
+      {
+        "id": "conversion",
+        "label": "高转化型",
+        "description": "价值与行动引导；不批准主张或 CTA",
+        "confirmable": true,
+        "requires_note": false
+      },
+      {
+        "id": "other",
+        "label": "其它",
+        "description": "须人审说明；不创建新生产类型",
+        "confirmable": true,
+        "requires_note": true
+      },
+      {
+        "id": "unknown",
+        "label": "待判断",
+        "description": "仅建议/待判断；正式类型为 null",
+        "confirmable": false,
+        "requires_note": false
+      }
+    ]
+  },
+  "confirmable_ids": [
+    "news",
+    "persona",
+    "story",
+    "conversion",
+    "other"
+  ],
+  "unknown_is_formal_type": false
+}

@@ -1,9 +1,10 @@
 import { escapeHtml, formatCaseDuration } from './list-ui.mjs?v=case-share-ux2';
+import { typeLabel } from './case-type-confirmation.mjs?v=case-joint-1';
 
 export function sharePreviewCard(bundle) {
   const display = bundle.preview.display;
   const duration = formatCaseDuration(display.duration_seconds);
-  const tags = [display.industry || '行业暂未确认', display.video_type, duration].filter(Boolean);
+  const tags = [display.industry || '行业暂未确认', display.video_type && typeLabel(display.video_type), duration].filter(Boolean);
   return `<div class="share-preview-cover" aria-label="未获封面展示许可，使用品牌占位图">
       <svg viewBox="0 0 32 32" fill="none" stroke="currentColor" stroke-width="1.3" aria-hidden="true"><rect x="5" y="5" width="22" height="22" rx="6"/><path d="m13 11 8 5-8 5z"/></svg><span>品牌占位封面</span>
     </div><div class="share-preview-content"><h3>${escapeHtml(display.title || '尚未设置展示标题')}</h3>
@@ -37,7 +38,7 @@ export function shareConfirmation(bundle) {
   const share = bundle.mode === "approve_and_share";
   const display = bundle.preview.display;
   const fields = [display.title && `标题：${display.title}`, display.industry && `行业：${display.industry}`,
-    display.video_type && `视频类型：${display.video_type}`,
+    (display.video_type || bundle.preview.type_confirmation) && `视频类型：${typeLabel(display.video_type)}`,
     display.duration_seconds != null && `时长：${display.duration_seconds} 秒`,
     display.structure_summary && `结构参考：${display.structure_summary}`, "封面：品牌占位图，未授权原封面"].filter(Boolean).join("；");
   return {

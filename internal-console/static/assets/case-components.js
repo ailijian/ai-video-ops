@@ -1,9 +1,10 @@
 import { DOUYIN_PLAYER_VIEWPORTS } from "./case-media-preview.mjs?v=case-media-fit-1";
-import { escapeHtml, caseListCard } from "./list-ui.mjs?v=case-share-ux2";
+import { escapeHtml, caseListCard } from "./list-ui.mjs?v=case-joint-1";
 import { accountLabel, formatConsoleTime } from "./ui-format.mjs?v=flow-closure-2";
 import { evidenceWorkspace, reviewWorkspace } from "./case-evidence-workspace.mjs?v=case-review-ux1";
-import { sharePreviewPanel } from "./case-share-confirmation.mjs?v=case-share-ui1";
-import { caseRecovery, caseResultPanel } from "./case-review-result.mjs?v=case-recovery-ui1";
+import { sharePreviewPanel } from "./case-share-confirmation.mjs?v=case-joint-1";
+import { typeConfirmationMarkup } from './case-type-confirmation.mjs?v=case-joint-1';
+import { caseRecovery, caseResultPanel } from "./case-review-result.mjs?v=case-joint-1";
 export { escapeHtml };
 
 export const CASE_PROGRESS_STAGES = [
@@ -263,6 +264,7 @@ export function caseReviewContent(detail, statusPill, {operations = [], recovery
           </div>
         </section>
         ${evidenceReviewSurface}
+        ${detail.review?.approved ? '' : typeConfirmationMarkup(detail.video_type_context,escapeHtml)}
         ${shareDraft ? sharePreviewPanel(shareDraft) : ""}
         <section class="case-analysis"><h2>${workspace?.state === "unavailable" ? "已有分析（审核范围尚未恢复）" : workspace && !["original","validated"].includes(workspace.state) ? "原分析（新修订尚未生效）" : "分析结果"}</h2>
         <div class="review-section"><h3>讲了什么</h3>
