@@ -93,7 +93,7 @@ function navigate(path, replace = false) {
   if (replace) history.replaceState({}, "", path);
   else history.pushState({}, "", path);
   window.scrollTo({ top: 0, behavior: "instant" });
-  renderRoute();
+  return renderRoute();
 }
 window.addEventListener("beforeunload", event => {
   if (window.__customerReviewDirty) { event.preventDefault(); event.returnValue = ""; }
@@ -568,7 +568,8 @@ const contentViews = createContentViews({
 const creationConfigViews = createCreationConfigViews({ app, api, shell, bindCommonActions,
   skeletonPage, renderLoadError, navigate });
 const excelPreviewViews = createExcelPreviewViews({ app, api, shell, bindCommonActions, navigate, openModal });
-import { createCapacityViews } from "./creative-capacity-view.mjs?v=c1-read-1";
+const capacityViews = createCapacityViews({ app, api, shell, bindCommonActions,
+  skeletonPage, renderLoadError });
 const creationBatchViews = createCreationBatchViews({ app, api, shell, bindCommonActions,
   skeletonPage, renderLoadError });
 
@@ -739,16 +740,27 @@ if (path === "/customers/new") return customerViews.renderCustomerNew();
   bindCommonActions();
 }
 
-async function bootstrap() {
+export async function bootstrap({ signal, onReady = () => {} } = {}) {
   try {
-    const payload = await api("/api/auth/me", { skipAuthRedirect: true });
+    const payload = await api("/api/auth/me", { skipAuthRedirect: true, signal });
+    if (!payload?.user || typeof payload.csrf_token !== "string" || !payload.csrf_token) {
+      throw new Error("Invalid session response");
+    }
+    if (signal?.aborted) throw signal.reason;
     state.user = payload.user;
     state.csrfToken = payload.csrf_token;
-  } catch {
+  } catch (error) {
+    // Only an actual unauthenticated response may open the login form.
+    if (error.status !== 401) throw error;
+    if (signal?.aborted) throw signal.reason;
     state.user = null;
     state.csrfToken = null;
   }
-  await renderRoute();
+  const rendering = renderRoute();
+  // Routes take over with their own loading/error UI; the startup deadline
+  // covers module loading and the session read, not business-page requests.
+  onReady();
+  await rendering;
 }
 
 window.addEventListener("popstate", () => {
@@ -759,4 +771,3 @@ window.addEventListener("popstate", () => {
   window.__customerReviewDirty = false;
   renderRoute();
 });
-bootstrap();

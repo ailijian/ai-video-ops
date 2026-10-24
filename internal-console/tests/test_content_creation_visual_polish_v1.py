@@ -71,8 +71,8 @@ def test_console_branding_and_favicon_contract():
     assert 'href="/assets/brand/favicon-32x32.png?v=transparent-1"' in index
     assert 'href="/assets/brand/favicon-16x16.png?v=transparent-1"' in index
     assert 'href="/assets/brand/apple-touch-icon.png?v=transparent-1"' in index
-    assert 'styles.css?v=news-review-ui-2' in index
-    assert 'app.js?v=jt-release-1' in index
+    assert 'styles.css?v=jt-startup-hotfix-1' in index
+    assert 'data-app-entry="/assets/app.js?v=jt-startup-hotfix-1"' in index
     assert 'case-excel-preview.css?v=excel-upload-status-1' in index
     assert 'case-excel-preview-view.mjs?v=excel-upload-status-2' in app
     assert 'creation-config.css?v=capacity-entry-2' in index

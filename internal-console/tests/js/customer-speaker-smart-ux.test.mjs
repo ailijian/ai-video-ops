@@ -307,7 +307,7 @@ console.log("TEN_DEFAULT_FACTS_ONE_EXPLICIT_HUMAN_SUBMISSION_PASS");
 {
   const router=readFileSync(new URL("assets/app.js",root),"utf8");
   const start=router.indexOf('window.addEventListener("popstate", () => {');
-  const end=router.indexOf('\nbootstrap();',start);
+  const end=router.length;
   assert.ok(start>0 && end>start);
   let listener, renders=0, restored=[];
   const win={__customerReviewDirty:true,confirm:()=>false,addEventListener(_,fn){listener=fn;}};
