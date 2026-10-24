@@ -1,0 +1,139 @@
+{
+  "algorithm": "SHA-256",
+  "excludes": [
+    "MANIFEST.json",
+    "SHA256SUMS.txt"
+  ],
+  "files": [
+    {
+      "path": "B0_IMMUTABLE_PACKAGE_REFERENCE.json",
+      "sha256": "d48b11e903ad0c59ebfe8fbf5bc74a122fe5597d6d2ce509a93d0d13312044d5",
+      "bytes": 303
+    },
+    {
+      "path": "evidence/0-pipeline.xml",
+      "sha256": "557fd0a0e52be0ddf6e25a4ad999e2b67edbcaab56fc50c20fe387e6901e5c1d",
+      "bytes": 109330
+    },
+    {
+      "path": "evidence/4-authority-release.xml",
+      "sha256": "8c0ff699f19085589a5dd32953177fe1cc2d908e3c5bf36b90c2f7d2c8a05afd",
+      "bytes": 2254
+    },
+    {
+      "path": "evidence/I1_FOCUSED.xml",
+      "sha256": "19f54c13f76b4baff652cd11ac848430fb8479b52377ddebd86525103d2aa438",
+      "bytes": 9865
+    },
+    {
+      "path": "evidence/I1_SIXTEEN_PREVIEW_RESULTS.json",
+      "sha256": "e0c3a7d2d443183586875d7d3c360e73d118908c1a13de5afb3de2bd9a325793",
+      "bytes": 54736
+    },
+    {
+      "path": "evidence/JAVASCRIPT_RESULT.json",
+      "sha256": "3813fed9807cc9f7d8dfe40260d873cbd5b5b81fb2513a86864d5dcf29898568",
+      "bytes": 5775
+    },
+    {
+      "path": "evidence/ROOT_VERIFICATION_SUMMARY.json",
+      "sha256": "3d1fbd6ccf8422cc0a6bcf19770bec4189feb52af15b6002cf6d467e8012abfe",
+      "bytes": 2890
+    },
+    {
+      "path": "I1_PARSER_REPORT.md",
+      "sha256": "8a7c55f2c5c69f33d5400355ea22230601cbc6e54f9622dcacb1f7d40b2b2f94",
+      "bytes": 4108
+    },
+    {
+      "path": "I2_EXACT_WRITE_CONTRACT_PROPOSAL.json",
+      "sha256": "be12957c9a2937a3542c3c13c08d233b363a8c589c4336186558dc6d4df8ac84",
+      "bytes": 17326
+    },
+    {
+      "path": "I2_NATIVE_UPLOAD_SOURCE_REFS.json",
+      "sha256": "22294585921b7d31c6014292585c4dbc810c766cb385039c569bb7bb1df103bd",
+      "bytes": 1355
+    },
+    {
+      "path": "I2_WRITE_PROTOCOL_PROPOSAL.md",
+      "sha256": "c9688db5dc723ab283c8c6cecdb11e7a081f2a8768658562e7c1bd99615c2cba",
+      "bytes": 6304
+    },
+    {
+      "path": "NEXT_AUTHORITY_GATES.md",
+      "sha256": "9b5a7d5a433dc7831b999fd48b28a9af5c7e5d1b721b2bda16bbcc833a46e3da",
+      "bytes": 1642
+    },
+    {
+      "path": "OBSERVATION_BASIS_V03_1.json",
+      "sha256": "4e2124f31606798113d3fbfc217c5c4f0310d5455f54a0c6c46445f9d9aed846",
+      "bytes": 815
+    },
+    {
+      "path": "OPEN_VERIFICATION_GATES.md",
+      "sha256": "4a08033a58525e1b8e6369ee6ed906842c6c9c99333ae614fa9dfd1d425aaa7b",
+      "bytes": 1739
+    },
+    {
+      "path": "PROPOSAL_STRUCTURE_CHECK.json",
+      "sha256": "fab6232eeabc21acf9259cf8c91d615193061637f4af5b7f28aef96f3b0c3d05",
+      "bytes": 183
+    },
+    {
+      "path": "PROTECTION_RESULT.json",
+      "sha256": "78a176e3639685aa3ed6705e142a1c6ff797c997ada2b07f0fde22b74bb94342",
+      "bytes": 968
+    },
+    {
+      "path": "README.md",
+      "sha256": "226097b0eae66abce38fbcc21b62b9432e75e8c264f026cc096ccdf8ff23ac75",
+      "bytes": 1448
+    },
+    {
+      "path": "source/docs/deliveries/case-excel-import-1/inputs/鲸汤案例快速导入模板 V0.3.xlsx",
+      "sha256": "d720aa257d90955a0c8209756b1d6d8da49a789d250e28cf716890ab21a8664f",
+      "bytes": 40367
+    },
+    {
+      "path": "source/docs/deliveries/case-excel-import-1/inputs/鲸汤案例快速导入模板对应字段与校验规则 V0.3.json",
+      "sha256": "95463b7faf241bd090afda70bdc34a09584b386645bb0a1981673a5c1fbe1e08",
+      "bytes": 15319
+    },
+    {
+      "path": "source/docs/deliveries/case-excel-import-1/ISOLATED_TEST_INPUTS.json",
+      "sha256": "95201ac901a88566c6caee470d1f3fff09788ebb0738865d42ef8cc7f59743c8",
+      "bytes": 21362
+    },
+    {
+      "path": "source/internal-console/app/case_excel_preview.py",
+      "sha256": "216e0ce58407a69bf0134a7d06f1e1c82cb9c34e7cad885c6fa6ba0bdb2bfa9b",
+      "bytes": 20066
+    },
+    {
+      "path": "source/internal-console/app/case_excel_v03_template.json",
+      "sha256": "95463b7faf241bd090afda70bdc34a09584b386645bb0a1981673a5c1fbe1e08",
+      "bytes": 15319
+    },
+    {
+      "path": "source/internal-console/tests/test_case_excel_preview_v03.py",
+      "sha256": "b3eb956fb2b920adbff91b06d220463b348e16b26ce788ffbf8b7209e486ff2e",
+      "bytes": 14419
+    },
+    {
+      "path": "source/WORKING_TREE.diff",
+      "sha256": "687e67176154dc0ae95476d68ed75c04201661563903203cfe18876947408d6a",
+      "bytes": 1192
+    },
+    {
+      "path": "SOURCE_AND_VERIFICATION.json",
+      "sha256": "1bb837cd916101f0ea46cdd6bee9b5c4cac8727c113be07158f30d0ebc053de4",
+      "bytes": 10734
+    },
+    {
+      "path": "TEST_DISPOSITION.json",
+      "sha256": "c8b3afc7bf5243336685783f67e1f625ef76b1e9f472ce6b8ef56304c4faf7ef",
+      "bytes": 6516
+    }
+  ]
+}

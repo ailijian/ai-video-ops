@@ -3356,6 +3356,66 @@ def build_app(settings: Settings | None = None) -> FastAPI:
         )
         return {"review": result}
 
+    @app.post('/api/case-excel/preview')
+    async def case_excel_preview(request: Request,
+            session: SessionContext = Depends(require_console_access),
+            x_csrf_token: str | None = Header(default=None, alias='X-CSRF-Token')):
+        require_csrf(session, x_csrf_token)
+        from .case_excel_preview_http import preview_upload
+        return await preview_upload(request)
+
+    @app.post('/api/case-excel/imports/prepare')
+    async def prepare_case_excel_import(request: Request,
+            session: SessionContext = Depends(require_console_access),
+            x_csrf_token: str | None = Header(default=None, alias='X-CSRF-Token')):
+        require_csrf(session, x_csrf_token)
+        from .case_excel_import_http import execute
+        return await execute(request, settings, session)
+
+    @app.post('/api/case-excel/imports/save')
+    async def save_case_excel_import(request: Request,
+            session: SessionContext = Depends(require_console_access),
+            x_csrf_token: str | None = Header(default=None, alias='X-CSRF-Token')):
+        require_csrf(session, x_csrf_token)
+        from .case_excel_import_http import execute
+        return await execute(request, settings, session, save=True)
+
+    @app.get('/api/case-excel/imports')
+    def list_case_excel_imports(session: SessionContext = Depends(require_console_access)):
+        from .case_intake_service import list_excel_imports
+        from .case_excel_import import ImportError
+        from .case_excel_import_http import failure, HEADERS
+        try:
+            return JSONResponse(list_excel_imports(settings, session), headers=HEADERS)
+        except ImportError as exc:
+            return failure(exc)
+
+    @app.post('/api/case-excel/imports/{batch_id}/recover')
+    async def recover_case_excel_import(batch_id: str, request: Request,
+            session: SessionContext = Depends(require_console_access),
+            x_csrf_token: str | None = Header(default=None, alias='X-CSRF-Token')):
+        require_csrf(session, x_csrf_token)
+        from .case_excel_import_http import execute
+        return await execute(request, settings, session, batch_id=batch_id)
+
+    @app.post('/api/case-excel/imports/{batch_id}/cancel')
+    async def cancel_case_excel_import(batch_id: str, request: Request,
+            session: SessionContext = Depends(require_console_access),
+            x_csrf_token: str | None = Header(default=None, alias='X-CSRF-Token')):
+        require_csrf(session, x_csrf_token)
+        from .case_excel_import_http import execute
+        return await execute(request, settings, session, batch_id=batch_id, cancel=True)
+
+    @app.get('/api/case-excel/imports/{batch_id}')
+    def read_case_excel_import(batch_id: str, session: SessionContext = Depends(require_console_access)):
+        from .case_intake_service import get_excel_import
+        from .case_excel_import import ImportError
+        from .case_excel_import_http import failure, HEADERS
+        try:
+            return JSONResponse(get_excel_import(settings, session, batch_id), headers=HEADERS)
+        except ImportError as exc:
+            return failure(exc)
+
     @app.get("/api/cases")
     def cases(
         session: SessionContext = Depends(require_console_access),

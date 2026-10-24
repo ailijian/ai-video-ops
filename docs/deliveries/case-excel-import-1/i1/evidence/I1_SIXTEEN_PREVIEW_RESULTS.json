@@ -1,0 +1,1395 @@
+{
+  "fictional_only": true,
+  "no_business_writes": true,
+  "results": [
+    {
+      "id": "T01",
+      "original_expected": "CANDIDATE_ONLY",
+      "actual_preview": {
+        "schema_version": "case-excel-preview-v0.3",
+        "template_identity": "case-excel-intake-v0.3-review-candidate",
+        "file_sha256": "2799b74f0e40f029b63c627ae46ddc8716ed7975bd710a01d4ea680101e12b47",
+        "registry_sha256": "95463b7faf241bd090afda70bdc34a09584b386645bb0a1981673a5c1fbe1e08",
+        "basis_mapping_version": "case-excel-observation-basis-v0.3.1",
+        "excluded_sheets": [
+          "使用说明",
+          "字段字典",
+          "示例-案例清单",
+          "示例-结构分段",
+          "示例-来源与许可"
+        ],
+        "rows": [
+          {
+            "row": 5,
+            "external_case_key": "AUDIT-NEWS-001",
+            "raw": {
+              "external_case_key": "AUDIT-NEWS-001",
+              "source_platform": "抖音",
+              "submission_mode": "链接/视频待解析",
+              "source_url": "https://www.douyin.com/video/7999999999999999001",
+              "media_filename": "",
+              "source_title": "【自拟】全虚构审计样本AUDIT-NEWS-001",
+              "industry_hint": "",
+              "profile_hint": "news",
+              "video_content_type_hint": "新闻体",
+              "other_type_note": "",
+              "duration_seconds_hint": "",
+              "topic": "",
+              "hook_candidate": "",
+              "structure_summary": "",
+              "narration_excerpt": "",
+              "visual_observation": "",
+              "creative_reference": "",
+              "risk_notes": "",
+              "observation_basis": "未观看原视频",
+              "display_title_hint": "",
+              "display_structure_hint": ""
+            },
+            "segments": [],
+            "rights": null,
+            "row_sha256": "4f98d796798ee07762b909a6c0e8eb037f84967aa099db0e84aeabd1755819ac",
+            "trust": "unverified_submitter_description",
+            "media_binding": "unbound",
+            "rights_state": "unknown",
+            "approved_video_type": null,
+            "canonical_source_key": "douyin:7999999999999999001",
+            "observation_basis": {
+              "raw": "未观看原视频",
+              "normalized": "未观看原视频",
+              "mapping_version": "case-excel-observation-basis-v0.3.1"
+            },
+            "suggested_video_type": "news",
+            "issues": [],
+            "status": "unverified_preview"
+          }
+        ],
+        "issues": [],
+        "authority": {
+          "can_persist": false,
+          "can_dispatch": false,
+          "can_approve": false,
+          "can_share": false
+        },
+        "resource_budget_scope": "I1_local_parser_only_not_production_capacity"
+      }
+    },
+    {
+      "id": "T02",
+      "original_expected": "MANUAL_STRUCTURE_CANDIDATE",
+      "actual_preview": {
+        "schema_version": "case-excel-preview-v0.3",
+        "template_identity": "case-excel-intake-v0.3-review-candidate",
+        "file_sha256": "bc76c9a5878f4349fc7f917095311eb8758ac2c63bb69b2b57b38a105958b70c",
+        "registry_sha256": "95463b7faf241bd090afda70bdc34a09584b386645bb0a1981673a5c1fbe1e08",
+        "basis_mapping_version": "case-excel-observation-basis-v0.3.1",
+        "excluded_sheets": [
+          "使用说明",
+          "字段字典",
+          "示例-案例清单",
+          "示例-结构分段",
+          "示例-来源与许可"
+        ],
+        "rows": [
+          {
+            "row": 5,
+            "external_case_key": "AUDIT-PERSONA-002",
+            "raw": {
+              "external_case_key": "AUDIT-PERSONA-002",
+              "source_platform": "抖音",
+              "submission_mode": "已整理结构待核验",
+              "source_url": "https://www.douyin.com/video/7999999999999999001",
+              "media_filename": "",
+              "source_title": "【自拟】全虚构审计样本AUDIT-PERSONA-002",
+              "industry_hint": "",
+              "profile_hint": "mix",
+              "video_content_type_hint": "人设型",
+              "other_type_note": "",
+              "duration_seconds_hint": "",
+              "topic": "虚构经营观点",
+              "hook_candidate": "",
+              "structure_summary": "观点与理由",
+              "narration_excerpt": "",
+              "visual_observation": "",
+              "creative_reference": "",
+              "risk_notes": "",
+              "observation_basis": "未观看原视频",
+              "display_title_hint": "",
+              "display_structure_hint": ""
+            },
+            "segments": [],
+            "rights": null,
+            "row_sha256": "3525876c43a56833764596bc0c41d758b39d4d913d1dec325b5cbfb1242e8183",
+            "trust": "unverified_submitter_description",
+            "media_binding": "unbound",
+            "rights_state": "unknown",
+            "approved_video_type": null,
+            "canonical_source_key": "douyin:7999999999999999001",
+            "observation_basis": {
+              "raw": "未观看原视频",
+              "normalized": "未观看原视频",
+              "mapping_version": "case-excel-observation-basis-v0.3.1"
+            },
+            "suggested_video_type": "persona",
+            "issues": [],
+            "status": "unverified_preview"
+          }
+        ],
+        "issues": [],
+        "authority": {
+          "can_persist": false,
+          "can_dispatch": false,
+          "can_approve": false,
+          "can_share": false
+        },
+        "resource_budget_scope": "I1_local_parser_only_not_production_capacity"
+      }
+    },
+    {
+      "id": "T03",
+      "original_expected": "MANUAL_STRUCTURE_CANDIDATE",
+      "actual_preview": {
+        "schema_version": "case-excel-preview-v0.3",
+        "template_identity": "case-excel-intake-v0.3-review-candidate",
+        "file_sha256": "add374a80cb05e4a229017568a8170ad20ffb1f4451e72b8f60e08261bbad596",
+        "registry_sha256": "95463b7faf241bd090afda70bdc34a09584b386645bb0a1981673a5c1fbe1e08",
+        "basis_mapping_version": "case-excel-observation-basis-v0.3.1",
+        "excluded_sheets": [
+          "使用说明",
+          "字段字典",
+          "示例-案例清单",
+          "示例-结构分段",
+          "示例-来源与许可"
+        ],
+        "rows": [
+          {
+            "row": 5,
+            "external_case_key": "AUDIT-STORY-003",
+            "raw": {
+              "external_case_key": "AUDIT-STORY-003",
+              "source_platform": "抖音",
+              "submission_mode": "已整理结构待核验",
+              "source_url": "https://www.douyin.com/video/7999999999999999001",
+              "media_filename": "",
+              "source_title": "【自拟】全虚构审计样本AUDIT-STORY-003",
+              "industry_hint": "",
+              "profile_hint": "mix",
+              "video_content_type_hint": "故事型",
+              "other_type_note": "",
+              "duration_seconds_hint": "",
+              "topic": "虚构事件结构",
+              "hook_candidate": "",
+              "structure_summary": "背景、经过、结果",
+              "narration_excerpt": "",
+              "visual_observation": "",
+              "creative_reference": "",
+              "risk_notes": "",
+              "observation_basis": "未观看原视频",
+              "display_title_hint": "",
+              "display_structure_hint": ""
+            },
+            "segments": [
+              {
+                "row": 5,
+                "raw": {
+                  "external_case_key": "AUDIT-STORY-003",
+                  "segment_order": "1",
+                  "start_seconds_hint": "",
+                  "end_seconds_hint": "",
+                  "narrative_role_hint": "开场",
+                  "narration_excerpt": "",
+                  "visual_or_ocr_observation": "",
+                  "structural_value": "",
+                  "evidence_locator": "",
+                  "segment_basis": "整理资料（未看视频）"
+                },
+                "trust": "unverified_manual_notes"
+              },
+              {
+                "row": 6,
+                "raw": {
+                  "external_case_key": "AUDIT-STORY-003",
+                  "segment_order": "2",
+                  "start_seconds_hint": "",
+                  "end_seconds_hint": "",
+                  "narrative_role_hint": "过程",
+                  "narration_excerpt": "",
+                  "visual_or_ocr_observation": "",
+                  "structural_value": "",
+                  "evidence_locator": "",
+                  "segment_basis": "整理资料（未看视频）"
+                },
+                "trust": "unverified_manual_notes"
+              }
+            ],
+            "rights": null,
+            "row_sha256": "7785df5485c7afe1bfe7c455f0c1c40d111765de1afe6d24e30f18947daeb1e5",
+            "trust": "unverified_submitter_description",
+            "media_binding": "unbound",
+            "rights_state": "unknown",
+            "approved_video_type": null,
+            "canonical_source_key": "douyin:7999999999999999001",
+            "observation_basis": {
+              "raw": "未观看原视频",
+              "normalized": "未观看原视频",
+              "mapping_version": "case-excel-observation-basis-v0.3.1"
+            },
+            "suggested_video_type": "story",
+            "issues": [],
+            "status": "unverified_preview"
+          }
+        ],
+        "issues": [],
+        "authority": {
+          "can_persist": false,
+          "can_dispatch": false,
+          "can_approve": false,
+          "can_share": false
+        },
+        "resource_budget_scope": "I1_local_parser_only_not_production_capacity"
+      }
+    },
+    {
+      "id": "T04",
+      "original_expected": "CANDIDATE_ONLY",
+      "actual_preview": {
+        "schema_version": "case-excel-preview-v0.3",
+        "template_identity": "case-excel-intake-v0.3-review-candidate",
+        "file_sha256": "fb2a9fc9677ed8e8fe519fc3f0ec4dfdf4213047f3db0b2fee6c708f2fa3dc64",
+        "registry_sha256": "95463b7faf241bd090afda70bdc34a09584b386645bb0a1981673a5c1fbe1e08",
+        "basis_mapping_version": "case-excel-observation-basis-v0.3.1",
+        "excluded_sheets": [
+          "使用说明",
+          "字段字典",
+          "示例-案例清单",
+          "示例-结构分段",
+          "示例-来源与许可"
+        ],
+        "rows": [
+          {
+            "row": 5,
+            "external_case_key": "AUDIT-CONVERSION-004",
+            "raw": {
+              "external_case_key": "AUDIT-CONVERSION-004",
+              "source_platform": "抖音",
+              "submission_mode": "链接/视频待解析",
+              "source_url": "https://www.douyin.com/video/7999999999999999001",
+              "media_filename": "",
+              "source_title": "【自拟】全虚构审计样本AUDIT-CONVERSION-004",
+              "industry_hint": "",
+              "profile_hint": "mix",
+              "video_content_type_hint": "高转化型",
+              "other_type_note": "",
+              "duration_seconds_hint": "",
+              "topic": "",
+              "hook_candidate": "",
+              "structure_summary": "",
+              "narration_excerpt": "",
+              "visual_observation": "",
+              "creative_reference": "",
+              "risk_notes": "",
+              "observation_basis": "未观看原视频",
+              "display_title_hint": "",
+              "display_structure_hint": ""
+            },
+            "segments": [],
+            "rights": null,
+            "row_sha256": "b4272b4ca572cfbe0a7649560d7d995f78544737babacff653c2ee8e76b19a36",
+            "trust": "unverified_submitter_description",
+            "media_binding": "unbound",
+            "rights_state": "unknown",
+            "approved_video_type": null,
+            "canonical_source_key": "douyin:7999999999999999001",
+            "observation_basis": {
+              "raw": "未观看原视频",
+              "normalized": "未观看原视频",
+              "mapping_version": "case-excel-observation-basis-v0.3.1"
+            },
+            "suggested_video_type": "conversion",
+            "issues": [],
+            "status": "unverified_preview"
+          }
+        ],
+        "issues": [],
+        "authority": {
+          "can_persist": false,
+          "can_dispatch": false,
+          "can_approve": false,
+          "can_share": false
+        },
+        "resource_budget_scope": "I1_local_parser_only_not_production_capacity"
+      }
+    },
+    {
+      "id": "T05",
+      "original_expected": "CANDIDATE_ONLY",
+      "actual_preview": {
+        "schema_version": "case-excel-preview-v0.3",
+        "template_identity": "case-excel-intake-v0.3-review-candidate",
+        "file_sha256": "bd930b019f00729ea48e318109b31fb0e4b3003be8078d7c248d47fb21cf0421",
+        "registry_sha256": "95463b7faf241bd090afda70bdc34a09584b386645bb0a1981673a5c1fbe1e08",
+        "basis_mapping_version": "case-excel-observation-basis-v0.3.1",
+        "excluded_sheets": [
+          "使用说明",
+          "字段字典",
+          "示例-案例清单",
+          "示例-结构分段",
+          "示例-来源与许可"
+        ],
+        "rows": [
+          {
+            "row": 5,
+            "external_case_key": "AUDIT-OTHER-005",
+            "raw": {
+              "external_case_key": "AUDIT-OTHER-005",
+              "source_platform": "抖音",
+              "submission_mode": "链接/视频待解析",
+              "source_url": "https://www.douyin.com/video/7999999999999999001",
+              "media_filename": "",
+              "source_title": "【自拟】全虚构审计样本AUDIT-OTHER-005",
+              "industry_hint": "",
+              "profile_hint": "",
+              "video_content_type_hint": "其它",
+              "other_type_note": "全虚构问答结构参考",
+              "duration_seconds_hint": "",
+              "topic": "",
+              "hook_candidate": "",
+              "structure_summary": "",
+              "narration_excerpt": "",
+              "visual_observation": "",
+              "creative_reference": "",
+              "risk_notes": "",
+              "observation_basis": "未观看原视频",
+              "display_title_hint": "",
+              "display_structure_hint": ""
+            },
+            "segments": [],
+            "rights": null,
+            "row_sha256": "c646ca14d178948eb9fb1e975f56b2a2e650c5b0822198bb15ea9263de20c0f5",
+            "trust": "unverified_submitter_description",
+            "media_binding": "unbound",
+            "rights_state": "unknown",
+            "approved_video_type": null,
+            "canonical_source_key": "douyin:7999999999999999001",
+            "observation_basis": {
+              "raw": "未观看原视频",
+              "normalized": "未观看原视频",
+              "mapping_version": "case-excel-observation-basis-v0.3.1"
+            },
+            "suggested_video_type": "other",
+            "issues": [],
+            "status": "unverified_preview"
+          }
+        ],
+        "issues": [],
+        "authority": {
+          "can_persist": false,
+          "can_dispatch": false,
+          "can_approve": false,
+          "can_share": false
+        },
+        "resource_budget_scope": "I1_local_parser_only_not_production_capacity"
+      }
+    },
+    {
+      "id": "T06",
+      "original_expected": "ROW_ERROR_OTHER_NOTE_REQUIRED",
+      "actual_preview": {
+        "schema_version": "case-excel-preview-v0.3",
+        "template_identity": "case-excel-intake-v0.3-review-candidate",
+        "file_sha256": "77303adc396861f369f5724bdf92d0fbce6efdfe1acecb8dbd4ae805da2693a3",
+        "registry_sha256": "95463b7faf241bd090afda70bdc34a09584b386645bb0a1981673a5c1fbe1e08",
+        "basis_mapping_version": "case-excel-observation-basis-v0.3.1",
+        "excluded_sheets": [
+          "使用说明",
+          "字段字典",
+          "示例-案例清单",
+          "示例-结构分段",
+          "示例-来源与许可"
+        ],
+        "rows": [
+          {
+            "row": 5,
+            "external_case_key": "AUDIT-OTHER-006",
+            "raw": {
+              "external_case_key": "AUDIT-OTHER-006",
+              "source_platform": "抖音",
+              "submission_mode": "链接/视频待解析",
+              "source_url": "https://www.douyin.com/video/7999999999999999001",
+              "media_filename": "",
+              "source_title": "【自拟】全虚构审计样本AUDIT-OTHER-006",
+              "industry_hint": "",
+              "profile_hint": "",
+              "video_content_type_hint": "其它",
+              "other_type_note": "",
+              "duration_seconds_hint": "",
+              "topic": "",
+              "hook_candidate": "",
+              "structure_summary": "",
+              "narration_excerpt": "",
+              "visual_observation": "",
+              "creative_reference": "",
+              "risk_notes": "",
+              "observation_basis": "未观看原视频",
+              "display_title_hint": "",
+              "display_structure_hint": ""
+            },
+            "segments": [],
+            "rights": null,
+            "row_sha256": "da90b40593b570425f6afa2749e38453bdc89c50caedaaa391dd9afb893710a3",
+            "trust": "unverified_submitter_description",
+            "media_binding": "unbound",
+            "rights_state": "unknown",
+            "approved_video_type": null,
+            "canonical_source_key": "douyin:7999999999999999001",
+            "observation_basis": {
+              "raw": "未观看原视频",
+              "normalized": "未观看原视频",
+              "mapping_version": "case-excel-observation-basis-v0.3.1"
+            },
+            "suggested_video_type": "other",
+            "issues": [
+              {
+                "sheet": "案例清单",
+                "row": 5,
+                "field": "other_type_note",
+                "code": "OTHER_NOTE_REQUIRED",
+                "severity": "error"
+              }
+            ],
+            "status": "invalid"
+          }
+        ],
+        "issues": [
+          {
+            "sheet": "案例清单",
+            "row": 5,
+            "field": "other_type_note",
+            "code": "OTHER_NOTE_REQUIRED",
+            "severity": "error"
+          }
+        ],
+        "authority": {
+          "can_persist": false,
+          "can_dispatch": false,
+          "can_approve": false,
+          "can_share": false
+        },
+        "resource_budget_scope": "I1_local_parser_only_not_production_capacity"
+      }
+    },
+    {
+      "id": "T07",
+      "original_expected": "CANDIDATE_ONLY_UNCLASSIFIED",
+      "actual_preview": {
+        "schema_version": "case-excel-preview-v0.3",
+        "template_identity": "case-excel-intake-v0.3-review-candidate",
+        "file_sha256": "ae9750529747fe4a87ed89aaae7e940b771cb60b64f554b832798e4d38666f84",
+        "registry_sha256": "95463b7faf241bd090afda70bdc34a09584b386645bb0a1981673a5c1fbe1e08",
+        "basis_mapping_version": "case-excel-observation-basis-v0.3.1",
+        "excluded_sheets": [
+          "使用说明",
+          "字段字典",
+          "示例-案例清单",
+          "示例-结构分段",
+          "示例-来源与许可"
+        ],
+        "rows": [
+          {
+            "row": 5,
+            "external_case_key": "AUDIT-UNKNOWN-007",
+            "raw": {
+              "external_case_key": "AUDIT-UNKNOWN-007",
+              "source_platform": "抖音",
+              "submission_mode": "链接/视频待解析",
+              "source_url": "https://www.douyin.com/video/7999999999999999001",
+              "media_filename": "",
+              "source_title": "【自拟】全虚构审计样本AUDIT-UNKNOWN-007",
+              "industry_hint": "",
+              "profile_hint": "uncertain",
+              "video_content_type_hint": "待判断",
+              "other_type_note": "",
+              "duration_seconds_hint": "",
+              "topic": "",
+              "hook_candidate": "",
+              "structure_summary": "",
+              "narration_excerpt": "",
+              "visual_observation": "",
+              "creative_reference": "",
+              "risk_notes": "",
+              "observation_basis": "未观看原视频",
+              "display_title_hint": "",
+              "display_structure_hint": ""
+            },
+            "segments": [],
+            "rights": null,
+            "row_sha256": "25a09f3dc6a80284d1b6e96e0a3a5120b54be0051b74c7ad3ee6a9b80666f82f",
+            "trust": "unverified_submitter_description",
+            "media_binding": "unbound",
+            "rights_state": "unknown",
+            "approved_video_type": null,
+            "canonical_source_key": "douyin:7999999999999999001",
+            "observation_basis": {
+              "raw": "未观看原视频",
+              "normalized": "未观看原视频",
+              "mapping_version": "case-excel-observation-basis-v0.3.1"
+            },
+            "suggested_video_type": "unknown",
+            "issues": [],
+            "status": "unverified_preview"
+          }
+        ],
+        "issues": [],
+        "authority": {
+          "can_persist": false,
+          "can_dispatch": false,
+          "can_approve": false,
+          "can_share": false
+        },
+        "resource_budget_scope": "I1_local_parser_only_not_production_capacity"
+      }
+    },
+    {
+      "id": "T08",
+      "original_expected": "FLAG_HUMAN_COHERENCE",
+      "actual_preview": {
+        "schema_version": "case-excel-preview-v0.3",
+        "template_identity": "case-excel-intake-v0.3-review-candidate",
+        "file_sha256": "6962217d4b927903a6936d7e0667c3e1fdecf1dc22beba1614fb11cf335074f9",
+        "registry_sha256": "95463b7faf241bd090afda70bdc34a09584b386645bb0a1981673a5c1fbe1e08",
+        "basis_mapping_version": "case-excel-observation-basis-v0.3.1",
+        "excluded_sheets": [
+          "使用说明",
+          "字段字典",
+          "示例-案例清单",
+          "示例-结构分段",
+          "示例-来源与许可"
+        ],
+        "rows": [
+          {
+            "row": 5,
+            "external_case_key": "AUDIT-MISMATCH-008",
+            "raw": {
+              "external_case_key": "AUDIT-MISMATCH-008",
+              "source_platform": "抖音",
+              "submission_mode": "链接/视频待解析",
+              "source_url": "https://www.douyin.com/video/7999999999999999001",
+              "media_filename": "",
+              "source_title": "【自拟】全虚构审计样本AUDIT-MISMATCH-008",
+              "industry_hint": "",
+              "profile_hint": "news",
+              "video_content_type_hint": "故事型",
+              "other_type_note": "",
+              "duration_seconds_hint": "",
+              "topic": "",
+              "hook_candidate": "",
+              "structure_summary": "",
+              "narration_excerpt": "",
+              "visual_observation": "",
+              "creative_reference": "",
+              "risk_notes": "",
+              "observation_basis": "未观看原视频",
+              "display_title_hint": "",
+              "display_structure_hint": ""
+            },
+            "segments": [],
+            "rights": null,
+            "row_sha256": "79a55d74ddbfc0e68eed0ab45dbcff403ab9b3e8f78d34b68b66638e08c27ce4",
+            "trust": "unverified_submitter_description",
+            "media_binding": "unbound",
+            "rights_state": "unknown",
+            "approved_video_type": null,
+            "canonical_source_key": "douyin:7999999999999999001",
+            "observation_basis": {
+              "raw": "未观看原视频",
+              "normalized": "未观看原视频",
+              "mapping_version": "case-excel-observation-basis-v0.3.1"
+            },
+            "suggested_video_type": "story",
+            "issues": [
+              {
+                "sheet": "案例清单",
+                "row": 5,
+                "field": "video_content_type_hint",
+                "code": "PROFILE_TYPE_REVIEW_REQUIRED",
+                "severity": "review"
+              }
+            ],
+            "status": "unverified_preview"
+          }
+        ],
+        "issues": [
+          {
+            "sheet": "案例清单",
+            "row": 5,
+            "field": "video_content_type_hint",
+            "code": "PROFILE_TYPE_REVIEW_REQUIRED",
+            "severity": "review"
+          }
+        ],
+        "authority": {
+          "can_persist": false,
+          "can_dispatch": false,
+          "can_approve": false,
+          "can_share": false
+        },
+        "resource_budget_scope": "I1_local_parser_only_not_production_capacity"
+      }
+    },
+    {
+      "id": "T09",
+      "original_expected": "PENDING_EVIDENCE_NO_NATIVE_CASE",
+      "actual_preview": {
+        "schema_version": "case-excel-preview-v0.3",
+        "template_identity": "case-excel-intake-v0.3-review-candidate",
+        "file_sha256": "481cc938f364a6144bc6453c3a706ebf209234795ad080157407c045af9c1794",
+        "registry_sha256": "95463b7faf241bd090afda70bdc34a09584b386645bb0a1981673a5c1fbe1e08",
+        "basis_mapping_version": "case-excel-observation-basis-v0.3.1",
+        "excluded_sheets": [
+          "使用说明",
+          "字段字典",
+          "示例-案例清单",
+          "示例-结构分段",
+          "示例-来源与许可"
+        ],
+        "rows": [
+          {
+            "row": 5,
+            "external_case_key": "AUDIT-TEXT-009",
+            "raw": {
+              "external_case_key": "AUDIT-TEXT-009",
+              "source_platform": "未知",
+              "submission_mode": "仅文字待补证",
+              "source_url": "",
+              "media_filename": "",
+              "source_title": "【自拟】全虚构审计样本AUDIT-TEXT-009",
+              "industry_hint": "",
+              "profile_hint": "",
+              "video_content_type_hint": "人设型",
+              "other_type_note": "",
+              "duration_seconds_hint": "",
+              "topic": "虚构文字记录",
+              "hook_candidate": "",
+              "structure_summary": "观点与例子",
+              "narration_excerpt": "",
+              "visual_observation": "",
+              "creative_reference": "",
+              "risk_notes": "",
+              "observation_basis": "仅有文字资料",
+              "display_title_hint": "",
+              "display_structure_hint": ""
+            },
+            "segments": [],
+            "rights": null,
+            "row_sha256": "7d8a89ca92b6408538e5232992493ecd0dacdd9b5ed908bb2b239699af98534c",
+            "trust": "unverified_submitter_description",
+            "media_binding": "unbound",
+            "rights_state": "unknown",
+            "approved_video_type": null,
+            "canonical_source_key": null,
+            "observation_basis": {
+              "raw": "仅有文字资料",
+              "normalized": "仅有文字资料",
+              "mapping_version": "case-excel-observation-basis-v0.3.1"
+            },
+            "suggested_video_type": "persona",
+            "issues": [
+              {
+                "sheet": "案例清单",
+                "row": 5,
+                "field": "submission_mode",
+                "code": "TEXT_ONLY_NEEDS_EVIDENCE",
+                "severity": "pending"
+              }
+            ],
+            "status": "unverified_preview"
+          }
+        ],
+        "issues": [
+          {
+            "sheet": "案例清单",
+            "row": 5,
+            "field": "submission_mode",
+            "code": "TEXT_ONLY_NEEDS_EVIDENCE",
+            "severity": "pending"
+          }
+        ],
+        "authority": {
+          "can_persist": false,
+          "can_dispatch": false,
+          "can_approve": false,
+          "can_share": false
+        },
+        "resource_budget_scope": "I1_local_parser_only_not_production_capacity"
+      }
+    },
+    {
+      "id": "T10",
+      "original_expected": "CANONICAL_SOURCE_DUPLICATE_T01",
+      "actual_preview": {
+        "schema_version": "case-excel-preview-v0.3",
+        "template_identity": "case-excel-intake-v0.3-review-candidate",
+        "file_sha256": "cfe3983e8a2e4d36dac775c5b815bc73bbafcbeba0a8b9b36df555910346141d",
+        "registry_sha256": "95463b7faf241bd090afda70bdc34a09584b386645bb0a1981673a5c1fbe1e08",
+        "basis_mapping_version": "case-excel-observation-basis-v0.3.1",
+        "excluded_sheets": [
+          "使用说明",
+          "字段字典",
+          "示例-案例清单",
+          "示例-结构分段",
+          "示例-来源与许可"
+        ],
+        "rows": [
+          {
+            "row": 5,
+            "external_case_key": "AUDIT-NEWS-001",
+            "raw": {
+              "external_case_key": "AUDIT-NEWS-001",
+              "source_platform": "抖音",
+              "submission_mode": "链接/视频待解析",
+              "source_url": "https://www.douyin.com/video/7999999999999999001",
+              "media_filename": "",
+              "source_title": "【自拟】全虚构审计样本AUDIT-NEWS-001",
+              "industry_hint": "",
+              "profile_hint": "news",
+              "video_content_type_hint": "新闻体",
+              "other_type_note": "",
+              "duration_seconds_hint": "",
+              "topic": "",
+              "hook_candidate": "",
+              "structure_summary": "",
+              "narration_excerpt": "",
+              "visual_observation": "",
+              "creative_reference": "",
+              "risk_notes": "",
+              "observation_basis": "未观看原视频",
+              "display_title_hint": "",
+              "display_structure_hint": ""
+            },
+            "segments": [],
+            "rights": null,
+            "row_sha256": "4f98d796798ee07762b909a6c0e8eb037f84967aa099db0e84aeabd1755819ac",
+            "trust": "unverified_submitter_description",
+            "media_binding": "unbound",
+            "rights_state": "unknown",
+            "approved_video_type": null,
+            "canonical_source_key": "douyin:7999999999999999001",
+            "observation_basis": {
+              "raw": "未观看原视频",
+              "normalized": "未观看原视频",
+              "mapping_version": "case-excel-observation-basis-v0.3.1"
+            },
+            "suggested_video_type": "news",
+            "issues": [],
+            "status": "unverified_preview"
+          },
+          {
+            "row": 6,
+            "external_case_key": "AUDIT-DUP-010",
+            "raw": {
+              "external_case_key": "AUDIT-DUP-010",
+              "source_platform": "抖音",
+              "submission_mode": "链接/视频待解析",
+              "source_url": "https://www.douyin.com/video/7999999999999999001",
+              "media_filename": "",
+              "source_title": "【自拟】全虚构审计样本AUDIT-DUP-010",
+              "industry_hint": "",
+              "profile_hint": "",
+              "video_content_type_hint": "新闻体",
+              "other_type_note": "",
+              "duration_seconds_hint": "",
+              "topic": "",
+              "hook_candidate": "",
+              "structure_summary": "",
+              "narration_excerpt": "",
+              "visual_observation": "",
+              "creative_reference": "",
+              "risk_notes": "",
+              "observation_basis": "未观看原视频",
+              "display_title_hint": "",
+              "display_structure_hint": ""
+            },
+            "segments": [],
+            "rights": null,
+            "row_sha256": "5738de0ff56dd0f88b17d9e4331ed9ce0957cd84cef712abc6b4f588b1b7e780",
+            "trust": "unverified_submitter_description",
+            "media_binding": "unbound",
+            "rights_state": "unknown",
+            "approved_video_type": null,
+            "canonical_source_key": "douyin:7999999999999999001",
+            "observation_basis": {
+              "raw": "未观看原视频",
+              "normalized": "未观看原视频",
+              "mapping_version": "case-excel-observation-basis-v0.3.1"
+            },
+            "suggested_video_type": "news",
+            "issues": [
+              {
+                "sheet": "案例清单",
+                "row": 6,
+                "field": "source_url",
+                "code": "DUPLICATE_SOURCE_IN_WORKBOOK",
+                "severity": "error"
+              }
+            ],
+            "status": "invalid"
+          }
+        ],
+        "issues": [
+          {
+            "sheet": "案例清单",
+            "row": 6,
+            "field": "source_url",
+            "code": "DUPLICATE_SOURCE_IN_WORKBOOK",
+            "severity": "error"
+          }
+        ],
+        "authority": {
+          "can_persist": false,
+          "can_dispatch": false,
+          "can_approve": false,
+          "can_share": false
+        },
+        "resource_budget_scope": "I1_local_parser_only_not_production_capacity"
+      }
+    },
+    {
+      "id": "T11",
+      "original_expected": "ROW_ERROR_MEDIA_BINDING_MISSING",
+      "actual_preview": {
+        "schema_version": "case-excel-preview-v0.3",
+        "template_identity": "case-excel-intake-v0.3-review-candidate",
+        "file_sha256": "5ad9e5fd96d8dddf106d0ea94a2689dfbf0167e26d8a711f4d882b0257d2e02b",
+        "registry_sha256": "95463b7faf241bd090afda70bdc34a09584b386645bb0a1981673a5c1fbe1e08",
+        "basis_mapping_version": "case-excel-observation-basis-v0.3.1",
+        "excluded_sheets": [
+          "使用说明",
+          "字段字典",
+          "示例-案例清单",
+          "示例-结构分段",
+          "示例-来源与许可"
+        ],
+        "rows": [
+          {
+            "row": 5,
+            "external_case_key": "AUDIT-MEDIA-011",
+            "raw": {
+              "external_case_key": "AUDIT-MEDIA-011",
+              "source_platform": "抖音",
+              "submission_mode": "链接/视频待解析",
+              "source_url": "",
+              "media_filename": "not-uploaded.mp4",
+              "source_title": "【自拟】全虚构审计样本AUDIT-MEDIA-011",
+              "industry_hint": "",
+              "profile_hint": "",
+              "video_content_type_hint": "故事型",
+              "other_type_note": "",
+              "duration_seconds_hint": "",
+              "topic": "",
+              "hook_candidate": "",
+              "structure_summary": "",
+              "narration_excerpt": "",
+              "visual_observation": "",
+              "creative_reference": "",
+              "risk_notes": "",
+              "observation_basis": "未观看原视频",
+              "display_title_hint": "",
+              "display_structure_hint": ""
+            },
+            "segments": [],
+            "rights": null,
+            "row_sha256": "ffdcfa77e9bc2036f7743c3fa9d5fe1c537c1fcb78726f3cb9e0cdbb0da18fec",
+            "trust": "unverified_submitter_description",
+            "media_binding": "unbound",
+            "rights_state": "unknown",
+            "approved_video_type": null,
+            "canonical_source_key": null,
+            "observation_basis": {
+              "raw": "未观看原视频",
+              "normalized": "未观看原视频",
+              "mapping_version": "case-excel-observation-basis-v0.3.1"
+            },
+            "suggested_video_type": "story",
+            "issues": [
+              {
+                "sheet": "案例清单",
+                "row": 5,
+                "field": "media_filename",
+                "code": "MEDIA_UPLOAD_BINDING_REQUIRED",
+                "severity": "pending"
+              }
+            ],
+            "status": "unverified_preview"
+          }
+        ],
+        "issues": [
+          {
+            "sheet": "案例清单",
+            "row": 5,
+            "field": "media_filename",
+            "code": "MEDIA_UPLOAD_BINDING_REQUIRED",
+            "severity": "pending"
+          }
+        ],
+        "authority": {
+          "can_persist": false,
+          "can_dispatch": false,
+          "can_approve": false,
+          "can_share": false
+        },
+        "resource_budget_scope": "I1_local_parser_only_not_production_capacity"
+      }
+    },
+    {
+      "id": "T12",
+      "original_expected": "ROW_ERROR_RESERVED_DEMO_KEY",
+      "actual_preview": {
+        "schema_version": "case-excel-preview-v0.3",
+        "template_identity": "case-excel-intake-v0.3-review-candidate",
+        "file_sha256": "06f0d8a13700c1c2162584f7b072ce80f0410ce6624156bd224ace0c6855657b",
+        "registry_sha256": "95463b7faf241bd090afda70bdc34a09584b386645bb0a1981673a5c1fbe1e08",
+        "basis_mapping_version": "case-excel-observation-basis-v0.3.1",
+        "excluded_sheets": [
+          "使用说明",
+          "字段字典",
+          "示例-案例清单",
+          "示例-结构分段",
+          "示例-来源与许可"
+        ],
+        "rows": [
+          {
+            "row": 5,
+            "external_case_key": "DEMO-MIX-001",
+            "raw": {
+              "external_case_key": "DEMO-MIX-001",
+              "source_platform": "抖音",
+              "submission_mode": "链接/视频待解析",
+              "source_url": "https://www.douyin.com/video/7999999999999999001",
+              "media_filename": "",
+              "source_title": "【自拟】全虚构审计样本DEMO-MIX-001",
+              "industry_hint": "",
+              "profile_hint": "",
+              "video_content_type_hint": "人设型",
+              "other_type_note": "",
+              "duration_seconds_hint": "",
+              "topic": "",
+              "hook_candidate": "",
+              "structure_summary": "",
+              "narration_excerpt": "",
+              "visual_observation": "",
+              "creative_reference": "",
+              "risk_notes": "",
+              "observation_basis": "未观看原视频",
+              "display_title_hint": "",
+              "display_structure_hint": ""
+            },
+            "segments": [],
+            "rights": null,
+            "row_sha256": "8b50a33198e2e9cd6e081966b6204840b4fe5b7cf3462b9b2f9174ae9ebdc706",
+            "trust": "unverified_submitter_description",
+            "media_binding": "unbound",
+            "rights_state": "unknown",
+            "approved_video_type": null,
+            "canonical_source_key": "douyin:7999999999999999001",
+            "observation_basis": {
+              "raw": "未观看原视频",
+              "normalized": "未观看原视频",
+              "mapping_version": "case-excel-observation-basis-v0.3.1"
+            },
+            "suggested_video_type": "persona",
+            "issues": [
+              {
+                "sheet": "案例清单",
+                "row": 5,
+                "field": "external_case_key",
+                "code": "EXTERNAL_KEY_INVALID_OR_RESERVED",
+                "severity": "error"
+              }
+            ],
+            "status": "invalid"
+          }
+        ],
+        "issues": [
+          {
+            "sheet": "案例清单",
+            "row": 5,
+            "field": "external_case_key",
+            "code": "EXTERNAL_KEY_INVALID_OR_RESERVED",
+            "severity": "error"
+          }
+        ],
+        "authority": {
+          "can_persist": false,
+          "can_dispatch": false,
+          "can_approve": false,
+          "can_share": false
+        },
+        "resource_budget_scope": "I1_local_parser_only_not_production_capacity"
+      }
+    },
+    {
+      "id": "T13",
+      "original_expected": "ROW_ERROR_NONCONTIGUOUS_ORDER",
+      "actual_preview": {
+        "schema_version": "case-excel-preview-v0.3",
+        "template_identity": "case-excel-intake-v0.3-review-candidate",
+        "file_sha256": "31af985a0a3fedf750e564534fd54a30ee90bee90a1ebf0d028a8f436c3dd900",
+        "registry_sha256": "95463b7faf241bd090afda70bdc34a09584b386645bb0a1981673a5c1fbe1e08",
+        "basis_mapping_version": "case-excel-observation-basis-v0.3.1",
+        "excluded_sheets": [
+          "使用说明",
+          "字段字典",
+          "示例-案例清单",
+          "示例-结构分段",
+          "示例-来源与许可"
+        ],
+        "rows": [
+          {
+            "row": 5,
+            "external_case_key": "AUDIT-TIME-013",
+            "raw": {
+              "external_case_key": "AUDIT-TIME-013",
+              "source_platform": "抖音",
+              "submission_mode": "已整理结构待核验",
+              "source_url": "https://www.douyin.com/video/7999999999999999001",
+              "media_filename": "",
+              "source_title": "【自拟】全虚构审计样本AUDIT-TIME-013",
+              "industry_hint": "",
+              "profile_hint": "",
+              "video_content_type_hint": "故事型",
+              "other_type_note": "",
+              "duration_seconds_hint": "",
+              "topic": "虚构时序",
+              "hook_candidate": "",
+              "structure_summary": "两个分段",
+              "narration_excerpt": "",
+              "visual_observation": "",
+              "creative_reference": "",
+              "risk_notes": "",
+              "observation_basis": "未观看原视频",
+              "display_title_hint": "",
+              "display_structure_hint": ""
+            },
+            "segments": [
+              {
+                "row": 5,
+                "raw": {
+                  "external_case_key": "AUDIT-TIME-013",
+                  "segment_order": "1",
+                  "start_seconds_hint": "",
+                  "end_seconds_hint": "",
+                  "narrative_role_hint": "",
+                  "narration_excerpt": "",
+                  "visual_or_ocr_observation": "",
+                  "structural_value": "",
+                  "evidence_locator": "",
+                  "segment_basis": ""
+                },
+                "trust": "unverified_manual_notes"
+              },
+              {
+                "row": 6,
+                "raw": {
+                  "external_case_key": "AUDIT-TIME-013",
+                  "segment_order": "3",
+                  "start_seconds_hint": "",
+                  "end_seconds_hint": "",
+                  "narrative_role_hint": "",
+                  "narration_excerpt": "",
+                  "visual_or_ocr_observation": "",
+                  "structural_value": "",
+                  "evidence_locator": "",
+                  "segment_basis": ""
+                },
+                "trust": "unverified_manual_notes"
+              }
+            ],
+            "rights": null,
+            "row_sha256": "e8e42b3a70e8420e0e45963655eb78a100246cee5daf009412937372d7de4039",
+            "trust": "unverified_submitter_description",
+            "media_binding": "unbound",
+            "rights_state": "unknown",
+            "approved_video_type": null,
+            "canonical_source_key": "douyin:7999999999999999001",
+            "observation_basis": {
+              "raw": "未观看原视频",
+              "normalized": "未观看原视频",
+              "mapping_version": "case-excel-observation-basis-v0.3.1"
+            },
+            "suggested_video_type": "story",
+            "issues": [
+              {
+                "sheet": "结构分段",
+                "row": 5,
+                "field": "segment_order",
+                "code": "SEGMENT_ORDER_NOT_CONTIGUOUS_UNIQUE",
+                "severity": "error"
+              }
+            ],
+            "status": "invalid"
+          }
+        ],
+        "issues": [
+          {
+            "sheet": "结构分段",
+            "row": 5,
+            "field": "segment_order",
+            "code": "SEGMENT_ORDER_NOT_CONTIGUOUS_UNIQUE",
+            "severity": "error"
+          }
+        ],
+        "authority": {
+          "can_persist": false,
+          "can_dispatch": false,
+          "can_approve": false,
+          "can_share": false
+        },
+        "resource_budget_scope": "I1_local_parser_only_not_production_capacity"
+      }
+    },
+    {
+      "id": "T14",
+      "original_expected": "PENDING_SOURCE_CONTRACT_AFTER_REAL_UPLOAD",
+      "actual_preview": {
+        "schema_version": "case-excel-preview-v0.3",
+        "template_identity": "case-excel-intake-v0.3-review-candidate",
+        "file_sha256": "ad4ef4176832ec5883c3b63c8898eeecee0c2c245ecb09039908ce5807ab7c02",
+        "registry_sha256": "95463b7faf241bd090afda70bdc34a09584b386645bb0a1981673a5c1fbe1e08",
+        "basis_mapping_version": "case-excel-observation-basis-v0.3.1",
+        "excluded_sheets": [
+          "使用说明",
+          "字段字典",
+          "示例-案例清单",
+          "示例-结构分段",
+          "示例-来源与许可"
+        ],
+        "rows": [
+          {
+            "row": 5,
+            "external_case_key": "AUDIT-LOCAL-014",
+            "raw": {
+              "external_case_key": "AUDIT-LOCAL-014",
+              "source_platform": "本地文件",
+              "submission_mode": "链接/视频待解析",
+              "source_url": "",
+              "media_filename": "future-synthetic-source.mp4",
+              "source_title": "【自拟】全虚构审计样本AUDIT-LOCAL-014",
+              "industry_hint": "",
+              "profile_hint": "",
+              "video_content_type_hint": "人设型",
+              "other_type_note": "",
+              "duration_seconds_hint": "",
+              "topic": "",
+              "hook_candidate": "",
+              "structure_summary": "",
+              "narration_excerpt": "",
+              "visual_observation": "",
+              "creative_reference": "",
+              "risk_notes": "",
+              "observation_basis": "未观看原视频",
+              "display_title_hint": "",
+              "display_structure_hint": ""
+            },
+            "segments": [],
+            "rights": null,
+            "row_sha256": "06eaaa6a8c65581b03b8c3e3c0e04c11623d45d792e6f65e741b00520ca2ba61",
+            "trust": "unverified_submitter_description",
+            "media_binding": "unbound",
+            "rights_state": "unknown",
+            "approved_video_type": null,
+            "canonical_source_key": null,
+            "observation_basis": {
+              "raw": "未观看原视频",
+              "normalized": "未观看原视频",
+              "mapping_version": "case-excel-observation-basis-v0.3.1"
+            },
+            "suggested_video_type": "persona",
+            "issues": [
+              {
+                "sheet": "案例清单",
+                "row": 5,
+                "field": "media_filename",
+                "code": "MEDIA_UPLOAD_BINDING_REQUIRED",
+                "severity": "pending"
+              }
+            ],
+            "status": "unverified_preview"
+          }
+        ],
+        "issues": [
+          {
+            "sheet": "案例清单",
+            "row": 5,
+            "field": "media_filename",
+            "code": "MEDIA_UPLOAD_BINDING_REQUIRED",
+            "severity": "pending"
+          }
+        ],
+        "authority": {
+          "can_persist": false,
+          "can_dispatch": false,
+          "can_approve": false,
+          "can_share": false
+        },
+        "resource_budget_scope": "I1_local_parser_only_not_production_capacity"
+      }
+    },
+    {
+      "id": "T15",
+      "original_expected": "CANDIDATE_WITH_UNKNOWN_RIGHTS",
+      "actual_preview": {
+        "schema_version": "case-excel-preview-v0.3",
+        "template_identity": "case-excel-intake-v0.3-review-candidate",
+        "file_sha256": "2d32eb891b2cec797f11bfd8e12ac85675e66ed9df38206612fb2bd19243e8bc",
+        "registry_sha256": "95463b7faf241bd090afda70bdc34a09584b386645bb0a1981673a5c1fbe1e08",
+        "basis_mapping_version": "case-excel-observation-basis-v0.3.1",
+        "excluded_sheets": [
+          "使用说明",
+          "字段字典",
+          "示例-案例清单",
+          "示例-结构分段",
+          "示例-来源与许可"
+        ],
+        "rows": [
+          {
+            "row": 5,
+            "external_case_key": "AUDIT-RIGHTS-015",
+            "raw": {
+              "external_case_key": "AUDIT-RIGHTS-015",
+              "source_platform": "抖音",
+              "submission_mode": "链接/视频待解析",
+              "source_url": "https://www.douyin.com/video/7999999999999999001",
+              "media_filename": "",
+              "source_title": "【自拟】全虚构审计样本AUDIT-RIGHTS-015",
+              "industry_hint": "",
+              "profile_hint": "",
+              "video_content_type_hint": "新闻体",
+              "other_type_note": "",
+              "duration_seconds_hint": "",
+              "topic": "",
+              "hook_candidate": "",
+              "structure_summary": "",
+              "narration_excerpt": "",
+              "visual_observation": "",
+              "creative_reference": "",
+              "risk_notes": "",
+              "observation_basis": "未观看原视频",
+              "display_title_hint": "",
+              "display_structure_hint": ""
+            },
+            "segments": [],
+            "rights": null,
+            "row_sha256": "a570c9657e5c0cc8378881e83daca66d64f0ad1dbdda17d5e0db91b7979322ad",
+            "trust": "unverified_submitter_description",
+            "media_binding": "unbound",
+            "rights_state": "unknown",
+            "approved_video_type": null,
+            "canonical_source_key": "douyin:7999999999999999001",
+            "observation_basis": {
+              "raw": "未观看原视频",
+              "normalized": "未观看原视频",
+              "mapping_version": "case-excel-observation-basis-v0.3.1"
+            },
+            "suggested_video_type": "news",
+            "issues": [],
+            "status": "unverified_preview"
+          }
+        ],
+        "issues": [],
+        "authority": {
+          "can_persist": false,
+          "can_dispatch": false,
+          "can_approve": false,
+          "can_share": false
+        },
+        "resource_budget_scope": "I1_local_parser_only_not_production_capacity"
+      }
+    },
+    {
+      "id": "T16",
+      "original_expected": "ROW_REVIEW_OR_ERROR_UNSUPPORTED_OBSERVATION",
+      "actual_preview": {
+        "schema_version": "case-excel-preview-v0.3",
+        "template_identity": "case-excel-intake-v0.3-review-candidate",
+        "file_sha256": "aa38e38a5d7c1548f36f0638d53c9ac302d07f4cc20111cc8d1a9ee6b4d1dd6d",
+        "registry_sha256": "95463b7faf241bd090afda70bdc34a09584b386645bb0a1981673a5c1fbe1e08",
+        "basis_mapping_version": "case-excel-observation-basis-v0.3.1",
+        "excluded_sheets": [
+          "使用说明",
+          "字段字典",
+          "示例-案例清单",
+          "示例-结构分段",
+          "示例-来源与许可"
+        ],
+        "rows": [
+          {
+            "row": 5,
+            "external_case_key": "AUDIT-VISUAL-016",
+            "raw": {
+              "external_case_key": "AUDIT-VISUAL-016",
+              "source_platform": "抖音",
+              "submission_mode": "链接/视频待解析",
+              "source_url": "https://www.douyin.com/video/7999999999999999001",
+              "media_filename": "",
+              "source_title": "【自拟】全虚构审计样本AUDIT-VISUAL-016",
+              "industry_hint": "",
+              "profile_hint": "",
+              "video_content_type_hint": "新闻体",
+              "other_type_note": "",
+              "duration_seconds_hint": "",
+              "topic": "",
+              "hook_candidate": "",
+              "structure_summary": "",
+              "narration_excerpt": "",
+              "visual_observation": "声称亲见的虚构画面",
+              "creative_reference": "",
+              "risk_notes": "",
+              "observation_basis": "未观看原视频",
+              "display_title_hint": "",
+              "display_structure_hint": ""
+            },
+            "segments": [],
+            "rights": null,
+            "row_sha256": "0b4c1becebcba682c7d0292d820f3ae4bf18f73c14f0364003827e1e95247815",
+            "trust": "unverified_submitter_description",
+            "media_binding": "unbound",
+            "rights_state": "unknown",
+            "approved_video_type": null,
+            "canonical_source_key": "douyin:7999999999999999001",
+            "observation_basis": {
+              "raw": "未观看原视频",
+              "normalized": "未观看原视频",
+              "mapping_version": "case-excel-observation-basis-v0.3.1"
+            },
+            "suggested_video_type": "news",
+            "issues": [
+              {
+                "sheet": "案例清单",
+                "row": 5,
+                "field": "observation_basis",
+                "code": "OBSERVATION_REQUIRES_PERSONAL_VIEWING",
+                "severity": "error"
+              }
+            ],
+            "status": "invalid"
+          }
+        ],
+        "issues": [
+          {
+            "sheet": "案例清单",
+            "row": 5,
+            "field": "observation_basis",
+            "code": "OBSERVATION_REQUIRES_PERSONAL_VIEWING",
+            "severity": "error"
+          }
+        ],
+        "authority": {
+          "can_persist": false,
+          "can_dispatch": false,
+          "can_approve": false,
+          "can_share": false
+        },
+        "resource_budget_scope": "I1_local_parser_only_not_production_capacity"
+      }
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+diff --git a/docs/deliveries/README.md b/docs/deliveries/README.md
+index 5c44ab7..4feecfa 100644
+--- a/docs/deliveries/README.md
++++ b/docs/deliveries/README.md
+@@ -7,6 +7,7 @@ not supersede them or authorize implementation, deployment or production use.
+ 
+ | Delivery | Editable Baseline | Status | Supporting documents |
+ |---|---|---|---|
++| CASE_EXCEL_IMPORT_1 | [V0.3 B0 audit](case-excel-import-1/CASE_EXCEL_IMPORT_V03_CURRENT_TRUTH.md) | V0.3 frozen; B0 approved with guards; I1 parser review ready; I2 exact write and I3 Authority pending | [Current review entry](case-excel-import-1/i1/README.md) |
+ | CREATION_BATCH_UX_1 | [BASELINE.md](creation-batch-ux-1/BASELINE.md) | Approved / Frozen, Revision 1; D-P01/02/03 determined. Design Readiness: PASS (planning scope only); R4-input Planning Preflight PASS; Plan R5 prestart materials ready, awaiting independent approval and stage authorization; freeze / execution not authorized | [Delivery entry](creation-batch-ux-1/README.md), [historical BR-01](creation-batch-ux-1/BASELINE_REVIEW_RECORD.md), [Plan R5](creation-batch-ux-1/PLAN.md) |
+ 
+ Each delivery's directory identifies its single editable Baseline. Historical

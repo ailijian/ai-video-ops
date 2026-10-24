@@ -1,0 +1,20 @@
+{
+  "protected_before_file_count": 849,
+  "unchanged_count": 848,
+  "expected_navigation_update_only": [
+    ".worktrees/cxi/docs/deliveries/README.md"
+  ],
+  "unexpected_changed": [],
+  "original_UAT_tasks": {
+    "count": 24,
+    "sha256": "16ad57f900cf0f998f44b3f44d8d541f1f5258050be8dc2ce120d545490da7e1",
+    "unchanged": true
+  },
+  "root_working_tree_status": "?? docs/template/\n",
+  "no_commit_push_merge_deploy": true,
+  "no_root_source_or_authority_mutation": true,
+  "preserved_baseline_sha256": "13844cf74cd3eaf3a80e104fad26fbf56aa4548204c26597ab2e9623625fd0c3",
+  "preserved_plan_R5_sha256": "f1ebd4283dc0e341aca7675c245e2c515cbab1e314af8843eee3e426831e07bb",
+  "original_cxi_misplaced_dependency_junction": "internal-console/ops-pipeline/.venv retained, not source or packaged evidence",
+  "dependency_junctions_added": "correct cc2 pipeline/Console and cxi Console .venv links to declared root runtimes; no dependencies modified"
+}

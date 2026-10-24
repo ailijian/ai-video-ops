@@ -1,13 +1,14 @@
 import { dashboardMarkup, dashboardSkeleton } from "./dashboard-view.mjs?v=dash-1";
 import { taskListRows, taskSourceResults, taskReadFailure, taskActivityRows } from "./task-list-view.mjs?v=ui-1";
 import { createApiClient } from "./api-client.js?v=customer-speaker-v1";
-import { createCaseViews } from "./case-views.js?v=case-recovery-ui1";
+import { createCaseViews } from "./case-views.js?v=excel-flow-4";
 import { createCustomerViews } from "./customer-views.js?v=cbux1-b234-3";
 import { progressPanel } from "./case-components.js?v=case-share-ui1";
 import { startTaskPolling } from "./task-progress.js?v=mobile-reliability-1";
 import { CUSTOM_INDUSTRY, industryOptions, industryValue as readIndustryValue, setIndustryValue, syncCustomIndustry } from "./case-industry.mjs?v=industry-2";
-import { matchWorkflowRoute } from "./routes.js";
+import { matchWorkflowRoute, safeExcelReturn, excelLoginPath } from "./routes.js?v=excel-flow-4";
 import { createCreationConfigViews } from "./creation-config-view.mjs?v=qualification-alert-1";
+import { createExcelPreviewViews } from "./case-excel-preview-view.mjs?v=excel-flow-4";
 import { createCreationBatchViews } from "./creation-batch-view.mjs?v=batch-state-read-2";
 import {
   createSpeakerViews,
@@ -80,7 +81,7 @@ const api = createApiClient({
   onUnauthorized: () => {
     state.user = null;
     state.csrfToken = null;
-    navigate("/login", true);
+    navigate(excelLoginPath(location.pathname+location.search), true);
   },
   onPasswordRequired: () => navigate("/change-password", true),
 });
@@ -350,7 +351,7 @@ function renderLogin() {
       });
       state.user = payload.user;
       state.csrfToken = payload.csrf_token;
-      navigate(payload.user.must_change_password ? "/change-password" : "/workbench", true);
+      navigate(payload.user.must_change_password ? "/change-password" : safeExcelReturn(new URLSearchParams(location.search).get('return_to')) || "/workbench", true);
     } catch (error) {
       errorBox.textContent = error.message;
       errorBox.classList.add("visible");
@@ -505,10 +506,11 @@ function renderLoadError(title, error) {
 }
 
 async function logout() {
+  const destination=excelLoginPath(location.pathname+location.search);
   try { await api("/api/auth/logout", { method: "POST" }); } catch { /* local session still clears */ }
   state.user = null;
   state.csrfToken = null;
-  navigate("/login", true);
+  navigate(destination, true);
 }
 
 const caseViews = createCaseViews({
@@ -564,6 +566,7 @@ const contentViews = createContentViews({
 
 const creationConfigViews = createCreationConfigViews({ app, api, shell, bindCommonActions,
   skeletonPage, renderLoadError, navigate });
+const excelPreviewViews = createExcelPreviewViews({ app, api, shell, bindCommonActions, navigate, openModal });
 const creationBatchViews = createCreationBatchViews({ app, api, shell, bindCommonActions,
   skeletonPage, renderLoadError });
 
@@ -645,19 +648,22 @@ async function renderRoute() {
   stopContentTaskPolling?.();
   stopContentTaskPolling = null;
   caseViews.dispose();
+  excelPreviewViews.dispose();
   customerViews.stopTaskPolling();
   speakerViews.stopTaskPolling();
   if (!state.user) {
-    if (path !== "/login") return navigate("/login", true);
+    if (path !== "/login") return navigate(excelLoginPath(location.pathname+location.search), true);
     return renderLogin();
   }
   if (state.user.must_change_password && path !== "/change-password") {
     return navigate("/change-password", true);
   }
-  if (path === "/login" || path === "/") return navigate("/workbench", true);
+  if (path === "/login" || path === "/") return navigate(path==='/login' ? safeExcelReturn(new URLSearchParams(location.search).get('return_to')) || '/workbench' : '/workbench', true);
   if (path === "/change-password") return renderChangePassword();
   if (path === "/workbench") return renderWorkbench();
   if (path === "/cases") return caseViews.renderCases();
+  if (path === "/cases/excel-preview") return excelPreviewViews.renderExcelPreview();
+  if (path === "/cases/excel-imports") return excelPreviewViews.renderImportHistory();
   if (path === "/cases/new") return caseViews.renderCaseNew();
   if (path === "/tasks") return renderTasks();
   if (path === "/customers") return customerViews.renderCustomers();
@@ -666,6 +672,7 @@ if (path === "/customers/new") return customerViews.renderCustomerNew();
   if (path === "/create/batch") return creationBatchViews.renderBatch();
   if (path === "/create") return contentViews.renderCreate();
   const workflowRoute = matchWorkflowRoute(path);
+  if (workflowRoute?.name === 'excel-import-result') return excelPreviewViews.renderImportResult(workflowRoute.value);
   if (workflowRoute?.name === "case-intake") return caseViews.renderIntakeGroup(workflowRoute.value);
   if (workflowRoute?.name === "case-classification") return caseViews.renderIntakeGroup(null, workflowRoute.value);
   if (

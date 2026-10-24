@@ -1,0 +1,349 @@
+{
+  "status": "CASE_EXCEL_IMPORT_V0_3_FOUNDER_TEMPLATE_FROZEN",
+  "native_contract_status": "AUDIT_ONLY_NOT_APPROVED_NOT_IMPLEMENTED",
+  "source_files": [
+    {
+      "source_path": "E:\\projects\\ai-video-ops\\docs\\template\\鲸汤案例快速导入模板 V0.3.xlsx",
+      "review_copy": "inputs/鲸汤案例快速导入模板 V0.3.xlsx",
+      "sha256": "d720aa257d90955a0c8209756b1d6d8da49a789d250e28cf716890ab21a8664f",
+      "bytes": 40367
+    },
+    {
+      "source_path": "E:\\projects\\ai-video-ops\\docs\\template\\鲸汤案例快速导入模板对应字段与校验规则 V0.3.json",
+      "review_copy": "inputs/鲸汤案例快速导入模板对应字段与校验规则 V0.3.json",
+      "sha256": "95463b7faf241bd090afda70bdc34a09584b386645bb0a1981673a5c1fbe1e08",
+      "bytes": 15319
+    }
+  ],
+  "schema_id": "case-excel-intake-v0.3-review-candidate",
+  "json_declared_status": "design_candidate_pending_current_native_case_contract_review",
+  "identity_cell": {
+    "sheet": "使用说明",
+    "cell": "B3",
+    "value": "case-excel-intake-v0.3-review-candidate"
+  },
+  "sheet_names": [
+    "使用说明",
+    "案例清单",
+    "结构分段",
+    "来源与许可",
+    "字段字典",
+    "示例-案例清单",
+    "示例-结构分段",
+    "示例-来源与许可"
+  ],
+  "input_sheets": [
+    "案例清单",
+    "结构分段",
+    "来源与许可"
+  ],
+  "excluded_sheets": [
+    "使用说明",
+    "字段字典",
+    "示例-案例清单",
+    "示例-结构分段",
+    "示例-来源与许可"
+  ],
+  "formal_data": {
+    "案例清单": {
+      "machine_fields": [
+        {
+          "column": "A",
+          "key": "external_case_key",
+          "label": "案例编号 *"
+        },
+        {
+          "column": "B",
+          "key": "source_platform",
+          "label": "来源平台 *"
+        },
+        {
+          "column": "C",
+          "key": "submission_mode",
+          "label": "提交方式 *"
+        },
+        {
+          "column": "D",
+          "key": "source_url",
+          "label": "原视频链接"
+        },
+        {
+          "column": "E",
+          "key": "media_filename",
+          "label": "视频文件名"
+        },
+        {
+          "column": "F",
+          "key": "source_title",
+          "label": "视频标题/暂定名称 *"
+        },
+        {
+          "column": "G",
+          "key": "industry_hint",
+          "label": "行业建议"
+        },
+        {
+          "column": "H",
+          "key": "profile_hint",
+          "label": "制作形态建议"
+        },
+        {
+          "column": "I",
+          "key": "video_content_type_hint",
+          "label": "视频内容类型建议"
+        },
+        {
+          "column": "J",
+          "key": "other_type_note",
+          "label": "其它类型说明"
+        },
+        {
+          "column": "K",
+          "key": "duration_seconds_hint",
+          "label": "视频时长（秒）"
+        },
+        {
+          "column": "L",
+          "key": "topic",
+          "label": "内容主题"
+        },
+        {
+          "column": "M",
+          "key": "hook_candidate",
+          "label": "开头钩子"
+        },
+        {
+          "column": "N",
+          "key": "structure_summary",
+          "label": "结构摘要"
+        },
+        {
+          "column": "O",
+          "key": "narration_excerpt",
+          "label": "口播/字幕摘录"
+        },
+        {
+          "column": "P",
+          "key": "visual_observation",
+          "label": "画面观察（仅亲见）"
+        },
+        {
+          "column": "Q",
+          "key": "creative_reference",
+          "label": "可借鉴创作机制"
+        },
+        {
+          "column": "R",
+          "key": "risk_notes",
+          "label": "待核实事实与风险"
+        },
+        {
+          "column": "S",
+          "key": "observation_basis",
+          "label": "填写依据 *"
+        },
+        {
+          "column": "T",
+          "key": "display_title_hint",
+          "label": "展示标题建议"
+        },
+        {
+          "column": "U",
+          "key": "display_structure_hint",
+          "label": "展示结构摘要建议"
+        }
+      ],
+      "machine_field_count": 21,
+      "nonempty_business_rows": [],
+      "validations": [
+        {
+          "range": "B5:B105",
+          "formula": "\"抖音,视频号,快手,B站,本地文件,其他,未知\""
+        },
+        {
+          "range": "C5:C105",
+          "formula": "\"链接/视频待解析,已整理结构待核验,仅文字待补证\""
+        },
+        {
+          "range": "G5:G105",
+          "formula": "\"餐饮,零售,生活服务,教育,文旅,企业服务,其他,不确定\""
+        },
+        {
+          "range": "H5:H105",
+          "formula": "\"mix,news,hybrid,uncertain\""
+        },
+        {
+          "range": "I5:I105",
+          "formula": "\"新闻体,人设型,故事型,高转化型,其它,待判断\""
+        },
+        {
+          "range": "S5:S105",
+          "formula": "\"本人已观看视频,未观看原视频,整理他人笔记,仅有文字资料,未知\""
+        }
+      ]
+    },
+    "结构分段": {
+      "machine_fields": [
+        {
+          "column": "A",
+          "key": "external_case_key",
+          "label": "案例编号 *"
+        },
+        {
+          "column": "B",
+          "key": "segment_order",
+          "label": "段落序号 *"
+        },
+        {
+          "column": "C",
+          "key": "start_seconds_hint",
+          "label": "开始秒（核验后）"
+        },
+        {
+          "column": "D",
+          "key": "end_seconds_hint",
+          "label": "结束秒（核验后）"
+        },
+        {
+          "column": "E",
+          "key": "narrative_role_hint",
+          "label": "段落作用建议"
+        },
+        {
+          "column": "F",
+          "key": "narration_excerpt",
+          "label": "口播/字幕节选"
+        },
+        {
+          "column": "G",
+          "key": "visual_or_ocr_observation",
+          "label": "画面或画面文字（仅亲见）"
+        },
+        {
+          "column": "H",
+          "key": "structural_value",
+          "label": "为何值得借鉴"
+        },
+        {
+          "column": "I",
+          "key": "evidence_locator",
+          "label": "证据定位（人工参考）"
+        },
+        {
+          "column": "J",
+          "key": "segment_basis",
+          "label": "段落依据"
+        }
+      ],
+      "machine_field_count": 10,
+      "nonempty_business_rows": [],
+      "validations": [
+        {
+          "range": "E5:E105",
+          "formula": "\"开场,问题,信息点,过程,展示,证据线索,注意事项,收束,其他\""
+        },
+        {
+          "range": "J5:J105",
+          "formula": "\"本人观看（待核）,整理资料（未看视频）,他人转述（未核）,未知\""
+        }
+      ]
+    },
+    "来源与许可": {
+      "machine_fields": [
+        {
+          "column": "A",
+          "key": "external_case_key",
+          "label": "案例编号 *"
+        },
+        {
+          "column": "B",
+          "key": "source_verification",
+          "label": "来源核验现状"
+        },
+        {
+          "column": "C",
+          "key": "provider_reference",
+          "label": "素材提供方信息"
+        },
+        {
+          "column": "D",
+          "key": "text_display_rights_claim",
+          "label": "展示文字许可声明"
+        },
+        {
+          "column": "E",
+          "key": "cover_rights_claim",
+          "label": "封面展示许可声明"
+        },
+        {
+          "column": "F",
+          "key": "media_reuse_claim",
+          "label": "原视频素材复用状态"
+        },
+        {
+          "column": "G",
+          "key": "privacy_risk_claim",
+          "label": "可能涉及敏感信息"
+        },
+        {
+          "column": "H",
+          "key": "rights_risk_notes",
+          "label": "隐私与权利备注"
+        },
+        {
+          "column": "I",
+          "key": "supporting_document_ref",
+          "label": "其他凭证编号"
+        }
+      ],
+      "machine_field_count": 9,
+      "nonempty_business_rows": [],
+      "validations": [
+        {
+          "range": "B5:B105",
+          "formula": "\"未核对,投稿人自述已核对,有来源文件待平台核对\""
+        },
+        {
+          "range": "D5:D105",
+          "formula": "\"未确认,投稿人声称允许,明确不允许\""
+        },
+        {
+          "range": "E5:E105",
+          "formula": "\"未确认,投稿人声称允许,明确不允许\""
+        },
+        {
+          "range": "F5:F105",
+          "formula": "\"未确认,投稿人声称允许,明确不允许\""
+        },
+        {
+          "range": "G5:G105",
+          "formula": "\"未知,可能有,未发现（投稿自述）\""
+        }
+      ]
+    }
+  },
+  "candidate_rows_read": 0,
+  "reserved_demo_keys": [
+    "DEMO-MIX-001",
+    "DEMO-NEWS-002",
+    "DEMO-TEXT-003",
+    "DEMO-PERSONA-004",
+    "DEMO-STORY-005",
+    "DEMO-CONVERSION-006"
+  ],
+  "excluded_sheet_rows_never_promoted": true,
+  "zip": {
+    "crc": "PASS",
+    "entry_count": 15,
+    "compressed_file_bytes": 40367,
+    "total_uncompressed_bytes": 215446,
+    "max_entry_bytes": 43892,
+    "duplicate_members": [],
+    "unsafe_member_paths": [],
+    "active_or_external_parts": [],
+    "encrypted_entries": []
+  },
+  "cell_formulas": [],
+  "external_relationships": [],
+  "verification_scope": "Read-only raw OOXML/ZIP audit, not a production import adapter or comprehensive hostile-parser validation"
+}

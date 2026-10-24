@@ -1,0 +1,25 @@
+{
+  "status": "PASS_WITH_DOCUMENTED_OPEN_ARCHITECTURE_GATES",
+  "code_head": "4287234e5aa7f711751d7ec06dd0935ad6acbab2",
+  "template_sha_and_crc": "PASS",
+  "original_business_rows": 0,
+  "formal_field_mappings": 40,
+  "unique_source_anchors": 33,
+  "source_function_lines_and_SHA_at_HEAD": "PASS",
+  "relative_document_links": "PASS",
+  "protected_native_files": 616,
+  "existing_unique_owner_checks_passed": 22,
+  "new_import_tests": "NOT_RUN_NOT_IMPLEMENTED",
+  "synthetic_input_designs": 16,
+  "additional_test_matrix_designs": 14,
+  "open_native_delta_ids": [
+    "IB-01",
+    "SI-01",
+    "ME-01",
+    "CC-01",
+    "CC-02"
+  ],
+  "no_formal_plan_schema_adapter_approval_or_business_write": true,
+  "no_functional_source_or_test_modification": true,
+  "review_scope": "B0 current truth / contract proposals / minimal implementation and isolated preflight design only"
+}

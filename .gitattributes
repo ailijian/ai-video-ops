@@ -120,3 +120,26 @@
 /ops-pipeline/tests/test_creation_batch_review_input_v1.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 /ops-pipeline/tests/test_creative_style_v1.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
 /ops-pipeline/tests/test_native_batch_contract_v1.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+
+# Preserve exact accepted Excel I1/I2 checkpoint bytes and retained evidence SHA.
+/docs/deliveries/case-excel-import-1/** -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/docs/deliveries/README.md -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/internal-console/app/case_excel_import.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/internal-console/app/case_excel_import_http.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/internal-console/app/case_excel_preview.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/internal-console/app/case_excel_preview_http.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/internal-console/app/case_excel_v03_template.json -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/internal-console/app/case_intake_service.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/internal-console/static/assets/case-excel-import-session.mjs -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/internal-console/static/assets/case-excel-import-view.mjs -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/internal-console/static/assets/case-excel-preview-view.mjs -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/internal-console/static/assets/case-excel-preview.css -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/internal-console/static/assets/case-views.js -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/internal-console/static/assets/routes.js -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/internal-console/tests/js/case-excel-import-navigation.test.mjs -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/internal-console/tests/js/case-excel-import-session.test.mjs -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/internal-console/tests/js/case-excel-import-view.test.mjs -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/internal-console/tests/js/case-excel-preview-view.test.mjs -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/internal-console/tests/test_case_excel_import.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/internal-console/tests/test_case_excel_preview_http.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol
+/internal-console/tests/test_case_excel_preview_v03.py -text whitespace=blank-at-eol,blank-at-eof,space-before-tab,cr-at-eol

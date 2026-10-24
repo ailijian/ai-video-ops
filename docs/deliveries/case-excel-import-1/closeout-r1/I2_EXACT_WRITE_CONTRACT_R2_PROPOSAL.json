@@ -1,0 +1,673 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "proposal_status": "DRAFT_NOT_APPROVED_NOT_CONSUMED",
+  "contract_candidate": "case-excel-import-private-candidate-v0.2-proposal",
+  "template_identity": "case-excel-intake-v0.3-review-candidate",
+  "approval_prerequisites": [
+    "I1 parser core accepted; new HTTP seam independently reviewable; complete Console regression separately recorded",
+    "A1 exact storage/locks/recovery schema approved",
+    "A2 evidence boundary approved",
+    "A1 approve exact row-to-existing-native-upload reference binding and expiration/revalidation behavior"
+  ],
+  "$defs": {
+    "Batch": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "case-excel-import-batch-v0.2-proposal"
+        },
+        "batch_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{1,127}$"
+        },
+        "owner_user_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "file_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "registry_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "parser_source_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "template_identity": {
+          "const": "case-excel-intake-v0.3-review-candidate"
+        },
+        "row_refs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "row_id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{1,127}$"
+              },
+              "source_row": {
+                "type": "integer",
+                "minimum": 5
+              },
+              "row_sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "required": [
+              "row_id",
+              "source_row",
+              "row_sha256"
+            ]
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "batch_id",
+        "owner_user_id",
+        "file_sha256",
+        "registry_sha256",
+        "parser_source_sha256",
+        "template_identity",
+        "row_refs"
+      ]
+    },
+    "Row": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "case-excel-import-row-v0.2-proposal"
+        },
+        "batch_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{1,127}$"
+        },
+        "row_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{1,127}$"
+        },
+        "owner_user_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "raw_case": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "external_case_key": {
+              "type": "string"
+            },
+            "source_platform": {
+              "type": "string"
+            },
+            "submission_mode": {
+              "type": "string"
+            },
+            "source_url": {
+              "type": "string"
+            },
+            "media_filename": {
+              "type": "string"
+            },
+            "source_title": {
+              "type": "string"
+            },
+            "industry_hint": {
+              "type": "string"
+            },
+            "profile_hint": {
+              "type": "string"
+            },
+            "video_content_type_hint": {
+              "type": "string"
+            },
+            "other_type_note": {
+              "type": "string"
+            },
+            "duration_seconds_hint": {
+              "type": "string"
+            },
+            "topic": {
+              "type": "string"
+            },
+            "hook_candidate": {
+              "type": "string"
+            },
+            "structure_summary": {
+              "type": "string"
+            },
+            "narration_excerpt": {
+              "type": "string"
+            },
+            "visual_observation": {
+              "type": "string"
+            },
+            "creative_reference": {
+              "type": "string"
+            },
+            "risk_notes": {
+              "type": "string"
+            },
+            "observation_basis": {
+              "type": "string"
+            },
+            "display_title_hint": {
+              "type": "string"
+            },
+            "display_structure_hint": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "external_case_key",
+            "source_platform",
+            "submission_mode",
+            "source_url",
+            "media_filename",
+            "source_title",
+            "industry_hint",
+            "profile_hint",
+            "video_content_type_hint",
+            "other_type_note",
+            "duration_seconds_hint",
+            "topic",
+            "hook_candidate",
+            "structure_summary",
+            "narration_excerpt",
+            "visual_observation",
+            "creative_reference",
+            "risk_notes",
+            "observation_basis",
+            "display_title_hint",
+            "display_structure_hint"
+          ]
+        },
+        "raw_segments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "external_case_key": {
+                "type": "string"
+              },
+              "segment_order": {
+                "type": "string"
+              },
+              "start_seconds_hint": {
+                "type": "string"
+              },
+              "end_seconds_hint": {
+                "type": "string"
+              },
+              "narrative_role_hint": {
+                "type": "string"
+              },
+              "narration_excerpt": {
+                "type": "string"
+              },
+              "visual_or_ocr_observation": {
+                "type": "string"
+              },
+              "structural_value": {
+                "type": "string"
+              },
+              "evidence_locator": {
+                "type": "string"
+              },
+              "segment_basis": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "external_case_key",
+              "segment_order",
+              "start_seconds_hint",
+              "end_seconds_hint",
+              "narrative_role_hint",
+              "narration_excerpt",
+              "visual_or_ocr_observation",
+              "structural_value",
+              "evidence_locator",
+              "segment_basis"
+            ]
+          }
+        },
+        "raw_rights": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "external_case_key": {
+                  "type": "string"
+                },
+                "source_verification": {
+                  "type": "string"
+                },
+                "provider_reference": {
+                  "type": "string"
+                },
+                "text_display_rights_claim": {
+                  "type": "string"
+                },
+                "cover_rights_claim": {
+                  "type": "string"
+                },
+                "media_reuse_claim": {
+                  "type": "string"
+                },
+                "privacy_risk_claim": {
+                  "type": "string"
+                },
+                "rights_risk_notes": {
+                  "type": "string"
+                },
+                "supporting_document_ref": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "external_case_key",
+                "source_verification",
+                "provider_reference",
+                "text_display_rights_claim",
+                "cover_rights_claim",
+                "media_reuse_claim",
+                "privacy_risk_claim",
+                "rights_risk_notes",
+                "supporting_document_ref"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_identity_key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "source_resolution": {
+          "enum": [
+            "unresolved",
+            "syntax_only",
+            "verified_upload_bound"
+          ]
+        },
+        "trust": {
+          "const": "unverified_submitter_candidate"
+        },
+        "formal_video_type": {
+          "type": "null"
+        },
+        "approval_granted": {
+          "const": false
+        },
+        "evidence_promoted": {
+          "const": false
+        },
+        "source_upload": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/NativeUploadRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "schema_version",
+        "batch_id",
+        "row_id",
+        "owner_user_id",
+        "raw_case",
+        "raw_segments",
+        "raw_rights",
+        "source_identity_key",
+        "source_resolution",
+        "trust",
+        "formal_video_type",
+        "approval_granted",
+        "evidence_promoted",
+        "source_upload"
+      ]
+    },
+    "Intent": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "case-excel-import-intent-v0.2-proposal"
+        },
+        "operation_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{1,127}$"
+        },
+        "owner_user_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "batch_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{1,127}$"
+        },
+        "batch_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "selected_rows": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "row_id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{1,127}$"
+              },
+              "row_sha256": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            },
+            "required": [
+              "row_id",
+              "row_sha256"
+            ]
+          }
+        },
+        "upload_receipt_sha256s": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{64}$"
+          },
+          "uniqueItems": true
+        },
+        "action": {
+          "enum": [
+            "save_unverified_candidates",
+            "cancel_uncommitted_rows"
+          ]
+        },
+        "dispatch_model": {
+          "const": false
+        },
+        "expected_head_sha256": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "row_source_bindings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/RowSourceBinding"
+          }
+        }
+      },
+      "required": [
+        "schema_version",
+        "operation_id",
+        "owner_user_id",
+        "batch_id",
+        "batch_sha256",
+        "selected_rows",
+        "upload_receipt_sha256s",
+        "action",
+        "dispatch_model",
+        "expected_head_sha256",
+        "row_source_bindings"
+      ]
+    },
+    "Result": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "schema_version": {
+          "const": "case-excel-import-result-v0.2-proposal"
+        },
+        "operation_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{1,127}$"
+        },
+        "intent_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "owner_user_id": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "state": {
+          "enum": [
+            "prepared",
+            "saving",
+            "partially_saved",
+            "saved",
+            "cancelled_remaining",
+            "recovery_required",
+            "conflict"
+          ]
+        },
+        "row_results": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "row_id": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_-]{1,127}$"
+              },
+              "state": {
+                "enum": [
+                  "pending_source",
+                  "saved_unverified",
+                  "already_recorded_private",
+                  "invalid",
+                  "cancelled",
+                  "recovery_required"
+                ]
+              },
+              "candidate_ref_sha256": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "pattern": "^[a-f0-9]{64}$"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "public_error_code": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            },
+            "required": [
+              "row_id",
+              "state",
+              "candidate_ref_sha256",
+              "public_error_code"
+            ]
+          }
+        },
+        "model_dispatched": {
+          "const": false
+        },
+        "case_approved": {
+          "const": false
+        },
+        "shared_published": {
+          "const": false
+        }
+      },
+      "required": [
+        "schema_version",
+        "operation_id",
+        "intent_sha256",
+        "owner_user_id",
+        "state",
+        "row_results",
+        "model_dispatched",
+        "case_approved",
+        "shared_published"
+      ]
+    },
+    "NativeUploadRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "upload_id",
+        "receipt_sha256"
+      ],
+      "properties": {
+        "upload_id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{32}$"
+        },
+        "receipt_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "RowSourceBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "row_id": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_-]{1,127}$"
+        },
+        "row_sha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "canonical_source_key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "canonical_url": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "native_upload_ref": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/NativeUploadRef"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "media_sha256": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "binding_state": {
+          "enum": [
+            "pending_source",
+            "native_upload_reference_checked"
+          ]
+        },
+        "binding_authority": {
+          "const": "server_resolved_unverified_candidate_only"
+        }
+      },
+      "required": [
+        "row_id",
+        "row_sha256",
+        "canonical_source_key",
+        "canonical_url",
+        "native_upload_ref",
+        "media_sha256",
+        "binding_state",
+        "binding_authority"
+      ]
+    }
+  },
+  "semantic_validators_not_expressible_by_schema": [
+    "same actor/Batch/Row exact SHA",
+    "source/media true upload receipt and owner",
+    "original global source dedup with no cross-user disclosure",
+    "same operation same intent replay / changed bytes409",
+    "current Session/CSRF for candidate save; independent reviewer for I3",
+    "immutable result/head lineage and atomic partial recovery",
+    "raw source/rights/typed hints never authority",
+    "owner_user_id fields are server-derived, never a client-authorized identity",
+    "client supplies upload_id selection only; server resolves exact canonical source and Native receipt/media SHA under original owner checks",
+    "same-user row binding must be explicit; never match by basename or silently replace an upload",
+    "source-upload:<upload_id> cleanup lock compatibility and original source dedup lock order must be Owner-approved",
+    "upload expiration/deletion makes current source pending; immutable saved reference is not proof of present availability",
+    "selected_rows and row_source_bindings are one-to-one, exact row_id+SHA, no duplicate row; upload_receipt_sha256s equals the canonical unique projection of these bindings",
+    "null/pending source never claims real media, Case identity, rights or permission; admission revalidates current owner/source/media/age",
+    "candidate persistence never calls native create_case_task or dispatch_groups; source collisions are opaque unless same-owner authorization is established",
+    "new import source locks are proposed private-candidate coordination, not an already existing global Native Source Dedup lock",
+    "Native task admission remains original create_case_task/submit_task BEGIN IMMEDIATE and case_analysis:<case_id> uniqueness; future explicit dispatch revalidates original Native source dedup"
+  ],
+  "explicit_unknowns": [
+    "I2 Import/Row/Intent/Result store, shared lock ordering and recoverability await exact original Owner approval",
+    "Explicit row-to-source-upload binding is a new import-adapter contract; existing upload schema is known but does not approve that integration",
+    "No basename-only verified upload path exists in the current source-bound uploader; candidate remains pending unless a separate source contract is approved"
+  ],
+  "native_source_upload_contract": {
+    "existing_receipt_schema": "case-source-upload-v1.0",
+    "receipt_owner": "case_source_upload_v1.read_upload; app.case_uploads.receive_upload / validate_for_submission",
+    "reused_reference_shape": [
+      "upload_id",
+      "receipt_sha256"
+    ],
+    "source_scope": "exact canonical Douyin video URL and video ID, same uploaded_by_user_id, matching receipt/media SHA and size",
+    "trust": "operator_attestation; platform_original_verified=false; media_rights_granted=false; production_footage_pool_eligible=false",
+    "filename_scope": "Native stored filename is video-ID+suffix, not original client basename; Excel media_filename remains unverified hint",
+    "lifetime": "existing new admission24h / original task-used rule; candidate save must not borrow formal Human review reservation",
+    "filename_only_without_canonical_source": "keep pending and null source_upload; existing v1.0 uploader cannot establish a source-bound upload from a basename alone"
+  },
+  "prior_proposal_sha256": "be12957c9a2937a3542c3c13c08d233b363a8c589c4336186558dc6d4df8ac84",
+  "lock_protocol_status": "EXACT_CANDIDATE_FOR_OWNER_REVIEW_NOT_APPROVED",
+  "lock_order_candidate": [
+    "original authority backup shared barrier (applicability to new store requires Owner approval)",
+    "actor+operation scoped import lock",
+    "batch scoped import lock",
+    "sorted import-source SHA locks (new keys, only private import coordination)",
+    "sorted existing source-upload:<upload_id> cleanup locks",
+    "short original SQLite transaction only for current native task/owner recheck; no network or model under locks"
+  ],
+  "source_dedup_compatibility": "Existing Native source/case duplicate resolution plus submit_task transaction remains authoritative. Private candidate dedup does not reserve or create a formal Case or Task; dispatch is separately gated. No claim that an import lock already serializes all native writers."
+}

@@ -1,0 +1,41 @@
+{
+  "kind": "CODE_PROVEN_EXISTING_NATIVE_CONTRACT_NOT_NEW_I1_UPLOAD_PASS",
+  "anchors": [
+    {
+      "path": "ops-pipeline/scripts/case_source_upload_v1.py",
+      "function": "read_upload",
+      "line": 36,
+      "end_line": 68,
+      "sha256": "7e89a82c92647493bc5751b563a65a853efdf0a30d97e29a961b2c22cf299bb4"
+    },
+    {
+      "path": "ops-pipeline/scripts/case_source_upload_v1.py",
+      "function": "upload_directory",
+      "line": 26,
+      "end_line": 33,
+      "sha256": "7e89a82c92647493bc5751b563a65a853efdf0a30d97e29a961b2c22cf299bb4"
+    },
+    {
+      "path": "internal-console/app/case_uploads.py",
+      "function": "receive_upload",
+      "line": 49,
+      "end_line": 113,
+      "sha256": "ef96c11ff9802c0b1ef647b19b2761c79c647a6b33bec06fc096dd70910d5c5d"
+    },
+    {
+      "path": "internal-console/app/case_uploads.py",
+      "function": "validate_for_submission",
+      "line": 116,
+      "end_line": 134,
+      "sha256": "ef96c11ff9802c0b1ef647b19b2761c79c647a6b33bec06fc096dd70910d5c5d"
+    },
+    {
+      "path": "internal-console/app/case_uploads.py",
+      "function": "cleanup_unused_uploads",
+      "line": 183,
+      "end_line": 221,
+      "sha256": "ef96c11ff9802c0b1ef647b19b2761c79c647a6b33bec06fc096dd70910d5c5d"
+    }
+  ],
+  "formal_import_write_contract_approved": false
+}

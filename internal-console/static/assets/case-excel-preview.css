@@ -1,0 +1,138 @@
+.excel-preview-page { max-width:1040px; min-width:0; overflow-wrap:anywhere; padding-bottom:100px; }
+.excel-preview-page [hidden] { display:none!important; }
+.excel-preview-page h2 { margin:0; font-size:20px; line-height:1.5; }
+.excel-preview-page h3 { font-size:17px; }
+.excel-preview-page .btn { min-height:44px; white-space:normal; }
+.excel-page-heading { margin:24px 0; }
+.excel-page-heading h1 { margin:6px 0 10px; font-size:clamp(26px,3vw,36px); line-height:1.3; }
+.excel-page-heading p { max-width:680px; margin:0; color:var(--ink-soft); }
+.excel-kicker { color:var(--brand-green); font-size:12px; font-weight:700; letter-spacing:.08em; }
+.excel-help { color:var(--ink-soft); font-size:13px; line-height:1.7; margin:8px 0; }
+.excel-steps { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); list-style:none; margin:0 0 24px; padding:0; border:1px solid var(--border); border-radius:12px; background:var(--surface); overflow:hidden; }
+.excel-steps li { display:flex; align-items:center; gap:10px; min-width:0; padding:16px; color:var(--ink-soft); font-weight:600; }
+.excel-steps li+li { border-left:1px solid var(--border); }
+.excel-steps li>span { display:grid; place-items:center; width:28px; height:28px; flex:0 0 28px; border-radius:50%; background:var(--canvas); }
+.excel-steps li[data-state=current] { background:var(--soft-sage); color:var(--brand-green); }
+.excel-steps li[data-state=current]>span,.excel-steps li[data-state=done]>span { background:var(--brand-green); color:white; }
+.excel-upload-card,.excel-result-surface { padding:24px; border:1px solid var(--border); border-radius:16px; background:var(--surface); margin:20px 0; }
+.excel-file-picker { display:grid; grid-template-columns:48px minmax(0,1fr); align-items:center; gap:14px; margin:18px 0; padding:20px; border:1px dashed #a8bfb1; border-radius:12px; background:#f8fbf9; cursor:pointer; }
+.excel-file-picker>span { min-width:0; }
+.excel-file-picker strong,.excel-file-picker small { display:block; }
+.excel-file-picker small { margin-top:4px; color:var(--ink-soft); font-weight:400; }
+.excel-file-icon { display:grid; place-items:center; min-height:48px; border-radius:10px; background:var(--soft-sage); color:var(--brand-green); font-size:12px; font-weight:700; }
+.excel-preview-page input[type=file] { grid-column:1/-1; width:100%; max-width:100%; min-width:0; min-height:44px; font:inherit; background:var(--surface); border:1px solid var(--border); border-radius:8px; padding:6px; }
+.excel-preview-page input[type=file]::file-selector-button { min-height:32px; padding:4px 12px; margin-right:10px; border:0; border-radius:6px; background:var(--soft-sage); color:var(--brand-green); font:inherit; cursor:pointer; }
+.excel-upload-actions { display:flex; align-items:center; gap:16px; }
+#excel-preview-status,#excel-import-status { margin:8px 0; line-height:1.7; color:var(--ink-soft); }
+#excel-preview-status[data-state=error] { color:var(--red); font-weight:600; }
+.excel-result-heading,.excel-selection-heading { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.excel-result-heading h2 { margin:4px 0 0; }
+.excel-badge { display:inline-block; flex-shrink:0; border:1px solid #cbddd1; border-radius:20px; padding:4px 10px; background:var(--soft-sage); color:var(--brand-green); font-size:12px; font-weight:600; white-space:nowrap; }
+.excel-badge-warning { background:#fff4e6; border-color:#e5c69e; color:#81531c; }
+.excel-preview-counts { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:16px; margin:22px 0 14px; }
+.excel-preview-counts>div { border-right:1px solid var(--border); }
+.excel-preview-counts>div:last-child { border-right:0; }
+.excel-preview-counts dt { color:var(--ink-soft); font-size:13px; }
+.excel-preview-counts dd { margin:6px 0 0; font-size:30px; font-weight:700; color:var(--ink); line-height:1.3; }
+.excel-preview-counts small { font-size:13px; font-weight:400; margin-left:5px; color:var(--ink-soft); }
+.excel-preview-counts .excel-count-warning dd { color:#9b5c20; }
+.excel-empty { padding:20px; background:var(--canvas); border-radius:10px; }
+.excel-empty p { margin-bottom:0; color:var(--ink-soft); }
+#excel-import-panel { margin:26px 0; }
+.excel-selection-heading { margin-bottom:16px; }
+.excel-selection-heading .excel-help { margin-bottom:0; }
+.excel-case-list { display:grid; gap:14px; }
+.excel-import-selection { min-width:0; border:1px solid var(--border); border-radius:14px; background:var(--surface); overflow:hidden; }
+.excel-row-invalid { border-color:#e7c3aa; }
+.excel-case-choice { display:flex; align-items:flex-start; gap:12px; min-height:64px; margin:0; padding:18px 20px 12px; cursor:pointer; }
+.excel-case-choice>span:first-of-type { flex:1; min-width:0; }
+.excel-case-choice strong,.excel-case-choice small { display:block; }
+.excel-case-choice strong { font-size:16px; line-height:1.6; }
+.excel-case-choice small { color:var(--ink-soft); font-size:12px; font-weight:400; margin-top:4px; }
+.excel-preview-page input[type=checkbox] { width:20px; height:20px; flex:0 0 20px; margin:3px 0 0; accent-color:var(--brand-green); }
+.excel-case-body { padding:0 20px 18px 52px; }
+.excel-case-meta { display:flex; flex-wrap:wrap; gap:6px 16px; font-size:13px; color:var(--ink-soft); margin:0 0 10px; }
+.excel-row-guidance { font-weight:600; color:#81531c; }
+.excel-row-issues { list-style:none; padding:0; margin:0; }
+.excel-row-issues li { display:flex; align-items:flex-start; gap:10px; margin:10px 0; padding:12px; border-radius:8px; background:#f4f6f4; color:var(--ink); font-size:13px; }
+.excel-row-issues li[data-severity=error] { background:#fff3e9; color:#773e18; }
+.excel-row-issues strong { flex-shrink:0; }
+.excel-row-issues small { display:block; margin-top:4px; color:var(--ink-soft); }
+.excel-media-details { border-top:1px solid var(--border); margin-top:10px; }
+.excel-preview-page summary { cursor:pointer; min-height:44px; padding:12px 0; font-weight:600; }
+.excel-media-details summary { color:var(--brand-green); font-size:13px; }
+.excel-media-details label { display:block; margin:14px 0; }
+.excel-preview-page .excel-upload-consent,.excel-save-consent { display:flex; align-items:flex-start; gap:10px; line-height:1.7; }
+.excel-selection-actions { display:flex; align-items:center; justify-content:space-between; gap:20px; padding:20px; margin-top:16px; border:1px solid #c7dacf; border-radius:12px; background:var(--soft-sage); }
+.excel-selection-actions .excel-help { margin:3px 0 0; }
+.excel-selection-actions .btn { min-width:164px; }
+.excel-confirm-card { padding:24px; border:1px solid #7fa68e; border-radius:14px; background:var(--surface); margin:20px 0; scroll-margin-top:90px; }
+.excel-confirm-card h2 { margin:6px 0 12px; }
+#excel-import-selected { padding-left:22px; }
+#excel-import-selected li { margin:12px 0; }
+#excel-import-selected small { display:block; color:var(--ink-soft); }
+.excel-save-consent { margin:20px 0; padding:14px; border-radius:8px; background:var(--canvas); }
+.excel-file-details,.excel-history { border-top:1px solid var(--border); padding:8px 0; margin-top:20px; }
+.excel-file-details>summary,.excel-history>summary { color:var(--ink-soft); }
+.excel-file-details>div { display:flex; flex-wrap:wrap; gap:10px; }
+#excel-preview-file-identity { font-size:12px; color:var(--ink-soft); }
+.excel-history>summary span { margin-left:8px; font-size:12px; font-weight:400; }
+.excel-history-list { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; margin:16px 0; }
+.excel-history-list .btn { display:flex; justify-content:space-between; gap:12px; text-align:left; }
+.excel-saved-result { padding:18px; margin:16px 0; border:1px solid var(--border); border-radius:12px; background:var(--surface); }
+.excel-preview-page :is(button,input,summary,a):focus-visible,.excel-confirm-card:focus { outline:3px solid #78a48c; outline-offset:3px; }
+@media(max-width:767px) {
+  .excel-preview-page { padding-left:16px; padding-right:16px; padding-bottom:110px; }
+  .excel-page-heading { margin-top:20px; }
+  .excel-steps li { padding:12px 8px; gap:6px; font-size:12px; }
+  .excel-steps li>span { width:24px; height:24px; flex-basis:24px; }
+  .excel-upload-card,.excel-result-surface,.excel-confirm-card { padding:18px 16px; }
+  .excel-file-picker { padding:14px; gap:10px; }
+  .excel-upload-actions,.excel-selection-actions { align-items:stretch; flex-direction:column; gap:10px; }
+  .excel-result-heading,.excel-selection-heading { align-items:flex-start; flex-wrap:wrap; gap:10px; }
+  .excel-preview-counts { gap:10px; }
+  .excel-preview-counts dd { font-size:26px; }
+  .excel-case-choice { padding:16px 14px 10px; gap:10px; flex-wrap:wrap; }
+  .excel-case-choice>span:first-of-type { flex-basis:calc(100% - 34px); }
+  .excel-case-choice>.excel-badge { margin-left:30px; }
+  .excel-case-body { padding:0 14px 16px; }
+  .excel-selection-actions { padding:16px; }
+  .excel-history-list { grid-template-columns:1fr; }
+  .excel-file-details .btn { width:100%; }
+}
+.excel-preview-page.excel-flow-page { padding-bottom:240px; }
+.excel-flow-nav { display:flex; justify-content:space-between; gap:16px; align-items:center; min-height:32px; }
+.excel-flow-page .excel-upload-card { padding:36px 24px; text-align:center; }
+.excel-flow-page .excel-upload-card .excel-file-icon { width:64px; margin:0 auto 20px; min-height:64px; }
+.excel-flow-page .excel-upload-card p { margin:14px 0 0; }
+.excel-flow-message { padding:16px; margin:16px 0; border:1px solid #dbb792; border-radius:10px; background:#fff4e7; color:#754719; }
+.excel-selected-file { padding:12px 16px; border-radius:10px; background:var(--soft-sage); color:var(--brand-green); font-weight:600; }
+.excel-stage-loading { display:flex; min-height:280px; flex-direction:column; align-items:center; justify-content:center; text-align:center; gap:14px; padding:24px; }
+.excel-flow-footer { position:fixed; z-index:35; left:0; right:0; bottom:calc(66px + env(safe-area-inset-bottom)); border-top:1px solid #cfddd3; background:var(--surface); box-shadow:0 -4px 20px #1b302908; }
+.excel-footer-inner { display:flex; align-items:center; justify-content:space-between; gap:24px; max-width:1040px; min-height:96px; margin:auto; padding:16px 24px; }
+.excel-footer-inner>div:first-child { min-width:0; flex:1; }
+#excel-flow-count { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+#excel-flow-hint { display:block; color:var(--ink-soft); font-size:12px; line-height:18px; margin-top:4px; }
+.excel-footer-actions { display:grid; grid-template-columns:88px 240px; align-items:center; gap:16px; flex-shrink:0; }
+.excel-flow-page .excel-flow-footer .btn { grid-column:2; grid-row:1; width:100%; min-height:48px; }
+.excel-text-button { grid-column:1; grid-row:1; background:none; border:0; color:var(--brand-green); font:inherit; min-height:44px; padding:4px; cursor:pointer; }
+.excel-flow-page :is(input,button,summary,a) { scroll-margin-top:90px; scroll-margin-bottom:240px; }
+.excel-private-note { margin:20px 0; padding:14px 16px; border-radius:10px; background:var(--soft-sage); }
+.excel-fingerprint { font-size:12px; color:var(--ink-soft); }
+.excel-completion h2 { margin:18px 0 12px; font-size:24px; }
+.excel-result-titles { margin:22px 0 0; padding-left:22px; }
+.excel-result-titles li { margin:12px 0; }
+.excel-record-case { padding:20px; }
+.excel-record-case h2 { font-size:18px; }
+.excel-import-history-card { display:flex; align-items:center; justify-content:space-between; gap:20px; padding:20px; min-height:90px; border:1px solid var(--border); border-radius:12px; background:var(--surface); color:var(--ink); }
+.excel-import-history-card>div { min-width:0; }
+.excel-import-history-card:hover { border-color:#93b59f; background:#f8fbf9; }
+.excel-import-history-card p { margin:8px 0 0; color:var(--ink-soft); font-size:13px; }
+.excel-history-pages { display:flex; justify-content:center; gap:24px; align-items:center; padding:24px 0; }
+@media(min-width:1024px) { .excel-flow-footer { left:var(--sidebar); bottom:0; } .excel-preview-page.excel-flow-page { padding-bottom:150px; } }
+@media(max-width:1023px) {
+  .excel-footer-inner { display:block; padding:12px 16px; }
+  #excel-flow-hint { height:36px; }
+  .excel-footer-actions { grid-template-columns:72px minmax(0,1fr); gap:8px; margin-top:10px; }
+  .excel-preview-page.excel-flow-page { padding-bottom:250px; }
+}

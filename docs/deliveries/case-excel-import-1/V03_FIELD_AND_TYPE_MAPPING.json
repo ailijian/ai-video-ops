@@ -1,0 +1,1008 @@
+{
+  "template_schema_id": "case-excel-intake-v0.3-review-candidate",
+  "template_sha256": "d720aa257d90955a0c8209756b1d6d8da49a789d250e28cf716890ab21a8664f",
+  "contract_status": "PROPOSED_MAPPING_NOT_IMPLEMENTED",
+  "field_counts": {
+    "案例清单": 21,
+    "结构分段": 10,
+    "来源与许可": 9
+  },
+  "header_policy": "Strict V0.3 sequence/set/uniqueness validation, then map by machine key; H/I/J anchors checked; no V0.2 fallback",
+  "fields": [
+    {
+      "sheet": "案例清单",
+      "column_v03": 1,
+      "machine_key": "external_case_key",
+      "chinese_label": "案例编号 *",
+      "frozen_requirement": "所有模式必填",
+      "frozen_policy": "工作簿内唯一关联键，不是系统Case ID",
+      "native_mapping_status": "REQUIRES_DELTA",
+      "candidate_target_proposed": "proposed Import row key -> Native identity mapping",
+      "evidence_owner_id": "S02",
+      "boundary": "Workbook association only, never Case ID; reject DEMO-",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "案例清单",
+      "column_v03": 2,
+      "machine_key": "source_platform",
+      "chinese_label": "来源平台 *",
+      "frozen_requirement": "所有模式必填",
+      "frozen_policy": "抖音/视频号/本地文件等；纯文字可填未知；平台可解析范围由后端核验",
+      "native_mapping_status": "CANDIDATE_HINT_ONLY",
+      "candidate_target_proposed": "proposed source hint; original resolver decides executable platform",
+      "evidence_owner_id": "S04",
+      "boundary": "Workbook platform labels exceed current Douyin support",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "案例清单",
+      "column_v03": 3,
+      "machine_key": "submission_mode",
+      "chinese_label": "提交方式 *",
+      "frozen_requirement": "所有模式必填",
+      "frozen_policy": "链接/视频待解析、已整理结构待核验、仅文字待补证；决定预检必填条件，不是审批权限",
+      "native_mapping_status": "REQUIRES_DELTA",
+      "candidate_target_proposed": "proposed candidate mode discriminator",
+      "evidence_owner_id": "S03",
+      "boundary": "Three product modes do not exist in original Intake writer",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "案例清单",
+      "column_v03": 4,
+      "machine_key": "source_url",
+      "chinese_label": "原视频链接",
+      "frozen_requirement": "前两种模式：与视频文件名二选一",
+      "frozen_policy": "仅视频来源，不得填写Excel文档或个人网盘密码；来源URL必须正式校验",
+      "native_mapping_status": "CONDITIONAL_REUSE",
+      "candidate_target_proposed": "existing Douyin resolver / CaseAnalysisRequest.url",
+      "evidence_owner_id": "S04",
+      "boundary": "Resolve/normalize through original owner; unsupported sources remain pending, never fabricated",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "案例清单",
+      "column_v03": 5,
+      "machine_key": "media_filename",
+      "chinese_label": "视频文件名",
+      "frozen_requirement": "前两种模式：与视频链接二选一",
+      "frozen_policy": "仅相对文件名；还需与同批上传的真实视频文件匹配；写文件名并不会上传视频",
+      "native_mapping_status": "REQUIRES_DELTA",
+      "candidate_target_proposed": "server-side upload manifest -> original upload_id/receipt SHA",
+      "evidence_owner_id": "S06",
+      "boundary": "Exact real bytes/current user/source binding; bare local-only input cannot enter current Douyin-only Case path",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "案例清单",
+      "column_v03": 6,
+      "machine_key": "source_title",
+      "chinese_label": "视频标题/暂定名称 *",
+      "frozen_requirement": "所有模式必填",
+      "frozen_policy": "无原标题请写【自拟】+名称；不能冒充平台原始标题",
+      "native_mapping_status": "UNVERIFIED_MANUAL_NOTE",
+      "candidate_target_proposed": "proposed imported note; not original metadata.title/desc",
+      "evidence_owner_id": "S18",
+      "boundary": "Preserve 【自拟】 marker/source attribution; do not assert platform title",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "案例清单",
+      "column_v03": 7,
+      "machine_key": "industry_hint",
+      "chinese_label": "行业建议",
+      "frozen_requirement": "可选",
+      "frozen_policy": "仅投稿人的候选建议，不是正式分类",
+      "native_mapping_status": "CANDIDATE_HINT_ONLY",
+      "candidate_target_proposed": "CaseAnalysisRequest.industry / private operator classification",
+      "evidence_owner_id": "S19",
+      "boundary": "Retain raw hint; no implicit formal classification; label differences require explicit resolution",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "案例清单",
+      "column_v03": 8,
+      "machine_key": "profile_hint",
+      "chinese_label": "制作形态建议",
+      "frozen_requirement": "可选",
+      "frozen_policy": "可填 mix/news/hybrid/uncertain；不等于视频业务类型和兼容性批准",
+      "native_mapping_status": "CANDIDATE_HINT_ONLY",
+      "candidate_target_proposed": "CaseAnalysisRequest.operator_profile_hint",
+      "evidence_owner_id": "S32",
+      "boundary": "Only mix/news/hybrid/uncertain; no business-type or Compatibility approval",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "案例清单",
+      "column_v03": 9,
+      "machine_key": "video_content_type_hint",
+      "chinese_label": "视频内容类型建议",
+      "frozen_requirement": "可选，建议填写",
+      "frozen_policy": "投稿人视频业务类型建议；必须由指定审核人核对后才能作为正式Case展示类型。不是Production Profile、Pattern、Compatibility、Release或媒体使用权批准。",
+      "native_mapping_status": "REQUIRES_DELTA",
+      "candidate_target_proposed": "proposed Case content-type companion + catalog",
+      "evidence_owner_id": "S20",
+      "boundary": "No current formal type confirmation; CC-01/CC-02 required",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "案例清单",
+      "column_v03": 10,
+      "machine_key": "other_type_note",
+      "chinese_label": "其它类型说明",
+      "frozen_requirement": "当video_content_type_hint=其它时必填",
+      "frozen_policy": "填写真实期望的新类型描述，供后续视频类型词典治理；不自动注册业务类型，不授予创作生产资格。",
+      "native_mapping_status": "REQUIRES_DELTA",
+      "candidate_target_proposed": "proposed untrusted other-type note",
+      "evidence_owner_id": "S20",
+      "boundary": "Required for 其它; never auto-register type/Style/Pattern",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "案例清单",
+      "column_v03": 11,
+      "machine_key": "duration_seconds_hint",
+      "chinese_label": "视频时长（秒）",
+      "frozen_requirement": "可选",
+      "frozen_policy": "只填数字秒数；仅核过原视频时填写；非官方时长证据",
+      "native_mapping_status": "UNVERIFIED_MANUAL_NOTE",
+      "candidate_target_proposed": "proposed human duration hint; Native media inspection authoritative",
+      "evidence_owner_id": "S07",
+      "boundary": "Finite numeric reference; actual upload duration controls later evidence checks",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "案例清单",
+      "column_v03": 12,
+      "machine_key": "topic",
+      "chinese_label": "内容主题",
+      "frozen_requirement": "人工结构/纯文字模式必填；来源待解析可选",
+      "frozen_policy": "一句话说清楚视频/笔记讲什么",
+      "native_mapping_status": "UNVERIFIED_MANUAL_NOTE",
+      "candidate_target_proposed": "proposed manual-note companion",
+      "evidence_owner_id": "S12",
+      "boundary": "manual topic, not Customer Truth",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "案例清单",
+      "column_v03": 13,
+      "machine_key": "hook_candidate",
+      "chinese_label": "开头钩子",
+      "frozen_requirement": "可选",
+      "frozen_policy": "投稿人描述或整理的候选钩子，不冒充机器识别",
+      "native_mapping_status": "UNVERIFIED_MANUAL_NOTE",
+      "candidate_target_proposed": "proposed manual-note companion",
+      "evidence_owner_id": "S12",
+      "boundary": "unverified manual hook, not machine detection",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "案例清单",
+      "column_v03": 14,
+      "machine_key": "structure_summary",
+      "chinese_label": "结构摘要",
+      "frozen_requirement": "人工结构/纯文字模式必填；来源待解析可选",
+      "frozen_policy": "真实材料支持的结构概述；无把握则写待核实，不得虚构镜头和时间",
+      "native_mapping_status": "UNVERIFIED_MANUAL_NOTE",
+      "candidate_target_proposed": "proposed manual-note companion",
+      "evidence_owner_id": "S12",
+      "boundary": "manual structure, not storyboard",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "案例清单",
+      "column_v03": 15,
+      "machine_key": "narration_excerpt",
+      "chinese_label": "口播/字幕摘录",
+      "frozen_requirement": "可选",
+      "frozen_policy": "投稿人提供的摘录，绝不当作机器Whisper ASR和逐词时间轴",
+      "native_mapping_status": "UNVERIFIED_MANUAL_NOTE",
+      "candidate_target_proposed": "proposed manual-note companion",
+      "evidence_owner_id": "S12",
+      "boundary": "manual excerpt, not Whisper ASR/word timeline",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "案例清单",
+      "column_v03": 16,
+      "machine_key": "visual_observation",
+      "chinese_label": "画面观察（仅亲见）",
+      "frozen_requirement": "可选",
+      "frozen_policy": "只有亲自核对视频才写画面；不能用主观推测代替帧/OCR证据",
+      "native_mapping_status": "UNVERIFIED_MANUAL_NOTE",
+      "candidate_target_proposed": "proposed manual-note companion",
+      "evidence_owner_id": "S12",
+      "boundary": "unverified human observation, not visual-frame/OCR evidence",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "案例清单",
+      "column_v03": 17,
+      "machine_key": "creative_reference",
+      "chinese_label": "可借鉴创作机制",
+      "frozen_requirement": "可选",
+      "frozen_policy": "参考的钩子/顺序/镜头角色，不抄袭原作品的具体受保护表达",
+      "native_mapping_status": "UNVERIFIED_MANUAL_NOTE",
+      "candidate_target_proposed": "proposed manual-note companion",
+      "evidence_owner_id": "S12",
+      "boundary": "structural research note, not Pattern or protected-expression reuse right",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "案例清单",
+      "column_v03": 18,
+      "machine_key": "risk_notes",
+      "chinese_label": "待核实事实与风险",
+      "frozen_requirement": "可选，发现风险必须填",
+      "frozen_policy": "价格/功效/经营数据/人像/版权/来源疑点应如实记录",
+      "native_mapping_status": "UNVERIFIED_MANUAL_NOTE",
+      "candidate_target_proposed": "proposed manual-note companion",
+      "evidence_owner_id": "S12",
+      "boundary": "risk claim needing original review; cannot mark resolved",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "案例清单",
+      "column_v03": 19,
+      "machine_key": "observation_basis",
+      "chinese_label": "填写依据 *",
+      "frozen_requirement": "所有模式必填",
+      "frozen_policy": "本人已观看、仅链接未核对、整理他人笔记、仅有文字资料、未知",
+      "native_mapping_status": "UNVERIFIED_MANUAL_NOTE",
+      "candidate_target_proposed": "proposed manual-note companion",
+      "evidence_owner_id": "S12",
+      "boundary": "submitter-declared provenance, not observation/rights approval",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "案例清单",
+      "column_v03": 20,
+      "machine_key": "display_title_hint",
+      "chinese_label": "展示标题建议",
+      "frozen_requirement": "可选",
+      "frozen_policy": "仅审核候选；最终共享展示单独有安全预览和人工权限",
+      "native_mapping_status": "MANUAL_NOTE_DISPLAY_GATE",
+      "candidate_target_proposed": "private imported display proposal",
+      "evidence_owner_id": "S21",
+      "boundary": "Current joint preview allows source-title excerpts only; no automatic free-title publication",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "案例清单",
+      "column_v03": 21,
+      "machine_key": "display_structure_hint",
+      "chinese_label": "展示结构摘要建议",
+      "frozen_requirement": "可选",
+      "frozen_policy": "仅审核候选；不能自动公开原始素材/隐私数据",
+      "native_mapping_status": "MANUAL_NOTE_DISPLAY_GATE",
+      "candidate_target_proposed": "private imported display proposal",
+      "evidence_owner_id": "S21",
+      "boundary": "Current safe structural default is Native-derived; arbitrary imported summary needs display/source review",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "结构分段",
+      "column_v03": 1,
+      "machine_key": "external_case_key",
+      "chinese_label": "案例编号 *",
+      "frozen_requirement": "有分段行时必填",
+      "frozen_policy": "必须在同一工作簿「案例清单」存在",
+      "native_mapping_status": "REQUIRES_MANUAL_NOTE_CONTRACT",
+      "candidate_target_proposed": "proposed ordered manual segments",
+      "evidence_owner_id": "S13",
+      "boundary": "Must reference one formal case-list row; never Native Case ID",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "结构分段",
+      "column_v03": 2,
+      "machine_key": "segment_order",
+      "chinese_label": "段落序号 *",
+      "frozen_requirement": "有分段行时必填",
+      "frozen_policy": "同一案例内从1开始连续且唯一；不是正式Shot ID",
+      "native_mapping_status": "REQUIRES_MANUAL_NOTE_CONTRACT",
+      "candidate_target_proposed": "proposed ordered manual segments",
+      "evidence_owner_id": "S13",
+      "boundary": "Positive integer, unique contiguous from1 per case; never Shot ID",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "结构分段",
+      "column_v03": 3,
+      "machine_key": "start_seconds_hint",
+      "chinese_label": "开始秒（核验后）",
+      "frozen_requirement": "可选",
+      "frozen_policy": "核看视频后填写的人工参考秒数，不能成为正式候选帧切点",
+      "native_mapping_status": "REQUIRES_MANUAL_NOTE_CONTRACT",
+      "candidate_target_proposed": "proposed ordered manual segments",
+      "evidence_owner_id": "S13",
+      "boundary": "Human numeric seconds only; actual verified duration/frames remain authoritative",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "结构分段",
+      "column_v03": 4,
+      "machine_key": "end_seconds_hint",
+      "chinese_label": "结束秒（核验后）",
+      "frozen_requirement": "可选",
+      "frozen_policy": "大于开始秒；不超过已核验的真实时长；人工参考不替代Shot证据",
+      "native_mapping_status": "REQUIRES_MANUAL_NOTE_CONTRACT",
+      "candidate_target_proposed": "proposed ordered manual segments",
+      "evidence_owner_id": "S13",
+      "boundary": "Human numeric seconds only; actual verified duration/frames remain authoritative",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "结构分段",
+      "column_v03": 5,
+      "machine_key": "narrative_role_hint",
+      "chinese_label": "段落作用建议",
+      "frozen_requirement": "可选",
+      "frozen_policy": "开场/过程/信息点/证据线索/收束等，仅为候选结构",
+      "native_mapping_status": "REQUIRES_MANUAL_NOTE_CONTRACT",
+      "candidate_target_proposed": "proposed ordered manual segments",
+      "evidence_owner_id": "S13",
+      "boundary": "No machine Shot/Frame/ASR/Proof promotion; source refs must later be verified",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "结构分段",
+      "column_v03": 6,
+      "machine_key": "narration_excerpt",
+      "chinese_label": "口播/字幕节选",
+      "frozen_requirement": "可选",
+      "frozen_policy": "只能来自真实资料或明确来源的文字，非正式ASR证据",
+      "native_mapping_status": "REQUIRES_MANUAL_NOTE_CONTRACT",
+      "candidate_target_proposed": "proposed ordered manual segments",
+      "evidence_owner_id": "S13",
+      "boundary": "No machine Shot/Frame/ASR/Proof promotion; source refs must later be verified",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "结构分段",
+      "column_v03": 7,
+      "machine_key": "visual_or_ocr_observation",
+      "chinese_label": "画面或画面文字（仅亲见）",
+      "frozen_requirement": "可选",
+      "frozen_policy": "未看视频严禁填写；并非正式视觉模型/OCR证据",
+      "native_mapping_status": "REQUIRES_MANUAL_NOTE_CONTRACT",
+      "candidate_target_proposed": "proposed ordered manual segments",
+      "evidence_owner_id": "S13",
+      "boundary": "No machine Shot/Frame/ASR/Proof promotion; source refs must later be verified",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "结构分段",
+      "column_v03": 8,
+      "machine_key": "structural_value",
+      "chinese_label": "为何值得借鉴",
+      "frozen_requirement": "可选",
+      "frozen_policy": "该段的结构目的/节奏与参考价值",
+      "native_mapping_status": "REQUIRES_MANUAL_NOTE_CONTRACT",
+      "candidate_target_proposed": "proposed ordered manual segments",
+      "evidence_owner_id": "S13",
+      "boundary": "No machine Shot/Frame/ASR/Proof promotion; source refs must later be verified",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "结构分段",
+      "column_v03": 9,
+      "machine_key": "evidence_locator",
+      "chinese_label": "证据定位（人工参考）",
+      "frozen_requirement": "可选",
+      "frozen_policy": "例如人工记录的秒数或资料页码；不是系统Frame ID",
+      "native_mapping_status": "REQUIRES_MANUAL_NOTE_CONTRACT",
+      "candidate_target_proposed": "proposed ordered manual segments",
+      "evidence_owner_id": "S13",
+      "boundary": "No machine Shot/Frame/ASR/Proof promotion; source refs must later be verified",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "结构分段",
+      "column_v03": 10,
+      "machine_key": "segment_basis",
+      "chinese_label": "段落依据",
+      "frozen_requirement": "可选，推荐填写",
+      "frozen_policy": "本人观看/整理资料/他人转述/未知；不等于审核许可",
+      "native_mapping_status": "REQUIRES_MANUAL_NOTE_CONTRACT",
+      "candidate_target_proposed": "proposed ordered manual segments",
+      "evidence_owner_id": "S13",
+      "boundary": "No machine Shot/Frame/ASR/Proof promotion; source refs must later be verified",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "来源与许可",
+      "column_v03": 1,
+      "machine_key": "external_case_key",
+      "chinese_label": "案例编号 *",
+      "frozen_requirement": "有许可行时必填",
+      "frozen_policy": "关联案例清单；每个案例至多一行申报",
+      "native_mapping_status": "UNVERIFIED_RIGHTS_CLAIM",
+      "candidate_target_proposed": "proposed source/rights declaration companion",
+      "evidence_owner_id": "S22",
+      "boundary": "Reference one formal case-list row; max one rights row per case",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "来源与许可",
+      "column_v03": 2,
+      "machine_key": "source_verification",
+      "chinese_label": "来源核验现状",
+      "frozen_requirement": "可选",
+      "frozen_policy": "投稿人自述，不能授来源真实有效的系统权限",
+      "native_mapping_status": "UNVERIFIED_RIGHTS_CLAIM",
+      "candidate_target_proposed": "proposed source/rights declaration companion",
+      "evidence_owner_id": "S22",
+      "boundary": "Missing=unknown; submitter claim never grants display/cover/media rights or privacy pass",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "来源与许可",
+      "column_v03": 3,
+      "machine_key": "provider_reference",
+      "chinese_label": "素材提供方信息",
+      "frozen_requirement": "可选",
+      "frozen_policy": "仅非敏感来源机构/凭证编号，勿写个人电话/身份证等",
+      "native_mapping_status": "UNVERIFIED_RIGHTS_CLAIM",
+      "candidate_target_proposed": "proposed source/rights declaration companion",
+      "evidence_owner_id": "S22",
+      "boundary": "Missing=unknown; submitter claim never grants display/cover/media rights or privacy pass",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "来源与许可",
+      "column_v03": 4,
+      "machine_key": "text_display_rights_claim",
+      "chinese_label": "展示文字许可声明",
+      "frozen_requirement": "可选，默认未确认",
+      "frozen_policy": "投稿人声称的状态；不是共享发布权限",
+      "native_mapping_status": "UNVERIFIED_RIGHTS_CLAIM",
+      "candidate_target_proposed": "proposed source/rights declaration companion",
+      "evidence_owner_id": "S22",
+      "boundary": "Missing=unknown; submitter claim never grants display/cover/media rights or privacy pass",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "来源与许可",
+      "column_v03": 5,
+      "machine_key": "cover_rights_claim",
+      "chinese_label": "封面展示许可声明",
+      "frozen_requirement": "可选，默认未确认",
+      "frozen_policy": "单独声明；即便文字可展示，封面仍可能禁止",
+      "native_mapping_status": "UNVERIFIED_RIGHTS_CLAIM",
+      "candidate_target_proposed": "proposed source/rights declaration companion",
+      "evidence_owner_id": "S22",
+      "boundary": "Missing=unknown; submitter claim never grants display/cover/media rights or privacy pass",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "来源与许可",
+      "column_v03": 6,
+      "machine_key": "media_reuse_claim",
+      "chinese_label": "原视频素材复用状态",
+      "frozen_requirement": "可选，默认未确认",
+      "frozen_policy": "不等于案例收录或平台共享；生产复用必须独立权利",
+      "native_mapping_status": "UNVERIFIED_RIGHTS_CLAIM",
+      "candidate_target_proposed": "proposed source/rights declaration companion",
+      "evidence_owner_id": "S22",
+      "boundary": "Missing=unknown; submitter claim never grants display/cover/media rights or privacy pass",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "来源与许可",
+      "column_v03": 7,
+      "machine_key": "privacy_risk_claim",
+      "chinese_label": "可能涉及敏感信息",
+      "frozen_requirement": "可选，默认未知",
+      "frozen_policy": "未知/可能有/未发现（投稿人自述）；正式Privacy仍独立审查",
+      "native_mapping_status": "UNVERIFIED_RIGHTS_CLAIM",
+      "candidate_target_proposed": "proposed source/rights declaration companion",
+      "evidence_owner_id": "S22",
+      "boundary": "Missing=unknown; submitter claim never grants display/cover/media rights or privacy pass",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "来源与许可",
+      "column_v03": 8,
+      "machine_key": "rights_risk_notes",
+      "chinese_label": "隐私与权利备注",
+      "frozen_requirement": "可选",
+      "frozen_policy": "人像、品牌、第三方内容、合作/授权不确定性",
+      "native_mapping_status": "UNVERIFIED_RIGHTS_CLAIM",
+      "candidate_target_proposed": "proposed source/rights declaration companion",
+      "evidence_owner_id": "S22",
+      "boundary": "Missing=unknown; submitter claim never grants display/cover/media rights or privacy pass",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    },
+    {
+      "sheet": "来源与许可",
+      "column_v03": 9,
+      "machine_key": "supporting_document_ref",
+      "chinese_label": "其他凭证编号",
+      "frozen_requirement": "可选",
+      "frozen_policy": "仅填凭证编号/引用；凭证需通过独立安全渠道上传",
+      "native_mapping_status": "UNVERIFIED_RIGHTS_CLAIM",
+      "candidate_target_proposed": "proposed source/rights declaration companion",
+      "evidence_owner_id": "S22",
+      "boundary": "Missing=unknown; submitter claim never grants display/cover/media rights or privacy pass",
+      "source_preservation": [
+        "file SHA",
+        "sheet",
+        "physical row",
+        "machine key",
+        "raw value",
+        "normalized value and policy version"
+      ],
+      "direct_approved_case_write_allowed": false,
+      "formal_type_or_rights_granted": false
+    }
+  ],
+  "content_type_suggestions": {
+    "level": "untrusted_import_candidate",
+    "profile_hint_allowed": [
+      "mix",
+      "news",
+      "hybrid",
+      "uncertain"
+    ],
+    "candidate_labels_to_stable_ids": {
+      "新闻体": "news",
+      "人设型": "persona",
+      "故事型": "story",
+      "高转化型": "conversion",
+      "其它": "other",
+      "待判断": "unknown"
+    },
+    "recommended_profile_coherence": {
+      "news": [
+        "新闻体",
+        "待判断"
+      ],
+      "mix": [
+        "人设型",
+        "故事型",
+        "高转化型",
+        "其它",
+        "待判断"
+      ],
+      "hybrid": [
+        "待判断"
+      ],
+      "uncertain": [
+        "待判断"
+      ]
+    },
+    "mismatch_handling": "flag_for_human_classification_review; do_not_auto_correct_or_approve",
+    "other_note_required_when": "video_content_type_hint == 其它",
+    "primary_type_only_v1": true,
+    "display_rules": {
+      "before_classification_confirmation": "仅显示'投稿建议类型：{label}（待核对）'给有权读该投稿的用户；不得作为已批准的共享案例类型",
+      "after_formal_human_confirmation": "仅由已有或经批准扩展的Case正式分类Owner提供受审查的有效类型；合法共享投影才能展示该类型",
+      "unknown_or_other": "显示'待判断'或'其它·待分类'；不得因此自动匹配Mix Style、Pattern、Compatibility"
+    },
+    "production_rules": "Case classification/display type is independent of production_style_approval, Pattern, Compatibility, Creative Authority Release and media rights",
+    "future_catalog_extension": "使用受版本控制的视频类型字典；允许新标签由人审与词典治理新增，不在导入解析器里写死永久四类"
+  },
+  "authority_distinction": [
+    "submitter hint",
+    "Reviewer-confirmed Case classification",
+    "Shared Display publication",
+    "Mix/News production profile",
+    "Pattern/Compatibility/Release"
+  ],
+  "template_dropdown_observations": {
+    "案例清单": [
+      {
+        "range": "B5:B105",
+        "formula": "\"抖音,视频号,快手,B站,本地文件,其他,未知\""
+      },
+      {
+        "range": "C5:C105",
+        "formula": "\"链接/视频待解析,已整理结构待核验,仅文字待补证\""
+      },
+      {
+        "range": "G5:G105",
+        "formula": "\"餐饮,零售,生活服务,教育,文旅,企业服务,其他,不确定\""
+      },
+      {
+        "range": "H5:H105",
+        "formula": "\"mix,news,hybrid,uncertain\""
+      },
+      {
+        "range": "I5:I105",
+        "formula": "\"新闻体,人设型,故事型,高转化型,其它,待判断\""
+      },
+      {
+        "range": "S5:S105",
+        "formula": "\"本人已观看视频,未观看原视频,整理他人笔记,仅有文字资料,未知\""
+      }
+    ],
+    "结构分段": [
+      {
+        "range": "E5:E105",
+        "formula": "\"开场,问题,信息点,过程,展示,证据线索,注意事项,收束,其他\""
+      },
+      {
+        "range": "J5:J105",
+        "formula": "\"本人观看（待核）,整理资料（未看视频）,他人转述（未核）,未知\""
+      }
+    ],
+    "来源与许可": [
+      {
+        "range": "B5:B105",
+        "formula": "\"未核对,投稿人自述已核对,有来源文件待平台核对\""
+      },
+      {
+        "range": "D5:D105",
+        "formula": "\"未确认,投稿人声称允许,明确不允许\""
+      },
+      {
+        "range": "E5:E105",
+        "formula": "\"未确认,投稿人声称允许,明确不允许\""
+      },
+      {
+        "range": "F5:F105",
+        "formula": "\"未确认,投稿人声称允许,明确不允许\""
+      },
+      {
+        "range": "G5:G105",
+        "formula": "\"未知,可能有,未发现（投稿自述）\""
+      }
+    ]
+  },
+  "lexical_gap": "JSON observation_basis policy prose differs from exact worksheet dropdown wording; preserve raw labels, approve an explicit semantic alias map before implementation, do not rewrite frozen files",
+  "existing_business_type_authority": false
+}

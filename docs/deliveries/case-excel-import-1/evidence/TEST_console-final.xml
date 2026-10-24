@@ -1,0 +1,2 @@
+<?xml version='1.0' encoding='utf-8'?>
+<testsuite name="console-final-passed-only-sanitized" tests="2" failures="0" errors="0" skipped="0"><testcase classname="tests.test_case_share_joint_v1" name="test_S1_trusted_preview_is_read_only_and_unknown_fields_rejected" time="3.778" /><testcase classname="tests.test_case_share_joint_v1" name="test_S2_one_confirmation_two_receipts_and_safe_current_projection" time="3.540" /></testsuite>
