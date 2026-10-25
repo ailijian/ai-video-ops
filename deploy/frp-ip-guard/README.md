@@ -31,15 +31,16 @@
 
    主账号 UID 可从账号基本信息查看（不是密钥）；也可按官方安全组策略示例将账号段写 `*`，但必须保持具体地域和这个安全组 ID，不能把整个 Resource 写成 `*`。策略限制安全组，Description 的精确归属检查由脚本负责，并非云端 RAM 能按描述限定授权。
 3. 仅给该 RAM 用户绑定此自定义策略。由用户在 RAM 控制台创建其 AccessKey；不要把 ID/Secret 发到聊天、放到仓库、脚本参数或日志里。
-4. 在 4090 的专用 Windows 用户内交互式配置 CLI（见下节）。不在开发机配置或代建云凭证。
+4. 在 4090 上用于运行 Guard 的同一 Windows 用户内交互式配置 CLI（见下节）。不在开发机配置或代建云凭证。
 
 官方依据：[指定安全组的 RAM 策略](https://help.aliyun.com/zh/ram/manage-ecs-security-groups-within-an-alibaba-cloud-account)、[按规则 ID 删除入站规则](https://help.aliyun.com/en/ecs/developer-reference/api-ecs-2014-05-26-revokesecuritygroup)。如果精确策略在真实 API 上拒绝，不扩大到 ECS 全权限，先核对策略与资源 ARN。
 
 ## 一次性人工步骤：4090 的 CLI 与 Windows 身份
 
-1. 用 Windows 设置/计算机管理创建专用普通用户，例如 `AivoFrpGuard`，设置安全密码并首次登录以建立用户 Profile。不要使用 Administrator 或 SYSTEM 作为 Guard 身份。
+1. 默认使用专用普通用户，例如 `AivoFrpGuard`，设置安全密码并首次登录以建立用户 Profile。也支持用户明确选择复用本机内置 Administrator，安装时必须传 `-AllowAdministratorAccount`；通过 SID 确认身份，不依赖显示名称。SYSTEM、LocalService、NetworkService 和其他机器/域的 Administrator 不允许通过此选项启用。
+   Administrator 模式使用已有管理员 Profile，不需要新建账户或日常切换用户；Guard 将具有本机管理员权限，不是低权限沙箱。该选择不扩大 RAM 策略、不修改 UAC，也不自动放宽安全组。CLI 和计划任务必须使用同一个账户。
 2. 安装官方 Windows CLI：从 [阿里云 CLI 官方安装文档](https://help.aliyun.com/zh/cli/install-update-alibaba-cloud-cli)下载 Windows amd64 ZIP，解压到 `C:\AliyunCLI`，使 `C:\AliyunCLI\aliyun.exe` 存在。无需从其他网站安装。
-3. 在这个专用用户的 PowerShell 中执行（不是管理员账号的 Profile）：
+3. 在选定运行用户的 PowerShell 中执行；普通账户模式使用专用用户，Administrator 模式使用本机 Administrator：
 
    ```powershell
    & 'C:\AliyunCLI\aliyun.exe' version
@@ -47,7 +48,7 @@
    ```
 
    按交互提示输入独立 RAM 用户的凭证，地域填 `cn-shanghai`；不要把凭证写进命令行。CLI 保存在该用户的 `.aliyun\config.json`，该文件包含秘密，只存在新主机本地。
-4. CLI >= 3.3 使用插件，仍在该专用用户下安装 ECS 插件：
+4. CLI >= 3.3 使用插件，仍在同一个运行用户下安装 ECS 插件：
 
    ```powershell
    & 'C:\AliyunCLI\aliyun.exe' plugin install --names ecs
@@ -77,15 +78,31 @@ $guardCredential = $null
 
 有且只有一个 WinSW FRPC 服务时复用其名称/二进制/配置，不另建同类服务，`-WinSWPath` 可以省略。没有时需要已有 WinSW 二进制，并确认 `E:\AI-Video-Ops-Network\frpc.exe` 和 `frpc.toml` 已存在；才创建 `AIVO-FRPC`。不下载/升级 FRP，不生成 token。
 
-服务设 Manual，禁用旧的 SCM/WinSW 自动重启策略，Guard 负责恢复；原 XML/服务安全描述有外部备份。只给专用 Windows 用户查询/启动/停止此服务的权限，不给修改服务配置权限。脚本和配置只读，独立日志/状态可写，CLI 凭证目录只对专用身份、SYSTEM、管理员开放。
+复用本机内置 Administrator 的替代安装命令如下，不与上面的普通账户命令重复执行；必须使用真实 Windows 密码，不能使用 Windows Hello PIN：
 
-任务 `AIVO-FRP-IP-Guard`：开机延迟 30 秒、每 10 分钟、IgnoreNew、最长 2 分钟。Password 登录类型支持用户未登录及网络访问；Windows 密码仅传给 Task Scheduler 注册，不写入文件。遇到域策略禁止“作为批处理作业登录”时，必须由 Windows 管理员为此用户处理该权限，不改成 SYSTEM/S4U 规避。
+```powershell
+$guardAccount = "$env:COMPUTERNAME\Administrator"
+$guardCredential = Get-Credential -UserName $guardAccount
+& 'E:\AI-Video-Ops-Network\setup\install-frp-ip-guard.ps1' `
+  -ExpectedComputerName $env:COMPUTERNAME `
+  -UserName $guardAccount -TaskCredential $guardCredential `
+  -AllowAdministratorAccount `
+  -RegionId cn-shanghai -SecurityGroupId sg-uf61unqey0n2ft005unq `
+  -WinSWPath '<现有已验证的WinSW.exe绝对路径>'
+$guardCredential = $null
+```
 
-安装器不直接请求云 API，也不直接启动 FRPC；注册后的任务会开始周期执行。因此凭证未完成前只使用 `-PrepareOnly`，不要注册生产任务。安装完成先以同一专用账号执行只读检查，确认日志正常。
+如果本机 Administrator 已重命名，请填其真实名称；有现有 WinSW FRPC 服务时仍可省略 `-WinSWPath`。不要手改 4090 的安装器来绕过身份检查；使用已审核的新版本工具。
+
+服务设 Manual，禁用旧的 SCM/WinSW 自动重启策略，Guard 负责恢复；普通账户模式保留原 XML/服务安全描述的外部备份，并只授予查询/启动/停止此服务的必要权限。Administrator 模式复用既有管理员权限，不额外添加服务或 token 文件访问授权。文件 ACL 仍限制到运行身份、SYSTEM、管理员；独立日志/状态可写。管理员模式不能声称脚本/配置对该管理员不可修改。
+
+任务 `AIVO-FRP-IP-Guard`：开机延迟 30 秒、每 10 分钟、IgnoreNew、最长 2 分钟。普通账户为 LeastPrivilege；显式 Administrator 模式为 HighestAvailable，安装后校验实际身份和运行级别。Password 登录类型支持用户未登录及网络访问；Windows 密码仅传给 Task Scheduler 注册，不写入文件。遇到域策略禁止“作为批处理作业登录”时，必须由 Windows 管理员为此用户处理该权限，不改成 SYSTEM/S4U 规避。以后更改运行账户的 Windows 密码，需要同步更新任务保存的密码。
+
+安装器不直接请求云 API，也不直接启动 FRPC；注册后的任务会开始周期执行。因此凭证未完成前只使用 `-PrepareOnly`，不要注册生产任务。安装完成先以同一运行账号执行只读检查，确认日志正常。
 
 ## Dry-run 与首次运行
 
-以专用 Windows 用户运行；`-ServiceName` 填安装器报告的实际复用名称：
+以选定的 Windows 用户运行；Administrator 模式使用管理员 PowerShell。`-ServiceName` 填安装器报告的实际复用名称：
 
 ```powershell
 & 'E:\AI-Video-Ops-Network\frp-ip-guard.ps1' -ServiceName AIVO-FRPC -DryRun
@@ -107,7 +124,9 @@ Get-Content 'E:\AI-Video-Ops-Logs\frp-ip-guard.log' -Tail 15
 
 | 代码 | 处理 |
 | --- | --- |
-| `ALIYUN_CLI_MISSING` / `ALIYUN_ECS_PLUGIN_REQUIRED` | 在专用用户下安装官方 CLI/插件 |
+| `ALIYUN_CLI_MISSING` / `ALIYUN_ECS_PLUGIN_REQUIRED` | 在选定运行用户下安装官方 CLI/插件 |
+| `ADMINISTRATOR_ACCOUNT_OPT_IN_REQUIRED` | 仅在明确选择本机内置 Administrator 时，使用新版安装器并传 `-AllowAdministratorAccount` |
+| `LOCAL_ADMINISTRATOR_ACCOUNT_REQUIRED` / `WINDOWS_SERVICE_IDENTITY_NOT_SUPPORTED` | 核对本机实际用户；不允许换成系统身份或其他机器/域的 Administrator |
 | `ALIYUN_PROFILE_REQUIRED` / `ALIYUN_AUTH_FAILED` | 核对同一 Windows Profile 和最小 RAM 策略，不输出配置内容 |
 | `GUARD_CONFIG_REQUIRED` | 填真实地域/安全组 ID，不猜测 |
 | `UNMANAGED_7000_RULES_PRESENT` | 用户审核历史规则；脚本不清理它们 |

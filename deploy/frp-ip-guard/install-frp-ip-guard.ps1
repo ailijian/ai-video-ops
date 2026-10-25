@@ -3,6 +3,7 @@ param(
     [switch]$PrepareOnly,
     [string]$ExpectedComputerName = '',
     [string]$UserName = '',
+    [switch]$AllowAdministratorAccount,
     [System.Management.Automation.PSCredential]$TaskCredential,
     [string]$WinSWPath = '',
     [string]$RegionId = '',
@@ -28,6 +29,17 @@ function Resolve-GuardWindowsSid {
     return (New-Object Security.Principal.NTAccount($Identity)).Translate([Security.Principal.SecurityIdentifier]).Value
 }
 
+function Get-GuardTaskRunLevel {
+    param([string]$Sid, [string]$LocalAdministratorSid = '', [switch]$AllowAdministratorAccount)
+    if ($Sid -in @('S-1-5-18', 'S-1-5-19', 'S-1-5-20')) { throw 'WINDOWS_SERVICE_IDENTITY_NOT_SUPPORTED' }
+    if ($Sid -match '-500$') {
+        if (-not $AllowAdministratorAccount) { throw 'ADMINISTRATOR_ACCOUNT_OPT_IN_REQUIRED' }
+        if ($Sid -cne $LocalAdministratorSid) { throw 'LOCAL_ADMINISTRATOR_ACCOUNT_REQUIRED' }
+        return 'HighestAvailable'
+    }
+    return 'LeastPrivilege'
+}
+
 function New-GuardServiceXml {
     return @'
 <service>
@@ -46,7 +58,8 @@ function New-GuardServiceXml {
 }
 
 function New-GuardTaskXml {
-    param([string]$Principal, [string]$FrpcService)
+    param([string]$Principal, [string]$FrpcService,
+        [ValidateSet('LeastPrivilege', 'HighestAvailable')][string]$RunLevel = 'LeastPrivilege')
     if ($FrpcService -notmatch '^[A-Za-z0-9_.-]+$') { throw 'FRPC_SERVICE_INVALID' }
     $escapedPrincipal = ConvertTo-GuardXmlText $Principal
     $start = (Get-Date).AddMinutes(2).ToString('yyyy-MM-ddTHH:mm:ss')
@@ -58,7 +71,7 @@ function New-GuardTaskXml {
     <BootTrigger><Enabled>true</Enabled><Delay>PT30S</Delay></BootTrigger>
     <TimeTrigger><Repetition><Interval>PT10M</Interval><StopAtDurationEnd>false</StopAtDurationEnd></Repetition><StartBoundary>$start</StartBoundary><Enabled>true</Enabled></TimeTrigger>
   </Triggers>
-  <Principals><Principal id="Guard"><UserId>$escapedPrincipal</UserId><LogonType>Password</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
+  <Principals><Principal id="Guard"><UserId>$escapedPrincipal</UserId><LogonType>Password</LogonType><RunLevel>$RunLevel</RunLevel></Principal></Principals>
   <Settings>
     <MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy>
     <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
@@ -161,9 +174,18 @@ function Install-AivoFrpGuard {
         if (-not $ExpectedComputerName -or $env:COMPUTERNAME -ine $ExpectedComputerName) { throw 'PRODUCTION_HOST_CONFIRMATION_REQUIRED' }
         $principal = New-Object Security.Principal.WindowsPrincipal([Security.Principal.WindowsIdentity]::GetCurrent())
         if (-not $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) { throw 'ADMINISTRATOR_REQUIRED' }
-        if (-not $UserName) { throw 'DEDICATED_WINDOWS_IDENTITY_REQUIRED' }
+        if (-not $UserName) { throw 'WINDOWS_IDENTITY_REQUIRED' }
         $sid = Resolve-GuardWindowsSid $UserName
-        if ($sid -in @('S-1-5-18', 'S-1-5-19', 'S-1-5-20') -or $sid -match '-500$') { throw 'DEDICATED_WINDOWS_IDENTITY_REQUIRED' }
+        $localAdministratorSid = ''
+        if ($sid -match '-500$' -and $AllowAdministratorAccount) {
+            $localAdministrators = @(Get-LocalUser | Where-Object { $_.SID.Value -match '-500$' })
+            if ($localAdministrators.Count -ne 1) { throw 'LOCAL_ADMINISTRATOR_ACCOUNT_REQUIRED' }
+            $localAdministratorSid = $localAdministrators[0].SID.Value
+        }
+        $taskRunLevel = Get-GuardTaskRunLevel $sid $localAdministratorSid -AllowAdministratorAccount:$AllowAdministratorAccount
+        if ($taskRunLevel -eq 'HighestAvailable') {
+            Write-Warning 'Administrator mode selected: the guard runs with local administrator privileges. Keep the RAM policy narrowly scoped and protect the local CLI credentials.'
+        }
         $profile = Get-CimInstance Win32_UserProfile -Filter "SID='$sid'"
         if ($null -eq $profile -or -not $profile.LocalPath) { throw 'WINDOWS_USER_PROFILE_REQUIRED' }
         $cliDirectory = Join-Path $profile.LocalPath '.aliyun'
@@ -171,7 +193,7 @@ function Install-AivoFrpGuard {
         try { $metadata = Get-Content -LiteralPath $cliConfig -Raw | ConvertFrom-Json } catch { throw 'ALIYUN_PROFILE_REQUIRED' }
         $profiles = @((Get-GuardProperty $metadata 'profiles' @()) | Where-Object { (Get-GuardProperty $_ 'name') -ceq 'aivo-frp' })
         if ($profiles.Count -ne 1 -or (Get-GuardProperty $profiles[0] 'mode') -notin @('AK', 'RamRoleArn')) { throw 'ALIYUN_PROFILE_REQUIRED' }
-        if ($null -eq $TaskCredential) { $TaskCredential = Get-Credential -UserName $UserName -Message 'Dedicated Windows task identity (not an Alibaba Cloud key)' }
+        if ($null -eq $TaskCredential) { $TaskCredential = Get-Credential -UserName $UserName -Message 'Windows task identity password (not an Alibaba Cloud key or Windows Hello PIN)' }
         if ($null -eq $TaskCredential -or (Resolve-GuardWindowsSid $TaskCredential.UserName) -ne $sid) { throw 'TASK_IDENTITY_MISMATCH' }
         $existingTask = Get-ScheduledTask -TaskName 'AIVO-FRP-IP-Guard' -ErrorAction SilentlyContinue
         if ($null -ne $existingTask) {
@@ -211,7 +233,10 @@ function Install-AivoFrpGuard {
         $preparedStateDirectory = Join-Path $logDirectory 'frp-ip-guard-state'
         if (-not (Test-Path -LiteralPath $preparedStateDirectory)) { [void](New-Item -ItemType Directory -Path $preparedStateDirectory) }
         [IO.File]::WriteAllText((Join-Path $networkDirectory 'AIVO-FRPC.xml.example'), (New-GuardServiceXml), (New-Object Text.UTF8Encoding($false)))
-        [IO.File]::WriteAllText((Join-Path $networkDirectory 'AIVO-FRP-IP-Guard.task.xml.example'), (New-GuardTaskXml 'DEDICATED_WINDOWS_USER' 'AIVO-FRPC'), [Text.Encoding]::Unicode)
+        $examplePrincipal = if ($AllowAdministratorAccount) { 'LOCAL_ADMINISTRATOR_ACCOUNT' } else { 'DEDICATED_WINDOWS_USER' }
+        $exampleRunLevel = if ($AllowAdministratorAccount) { 'HighestAvailable' } else { 'LeastPrivilege' }
+        [IO.File]::WriteAllText((Join-Path $networkDirectory 'AIVO-FRP-IP-Guard.task.xml.example'),
+            (New-GuardTaskXml $examplePrincipal 'AIVO-FRPC' -RunLevel $exampleRunLevel), [Text.Encoding]::Unicode)
         Write-Output 'PREPARED_ONLY: no service, scheduled task, credential, or security-group mutation.'
         return
     }
@@ -242,11 +267,11 @@ function Install-AivoFrpGuard {
     $recoveryResult = Invoke-GuardNative "$env:SystemRoot\System32\sc.exe" @('failure', $serviceName, 'reset=', '0', 'actions=', '')
     if ($recoveryResult.ExitCode -ne 0) { throw 'FRPC_SERVICE_RECOVERY_SETUP_FAILED' }
     $binding = Get-GuardFrpcBinding $serviceName
-    Grant-GuardServiceControl $serviceName $sid
+    if ($taskRunLevel -eq 'LeastPrivilege') { Grant-GuardServiceControl $serviceName $sid }
     foreach ($path in @($guardDestination, $configDestination, $binding.Wrapper, $binding.XmlPath, $binding.Executable)) {
         Set-GuardFileAcl $path $sid ([Security.AccessControl.FileSystemRights]::ReadAndExecute)
     }
-    Grant-GuardConfigMetadataRead $binding.Config $sid
+    if ($taskRunLevel -eq 'LeastPrivilege') { Grant-GuardConfigMetadataRead $binding.Config $sid }
     # Separate writable state/logs; never grant this task write access to frpc.toml/token.
     $guardLogDirectory = Join-Path $logDirectory 'frp-ip-guard-state'
     if (-not (Test-Path -LiteralPath $guardLogDirectory)) { [void](New-Item -ItemType Directory -Path $guardLogDirectory) }
@@ -260,13 +285,15 @@ function Install-AivoFrpGuard {
     foreach ($file in @(Get-ChildItem -LiteralPath $cliDirectory -Force -File -Recurse)) {
         Set-GuardFileAcl $file.FullName $sid ([Security.AccessControl.FileSystemRights]::FullControl)
     }
-    $xml = New-GuardTaskXml $sid $serviceName
+    $xml = New-GuardTaskXml $sid $serviceName -RunLevel $taskRunLevel
     try {
         $password = $TaskCredential.GetNetworkCredential().Password
         Register-ScheduledTask -TaskName 'AIVO-FRP-IP-Guard' -Xml $xml -User $UserName -Password $password -Force | Out-Null
     } finally { $password = $null; $TaskCredential = $null }
     $task = Get-ScheduledTask -TaskName 'AIVO-FRP-IP-Guard'
-    if ($task.Principal.LogonType -ne 'Password' -or $task.Settings.MultipleInstances -ne 'IgnoreNew' -or
+    $expectedTaskLevel = if ($taskRunLevel -eq 'HighestAvailable') { 'Highest' } else { 'Limited' }
+    if ((Resolve-GuardWindowsSid $task.Principal.UserId) -cne $sid -or $task.Principal.RunLevel -ne $expectedTaskLevel -or
+        $task.Principal.LogonType -ne 'Password' -or $task.Settings.MultipleInstances -ne 'IgnoreNew' -or
         $task.Settings.ExecutionTimeLimit -ne 'PT2M') { throw 'TASK_SETUP_VERIFICATION_FAILED' }
     Write-Output ('SETUP_PASS: service=' + $serviceName + '; startup=Manual; task=AIVO-FRP-IP-Guard; no cloud mutation performed by installer.')
 }

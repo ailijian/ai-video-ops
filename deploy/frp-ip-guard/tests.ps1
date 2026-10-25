@@ -276,6 +276,33 @@ Invoke-GuardTest 'task/service contracts: boot delay, 10 minutes, Password logon
     Assert-GuardTest ($service.service.startmode -ceq 'Manual' -and $service.service.executable -ceq 'E:\AI-Video-Ops-Network\frpc.exe') 'manual fixed binding'
     Assert-GuardTest ($service.service.arguments -ceq '-c E:\AI-Video-Ops-Network\frpc.toml') 'existing config untouched'
 }
+Invoke-GuardTest 'local Administrator requires explicit opt-in; service and foreign Administrator identities remain blocked' {
+    $localSid = 'S-1-5-21-11-22-33-500'
+    Assert-GuardThrows { Get-GuardTaskRunLevel $localSid $localSid } 'ADMINISTRATOR_ACCOUNT_OPT_IN_REQUIRED'
+    Assert-GuardTest ((Get-GuardTaskRunLevel $localSid $localSid -AllowAdministratorAccount) -ceq 'HighestAvailable') 'explicit local Administrator supported'
+    Assert-GuardThrows { Get-GuardTaskRunLevel $localSid -AllowAdministratorAccount } 'LOCAL_ADMINISTRATOR_ACCOUNT_REQUIRED'
+    Assert-GuardThrows { Get-GuardTaskRunLevel 'S-1-5-21-44-55-66-500' $localSid -AllowAdministratorAccount } 'LOCAL_ADMINISTRATOR_ACCOUNT_REQUIRED'
+    foreach ($serviceSid in @('S-1-5-18', 'S-1-5-19', 'S-1-5-20')) {
+        Assert-GuardThrows { Get-GuardTaskRunLevel $serviceSid } 'WINDOWS_SERVICE_IDENTITY_NOT_SUPPORTED'
+        Assert-GuardThrows { Get-GuardTaskRunLevel $serviceSid $localSid -AllowAdministratorAccount } 'WINDOWS_SERVICE_IDENTITY_NOT_SUPPORTED'
+    }
+    Assert-GuardTest ((Get-GuardTaskRunLevel 'S-1-5-21-11-22-33-1001') -ceq 'LeastPrivilege') 'ordinary user default unchanged'
+}
+Invoke-GuardTest 'Administrator task preserves password logon, matching principal, bounded schedule and secret-free action' {
+    $sid = 'S-1-5-21-11-22-33-500'
+    $level = Get-GuardTaskRunLevel $sid $sid -AllowAdministratorAccount
+    [xml]$task = New-GuardTaskXml $sid 'AIVO-FRPC' -RunLevel $level
+    Assert-GuardTest ($task.Task.Principals.Principal.UserId -ceq $sid -and $task.Task.Principals.Principal.RunLevel -ceq 'HighestAvailable') 'actual approved principal and elevation'
+    Assert-GuardTest ($task.Task.Principals.Principal.LogonType -ceq 'Password') 'logged-out execution retained'
+    Assert-GuardTest ($task.Task.Triggers.BootTrigger.Delay -ceq 'PT30S' -and $task.Task.Triggers.TimeTrigger.Repetition.Interval -ceq 'PT10M') 'schedule unchanged'
+    Assert-GuardTest ($task.Task.Settings.MultipleInstancesPolicy -ceq 'IgnoreNew' -and $task.Task.Settings.ExecutionTimeLimit -ceq 'PT2M') 'single instance and timeout retained'
+    Assert-GuardTest ($task.Task.Actions.Exec.Arguments -notmatch 'password|AccessKey|Secret|token|AllowAdministratorAccount') 'no credentials or setup switch in task arguments'
+    # Construct native task principals in memory only; never register or start a task.
+    $principal = New-ScheduledTaskPrincipal -UserId $sid -LogonType Password -RunLevel Highest
+    Assert-GuardTest ($principal.RunLevel -eq 'Highest' -and $principal.LogonType -eq 'Password') 'native CIM enum values match installer verification'
+    $ordinaryPrincipal = New-ScheduledTaskPrincipal -UserId 'S-1-5-21-11-22-33-1001' -LogonType Password -RunLevel Limited
+    Assert-GuardTest ($ordinaryPrincipal.RunLevel -eq 'Limited') 'ordinary account native run level preserved'
+}
 Invoke-GuardTest 'log whitelist blocks exception text and arbitrary secret fields' {
     Reset-GuardMock
     Write-GuardLog $script:Mock.Log 'Secret=SENTINEL_DO_NOT_LOG'
