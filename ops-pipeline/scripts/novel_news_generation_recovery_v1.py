@@ -136,12 +136,16 @@ def current_identity(intent, context):
         raise GenerationError('AUTHORIZATION_CHANGED')
 
 
-def snapshot(root, context):
+def snapshot(root, context, *, _sealed_history=False):
     """Original source reader plus exact immutable source/memory references."""
     from news_runtime_v1_2 import configured, current
     paths, request = context['paths'], context['request']
     binding = request.get('profile_compatibility_v1_2')
-    if configured(root):
+    if _sealed_history:
+        from news_export_recovery_v1 import completed_production_receipt
+        if completed_production_receipt(root,paths['request'],kind='novel') is None:
+            raise GenerationError('EVIDENCE_INVALID')
+    elif configured(root):
         current(root, reuse_intent='novel_content', pinned=binding)
     lineage = request['lineage']
     refs = {key: {'path': str(paths[key].relative_to(root)), 'sha256': file_sha(paths[key])}

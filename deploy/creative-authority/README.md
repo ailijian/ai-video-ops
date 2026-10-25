@@ -24,8 +24,40 @@ requests, tasks, exports, media, credentials, or raw downloads. Recorded source
 paths in immutable artifacts remain provenance; the installer does not rewrite
 them or re-run any Human approval.
 
-The old development node is the only approved source:
-`E:\projects\ai-video-ops\ops-pipeline\data`. Do not build from test fixtures.
+For the legacy V1 release route below, the old development node remains its
+approved historical source: `E:\projects\ai-video-ops\ops-pipeline\data`.
+Do not build from test fixtures.
+
+### Founder-approved versioned source amendment — 2026-10-25
+
+The Founder approved the exact
+[production activation scope](../../docs/deliveries/jt-production-creation-1/PRODUCTION_ACTIVATION_AUTHORIZATION.md).
+For the new Compatibility Control and v1.1/v1.2/v1.3 production releases, the
+4090 node's actual `E:\projects\ai-video-ops\ops-pipeline` is the sole authoring
+source and explicitly configured live Control root. Initialize a missing
+versioned Control only through its original locked Owner during the approved
+maintenance window. Do not create another writer on the development machine,
+clone a Control as a fallback, or change existing legacy receipts/approvals.
+The previous development-node-only statement does not select the source for
+this newly authorized versioned route. Legacy V1 history stays unchanged.
+
+Source and runtime may use that same explicit pipeline root under the existing
+local/shared-filesystem protocol. Independent reviewer grants, real source
+validation and per-target Human approval remain mandatory. Source initialization
+and permission grants do not approve a Case, Pattern or Compatibility target.
+News additionally requires its original Native qualification and Pattern-purpose
+review before production admission. Real data and media are not copied from
+development or synthetic qualification fixtures. No new network service or
+replication protocol is introduced.
+
+The 4090 must first receive the exact reviewed source Commit through the
+verified offline Git Bundle. Recheck actual Tasks/unknown operations, preserve
+a consistent recovery snapshot and the original protected startup configuration,
+and stop the actual single Console before offline Authority mutations. Resume
+the one service after applicable preflight. Local/shared-source freshness,
+Human gates, privacy, media rights and Ledger rules remain unchanged.
+See the [versioned activation handoff](../../docs/deliveries/jt-production-creation-1/ACTIVATION_HANDOFF.md);
+the legacy `install` commands below do not install a v1.3 release.
 
 ## Build and validate on the development node
 

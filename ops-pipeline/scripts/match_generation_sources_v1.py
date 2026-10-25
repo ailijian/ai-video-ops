@@ -325,7 +325,7 @@ def load_profile_registry(path: Path | None) -> tuple[dict[str, Any] | None, str
         raise FileNotFoundError(path)
     registry = read_json(path)
     validate_registry(registry)
-    if registry.get('schema_version') in {'production-profile-registry-v1.1','production-profile-registry-v1.2'}:
+    if registry.get('schema_version') in {'production-profile-registry-v1.1','production-profile-registry-v1.2','production-profile-registry-v1.3'}:
         from profile_compatibility_release_v1_1 import effective_runtime, find_runtime_root
         active = effective_runtime(find_runtime_root(path))
         if active['registry_path'] != path:
@@ -349,7 +349,10 @@ def load_compatibility_report(
     if not io_path(path).is_file():
         raise FileNotFoundError(path)
     report = read_json(path)
-    if report.get('schema_version') == 'creative-coverage-report-v1.2':
+    if report.get('schema_version') == 'creative-coverage-report-v1.3':
+        from profile_compatibility_contract_v1_3 import COVERAGE, validate_contract
+        validate_contract(report,COVERAGE)
+    elif report.get('schema_version') == 'creative-coverage-report-v1.2':
         from profile_compatibility_contract_v1_2 import COVERAGE, validate_contract
         validate_contract(report, COVERAGE)
     elif report.get('schema_version') == 'creative-coverage-report-v1.1':
@@ -380,7 +383,7 @@ def load_profile_compatibility_approval(
     if not io_path(path).is_file():
         raise FileNotFoundError(path)
     approval = read_json(path)
-    if approval.get('schema_version') in {'production-profile-registry-v1.1','production-profile-registry-v1.2'}:
+    if approval.get('schema_version') in {'production-profile-registry-v1.1','production-profile-registry-v1.2','production-profile-registry-v1.3'}:
         from profile_compatibility_release_v1_1 import active_approval_projection
         return active_approval_projection(path)
     if approval.get("schema_version") != COMPATIBILITY_APPROVAL_SCHEMA_VERSION:
@@ -970,7 +973,7 @@ def build_source_plan(
         request_has_explicit_target = True
     registry, registry_sha = load_profile_registry(profile_registry_path)
     native_active = None
-    if (registry or {}).get('schema_version') in {'production-profile-registry-v1.1','production-profile-registry-v1.2'}:
+    if (registry or {}).get('schema_version') in {'production-profile-registry-v1.1','production-profile-registry-v1.2','production-profile-registry-v1.3'}:
         from profile_compatibility_release_v1_1 import effective_runtime, find_runtime_root
         native_active = effective_runtime(find_runtime_root(profile_registry_path))
         if (creative_coverage_report_path is None or profile_compatibility_approval_path is None

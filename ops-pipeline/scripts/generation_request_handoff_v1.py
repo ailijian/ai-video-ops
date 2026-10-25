@@ -813,6 +813,8 @@ def create_generation_request_handoff(
         except creative_style.CreativeStyleError as exc:
             raise GenerationRequestError(exc.code, str(exc)) from exc
 
+    from production_admission_v1 import require_native_execution
+    require_native_execution(pipeline_root,profile=profile,style=creative_style_id)
     idempotency_key = str(idempotency_key or "").strip()
 
     validate_confirmation(

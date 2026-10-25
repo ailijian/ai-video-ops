@@ -32,7 +32,20 @@ def translated(function):
             raise CanonicalOperationError(exc.code, '当前操作正在进行。', '请稍后刷新已有任务。') from exc
         except (RuntimeError, OSError, ValueError, KeyError, TypeError) as exc:
             code = getattr(exc, 'code', 'CREATION_BATCH_OPERATION_INVALID')
+            qualification = {
+                'CREATIVE_STYLE_QUALIFICATION_REQUIRED':'当前环境尚未激活可用于本次创作的正式版本。',
+                'CREATION_BATCH_ISOLATED_SCOPE_REQUIRED':'当前创作版本仅用于隔离验证，尚未开放正式生产。',
+                'CREATION_BATCH_QUALIFICATION_REQUIRED':'当前创作代码与已批准版本不一致，需要重新核对正式版本。',
+                'CREATION_PRODUCTION_ADMISSION_REQUIRED':'正式创作准入尚未完成，或原准入已撤回。',
+                'CREATION_PRODUCTION_SELECTION_NOT_ADMITTED':'所选内容类型或来源尚未在本次正式开放范围内。',
+                'CREATION_PRODUCTION_EXECUTION_NOT_AUTHORIZED':'本次正式创作版本尚未取得模型执行授权。',
+                'PROFILE_COMPATIBILITY_BLOCKED':'当前创作结构、兼容性或正式版本尚未通过核对。',
+            }
+            if code in qualification:
+                raise CanonicalOperationError(code,qualification[code],
+                    '请联系管理员核对正式创作版本及开放范围。当前配置已保留；调整数量或共享案例不会替代该项资格。') from exc
             message = {
+                'CREATION_BATCH_PRODUCTION_CAPACITY':'本次目标超出当前已批准的生产批次范围。',
                 'CREATION_BATCH_PREFLIGHT_STALE':'客户资料、所选来源或批准版本已变化，请重新核对创作资格。',
                 'CREATION_BATCH_REPURPOSE_SELECTION_REQUIRED':'改编数量与已选历史内容不一致，请明确选择相同数量的不同内容。',
                 'NEWS_DELIVERY_CONTENT_LEDGER_MISSING':'当前客户还没有已交付、可供改编的历史内容。',

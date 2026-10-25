@@ -84,13 +84,20 @@ def _paths(root: Path, request_id: str) -> dict[str, Path]:
 
 
 def _structural_source_projection(
-    root: Path, pattern_ref: dict[str, Any], case_refs: list[dict[str, Any]], source_plan=None
+    root: Path, pattern_ref: dict[str, Any], case_refs: list[dict[str, Any]], source_plan=None, *, historical=False
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     pattern_id = str(pattern_ref.get("pattern_id") or "")
     if not re.fullmatch(r"[a-z0-9_]+", pattern_id):
         raise NovelNewsError("NEWS_NOVEL_PATTERN_LINEAGE_INVALID", "Selected Pattern ID is invalid.")
     from news_runtime_v1_2 import configured,sources
-    released=sources(root,source_plan) if configured(root) else None
+    if historical:
+        from profile_compatibility_release_v1_3 import historical_bundle_root
+        from profile_compatibility_decisions_v1_1 import resolve_ref
+        pinned=source_plan['profile_compatibility_v1_2'];bundle=historical_bundle_root(root,pinned)
+        released=(None,resolve_ref(bundle,pinned['pattern_ref']),
+            {s['case_id']:resolve_ref(bundle,s['fingerprint_ref']) for s in pinned['structural_sources']})
+    else:
+        released=sources(root,source_plan) if configured(root) else None
     pattern_path = released[1] if released else root / "data/patterns/approved" / pattern_id / "pattern_v1.json"
     if not io_path(pattern_path).is_file() or sha256_file(pattern_path) != pattern_ref.get("approved_pattern_sha"):
         raise NovelNewsError("NEWS_NOVEL_PATTERN_LINEAGE_INVALID", "Selected Approved Pattern changed after source planning.")
@@ -135,15 +142,19 @@ def _structural_source_projection(
     return pattern_projection, case_projections
 
 
-def _source_context(root: Path, request_id: str) -> dict[str, Any]:
+def _source_context(root: Path, request_id: str, *, _sealed_history=False) -> dict[str, Any]:
     paths = _paths(root, request_id)
     request = _read(paths["request"])
     source_plan = _read(paths["source_plan"])
+    if _sealed_history:
+        from news_export_recovery_v1 import completed_production_receipt
+        if completed_production_receipt(root,paths['request'],kind='novel') is None:
+            raise NovelNewsError('NEWS_NOVEL_HISTORY_REQUIRED','Sealed production history is required for this read')
     if source_plan.get('profile_compatibility_v1_2')!=request.get('profile_compatibility_v1_2'):
         raise NovelNewsError('NEWS_NOVEL_SOURCE_BINDING_INVALID','Request and native Source Plan use different News versions')
     selected = request.get("selected_content") or {}
     from content_intent_reservations_v1 import assert_available
-    if selected:
+    if selected and not _sealed_history:
         assert_available(root, request.get('persona_id'), [selected], request_id)
     pattern_refs = source_plan.get("selected_patterns") or []
     case_refs = source_plan.get("eligible_case_pool") or []
@@ -184,9 +195,9 @@ def _source_context(root: Path, request_id: str) -> dict[str, Any]:
             raise NovelNewsError("NEWS_NOVEL_PERSONA_LINEAGE_INVALID", "Approved Persona changed after Request creation.")
     persona = _read(persona_path)
     from news_runtime_v1_2 import configured,validate_request_personas
-    if configured(root):validate_request_personas(root,request)
+    if configured(root) and not _sealed_history:validate_request_personas(root,request)
     from customer_constraints_v1 import assert_production_allowed
-    assert_production_allowed(persona, persona_path, consumer="novel_news")
+    if not _sealed_history:assert_production_allowed(persona, persona_path, consumer="novel_news")
     speaker = _read(speaker_path)
     safe_business = safe_persona_projection(persona)
     safe_speaker = safe_speaker_projection(speaker)
@@ -214,7 +225,7 @@ def _source_context(root: Path, request_id: str) -> dict[str, Any]:
         or not selected.get("approved_state_correspondence_refs")
     ):
         raise NovelNewsError("NEWS_SCENE_CORRESPONDENCE_INVALID", "State A/B must cite distinct Approved Customer Fact Atoms.")
-    pattern_structure, case_structures = _structural_source_projection(root, pattern_refs[0], case_refs,source_plan)
+    pattern_structure, case_structures = _structural_source_projection(root, pattern_refs[0], case_refs,source_plan,historical=_sealed_history)
     return {
         "paths": paths, "request": request, "source_plan": source_plan,
         "selected": selected, "pattern_id": pattern_id,
@@ -392,9 +403,10 @@ def prepare_novel_news_generation(*, pipeline_root, request_id, authorization_co
                       expected_parent=expected_parent)
 
 
-def novel_generation_state(root, request_id, *, context=None, completed=False):
+def novel_generation_state(root, request_id, *, context=None, completed=False, _sealed_history=False):
     from novel_news_generation_recovery_v1 import head, evidence, snapshot, directory, GenerationError
-    context = context or _source_context(root, request_id)
+    if _sealed_history and not completed:raise GenerationError('EVIDENCE_INVALID')
+    context = context or _source_context(root, request_id, _sealed_history=_sealed_history)
     attempt = head(root, request_id)
     plan_path = context['paths']['plan']
     state = {'artifact_present': plan_path.is_file(), 'ready_for_human_review': False,
@@ -410,7 +422,7 @@ def novel_generation_state(root, request_id, *, context=None, completed=False):
     state['recovery_state'] = 'not_dispatched'
     if not completed and attempt['intent']['parameters'] != _generation_parameters():
         raise GenerationError('OPERATION_CONFLICT')
-    current_snapshot = snapshot(root, context)
+    current_snapshot = snapshot(root, context, _sealed_history=_sealed_history)
     if completed:
         # Native export validation below proves the immutable completed Ledger
         # event. Later legal appends cannot rewrite this historical result.
@@ -688,7 +700,7 @@ def _export_novel_news_native(
     )
     directory = paths["approved"].parent
     if paths["receipt"].is_file() and paths["closure"].is_file():
-        validate_novel_news_export(pipeline_root=root, request_id=request_id)
+        validate_novel_news_export(pipeline_root=root, request_id=request_id, _live_recovery=True)
         from ledger_history_v1 import finish_completed_news_request
         finish_completed_news_request(root,business_id,request_id,directory,paths['receipt'],paths['closure'],export_context)
         return {"request_id": request_id, "output_path": str(output_path), "output_name": output_path.name,
@@ -807,12 +819,15 @@ def _export_novel_news_native(
 
 
 
-def validate_novel_news_export(*, pipeline_root: Path, request_id: str) -> dict:
+def validate_novel_news_export(*, pipeline_root: Path, request_id: str, _live_recovery=False) -> dict:
     """Strict native terminal reader, including legacy complete history."""
     from news_export_recovery_v1 import (NOVEL_RECEIPT, NOVEL_CLOSURE, NewsExportError,
         validate_workbook, validate_receipt_publication, validate_ledger_prefix)
     root = Path(pipeline_root).resolve()
     paths = _paths(root, request_id)
+    from news_export_recovery_v1 import completed_production_receipt
+    completed=None if _live_recovery else completed_production_receipt(root,paths['request'],kind='novel')
+    if completed is not None:return completed
     context = _source_context(root, request_id)
     approved = _read(paths["approved"])
     from news_export_recovery_v1 import verify_native_human_bundle
@@ -851,7 +866,8 @@ def validate_novel_news_export(*, pipeline_root: Path, request_id: str) -> dict:
 
 
 def novel_news_status(*, pipeline_root: Path, request_id: str) -> dict[str, Any]:
-    paths = _paths(pipeline_root.expanduser().resolve(), request_id)
+    pipeline_root=pipeline_root.expanduser().resolve()
+    paths = _paths(pipeline_root, request_id)
     request = _read(paths["request"])
     if request.get("target_profile") != "news" or not request.get("selected_content"):
         raise NovelNewsError("NEWS_NOVEL_REQUEST_INVALID", "Not a Novel News Request.")
@@ -859,9 +875,15 @@ def novel_news_status(*, pipeline_root: Path, request_id: str) -> dict[str, Any]
     coverage = (source or {}).get("coverage") or {}
     context = None
     context_conflict = None
+    from news_export_recovery_v1 import completed_production_receipt,NewsExportError
+    seal_pending=False
+    try:completed=completed_production_receipt(pipeline_root,paths['request'],kind='novel')
+    except NewsExportError as exc:
+        if exc.code!='NEWS_EXPORT_LEDGER_SEAL_PENDING':raise
+        completed=None;seal_pending=True
     if coverage.get('status') == 'supported':
         try:
-            context = _source_context(pipeline_root.expanduser().resolve(), request_id)
+            context = _source_context(pipeline_root, request_id, _sealed_history=completed is not None)
         except RuntimeError as exc:
             context_conflict = getattr(exc, 'code', 'NEWS_GENERATION_SOURCE_CHANGED')
     stage = "source_plan" if not paths["source_plan"].is_file() else "generation"
@@ -876,13 +898,14 @@ def novel_news_status(*, pipeline_root: Path, request_id: str) -> dict[str, Any]
         from novel_news_generation_recovery_v1 import GenerationError
         try:
             human_completed = False
-            if paths['approved'].is_file():
+            if paths['approved'].is_file() and completed is None:
                 from news_export_recovery_v1 import verify_native_human_bundle
                 verify_native_human_bundle(pipeline_root, request=paths['request'], plan=paths['plan'],
                     review=paths['review'], approved=paths['approved'], kind='novel')
                 human_completed = True
             generation = novel_generation_state(pipeline_root.expanduser().resolve(), request_id,
-                context=context, completed=paths['closure'].is_file() or human_completed)
+                context=context, completed=paths['closure'].is_file() or human_completed,
+                _sealed_history=completed is not None)
         except (GenerationError, NovelNewsError) as exc:
             if exc.code == 'NEWS_GENERATION_LEGACY_UNBOUND_PLAN':
                 generation.update(artifact_present=True, recovery_state='dispatched_outcome_unknown',
@@ -900,7 +923,9 @@ def novel_news_status(*, pipeline_root: Path, request_id: str) -> dict[str, Any]
         output = pipeline_root / "output" / f"News新内容_{request_id}.xlsx"
         export_recovery_state = partial_state(pipeline_root, paths["approved"].parent, output=output,
             receipt=paths["receipt"], closure=paths["closure"])
-        if paths["closure"].is_file():
+        if seal_pending:
+            stage,export_recovery_state='export','ledger_seal_pending'
+        elif paths["closure"].is_file():
             validate_novel_news_export(pipeline_root=pipeline_root, request_id=request_id)
             stage, export_recovery_state = "completed", "completed"
         elif export_recovery_state == "legacy_unbound_orphan":

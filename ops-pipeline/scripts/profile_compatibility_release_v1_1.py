@@ -100,6 +100,12 @@ def configure_runtime(root, control_root, *, purpose, contract_version='1.1',pro
     if purpose not in {'isolated-validation', 'production'}:
         raise CompatibilityError('Explicit runtime purpose required')
     control = initialize_control(control_root)
+    if contract_version=='1.3':
+        from profile_compatibility_contract_v1_3 import CONFIG as VERSION,READER,validate_contract as check
+        config={'schema_version':VERSION,'purpose':purpose,'control_root':str(Path(control_root).resolve()),
+            'control_id':control['control_id'],'reader_version':READER,'profiles':profiles}
+        write_once(Path(root)/CONFIG,check(config,VERSION))
+        return config
     if contract_version=='1.2':
         from profile_compatibility_contract_v1_2 import CONFIG as VERSION,READER,validate_contract as check
         config={'schema_version':VERSION,'purpose':purpose,'control_root':str(Path(control_root).resolve()),
@@ -115,7 +121,10 @@ def configure_runtime(root, control_root, *, purpose, contract_version='1.1',pro
 
 def _control(root):
     config = read(Path(root) / CONFIG)
-    if config.get('schema_version')=='compatibility-runtime-config-v1.2':
+    if config.get('schema_version')=='compatibility-runtime-config-v1.3':
+        from profile_compatibility_contract_v1_3 import CONFIG as VERSION,validate_contract as check
+        check(config,VERSION)
+    elif config.get('schema_version')=='compatibility-runtime-config-v1.2':
         from profile_compatibility_contract_v1_2 import CONFIG as VERSION,validate_contract as check
         check(config,VERSION)
     elif (set(config) != {'schema_version', 'purpose', 'control_root', 'control_id'}
@@ -199,6 +208,9 @@ def _selected_files(root, derived):
 
 
 def validate_bundle(bundle, manifest):
+    if manifest.get('schema_version')=='creative-authority-release-v1.3':
+        from profile_compatibility_release_v1_3 import validate_bundle as production_bundle
+        return production_bundle(bundle,manifest)
     if manifest.get('schema_version')=='creative-authority-release-v1.2':
         from profile_compatibility_release_v1_2 import validate_bundle as news_bundle
         return news_bundle(bundle,manifest)
@@ -275,7 +287,7 @@ def source_blobs(repo_root, commit):
 
 
 def build_release(root, release_parent, repo_root, *, purpose, parent_release=None,
-                  contract_version='1.1',validation_refs=None,eligibility_stage=None):
+                  contract_version='1.1',validation_refs=None,eligibility_stage=None,production_admission_ref=None):
     root, repo_root = Path(root).resolve(), Path(repo_root).resolve()
     control = initialize_control(root)
     # A new implementation must not be attributed to the old Checkpoint commit.
@@ -290,7 +302,14 @@ def build_release(root, release_parent, repo_root, *, purpose, parent_release=No
             raise CompatibilityError('Release source does not match its declared commit')
         sources.append({'path': path, 'git_blob_sha256': hashlib.sha256(blob).hexdigest(),
                         'checkout_sha256': hashlib.sha256(actual).hexdigest()})
-    if contract_version=='1.2':
+    if contract_version=='1.3':
+        import profile_compatibility_contract_v1_3 as contract
+        from profile_compatibility_release_v1_3 import selected_files as select_news,allowed_artifact as allow_news
+        if purpose!='production' or production_admission_ref is None:
+            raise CompatibilityError('Production Release requires its exact independent Human admission')
+        from profile_compatibility_release_v1_2 import validate_machine_sources
+        validate_machine_sources(repo_root,commit)
+    elif contract_version=='1.2':
         import profile_compatibility_contract_v1_2 as contract
         from profile_compatibility_release_v1_2 import selected_files as select_news,allowed_artifact as allow_news
         if purpose!='isolated-validation':raise CompatibilityError('News v1.2 is isolated-only')
@@ -300,7 +319,11 @@ def build_release(root, release_parent, repo_root, *, purpose, parent_release=No
         import profile_compatibility_contract_v1_1 as contract
         select_news,allow_news=None,None
     else:raise CompatibilityError('Unknown release contract')
-    derived = bootstrap_registry(root,contract_version=contract_version,validation_refs=validation_refs,eligibility_stage=eligibility_stage)
+    if contract_version=='1.3':
+        from profile_compatibility_release_v1_3 import bootstrap_registry as production_registry
+        derived=production_registry(root,production_admission_ref)
+    else:
+        derived = bootstrap_registry(root,contract_version=contract_version,validation_refs=validation_refs,eligibility_stage=eligibility_stage)
     with control_write(root):
         if decision_graph(root)['head_sha256'] != derived['graph']['head_sha256']:
             raise CompatibilityError('Decision graph advanced while preparing release')
@@ -326,6 +349,7 @@ def build_release(root, release_parent, repo_root, *, purpose, parent_release=No
             'approval_refs': read(root / derived['registry_ref']['path'])['approval_refs'],
             'parent_release': parent_release}
         if contract_version=='1.2':manifest['eligibility']=derived['eligibility']
+        if contract_version=='1.3':manifest['production_admission_ref']=derived['production_admission_ref']
         validate_bundle(bundle, manifest)
         write_once(directory / 'manifest.json', manifest)
         verify_release(directory, repo_root)
@@ -338,7 +362,7 @@ def verify_release(directory, repo_root):
     from profile_compatibility_decisions_v1_1 import contract_for_version
     contract=contract_for_version(raw.get('schema_version'))
     manifest = contract.validate_contract(raw, contract.RELEASE)
-    if contract.RELEASE.endswith('v1.2'):
+    if contract.RELEASE.endswith(('v1.2','v1.3')):
         from profile_compatibility_release_v1_2 import validate_machine_sources
         validate_machine_sources(repo_root,manifest['source_repo_commit'])
     if directory.name != manifest['release_id']:
@@ -365,7 +389,7 @@ def stage_release(directory, runtime_root, repo_root):
     directory, root = Path(directory).resolve(), Path(runtime_root).resolve()
     manifest = read(directory / 'manifest.json')
     config, control = _control(root)
-    expected='creative-authority-release-v1.2' if config['schema_version'].endswith('v1.2') else RELEASE
+    expected=_runtime_contract(config).RELEASE
     if manifest.get('schema_version')!=expected:raise CompatibilityError('Runtime/Release reader version mismatch')
     if 'profiles' in config and config['profiles']!=manifest['profiles']:
         raise CompatibilityError('Runtime/Release declared profiles mismatch')
@@ -373,6 +397,9 @@ def stage_release(directory, runtime_root, repo_root):
         raise CompatibilityError('Validation release cannot enter production or a different control Authority')
     verify_release(directory, repo_root)
     with control_write(control):
+        if manifest.get('schema_version')=='creative-authority-release-v1.3':
+            from production_admission_v1 import current
+            current(control,manifest['production_admission_ref'])
         if decision_graph(control)['head_sha256'] != manifest['decision_head_sha256']:
             raise CompatibilityError('Release is stale; stage refuses old permissions')
         destination = root / DOMAIN / 'staged' / manifest['release_id']
@@ -391,8 +418,7 @@ def activate(runtime_root, repo_root, release_ref, operation_id):
     validate(operation_id, OPERATION)
     root = Path(runtime_root).resolve()
     config, control = _control(root)
-    from profile_compatibility_decisions_v1_1 import contract_for_version
-    contract=contract_for_version('creative-authority-release-v1.2' if config['schema_version'].endswith('v1.2') else RELEASE)
+    contract=_runtime_contract(config)
     with control_write(control):
         manifest_path = resolve_ref(root, release_ref)
         manifest = read(manifest_path)
@@ -404,6 +430,9 @@ def activate(runtime_root, repo_root, release_ref, operation_id):
             raise CompatibilityError('Activation declared profiles mismatch')
         if decision_graph(control)['head_sha256'] != manifest['decision_head_sha256']:
             raise CompatibilityError('Cannot activate a stale or withdrawn decision graph')
+        if contract.RELEASE.endswith('v1.3'):
+            from production_admission_v1 import current
+            current(control,manifest['production_admission_ref'])
         pointer_path = root / POINTER
         parent = read(pointer_path).get('activation_ref') if pointer_path.exists() else None
         receipt_path = root / DOMAIN / 'activations' / f'{operation_id}.json'
@@ -423,6 +452,7 @@ def activate(runtime_root, repo_root, release_ref, operation_id):
                 'decision_head_sha256': manifest['decision_head_sha256'],
                 'control_id': config['control_id'], 'purpose': config['purpose']}
             if manifest['schema_version'].endswith('v1.2'):receipt['eligibility']=manifest['eligibility']
+            if manifest['schema_version'].endswith('v1.3'):receipt['production_admission_ref']=manifest['production_admission_ref']
             write_once(receipt_path, contract.validate_contract(receipt, contract.ACTIVATION))
         pointer = {'activation_ref': ref(root, receipt_path)}
         temporary = pointer_path.with_suffix(f'.{operation_id}.tmp')
@@ -434,11 +464,19 @@ def activate(runtime_root, repo_root, release_ref, operation_id):
         return {'activation_ref': ref(root, receipt_path), 'receipt': receipt}
 
 
+def _runtime_contract(config):
+    from profile_compatibility_decisions_v1_1 import contract_for_version
+    versions={'compatibility-runtime-config-v1.1':RELEASE,
+        'compatibility-runtime-config-v1.2':'creative-authority-release-v1.2',
+        'compatibility-runtime-config-v1.3':'creative-authority-release-v1.3'}
+    if config['schema_version'] not in versions:raise CompatibilityError('Unknown configured runtime reader')
+    return contract_for_version(versions[config['schema_version']])
+
+
 def effective_runtime(runtime_root, *, pinned=None):
     root = Path(runtime_root).resolve()
     config, control = _control(root)
-    from profile_compatibility_decisions_v1_1 import contract_for_version
-    contract=contract_for_version('creative-authority-release-v1.2' if config['schema_version'].endswith('v1.2') else RELEASE)
+    contract=_runtime_contract(config)
     with control_read(control):
         # Only the isolated News reader has retained Native qualification.
         # Reuse is derived and process-local. Every access re-hashes all input
@@ -497,6 +535,18 @@ def effective_runtime(runtime_root, *, pinned=None):
                 or manifest['decision_head_sha256'] != graph['head_sha256']):
             raise CompatibilityError('兼容性决定已更新或撤回，请先发布并激活当前版本。')
         result = validate_bundle(manifest_path.parent / 'bundle', manifest)
+        if contract.RELEASE.endswith('v1.3'):
+            from production_admission_v1 import current
+            _,live=current(control,manifest['production_admission_ref'])
+            if live!=result['production_admission']:
+                raise CompatibilityError('Current production admission differs from the published scope')
+            actual_repo=Path(__file__).resolve().parents[2]
+            for item in manifest['source_files']:
+                try: actual_sha=file_sha(actual_repo/item['path'])
+                except OSError as exc:
+                    raise CompatibilityError('An executing production machine owner is missing') from exc
+                if actual_sha!=item['checkout_sha256']:
+                    raise CompatibilityError('An executing production machine owner changed')
         # Compare live sources as well as immutable staged snapshot.
         validate_targets(control, [value['target'] for value in graph['heads'].values() if value['effective']])
         binding = {'activation_ref': pointer['activation_ref'], 'release_ref': activation['release_ref'],
@@ -505,11 +555,16 @@ def effective_runtime(runtime_root, *, pinned=None):
         active={**result, 'binding': binding, 'bundle_root': manifest_path.parent / 'bundle',
                 'manifest': manifest, 'registry_path': resolve_ref(manifest_path.parent / 'bundle', manifest['registry_ref']),
                 'coverage_path': resolve_ref(manifest_path.parent / 'bundle', manifest['coverage_ref'])}
+        if contract.RELEASE.endswith('v1.3'):
+            from profile_compatibility_release_v1_3 import validate_binding
+            if activation['production_admission_ref']!=manifest['production_admission_ref']:
+                raise CompatibilityError('Production activation differs from its reviewed admission')
+            if pinned is not None:validate_binding(active,pinned)
         if contract.RELEASE.endswith('v1.2'):
             from profile_compatibility_release_v1_2 import validate_binding
             if activation['eligibility']!=manifest['eligibility']:raise CompatibilityError('Activation eligibility differs from Release')
             if pinned is not None:validate_binding(active,pinned)
-        elif pinned is not None and pinned != binding:
+        elif contract.RELEASE.endswith('v1.1') and pinned is not None and pinned != binding:
             raise CompatibilityError('Open Request uses a different Compatibility activation; cannot continue writes')
         if news:
             from profile_compatibility_release_v1_2 import validation_roots,validation_fingerprint

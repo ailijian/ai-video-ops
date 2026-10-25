@@ -48,11 +48,15 @@ const NEWS_SOURCES = [
   ['repurpose','改编已有内容','选择已经审核的历史内容，重新制作新闻体。'],
 ];
 export function configurationFailureMarkup(failure) {
+  const qualification = new Set(['CREATIVE_STYLE_QUALIFICATION_REQUIRED','CREATION_BATCH_ISOLATED_SCOPE_REQUIRED',
+    'CREATION_BATCH_QUALIFICATION_REQUIRED','CREATION_PRODUCTION_ADMISSION_REQUIRED',
+    'CREATION_PRODUCTION_SELECTION_NOT_ADMITTED','CREATION_PRODUCTION_EXECUTION_NOT_AUTHORIZED',
+    'PROFILE_COMPATIBILITY_BLOCKED']).has(failure.code);
   return `<span class="batch-config-feedback-icon" aria-hidden="true">!</span><div class="batch-config-feedback-body">
-    <h3 id="config-feedback-title">${failure.checking ? '创作资格未通过，暂不能开始' : '本次操作未完成'}</h3>
+    <h3 id="config-feedback-title">${failure.checking ? qualification ? '创作暂未开放，请核对正式资格' : '创作资格未通过，暂不能开始' : '本次操作未完成'}</h3>
     <p class="batch-config-feedback-reason">${escapeHtml(failure.message)}</p>
     <p class="batch-config-feedback-next">${escapeHtml(failure.nextAction)}</p>
-    ${failure.checking ? '<button type="button" class="btn btn-secondary" id="config-adjust-quantities">调整创作数量</button>' : ''}</div>`;
+    ${failure.checking && !qualification ? '<button type="button" class="btn btn-secondary" id="config-adjust-quantities">调整创作数量</button>' : ''}</div>`;
 }
 function newsLegacyMarkup(state) {
   const legacy = (!state.repurposeEnabled && state.quantities.repurpose > 0)
@@ -283,7 +287,7 @@ export function createCreationConfigViews({ app, api, shell, bindCommonActions, 
           catch (error) {
             if (!isCurrent()) return;
             message = safeCreationMessage(error.message, "本次操作尚未确认，请重新核对。已有草稿会保留。");
-            failure = { checking, message, nextAction: safeCreationMessage(error.detail?.next_action,
+            failure = { checking, code:error.detail?.code, message, nextAction: safeCreationMessage(error.detail?.next_action,
               checking ? '请核对对应数量与创作来源，调整后重新核对资格。' : '请保留当前配置，按提示核对后重试。') };
           }
           finally { busy = false; render(failure ? "config-feedback" : "batch-config-status"); }

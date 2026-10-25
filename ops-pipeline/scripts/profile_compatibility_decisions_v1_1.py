@@ -26,6 +26,8 @@ def contract_for_version(version):
     if version in old.SCHEMAS:return old
     import profile_compatibility_contract_v1_2 as news
     if version in news.SCHEMAS:return news
+    import profile_compatibility_contract_v1_3 as production
+    if version in production.SCHEMAS:return production
     raise CompatibilityError('Unknown Compatibility contract; no legacy downgrade')
 
 
@@ -333,9 +335,17 @@ def decision_graph(root, *, check_sources=False, expected_control_id=None):
 
 
 @contextmanager
-def reviewer_operation(root, actor):
+def reviewer_operation(root, actor, *, allow_native_reads=False):
+    # The production Human operation verifies archived Native qualification
+    # under this same exclusive fence. Reuse the original synchronous read
+    # scope; never release/upgrade the OS lock or transfer it to a child.
+    if allow_native_reads:
+        from profile_compatibility_release_v1_1 import control_write
+        fence=control_write(root)
+    else:
+        fence=operation_lock(root, CONTROL_LOCK)
     with operation_lock(root, 'authority_backup_gate', shared=True):
-        with operation_lock(root, CONTROL_LOCK):
+        with fence:
             with operation_lock(root, f"profile-reviewer:{actor['namespace']}:{actor['user_id']}"):
                 yield
 

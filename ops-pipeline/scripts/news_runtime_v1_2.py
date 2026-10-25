@@ -9,7 +9,10 @@ from profile_compatibility_release_v1_2 import binding as make_binding
 
 def configured(root):
     path=Path(root)/CONFIG
-    return path.is_file() and read(path).get('schema_version')=='compatibility-runtime-config-v1.2'
+    if not path.is_file():return False
+    config=read(path)
+    return config.get('schema_version')=='compatibility-runtime-config-v1.2' or (
+        config.get('schema_version')=='compatibility-runtime-config-v1.3' and 'news' in config.get('profiles',[]))
 
 
 def current(root,*,reuse_intent='novel_content',pinned=None):
@@ -22,10 +25,15 @@ def current(root,*,reuse_intent='novel_content',pinned=None):
             raise CompatibilityError('Read-only qualification cannot change its native route')
         return scope['active'],scope['binding']
     if pinned is not None:
-        from profile_compatibility_contract_v1_2 import BINDING,validate_contract
-        validate_contract(pinned,BINDING)
+        import profile_compatibility_contract_v1_2 as contract
+        if pinned.get('schema_version')=='profile-compatibility-runtime-binding-v1.3':
+            import profile_compatibility_contract_v1_3 as contract
+        contract.validate_contract(pinned,contract.BINDING)
         if pinned['target_profile']!='news':raise CompatibilityError('News requires its own independent binding')
     active=effective_runtime(root,pinned=pinned)
+    if active['manifest'].get('schema_version')=='creative-authority-release-v1.3':
+        from profile_compatibility_release_v1_3 import binding
+        return active,binding(active,reuse_intent)
     if active['manifest'].get('schema_version')!='creative-authority-release-v1.2':
         raise CompatibilityError('News cannot consume a Mix-only or legacy release')
     return active,make_binding(active,reuse_intent)
@@ -79,13 +87,14 @@ def feasibility(root,business_path,speaker_path,quantity,selected_content=None,r
         for a in atoms if a.get('field') in fields}
     valid=(quantity==1 and price.get('state')=='known' and bool(str(price.get('value') or '').strip())
         and len(independent)>=4 and (selected_content is None or 'pricing_facts' in selected_content.get('primary_fact_refs',[])))
+    production=active['manifest'].get('schema_version')=='creative-authority-release-v1.3'
     return {'status':'supported' if valid else 'unsupported','blocker_type':None if valid else 'NEWS_PRICE_SOURCE_REQUIRED',
         'blocker_codes':[] if valid else ['NEWS_PRICE_SOURCE_REQUIRED'],
-        'humanized_reason':'已批准结构可用于本次隔离新闻体验证。' if valid else '请先核实价格及适用条件，并选择一条价格内容方向。',
+        'humanized_reason':('已批准结构可用于本次受限新闻体创作。' if production else '已批准结构可用于本次隔离新闻体验证。') if valid else '请先核实价格及适用条件，并选择一条价格内容方向。',
         'optional_customer_truth_route':None,'requested_quantity':quantity,'supported_quantity':1 if valid else 0,
         'selected_pattern_count':1 if valid else 0,'eligible_case_count':len(pinned['structural_sources']) if valid else 0,
         'authority':{'generation_request_created':False,'source_plan_written':False,'matching_core':'native News v1.2 effective graph',
-            'production_eligibility_granted':False},'profile_compatibility_v1_2':pinned}
+            'production_eligibility_granted':production},'profile_compatibility_v1_2':pinned}
 
 
 def source_plan(root,request_path,request):

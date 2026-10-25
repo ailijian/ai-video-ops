@@ -109,7 +109,12 @@ def catalog_snapshot(root,*,publish=True):
     release=active['binding']['release_ref']
     release_ref=artifact(root/release['path'],'native-release',active['manifest']['release_id'],active['manifest']['schema_version'])
     styles=[]
+    allowed=rules['enabled_styles']
+    if active['manifest'].get('schema_version')=='creative-authority-release-v1.3':
+        from production_admission_v1 import require_selection
+        allowed=require_selection(active,profile='mix')['creative_styles']
     for name in rules['enabled_styles']:
+        if name not in allowed:continue
         item={key:copy.deepcopy(definition(name)[key]) for key in STYLE_FIELDS}
         item.update(approved_product_rule_ref=product_ref,pattern_scope_refs=list(patterns.values()),
             compatibility_scope_refs=list(decisions.values()),release_ref=release_ref)
@@ -134,6 +139,8 @@ def admission_preflight(root,business_id,speaker_id,style_id,configuration,entry
     speaker=resolve_speaker_persona(root,business,speaker_id)
     validate_style_facts(style_id,rule,read(business['path']),read(speaker['path']))
     _,catalog=catalog_snapshot(root,publish=False)
+    if not any(rule['style_id']==style_id for rule in catalog['styles']):
+        raise CreativeStyleError('CREATIVE_STYLE_NOT_ENABLED','This Style has no current production admission')
     ledger=Path(root)/'data/content_ledgers'/business_id/'content_ledger_v1.json'
     snapshot={'business_sha256':file_sha(business['path']),'speaker_sha256':file_sha(speaker['path']),
         'catalog':catalog,'configuration':payload,'style_id':style_id,

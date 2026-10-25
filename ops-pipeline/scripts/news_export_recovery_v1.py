@@ -230,6 +230,9 @@ def current_authority(root, binding):
             if typed_news:
                 from profile_compatibility_contract_v1_2 import BINDING, validate_contract
                 from profile_compatibility_release_v1_2 import binding as exact_news_binding
+                if active['manifest'].get('schema_version')=='creative-authority-release-v1.3':
+                    from profile_compatibility_contract_v1_3 import BINDING,validate_contract
+                    from profile_compatibility_release_v1_3 import binding as exact_news_binding
                 validate_contract(binding, BINDING)
                 if binding != exact_news_binding(active, binding['reuse_intent']):
                     raise NewsExportError('NEWS_EXPORT_AUTHORITY_CHANGED')
@@ -353,10 +356,44 @@ def validate_ledger_prefix(ledger, prefix):
         raise NewsExportError('NEWS_EXPORT_LEDGER_HISTORY_CONFLICT', '原交付的内容历史已变化，需要重新核对。')
 
 
-def bound_source_paths(root, value):
+def bound_source_paths(root, value, *, historical=False):
     """Read only declared immutable native refs; Ledger has event identity instead."""
     result = set()
     if isinstance(value, dict):
+        # A production runtime stages corporate structural data; it does not
+        # copy it over runtime Canonical/customer data. These source refs are
+        # bundle-relative, while activation/release refs are runtime-relative.
+        # Dispatch only the new exact contract. Historical v1.2 snapshots keep
+        # their original byte/path semantics.
+        typed=value.get('schema_version')=='profile-compatibility-runtime-binding-v1.3'
+        raw_mix=set(value)=={'activation_ref','release_ref','decision_head_sha256','control_id','approval_refs'}
+        if typed or raw_mix:
+            from profile_compatibility_release_v1_1 import CONFIG,effective_runtime
+            config=Path(root)/CONFIG
+            archived_v13=historical and (typed or raw_mix and read(resolve_ref(root,value['release_ref'])).get('schema_version')=='creative-authority-release-v1.3')
+            if archived_v13 or not historical and (typed or config.is_file() and read(config).get('schema_version')=='compatibility-runtime-config-v1.3'):
+                if archived_v13:
+                    from profile_compatibility_release_v1_3 import historical_bundle_root
+                    bundle=historical_bundle_root(root,value)
+                elif typed:
+                    from news_runtime_v1_2 import current
+                    active,_=current(root,pinned=value,reuse_intent=value['reuse_intent'])
+                    bundle=active['bundle_root']
+                else:
+                    active=effective_runtime(root,pinned=value)
+                    bundle=active['bundle_root']
+                for key in ('activation_ref','release_ref'):
+                    result.add(resolve_ref(root,value[key]).resolve())
+                def bundled(item):
+                    if isinstance(item,dict):
+                        if set(item)=={'path','sha256'}:
+                            result.add(resolve_ref(bundle,item).resolve())
+                        else:
+                            for child in item.values():bundled(child)
+                    elif isinstance(item,list):
+                        for child in item:bundled(child)
+                bundled({key:item for key,item in value.items() if key not in ('activation_ref','release_ref')})
+                return result
         if value.get('path') and (value.get('sha256') or value.get('file_sha256')):
             path = Path(value['path'])
             if not path.is_absolute():
@@ -367,10 +404,10 @@ def bound_source_paths(root, value):
                     raise NewsExportError('NEWS_EXPORT_SOURCE_CHANGED', '原导出来源已变化，需要重新核对。')
                 result.add(path.resolve())
         for item in value.values():
-            result.update(bound_source_paths(root, item))
+            result.update(bound_source_paths(root, item,historical=historical))
     elif isinstance(value, list):
         for item in value:
-            result.update(bound_source_paths(root, item))
+            result.update(bound_source_paths(root, item,historical=historical))
     return result
 
 
@@ -441,6 +478,89 @@ def validate_receipt_publication(root, directory, receipt, *, output, template, 
             or ('actor' in receipt and receipt['actor'] != intent['actor'])):
         raise NewsExportError('NEWS_EXPORT_RECEIPT_CONFLICT')
     return intent
+
+
+def completed_production_receipt(root, request_path, *, kind):
+    """Read sealed v1.3 history; never confer current execution eligibility.
+
+    A successor release or withdrawn admission cannot erase a completed Native
+    export. Incomplete exports still go through their original live writers.
+    All immutable inputs and the exact append-only Native transitions remain
+    mandatory. This reader neither finishes a crash window nor creates a seal.
+    """
+    import ledger_history_v1 as history
+    root=Path(root).expanduser().resolve()
+    request_path=Path(request_path).expanduser().resolve();request=read(request_path)
+    if (request.get('profile_compatibility_v1_2') or {}).get('schema_version')!='profile-compatibility-runtime-binding-v1.3':
+        return None
+    rid=request['request_id']
+    if kind=='novel':
+        from novel_news_v1 import _paths
+        p=_paths(root,rid);receipt_path=p['receipt'];closure_path=p['closure'];directory=p['approved'].parent
+        business=request['persona_id'];expected=['novel_semantic','novel_presentation']
+        receipt_version,closure_version=NOVEL_RECEIPT,NOVEL_CLOSURE
+        if request_path!=p['request'] or request.get('reuse_intent')!='novel_content' or request.get('target_profile')!='news':
+            raise NewsExportError('NEWS_EXPORT_COMPLETION_INVALID')
+    elif kind=='repurpose':
+        from news_delivery_v1 import _request_path,_request_root
+        directory=_request_root(root,rid);receipt_path=directory/'news_dynamic_excel_export_receipt_v1.json'
+        closure_path=directory/'news_delivery_export_closure_v1.json'
+        business=request['business_id'];expected=['news_presentation']
+        receipt_version,closure_version=REPURPOSE_RECEIPT,REPURPOSE_CLOSURE
+        if request_path!=_request_path(root,rid) or request.get('reuse_intent')!='cross_profile_repurpose':
+            raise NewsExportError('NEWS_EXPORT_COMPLETION_INVALID')
+    else:
+        raise ValueError('Unknown Native News export kind')
+    if not closure_path.is_file():return None
+    receipt=check(read(receipt_path),receipt_version);closure=check(read(closure_path),closure_version)
+    def matches(reference,path):
+        # Existing Native receipts use absolute paths; structural refs use
+        # root-relative paths. Validate each exact target, never rewrite either.
+        candidate=Path(reference['path'])
+        if not candidate.is_absolute():candidate=root/candidate
+        return candidate.resolve()==Path(path).resolve() and reference['sha256']==file_sha(path)
+    if receipt['request_id']!=rid or closure['request_id']!=rid or not matches(closure['receipt_ref'],receipt_path):
+        raise NewsExportError('NEWS_EXPORT_COMPLETION_INVALID')
+    nodes=history.graph(root,business)
+    if (not nodes or file_sha(history.ledger_path(root,business))!=nodes[-1][1]['after_ref']['sha256']
+        or [v['kind'] for _,v in nodes if v['request_id']==rid]!=expected):
+        raise NewsExportError('NEWS_EXPORT_LEDGER_HISTORY_CONFLICT')
+    pending=False
+    for path,event in nodes:
+        if path.with_name('receipt.json').is_file():
+            history.validate_sealed_transition(root,path,event)
+        else:
+            # Status must distinguish a real Closure-before-seal crash from
+            # completion. Only the original live exporter can finish it.
+            _,after=history.validate_transition(root,path,event,require_seal=False)
+            if event['request_id']==rid:
+                recipe=history.material(root,event['kind'],rid,event['exported_at'])
+                history.validate_native_terminal(root,event,after,receipt,closure,recipe)
+                pending=True
+    intent=check(read(paths(directory)['intent']),INTENT)
+    if (intent['sources']['request_ref']!=ref(root,request_path) or intent['business_id']!=business
+        or intent['request_id']!=rid or receipt['publication']!=receipt_publication(root,directory)
+        or receipt['created_at']!=intent['created_at'] or receipt['output_path']!=str(root/intent['output_path'])
+        or receipt['output_sha256']!=file_sha(root/intent['output_path'])
+        or ('actor' in receipt and receipt['actor']!=intent['actor'])):
+        raise NewsExportError('NEWS_EXPORT_COMPLETION_INVALID')
+    if kind=='novel':
+        if (not matches(receipt['approved_ref'],resolve_ref(root,intent['sources']['approved_ref']))
+            or closure['approved_sha256']!=intent['sources']['approved_ref']['sha256']
+            or closure['output_sha256']!=receipt['output_sha256']
+            or closure['content_id']!=rid+'-N001' or closure['presentation_id']!=rid+'-P001'):
+            raise NewsExportError('NEWS_EXPORT_COMPLETION_INVALID')
+    elif (not matches(receipt['approved_news_delivery'],resolve_ref(root,intent['sources']['approved_ref']))
+        or receipt['titles']!=intent['titles'] or receipt['ledger_prefix']!=closure['ledger_prefix']
+        or receipt['template_sha256']!=intent['template_ref']['sha256']
+        or receipt['source_content_ref']!=request['source_content_id']
+        or not matches(closure['request'],request_path)
+        or not matches(closure['approved_news_delivery'],resolve_ref(root,intent['sources']['approved_ref']))
+        or closure['excel_export']['sha256']!=receipt['output_sha256']):
+        raise NewsExportError('NEWS_EXPORT_COMPLETION_INVALID')
+    validate_ledger_prefix(read(history.ledger_path(root,business)),closure['ledger_prefix'])
+    if pending:raise NewsExportError('NEWS_EXPORT_LEDGER_SEAL_PENDING','导出文件已保留，原操作仍需完成封存。')
+    return receipt
 
 
 def partial_state(root, directory, *, output, receipt, closure):

@@ -199,6 +199,30 @@ def validate_evidence_batch(source_root,evidence_refs):
         return [_validate_evidence(source_root,item,shared_read) for item in evidence_refs]
 
 
+def production_summary(source_root,evidence_refs):
+    """Portable structural qualification summary for a NEW explicit Human gate.
+
+    Re-verify both original Native results at preview/confirmation; do not copy
+    private Customer/Request/Task/Ledger artifacts into a production package.
+    This derived summary alone never grants production or real-model quality.
+    """
+    if len(evidence_refs)!=2:
+        raise CompatibilityError('Production News requires both Native qualification outcomes')
+    values=validate_evidence_batch(source_root,evidence_refs)
+    by_intent={value['reuse_intent']:(value,reference) for value,reference in zip(values,evidence_refs)}
+    if set(by_intent)!={'novel_content','cross_profile_repurpose'}:
+        raise CompatibilityError('Novel and Repurpose cannot qualify one another')
+    first=values[0]['eligibility_binding']
+    for value in values:
+        if any(value['eligibility_binding'][key]!=first[key] for key in ('profile_ref','pattern_ref','pattern_approval_ref')):
+            raise CompatibilityError('Qualification outcomes use different structural scopes')
+    return {'schema_version':'news-production-qualification-summary-v1.0',
+        'novel_evidence_sha256':by_intent['novel_content'][1]['sha256'],
+        'repurpose_evidence_sha256':by_intent['cross_profile_repurpose'][1]['sha256'],
+        **{key:first[key] for key in ('profile_ref','pattern_ref','pattern_approval_ref')},
+        'native_paths_verified':True,'real_model_quality':'not_validated'}
+
+
 def _validate_evidence(source_root,evidence_ref,reader):
     value=validate_contract(read(resolve_ref(source_root,evidence_ref)),EVIDENCE)
     origin=value['origin_runtime'];root=Path(origin['pipeline_root']).resolve()

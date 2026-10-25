@@ -66,7 +66,7 @@ def novel_flow(client, headers, runtime, business):
     return rid, proof
 
 
-def repurpose_flow(client, headers, runtime, business, *, key='complete_repurpose'):
+def repurpose_flow(client, headers, runtime, business, *, key='complete_repurpose',record_isolated_evidence=True):
     root = runtime.pipeline_root
     created = client.post('/api/create/confirm', headers=headers, json={
         'business_id': business['business_id'], 'speaker_id': business['speaker_id'], 'profile': 'mix',
@@ -105,8 +105,9 @@ def repurpose_flow(client, headers, runtime, business, *, key='complete_repurpos
         replay = client.post(url + '/export', headers=headers)
         assert replay.status_code == 200 and replay.json()['accepted'] is False, replay.text
         assert replay.json()['task']['task_id'] == tid
-    proof = create_evidence(root, nrid, 'cross_profile_repurpose')
-    assert validate_evidence(root, proof)['reuse_intent'] == 'cross_profile_repurpose'
+    proof = create_evidence(root, nrid, 'cross_profile_repurpose') if record_isolated_evidence else None
+    if record_isolated_evidence:
+        assert validate_evidence(root, proof)['reuse_intent'] == 'cross_profile_repurpose'
     return nrid, proof
 
 

@@ -50,6 +50,11 @@ def main() -> None:
     activate.add_argument('--pipeline-root', type=Path, required=True)
     activate.add_argument('--repo-root', type=Path, required=True)
     activate.add_argument('--operation-id', required=True)
+    configure=sub.add_parser('configure-v1.3')
+    configure.add_argument('--pipeline-root',type=Path,required=True)
+    configure.add_argument('--control-root',type=Path,required=True)
+    configure.add_argument('--repo-root',type=Path,required=True)
+    configure.add_argument('--profiles',nargs='+',choices=['mix','news'],required=True)
     args = parser.parse_args()
     try:
         if args.operation == "verify":
@@ -65,6 +70,12 @@ def main() -> None:
         elif args.operation == 'activate-v1.1':
             result = activate_release_v1_1(args.pipeline_root, args.repo_root,
                 json.loads(args.release_ref.read_text('utf-8')), args.operation_id)
+        elif args.operation == 'configure-v1.3':
+            import sys
+            sys.path.insert(0,str(args.repo_root/'ops-pipeline/scripts'))
+            from profile_compatibility_release_v1_1 import configure_runtime
+            result={'configuration':configure_runtime(args.pipeline_root,args.control_root,
+                purpose='production',contract_version='1.3',profiles=args.profiles)}
         else:
             result = install_release(args.release, args.pipeline_root, args.repo_root, args.expected_commit, args.backup_parent, args.receipt)
     except RuntimeError as exc:

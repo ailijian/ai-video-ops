@@ -1160,6 +1160,12 @@ def preview_news_delivery(
         )
     )
 
+    native_authority={}
+    if configured(pipeline_root):
+        from profile_compatibility_release_v1_1 import CONFIG
+        runtime_config=read_json(Path(pipeline_root)/CONFIG)
+        native_authority={'isolated_qualification_authorized':runtime_config['purpose']=='isolated-validation',
+            'production_eligibility_granted':runtime_config['schema_version']=='compatibility-runtime-config-v1.3'}
     return {
         "schema_version": (
             "news-delivery-preview-v1.0"
@@ -1209,8 +1215,7 @@ def preview_news_delivery(
             "frozen_registry_mutated": False,
             "novel_news_globally_ready": False,
             "price_offer_path_production_validated": not configured(pipeline_root),
-            **({'isolated_qualification_authorized':True,'production_eligibility_granted':False}
-                if configured(pipeline_root) else {}),
+            **native_authority,
             "scene_contrast_path_opened": False,
             "same_source_same_pattern_reexport_blocked": True,
             "remote_model_called": False,
@@ -1388,7 +1393,10 @@ def create_news_delivery_request(
     idempotency_key: str, created_by_user_id: int | None = None, created_by_phone: str | None = None,
     batch_admission_ref: dict | None = None, authorization_context: dict | None = None,
 ) -> tuple[dict[str, Any], bool]:
+    from production_admission_v1 import require_native_execution
+    require_native_execution(pipeline_root,profile='news',reuse_intent='cross_profile_repurpose')
     values = locals().copy()
+    values.pop('require_native_execution',None)
     if batch_admission_ref is not None:
         from generation_request_handoff_v1 import _business_generation_lock
         with _business_generation_lock(Path(pipeline_root), business_id):
@@ -1649,8 +1657,11 @@ def _load_request(
             "News Delivery Request schema or identity is invalid.",
         )
     if request.get('schema_version') in (REQUEST_SCHEMA_V1_1, REQUEST_SCHEMA_V1_2):
-        from profile_compatibility_contract_v1_2 import BINDING,validate_contract
-        value=validate_contract(request.get('profile_compatibility_v1_2'),BINDING)
+        import profile_compatibility_contract_v1_2 as contract
+        binding=request.get('profile_compatibility_v1_2') or {}
+        if binding.get('schema_version')=='profile-compatibility-runtime-binding-v1.3':
+            import profile_compatibility_contract_v1_3 as contract
+        value=contract.validate_contract(binding,contract.BINDING)
         if value['target_profile']!='news' or value['reuse_intent']!='cross_profile_repurpose':
             raise NewsDeliveryError('NEWS_DELIVERY_BINDING_INVALID','新闻体来源版本需要重新核对。')
         from news_runtime_v1_2 import validate_request_personas
@@ -2935,7 +2946,7 @@ def historical_ledger_material(root, request_id, kind, exported_at):
     sources={key:ref(root,path) for key,path in p.items() if key in {'request','plan','review','approved'}}
     sources.update({key:ref(root,path) for key,path in {'business':business_path,'speaker':speaker_path,
         'intent':pp['intent'],'prepared':pp['prepared'],'output':output,'template':template}.items()})
-    for n,path in enumerate(sorted(bound_source_paths(root,intent['sources']))):sources['lineage_'+str(n)]=ref(root,path)
+    for n,path in enumerate(sorted(bound_source_paths(root,intent['sources'],historical=True))):sources['lineage_'+str(n)]=ref(root,path)
     request=read(p['request']);approved=read(p['approved']);review=read(p['review']);plan=read(p['plan'])
     if request.get('request_id')!=request_id or approved.get('request_id')!=request_id:
         raise LedgerHistoryError('NATIVE_SOURCE_INVALID')
@@ -3455,7 +3466,7 @@ def _export_news_delivery_native(*, pipeline_root: Path, request_id: str,
         bound_source_paths,
     )
     if receipt_path.is_file() and closure_path.is_file():
-        validate_news_delivery_export(pipeline_root=pipeline_root, request_id=request_id)
+        validate_news_delivery_export(pipeline_root=pipeline_root, request_id=request_id, _live_recovery=True)
         from ledger_history_v1 import finish_completed_news_request
         finish_completed_news_request(pipeline_root,request['business_id'],request_id,root,receipt_path,closure_path,export_context)
         return {"request_id": request_id, "output_path": str(output_path), "output_name": output_name,
@@ -3993,11 +4004,14 @@ def export_supplemental_delivery(*, pipeline_root, request_id, authorization_con
     return export(root, request_id, authorization_context, native_owner='news_delivery_v1', ensure_core=ensure, expected_draft_ref=expected_draft_ref)
 
 
-def validate_news_delivery_export(*, pipeline_root: Path, request_id: str) -> dict:
+def validate_news_delivery_export(*, pipeline_root: Path, request_id: str, _live_recovery=False) -> dict:
     """Native terminal read; mutable Ledger appends do not rewrite old receipts."""
     from news_export_recovery_v1 import (REPURPOSE_RECEIPT, REPURPOSE_CLOSURE, NewsExportError,
         validate_workbook, validate_receipt_publication, validate_ledger_prefix)
     root = Path(pipeline_root).resolve()
+    from news_export_recovery_v1 import completed_production_receipt
+    completed=None if _live_recovery else completed_production_receipt(root,_request_path(root,request_id),kind='repurpose')
+    if completed is not None:return completed
     request_path, request = _load_request(root, request_id)
     directory = _request_root(root, request_id)
     receipt_path = directory / "news_dynamic_excel_export_receipt_v1.json"
@@ -4059,12 +4073,14 @@ def status_news_delivery(
         .expanduser()
         .resolve()
     )
-    request_path, request = (
-        _load_request(
-            pipeline_root,
-            request_id,
-        )
-    )
+    from news_export_recovery_v1 import completed_production_receipt,NewsExportError
+    request_path=_request_path(pipeline_root,request_id)
+    seal_pending=False
+    try:completed_receipt=completed_production_receipt(pipeline_root,request_path,kind='repurpose')
+    except NewsExportError as exc:
+        if exc.code!='NEWS_EXPORT_LEDGER_SEAL_PENDING':raise
+        completed_receipt=None;seal_pending=True
+    request=read_json(request_path) if completed_receipt is not None else _load_request(pipeline_root,request_id)[1]
     root = _request_root(
         pipeline_root,
         request_id,
@@ -4095,14 +4111,19 @@ def status_news_delivery(
     )
 
     from news_export_recovery_v1 import partial_state
-    business_path, business = _latest_approved_persona(pipeline_root, request["business_id"], "business")
-    _, speaker = _latest_approved_persona(pipeline_root, request["speaker_id"], "speaker")
-    output = pipeline_root / "output" / _export_name(request=request, business=business, speaker=speaker)
+    if completed_receipt is not None:
+        output=Path(completed_receipt['output_path'])
+    else:
+        business_path, business = _latest_approved_persona(pipeline_root, request["business_id"], "business")
+        _, speaker = _latest_approved_persona(pipeline_root, request["speaker_id"], "speaker")
+        output = pipeline_root / "output" / _export_name(request=request, business=business, speaker=speaker)
     recovery_state = partial_state(pipeline_root, root, output=output, receipt=receipt_path, closure=closure_path)
     completed = False
     cancelled=bool(request_cancelled(pipeline_root,request_id))
     if cancelled:
         next_action,recovery_state,completed='NEWS_REQUEST_CANCELLED','cancelled_unissued',False
+    elif seal_pending:
+        next_action,recovery_state='EXPORT_NEWS_EXCEL','ledger_seal_pending'
     elif closure_path.is_file():
         validate_news_delivery_export(pipeline_root=pipeline_root, request_id=request_id)
         next_action, recovery_state, completed = "NEWS_EXCEL_EXPORTED", "completed", True

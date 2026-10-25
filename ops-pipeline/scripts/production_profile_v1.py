@@ -219,6 +219,10 @@ def validate_target_profile(registry: dict[str, Any], target_profile: str) -> di
 
 
 def validate_registry(registry: dict[str, Any]) -> None:
+    if registry.get('schema_version')=='production-profile-registry-v1.3':
+        from profile_compatibility_contract_v1_3 import validate_contract,REGISTRY
+        validate_contract(registry,REGISTRY)
+        return
     if registry.get('schema_version')=='production-profile-registry-v1.2':
         from profile_compatibility_contract_v1_2 import validate_contract,REGISTRY
         validate_contract(registry,REGISTRY)

@@ -17,6 +17,50 @@ def reviewer_name(actor):
     return f"principal:{actor['namespace']}:{actor['user_id']}"
 
 
+def validate_production_purpose_review(value):
+    """Versioned purpose extension only; the old isolated receipt stays unchanged."""
+    from production_admission_v1 import PATTERN_SCHEMA
+    validate(value, PATTERN_SCHEMA)
+    validate_grant_proof(value['authorization'], capability=PATTERN_CAPABILITY)
+    if value['actor'] != value['authorization']['principal']:
+        raise CompatibilityError('Pattern production-purpose review principal differs')
+    keys = [digest(item) for item in value['patterns']]
+    if keys != sorted(set(keys)):
+        raise CompatibilityError('Pattern production-purpose scope must be exact and unique')
+    return value
+
+
+def prepare_production_purpose_review(root, database_path, actor, operation_id, targets):
+    from production_admission_v1 import PATTERN_REVIEW
+    patterns = {digest({k: target[k] for k in ('pattern_ref','pattern_approval_ref')}):
+                {k: target[k] for k in ('pattern_ref','pattern_approval_ref')} for target in targets}
+    for item in patterns.values():
+        validate_pattern(root, item['pattern_ref'], item['pattern_approval_ref'])
+    value = {'schema_version': PATTERN_REVIEW, 'operation_id': operation_id, 'actor': actor,
+        'authorization': authorization(database_path, actor, capability=PATTERN_CAPABILITY),
+        'decision': 'approve_exact_production_purpose', 'patterns': [patterns[k] for k in sorted(patterns)],
+        'purpose': 'production', 'case_scope_expanded': False, 'customer_truth_created': False,
+        'human_confirmation_required': True, 'at': datetime.now(timezone.utc).isoformat()}
+    return validate_production_purpose_review(value)
+
+
+def confirm_production_purpose_review(root, database_path, actor, proposal):
+    """Called only inside the original Release review's locked Human confirmation."""
+    from production_admission_v1 import PATTERN_DECISION,check
+    validate_production_purpose_review(proposal)
+    if (proposal['actor'] != actor or authorization(database_path, actor, capability=PATTERN_CAPABILITY)
+            != proposal['authorization']):
+        raise CompatibilityError('Pattern production-purpose permission changed')
+    for item in proposal['patterns']:
+        validate_pattern(root, item['pattern_ref'], item['pattern_approval_ref'])
+    path = Path(root)/'data/patterns/production_purpose_operations'/proposal['operation_id']/'decision.json'
+    old = read(path) if path.is_file() else None
+    receipt = {**proposal, 'schema_version': PATTERN_DECISION, 'human_gate': True,
+        'confirmed_at': old['confirmed_at'] if old else datetime.now(timezone.utc).isoformat()}
+    write_once(path, check(receipt, PATTERN_DECISION))
+    return ref(root,path)
+
+
 def profile_sources(root,profile_ref,rules_ref):
     from production_profile_v1 import declared_news_profile_v1_2
     p=validate_contract(read(resolve_ref(root,profile_ref)),PROFILE)

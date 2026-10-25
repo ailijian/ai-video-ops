@@ -275,6 +275,16 @@ test('error card escapes supplied text; other failed operations do not claim a c
   assert.doesNotMatch(html,/<img|config-adjust-quantities|创作资格未通过/);
 });
 
+test('missing production qualification explains administrator action without a false count adjustment',()=>{
+  for (const code of ['CREATIVE_STYLE_QUALIFICATION_REQUIRED','CREATION_BATCH_ISOLATED_SCOPE_REQUIRED',
+    'CREATION_PRODUCTION_ADMISSION_REQUIRED','CREATION_PRODUCTION_EXECUTION_NOT_AUTHORIZED']) {
+    const html=configurationFailureMarkup({checking:true,code,
+      message:'当前环境尚未激活可用于本次创作的正式版本。',nextAction:'请联系管理员；当前配置已保留。'});
+    assert.match(html,/创作暂未开放/);assert.match(html,/管理员/);
+    assert.doesNotMatch(html,/config-adjust-quantities|调整创作数量/);
+  }
+});
+
 test('a lost confirmation response keeps the original checked identity for safe replay',async()=>{
   const dom=browser(),confirmations=[],navigations=[];
   const state=changeConfiguration(createConfiguration('free'),'persona',1);

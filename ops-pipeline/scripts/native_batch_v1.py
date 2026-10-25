@@ -31,6 +31,22 @@ def request_path(root, request_id):
 
 def validate_policy(value):
     """Only the two attributable engineering scopes; neither grants production."""
+    if value.get('schema_version')=='native-batch-admission-policy-v1.1':
+        expected={'schema_version':'native-batch-admission-policy-v1.1','policy_version':'production-1',
+            'maximum_logical_slots':value.get('maximum_logical_slots'),
+            'maximum_pending_native_requests':value.get('maximum_logical_slots'),
+            'dispatch_per_business':1,'mix_style_quantities':[1,2],
+            'allowed_profiles':value.get('allowed_profiles'),'maximum_explicit_cycles':1,
+            'production_admission_ref':value.get('production_admission_ref'),
+            'production_qualification_granted':True,'unknown_retry':'explicit-native-only','legacy_active_exception':False}
+        from profile_compatibility_contract_v1_1 import REF,validate
+        validate(value.get('production_admission_ref'),REF)
+        count=value.get('maximum_logical_slots')
+        if (type(count) is not int or not 1<=count<=5
+                or value.get('allowed_profiles') not in [['mix'],['news'],['mix','news']]
+                or digest(value)!=digest(expected)):
+            raise BatchError('CREATION_BATCH_POLICY_INVALID','Invalid bounded production policy')
+        return value
     version = value.get('policy_version')
     if version not in ('1', '2'):
         raise BatchError('CREATION_BATCH_POLICY_INVALID', 'Unknown Native admission policy')
@@ -114,6 +130,8 @@ def configuration(value, *, policy=None):
     total = sum(quantities.values())
     policy = validate_policy(read(POLICY) if policy is None else policy)
     if not 1 <= total <= policy['maximum_logical_slots']:
+        if policy.get('policy_version')=='production-1':
+            raise BatchError('CREATION_BATCH_PRODUCTION_CAPACITY','Target exceeds the exact production batch admission')
         raise BatchError('CREATION_BATCH_CAPACITY_NOT_APPROVED', 'Current approved isolated batch scope is 1..40 videos')
     mode, stage = value.get('mode'), value.get('stage')
     if mode not in ('free', 'stage') or mode == 'stage' and stage not in ('launch', 'trust', 'steady'):
@@ -156,6 +174,16 @@ def preview(root, business_id, speaker_id, value, context, operation_id):
     root = Path(root).resolve()
     payload = configuration(value)
     active = policy_qualification(root)
+    policy = validate_policy(read(POLICY))
+    if active['manifest'].get('schema_version')=='creative-authority-release-v1.3':
+        from production_admission_v1 import batch_policy,require_selection
+        policy=batch_policy(active)
+        payload=configuration(value,policy=policy)
+        for kind,count in payload['quantities'].items():
+            if count:
+                require_selection(active,style=kind if kind in ('persona','story','conversion') else None,
+                    profile='news' if kind in ('novel','repurpose') else 'mix',
+                    reuse_intent='cross_profile_repurpose' if kind=='repurpose' else 'novel_content',execution=True)
     business = resolve_current_persona(root, business_id, 'business')
     speaker = resolve_speaker_persona(root, business, speaker_id)
     business_ref = artifact(business['path'], 'native-business', business_id, business['revision'])
@@ -215,7 +243,7 @@ def preview(root, business_id, speaker_id, value, context, operation_id):
     snapshot = {'business_id': business_id, 'speaker_id': speaker_id, 'configuration': payload,
                 'slots': slots, 'qualification': active['binding'],
                 'memory': __import__('content_intent_reservations_v1').memory(root, business_id),
-                'admission_policy': validate_policy(read(POLICY))}
+                'admission_policy': policy}
     return {'schema_version': 'native-batch-preflight-v1.0', 'batch_id': batch_id, 'actual_target': len(slots),
             'new_content_target': len(slots) - payload['quantities']['repurpose'], 'can_confirm': True,
             'source_configuration_sha256': digest(snapshot), 'snapshot': snapshot, 'no_mutation': True}
@@ -584,7 +612,7 @@ def groups(root, batch_id):
         key = style['style_id'] if style else slot['slot_id']
         same = [g for g in result if g.get('style_key') == key]
         group = same[-1] if same else None
-        if style and policy['policy_version'] == '2' and group and len(group['slots']) >= max(policy['mix_style_quantities']):
+        if style and policy['policy_version'] in ('2','production-1') and group and len(group['slots']) >= max(policy['mix_style_quantities']):
             group = None
         if group is None:
             group = {'group_id': key if not same else key + '-' + str(len(same)+1).zfill(3),
@@ -608,7 +636,10 @@ def groups(root, batch_id):
 def policy_qualification(root):
     from creative_style_v1 import active_qualification
     active = active_qualification(root)
-    if active['manifest'].get('purpose')!='isolated-validation':
+    if active['manifest'].get('schema_version')=='creative-authority-release-v1.3':
+        from production_admission_v1 import validate_active
+        validate_active(active)
+    elif active['manifest'].get('purpose')!='isolated-validation':
         raise BatchError('CREATION_BATCH_ISOLATED_SCOPE_REQUIRED', 'The approved engineering policy grants no production batch eligibility')
     declared = {v['path']: v for v in active['manifest']['source_files']}
     for name in ('native_batch_v1.py', 'creation_batch_contract_v1.py', 'creation_batch_contracts_v1.json',
